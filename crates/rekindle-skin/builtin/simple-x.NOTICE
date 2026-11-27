@@ -14,9 +14,9 @@ Licence
 
 Colour groups (55 defined)
   ScrollbarColor RGBA(0,0,0,0) -> image shift (baked)
-  ScrollbarColorBG RGBA(0,0,0,0) -> not mapped: no registry role scrollbar.track yet
-  TooltipCG RGBA(153,153,153,0) -> not mapped: no registry role tooltip.bg yet
-  TooltipTextCG RGBA(0,0,0,0) -> not mapped: no registry role tooltip.text yet
+  ScrollbarColorBG RGBA(0,0,0,0) -> token scrollbar.track
+  TooltipCG RGBA(153,153,153,0) -> token tooltip.bg
+  TooltipTextCG RGBA(0,0,0,0) -> token tooltip.text
   InnerBevelBkCg RGBA(0,0,0,0) -> image shift (baked)
   BevelCG RGBA(0,0,0,0) -> image shift (baked)
   MainCG RGBA(0,0,0,0) -> image shift (baked)
@@ -39,7 +39,7 @@ Colour groups (55 defined)
   MenuBarCG RGBA(0,0,0,0) -> image shift (baked)
   MenuHoverCG RGBA(0,0,0,0) -> image shift (baked)
   MenuDownCG RGBA(0,0,0,0) -> image shift (baked)
-  MenuTextCG RGBA(255,255,255,0) -> not mapped: no registry role menubar.text yet
+  MenuTextCG RGBA(255,255,255,0) -> token menubar.text
   ChatViewCG RGBA(0,0,0,0) -> token bg.panel
   ChatOtherCG RGBA(255,255,255,0) -> not mapped: no registry role chat.peer.name yet
   ChatOtherTextCG RGBA(255,255,255,0) -> not mapped: no registry role chat.peer.text yet
@@ -54,7 +54,7 @@ Colour groups (55 defined)
   BuddyViewOfflineText RGBA(255,255,255,0) -> token status.offline-text
   BuddyViewSelected RGBA(102,102,102,0) -> token accent.fill
   BuddyViewNonFocus RGBA(102,102,102,0) -> not mapped: no registry role list.selected.bg.inactive yet
-  BuddyViewSelectedText RGBA(0,0,0,0) -> registry-fixed accent.fg (a skin cannot set it)
+  BuddyViewSelectedText RGBA(0,0,0,0) -> token selection.text
   InfoBackDropCG RGBA(0,0,0,0) -> image shift (baked)
   InfoOuterCG RGBA(0,0,0,0) -> image shift (baked)
   InfoViewBG RGBA(0,0,0,0) -> token bg.secondary
@@ -178,4 +178,5 @@ Dropped
     mainskin/toolbar.gif
     strings.ini
 
-Contrast changes (minimal Oklab-lightness walk) (0 made)
+Contrast changes (minimal Oklab-lightness walk) (1 made)
+  selection.text: #000000 -> #e4e4e4 (1.4.3 selection.text on accent.fill: 3.65:1 -> 4.51:1, required 4.50:1)

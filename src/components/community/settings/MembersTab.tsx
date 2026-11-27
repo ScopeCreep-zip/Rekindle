@@ -17,9 +17,8 @@ import {
 
 interface MembersTabProps {
   community: Community;
-  canManageRoles: boolean;
-  canModerate: boolean;
-  canManageCommunity: boolean;
+  /** Why we may not expand the community, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
 }
 
 const SLOTS_PER_SEGMENT = 255;
@@ -54,11 +53,6 @@ const MembersTab: Component<MembersTabProps> = (props) => {
 
   // What we may do to a member is the Host's per-member verdict (plan
   // E3.2 S9): the validator's rank rule, never a rank compared here.
-  function canManageMember(member: Member): boolean {
-    const may = member.canModerateTarget;
-    return member.outranks || may.kick || may.ban || may.timeout;
-  }
-
   function kickMember(member: Member): void {
     void handleRemoveCommunityMember(props.community.id, member.pseudonymKey);
   }
@@ -78,7 +72,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
   const remaining = () => Math.max(0, capacity() - props.community.members.length);
   const canExpandMore = () => segmentCount() < MAX_SEGMENTS;
   const expansionBannerVariant = (): "warning" | "alert" | null => {
-    if (!props.canManageCommunity || !canExpandMore()) return null;
+    if (!canExpandMore()) return null;
     if (remaining() === 0) return "alert";
     if (remaining() <= PLATE_WARNING_REMAINING) return "warning";
     return null;
@@ -121,14 +115,16 @@ const MembersTab: Component<MembersTabProps> = (props) => {
           </div>
           <button
             class="plate-gate-banner-btn"
-            disabled={expanding()}
+            disabled={expanding() || props.manageDenied !== null}
+            title={props.manageDenied ?? undefined}
+            aria-description={props.manageDenied ?? undefined}
             onClick={() => void onClickExpand()}
           >
             {expanding() ? "Expanding…" : "Expand community"}
           </button>
         </div>
       </Show>
-      <Show when={props.canManageCommunity && (props.community.segments?.length ?? 0) > 0}>
+      <Show when={(props.community.segments?.length ?? 0) > 0}>
         <div class="plate-gate-status">
           Plate Gate: {segmentCount()} segments · capacity {capacity()} ·
           {" "}{props.community.members.length} members ·{" "}
@@ -160,65 +156,72 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 <SkinGlyph name="timeout" class="timeout-indicator" title="Timed out" label="Timed out" />
               </Show>
             </div>
-            <Show when={canManageMember(member)}>
-              <div class="settings-member-actions">
-                <Show when={member.outranks && props.canManageRoles}>
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => setRolePickerTarget(
-                      rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
-                    )}
-                  >
-                    <SkinGlyph name="shield" /> Roles
-                  </button>
-                </Show>
-                <Show when={member.timeoutUntil ? props.canModerate : member.canModerateTarget.timeout}>
-                  <Show when={!member.timeoutUntil} fallback={
-                    <button
-                      class="form-btn-secondary"
-                      onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
-                    >
-                      <SkinGlyph name="timeout" /> Untimeout
-                    </button>
-                  }>
-                    <select
-                      class="timeout-select"
-                      onChange={(e) => {
-                        const secs = Number(e.currentTarget.value);
-                        if (secs > 0) {
-                          handleTimeoutMember(props.community.id, member.pseudonymKey, secs, null);
-                          e.currentTarget.value = "";
-                        }
-                      }}
-                    >
-                      <option value="">Timeout...</option>
-                      <option value="60">1 min</option>
-                      <option value="300">5 min</option>
-                      <option value="600">10 min</option>
-                      <option value="1800">30 min</option>
-                      <option value="3600">1 hour</option>
-                      <option value="86400">1 day</option>
-                    </select>
-                  </Show>
-                </Show>
-                <Show when={member.canModerateTarget.kick}>
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => kickMember(member)}
-                  >
-                    <SkinGlyph name="account-remove" /> Kick
-                  </button>
-                </Show>
-                <Show when={member.canModerateTarget.ban}>
-                  <button
-                    class="form-btn-danger"
-                    onClick={() => banMember(member)}
-                  >
-                    <SkinGlyph name="ban" /> Ban
-                  </button>
-                </Show>
-              </div>
-            </Show>
+            {/* Never-hide: every action is drawn for every member, each disabled
+                with the Host's reason for this member (rank, permission, self). */}
+            <div class="settings-member-actions">
+              <button
+                class="form-btn-secondary"
+                disabled={member.moderation.manageRoles !== null}
+                title={member.moderation.manageRoles ?? undefined}
+                aria-description={member.moderation.manageRoles ?? undefined}
+                onClick={() => setRolePickerTarget(
+                  rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
+                )}
+              >
+                <SkinGlyph name="shield" /> Roles
+              </button>
+              <Show when={!member.timeoutUntil} fallback={
+                <button
+                  class="form-btn-secondary"
+                  disabled={member.moderation.timeout !== null}
+                  title={member.moderation.timeout ?? undefined}
+                  aria-description={member.moderation.timeout ?? undefined}
+                  onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
+                >
+                  <SkinGlyph name="timeout" /> Untimeout
+                </button>
+              }>
+                <select
+                  class="timeout-select"
+                  disabled={member.moderation.timeout !== null}
+                  title={member.moderation.timeout ?? undefined}
+                  aria-description={member.moderation.timeout ?? undefined}
+                  onChange={(e) => {
+                    const secs = Number(e.currentTarget.value);
+                    if (secs > 0) {
+                      handleTimeoutMember(props.community.id, member.pseudonymKey, secs, null);
+                      e.currentTarget.value = "";
+                    }
+                  }}
+                >
+                  <option value="">Timeout...</option>
+                  <option value="60">1 min</option>
+                  <option value="300">5 min</option>
+                  <option value="600">10 min</option>
+                  <option value="1800">30 min</option>
+                  <option value="3600">1 hour</option>
+                  <option value="86400">1 day</option>
+                </select>
+              </Show>
+              <button
+                class="form-btn-secondary"
+                disabled={member.moderation.kick !== null}
+                title={member.moderation.kick ?? undefined}
+                aria-description={member.moderation.kick ?? undefined}
+                onClick={() => kickMember(member)}
+              >
+                <SkinGlyph name="account-remove" /> Kick
+              </button>
+              <button
+                class="form-btn-danger"
+                disabled={member.moderation.ban !== null}
+                title={member.moderation.ban ?? undefined}
+                aria-description={member.moderation.ban ?? undefined}
+                onClick={() => banMember(member)}
+              >
+                <SkinGlyph name="ban" /> Ban
+              </button>
+            </div>
             <Show when={rolePickerTarget() === member.pseudonymKey}>
               <div class="role-picker-list settings-role-picker">
                 <For each={props.community.roles.filter((r) => r.id !== EVERYONE_ROLE_ID).sort((a, b) => b.position - a.position)}>

@@ -211,6 +211,23 @@ pub fn stream_rows(conn: &Connection, owner_key: &str, stream: &str) -> rusqlite
     )
 }
 
+/// Rows of one stream that are still waiting to be sent.
+///
+/// # Errors
+/// The query failed.
+pub fn pending_stream_rows(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+) -> rusqlite::Result<Vec<Row>> {
+    query_rows(
+        conn,
+        "o.owner_key = ?1 AND o.stream = ?2 AND o.state IN ('queued', 'awaiting_key') \
+         ORDER BY o.stream_seq",
+        params![owner_key, stream],
+    )
+}
+
 /// The unsettled rows whose deadline is at or before `now`.
 ///
 /// # Errors

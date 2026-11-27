@@ -16,7 +16,7 @@
    * grouped with the add-friend panel's. */
   .toast-action-button {
     background: transparent;
-    border: 1px solid currentColor;
+    border: 1px solid currentcolor;
     border-radius: 3px;
     color: inherit;
     font-size: 11px;

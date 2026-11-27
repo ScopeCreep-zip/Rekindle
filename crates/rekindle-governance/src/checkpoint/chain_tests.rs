@@ -77,7 +77,7 @@ fn members_1_to_3() -> GovernanceState {
 fn a_hint_chain_is_checked_down_to_the_genesis_cert() {
     let cert = cert(&pk(1), AdmissionMode::Open);
     let one = endorse(1, 1, &body(1, None, &[pk(1)]));
-    let link1 = endorsed_link(&cert, None, std::slice::from_ref(&one)).expect("height 1");
+    let link1 = endorsed_link(&cert, ANCHOR, None, std::slice::from_ref(&one)).expect("height 1");
     let at_cut = members_1_to_3();
     let electorate = [pk(1), pk(2), pk(3)];
     let prev = OpRef {
@@ -89,14 +89,14 @@ fn a_hint_chain_is_checked_down_to_the_genesis_cert() {
     };
     let two = body(2, Some(prev), &electorate);
     let votes = [endorse(1, 2, &two), endorse(3, 0, &two)];
-    let link2 = endorsed_link(&cert, Some((&link1, &at_cut)), &votes).expect("height 2");
+    let link2 = endorsed_link(&cert, ANCHOR, Some((&link1, &at_cut)), &votes).expect("height 2");
     assert_eq!((link2.height, link2.body.clone()), (2, two.clone()));
 
     // One endorser of three is no majority.
-    assert!(endorsed_link(&cert, Some((&link1, &at_cut)), &votes[..1]).is_none());
+    assert!(endorsed_link(&cert, ANCHOR, Some((&link1, &at_cut)), &votes[..1]).is_none());
     // A height-1 hint endorsed by a non-creator does not chain to the cert.
     let forged = endorse(2, 0, &body(1, None, &[pk(2)]));
-    assert!(endorsed_link(&cert, None, &[forged]).is_none());
+    assert!(endorsed_link(&cert, ANCHOR, None, &[forged]).is_none());
     // Height-2 endorsements naming no height-1 endorsement do not chain.
     let orphan = body(
         2,
@@ -107,10 +107,10 @@ fn a_hint_chain_is_checked_down_to_the_genesis_cert() {
         &electorate,
     );
     let orphans = [endorse(1, 2, &orphan), endorse(3, 0, &orphan)];
-    assert!(endorsed_link(&cert, Some((&link1, &at_cut)), &orphans).is_none());
+    assert!(endorsed_link(&cert, ANCHOR, Some((&link1, &at_cut)), &orphans).is_none());
     // Endorsers outside the members at the height-1 cut count for nothing.
     let strangers = [endorse(7, 0, &two), endorse(8, 0, &two)];
-    assert!(endorsed_link(&cert, Some((&link1, &at_cut)), &strangers).is_none());
+    assert!(endorsed_link(&cert, ANCHOR, Some((&link1, &at_cut)), &strangers).is_none());
 }
 
 /// A bad signature is no endorsement.

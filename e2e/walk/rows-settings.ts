@@ -4,7 +4,7 @@
 // windows/SettingsWindow.tsx and windows/settings/*.
 
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, present, resolveIntent, shown, waitUntil } from "./helpers.ts";
-import { closeSettings, flipPersisted, inBuddy, openSettings, optionBox, pickNextFile, setValue, waitStored } from "./nav.ts";
+import { chooseSetting, closeSettings, flipPersisted, inBuddy, openSettings, optionBox, pickNextFile, setValue, settingOptions, settingShown, waitStored } from "./nav.ts";
 import { readFileSync } from "node:fs";
 import type { Browser } from "webdriverio";
 import type { Row } from "./rows.ts";
@@ -195,14 +195,14 @@ export const SETTINGS_ROWS: Row[] = [
     title: "Application: auto-away minutes",
     async run({ b, shot }) {
       await openSettings(b, "Application");
-      await setValue(b, ".settings-content select.form-select", "15");
+      await chooseSetting(b, "settings-auto-away-label", "15 minutes");
       await waitStored(b, "autoAwayMinutes", 15);
       await closeSettings(b);
       await openSettings(b, "Application");
-      const v = await (await b.$(".settings-content select.form-select")).getValue();
+      const v = await settingShown(b, "settings-auto-away-label");
       await shot();
-      if (v !== "15") throw new Error(`auto-away read back ${v}`);
-      await setValue(b, ".settings-content select.form-select", "0");
+      if (v !== "15 minutes") throw new Error(`auto-away read back ${v}`);
+      await chooseSetting(b, "settings-auto-away-label", "Disabled");
       await waitStored(b, "autoAwayMinutes", 0);
       await closeSettings(b);
       return "15 minutes kept after reopen; set back to Disabled";
@@ -367,17 +367,17 @@ export const SETTINGS_ROWS: Row[] = [
     title: 'Notifications: "Notifications show"',
     async run({ b, shot }) {
       await openSettings(b, "Notifications");
-      // The tab has two selects (NotificationsTab.tsx:155 and the quiet-hours
-      // timezone at :249): "Notifications show" is the one offering nameOnly.
-      const sel = '.settings-content select.form-select:has(option[value="nameOnly"])';
-      await setValue(b, sel, "nameOnly");
+      // "Notifications show" (NotificationsTab.tsx), a Settings select (ST1).
+      const sel = "settings-notification-content-label";
+      const nameOnly = "Name only (sender or channel, no text)";
+      await chooseSetting(b, sel, nameOnly);
       await waitStored(b, "notificationContent", "nameOnly");
       await closeSettings(b);
       await openSettings(b, "Notifications");
-      const v = await (await b.$(sel)).getValue();
+      const v = await settingShown(b, sel);
       await shot();
-      if (v !== "nameOnly") throw new Error(`read back ${v}`);
-      await setValue(b, sel, "nameAndMessage");
+      if (v !== nameOnly) throw new Error(`read back ${v}`);
+      await chooseSetting(b, sel, "Name and message");
       await waitStored(b, "notificationContent", "nameAndMessage");
       await closeSettings(b);
       return "Name only kept after reopen; set back";
@@ -480,25 +480,21 @@ export const SETTINGS_ROWS: Row[] = [
     async run({ b, shot }) {
       await openSettings(b, "Audio");
       await sleepFor(1500);
-      const selects = await b.$$(".settings-content select.form-select");
-      const out = selects[selects.length - 1];
-      const values = await out.$$("option").map((o) => o.getAttribute("value"));
+      // The output device is a Settings select (AudioTab.tsx, plan ST1).
+      const out = "settings-output-device-label";
+      const values = await settingOptions(b, out);
       await shot();
       if (values.length < 2) {
         await closeSettings(b);
         throw new Skip(`output select lists ${values.length} option(s); nothing to change to`);
       }
-      const before = await out.getValue();
+      const before = await settingShown(b, out);
       const next = values.find((v) => v !== before) ?? "";
-      await b.execute((n: HTMLSelectElement, v: string) => {
-        n.value = v;
-        n.dispatchEvent(new Event("change", { bubbles: true }));
-      }, out as unknown as HTMLSelectElement, next);
+      await chooseSetting(b, out, next);
       await closeSettings(b);
       await openSettings(b, "Audio");
       await sleepFor(1500);
-      const again = await b.$$(".settings-content select.form-select");
-      const got = await again[again.length - 1].getValue();
+      const got = await settingShown(b, out);
       await closeSettings(b);
       if (got !== next) throw new Error(`output read back "${got}", chose "${next}"`);
       return `output ${before || "(default)"} -> ${next}, kept after reopen`;

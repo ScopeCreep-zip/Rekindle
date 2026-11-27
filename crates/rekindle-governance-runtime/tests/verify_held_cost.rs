@@ -55,7 +55,7 @@ fn chain(len: u64) -> Vec<HeldOp> {
             body: meta("m"),
             sig: [0; 64],
         };
-        let unsigned = op_unsigned_bytes(&op);
+        let unsigned = op_unsigned_bytes(&op).unwrap();
         op.sig = key.sign(&op_signing_bytes(ANCHOR, &unsigned)).to_bytes();
         let op_ref = OpRef {
             op_hash: op_hash(&unsigned, &op.sig),

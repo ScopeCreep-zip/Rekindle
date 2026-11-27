@@ -15,7 +15,8 @@ interface ChannelListProps {
   myPseudonymKey: string | null;
   selectedId?: string;
   communityId: string;
-  canManage: boolean;
+  /** Why we may not manage channels, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
   onSelect: (id: string) => void;
   onVoiceJoin?: (id: string) => void;
   onRename?: (channelId: string, currentName: string) => void;
@@ -102,22 +103,25 @@ const ChannelList: Component<ChannelListProps> = (props) => {
     return (
       <ContextMenu.Portal>
         <ContextMenu.Content class="context-menu">
-          <Show when={props.canManage}>
-            <ContextMenu.Item
-              class="context-menu-item"
-              onSelect={() => props.onRename?.(channel.id, channel.name)}
-            >
-              <SkinGlyph name="pencil" class="context-menu-icon" />
-              Rename Channel
-            </ContextMenu.Item>
-            <ContextMenu.Item
-              class="context-menu-item context-menu-item-danger"
-              onSelect={() => props.onDelete?.(channel.id)}
-            >
-              <SkinGlyph name="delete" class="context-menu-icon" />
-              Delete Channel
-            </ContextMenu.Item>
-          </Show>
+          {/* Never-hide: listed always, disabled with the Host's reason. */}
+          <ContextMenu.Item
+            class="context-menu-item"
+            disabled={props.manageDenied !== null}
+            title={props.manageDenied ?? undefined}
+            onSelect={() => props.onRename?.(channel.id, channel.name)}
+          >
+            <SkinGlyph name="pencil" class="context-menu-icon" />
+            Rename Channel
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            class="context-menu-item context-menu-item-danger"
+            disabled={props.manageDenied !== null}
+            title={props.manageDenied ?? undefined}
+            onSelect={() => props.onDelete?.(channel.id)}
+          >
+            <SkinGlyph name="delete" class="context-menu-icon" />
+            Delete Channel
+          </ContextMenu.Item>
           <Show when={props.onSetNotification}>
             <ContextMenu.Item
               class="context-menu-item"
@@ -208,44 +212,39 @@ const ChannelList: Component<ChannelListProps> = (props) => {
                 <div class="channel-section-header">Channels</div>
               }>
                 {(cat) => (
-                  <Show
-                    when={props.canManage}
-                    fallback={
+                  <ContextMenu>
+                    {/* Never-hide: the category's menu is always there; its items are
+                        disabled with the Host's reason when we may not manage channels. */}
+                    <ContextMenu.Trigger as="div">
                       <CategoryHeader
                         name={cat().name}
                         isExpanded={!isCollapsed()}
                         onToggle={() => toggleCategory(cat().id)}
                       />
-                    }
-                  >
-                    <ContextMenu>
-                      <ContextMenu.Trigger as="div">
-                        <CategoryHeader
-                          name={cat().name}
-                          isExpanded={!isCollapsed()}
-                          onToggle={() => toggleCategory(cat().id)}
-                        />
-                      </ContextMenu.Trigger>
-                      <ContextMenu.Portal>
-                        <ContextMenu.Content class="context-menu">
-                          <ContextMenu.Item
-                            class="context-menu-item"
-                            onSelect={() => props.onRenameCategory?.(cat().id, cat().name)}
-                          >
-                            <SkinGlyph name="pencil" class="context-menu-icon" />
-                            Rename Category
-                          </ContextMenu.Item>
-                          <ContextMenu.Item
-                            class="context-menu-item context-menu-item-danger"
-                            onSelect={() => props.onDeleteCategory?.(cat().id)}
-                          >
-                            <SkinGlyph name="delete" class="context-menu-icon" />
-                            Delete Category
-                          </ContextMenu.Item>
-                        </ContextMenu.Content>
-                      </ContextMenu.Portal>
-                    </ContextMenu>
-                  </Show>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Portal>
+                      <ContextMenu.Content class="context-menu">
+                        <ContextMenu.Item
+                          class="context-menu-item"
+                          disabled={props.manageDenied !== null}
+                          title={props.manageDenied ?? undefined}
+                          onSelect={() => props.onRenameCategory?.(cat().id, cat().name)}
+                        >
+                          <SkinGlyph name="pencil" class="context-menu-icon" />
+                          Rename Category
+                        </ContextMenu.Item>
+                        <ContextMenu.Item
+                          class="context-menu-item context-menu-item-danger"
+                          disabled={props.manageDenied !== null}
+                          title={props.manageDenied ?? undefined}
+                          onSelect={() => props.onDeleteCategory?.(cat().id)}
+                        >
+                          <SkinGlyph name="delete" class="context-menu-icon" />
+                          Delete Category
+                        </ContextMenu.Item>
+                      </ContextMenu.Content>
+                    </ContextMenu.Portal>
+                  </ContextMenu>
                 )}
               </Show>
               <Show when={!isCollapsed()}>
@@ -258,11 +257,15 @@ const ChannelList: Component<ChannelListProps> = (props) => {
         }}
       </For>
 
-      <Show when={props.canManage && props.onCreateCategory}>
+      {/* Never-hide: drawn always, disabled with the Host's reason. */}
+      <Show when={props.onCreateCategory}>
         <button
           class="channel-create-category-btn"
           onClick={() => props.onCreateCategory?.()}
-          title="Create Category"
+          disabled={props.manageDenied !== null}
+          title={props.manageDenied ?? "Create Category"}
+          aria-label="Create Category"
+          aria-description={props.manageDenied ?? undefined}
         >
           <SkinGlyph name="plus-box" /> Category
         </button>

@@ -62,6 +62,7 @@
       border-image: var(--skin-region-buddylist-action-button--disabled--still, var(--skin-region-buddylist-action-button--disabled, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
     }
   }
+
   @media (forced-colors: active) {
     .buddy-list-window .menu-bar,
     .buddy-list-window .identity-bar,

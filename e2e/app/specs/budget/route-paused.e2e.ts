@@ -125,10 +125,6 @@ async function arrowOpens(): Promise<string> {
   if (!opened) return "the arrow did not open the status list";
   await browser.keys(["Escape"]);
   await gone(browser, '[role="menu"]', NET_WAIT_MS);
-  // Kobalte's menubar stays in menubar mode after Escape (the next press on
-  // another bar title then did not open it: Combat's Settings never opened):
-  // focus leaves the bar.
-  await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
   const statuses = ["Online", "Away", "Busy"];
   const missing = statuses.filter((st) => !entries.some((e) => e.startsWith(st)));
   return missing.length === 0 ? "opens the status list" : `the status list lacks ${missing.join(", ")} (entries ${JSON.stringify(entries)})`;

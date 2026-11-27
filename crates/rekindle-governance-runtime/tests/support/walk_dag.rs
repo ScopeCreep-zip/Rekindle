@@ -49,7 +49,7 @@ fn chain(seed: u8, record: &str, len: u64, first_deps: &[OpRef]) -> (Vec<Vec<u8>
             body: meta("m"),
             sig: [0; 64],
         };
-        let unsigned = op_unsigned_bytes(&op);
+        let unsigned = op_unsigned_bytes(&op).unwrap();
         op.sig = key.sign(&op_signing_bytes(ANCHOR, &unsigned)).to_bytes();
         let hash = op_hash(&unsigned, &op.sig);
         log.push(encode_op(&op).unwrap());

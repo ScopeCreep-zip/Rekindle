@@ -60,6 +60,13 @@ pub enum GovernanceRuntimeError {
 
     #[error("insufficient permission for this governance operation")]
     PermissionDenied,
+
+    /// The Host refused the forum starter during the atomic write.
+    #[error("{0}")]
+    ForumStarterRefused(String),
+
+    #[error("membership ended while preparing the forum starter")]
+    ForumStarterRemoved { banned: bool },
     /// No `GenesisCert` is pinned for the community (S5 writes it at
     /// origin, S6 pins it at join).
     #[error("no genesis certificate is pinned for community {0}")]
@@ -72,6 +79,17 @@ pub enum GovernanceRuntimeError {
     /// nothing is signed under the key again.
     #[error("{community}: this device's key signed seq {last_seq} from another copy of this data")]
     RestoreDetected { community: String, last_seq: u64 },
+    /// The merged device set holds a `DeviceRetired` of this device's own
+    /// op key, retired from seq `retired_from` by another copy of this data
+    /// root or by the user (ADR 0022 rule 4, plan E3.2 S7d-keys.9): this
+    /// device stops signing under it. The text is the notice the plan words,
+    /// shown as the write's refusal (a held write's through
+    /// `GovernanceRuntimeEvent::HeldWriteRefused`).
+    #[error("this device's key was retired by another copy of this data")]
+    OwnKeyRetired {
+        community: String,
+        retired_from: u64,
+    },
     /// A write whose answer needs the op signed (an invite link, which is
     /// handed out only once it landed) while the unlock barrier is still
     /// catching up (plan E3.2 S7d-keys.8): refused at once, nothing signed. The
@@ -234,5 +252,13 @@ impl GovernanceRuntimeError {
     /// the crate having to know about those types.
     pub fn adapter(msg: impl Into<String>) -> Self {
         Self::Adapter(msg.into())
+    }
+}
+
+/// An op with no canonical form is never signed or published: the codec's
+/// refusal is an encoding error (`op_log::build_op`).
+impl From<rekindle_codec::CodecError> for GovernanceRuntimeError {
+    fn from(e: rekindle_codec::CodecError) -> Self {
+        Self::Encoding(e.to_string())
     }
 }

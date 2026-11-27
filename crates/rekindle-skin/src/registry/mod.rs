@@ -15,17 +15,40 @@
 //! Security-surface tokens (`--sec-*`) are absent: they live only in
 //! `@layer sec` of `global.css` and no skin reaches them (plan E7.7.0).
 
+pub mod dialog;
+pub mod dialog_walk;
 mod fonts;
 mod slots;
 mod table;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin::{SkinBase, SkinContrast, TokenValue};
 
+pub use dialog::DIALOG;
 pub use fonts::{font, FontFace, FONTS};
 pub use slots::{IconSlot, SoundCue};
-pub use table::ENTRIES;
+/// The base rows, with the title grounds at their defaults: what the import
+/// walks before any dialog role is derived (ST1 ruling 2).
+pub const BASE_TABLE: &[TokenEntry] = &BASE_AND_TITLE;
+const BASE_AND_TITLE: [TokenEntry; table::BASE.len() + 2] =
+    concat(table::BASE, &dialog::TITLE_AS_BEFORE);
+
+/// Every row: the base table, then the dialog roles.
+pub const ENTRIES: &[TokenEntry] = &BASE_THEN_DIALOG;
+const BASE_THEN_DIALOG: [TokenEntry; table::BASE.len() + DIALOG.len()] =
+    concat(table::BASE, DIALOG);
+
+const fn concat<const N: usize>(a: &[TokenEntry], b: &[TokenEntry]) -> [TokenEntry; N] {
+    assert!(a.len() + b.len() == N && !a.is_empty());
+    let mut out = [a[0]; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = if i < a.len() { a[i] } else { b[i - a.len()] };
+        i += 1;
+    }
+    out
+}
 
 use crate::colour;
 
@@ -238,7 +261,7 @@ pub struct TokenEntry {
 /// the ground (alpha resolved), as the app paints them.
 #[must_use]
 pub fn constraint_failures(table: &[TokenEntry], base: Base) -> Vec<String> {
-    let resolved = resolve(table, base, &BTreeMap::new());
+    let resolved = resolve_unwalked(table, base, &BTreeMap::new());
     let colour_of = |id: &str| {
         resolved
             .iter()
@@ -278,11 +301,39 @@ pub fn entry_in<'a>(table: &'a [TokenEntry], id: &str) -> Option<&'a TokenEntry>
     table.iter().find(|e| e.id == id)
 }
 
-/// Every token of `table` on `base`: the skin's own value, else the
-/// derivation when the skin sets a token it reads, else the base default.
-/// `skin` holds only ids of `table` (what [`crate::tokens::parse`] returns).
+/// Every token of `table` on `base` as a package serves it: what
+/// [`resolve_unwalked`] gives, and, when `table` serves the dialog roles and
+/// the skin lacks some, those roles derived from the skin's colours and
+/// settled by the dialog walk ([`dialog_walk::settle`], only the lacking
+/// roles movable: derived roles are ours, not the pack's; lead round 4 b).
+/// A role the walk cannot settle is served as derived, and the validator
+/// refuses its pair. `skin` holds only ids of `table` (what
+/// [`crate::tokens::parse`] returns).
 #[must_use]
 pub fn resolve<'a>(
+    table: &'a [TokenEntry],
+    base: Base,
+    skin: &BTreeMap<String, TokenValue>,
+) -> Vec<(&'a TokenEntry, TokenValue)> {
+    let lacking: BTreeSet<&str> = dialog::roles().filter(|r| !skin.contains_key(*r)).collect();
+    if lacking.is_empty() || !DIALOG.iter().all(|d| table.contains(d)) {
+        return resolve_unwalked(table, base, skin);
+    }
+    let mut tokens = skin.clone();
+    dialog::fill(&mut tokens, base);
+    dialog_walk::settle(&mut tokens, base, &|id| lacking.contains(id));
+    resolve_unwalked(table, base, &tokens)
+}
+
+/// Every token of `table` on `base`: the skin's own value, else the
+/// derivation when the skin sets a token it reads, else the base default.
+/// A dialog role ([`DIALOG`]) also follows its derivation when a token it
+/// reads is itself derived from the skin's colours (`menubar.bg` from
+/// `bg.dark` from the skin's `bg.primary`), so a package that lacks the
+/// role is served it from its own colours (ST1 ruling 4).
+/// `skin` holds only ids of `table` (what [`crate::tokens::parse`] returns).
+#[must_use]
+pub fn resolve_unwalked<'a>(
     table: &'a [TokenEntry],
     base: Base,
     skin: &BTreeMap<String, TokenValue>,
@@ -295,15 +346,21 @@ pub fn resolve<'a>(
             .unwrap_or_else(|| e.defaults.on(base).value());
         resolved.insert(e.id, v);
     }
+    let mut followed: BTreeSet<&str> = BTreeSet::new();
     for e in table {
         let Some(d) = e.derivation else { continue };
-        let v = skin.get(e.id).cloned().or_else(|| {
-            d.sources()
-                .iter()
-                .any(|s| skin.contains_key(*s))
-                .then(|| d.apply(&resolved))
-                .flatten()
-        });
+        let role = entry_in(DIALOG, e.id).is_some();
+        let follows = d
+            .sources()
+            .iter()
+            .any(|s| skin.contains_key(*s) || (role && followed.contains(s)));
+        let derived = (follows && !skin.contains_key(e.id))
+            .then(|| d.apply(&resolved))
+            .flatten();
+        if derived.is_some() {
+            followed.insert(e.id);
+        }
+        let v = skin.get(e.id).cloned().or(derived);
         resolved.insert(e.id, v.unwrap_or_else(|| e.defaults.on(base).value()));
     }
     table

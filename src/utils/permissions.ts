@@ -1,32 +1,32 @@
-export const VIEW_CHANNELS = 1n << 0n;
+const VIEW_CHANNELS = 1n << 0n;
 export const MANAGE_CHANNELS = 1n << 1n;
 export const MANAGE_ROLES = 1n << 2n;
 export const MANAGE_COMMUNITY = 1n << 3n;
 export const CREATE_INVITES = 1n << 4n;
 export const KICK_MEMBERS = 1n << 5n;
 export const BAN_MEMBERS = 1n << 6n;
-export const MODERATE_MEMBERS = 1n << 7n;
+const MODERATE_MEMBERS = 1n << 7n;
 export const MANAGE_EXPRESSIONS = 1n << 9n;
 export const VIEW_AUDIT_LOG = 1n << 10n;
-export const VIEW_INSIGHTS = 1n << 11n;
-export const CREATE_EXPRESSIONS = 1n << 12n;
+const VIEW_INSIGHTS = 1n << 11n;
+const CREATE_EXPRESSIONS = 1n << 12n;
 
 export const SEND_MESSAGES = 1n << 16n;
-export const EMBED_LINKS = 1n << 17n;
+const EMBED_LINKS = 1n << 17n;
 const ATTACH_FILES = 1n << 18n;
 const ADD_REACTIONS = 1n << 19n;
 export const MENTION_EVERYONE = 1n << 20n;
 export const MANAGE_MESSAGES = 1n << 21n;
 const READ_HISTORY = 1n << 22n;
-export const USE_EXTERNAL_EMOJIS = 1n << 24n;
+const USE_EXTERNAL_EMOJIS = 1n << 24n;
 const PIN_MESSAGES = 1n << 26n;
 const SEND_POLLS = 1n << 28n;
 export const BYPASS_SLOWMODE = 1n << 29n;
 
 const CONNECT = 1n << 32n;
 const SPEAK = 1n << 33n;
-export const MUTE_MEMBERS = 1n << 34n;
-export const DEAFEN_MEMBERS = 1n << 35n;
+const MUTE_MEMBERS = 1n << 34n;
+const DEAFEN_MEMBERS = 1n << 35n;
 const MOVE_MEMBERS = 1n << 36n;
 const USE_VOICE_ACTIVITY = 1n << 37n;
 export const USE_SOUNDBOARD = 1n << 39n;
@@ -38,9 +38,9 @@ const CREATE_PUBLIC_THREADS = 1n << 45n;
 const CREATE_PRIVATE_THREADS = 1n << 46n;
 const SEND_IN_THREADS = 1n << 47n;
 
-export const MANAGE_EVENTS = 1n << 48n;
+const MANAGE_EVENTS = 1n << 48n;
 const CREATE_EVENTS = 1n << 49n;
-export const ADMINISTRATOR = 1n << 50n;
+const ADMINISTRATOR = 1n << 50n;
 
 function permissionBits(value: string | bigint | null | undefined): bigint {
   if (typeof value === "bigint") return value;

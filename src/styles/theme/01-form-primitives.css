@@ -95,7 +95,6 @@
     padding: 0 8px;
     font-size: 11px;
     color: var(--color-xfire-text-status);
-    flex-shrink: 0;
   }
 
   /* Context menu */
@@ -319,17 +318,17 @@
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 12px;
-    color: var(--color-xfire-text);
+    color: var(--color-xfire-text-secondary);
   }
 
 
   .settings-option:hover {
-    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
   }
 
   .settings-hint {
     font-size: 11px;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     padding: 8px 12px;
     font-style: italic;
   }
@@ -337,7 +336,7 @@
   .settings-category-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     padding: 8px 12px;
     font-style: normal;
     text-transform: uppercase;
@@ -381,8 +380,15 @@
     border-radius: 4px;
   }
 
+  /* The skin shown is Xfire's selected list row, solid: its text, the
+   * target-size line, badge and credits included, is the selected text. */
   .skin-row-shown {
-    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-selection-text);
+  }
+
+  .skin-row-shown :is(.skin-access, .skin-badge, .skin-credits, .skin-credits-stated, .skin-credits-term, .skin-credits-value, .skin-credits-url, .skin-credits-licence) {
+    color: var(--color-xfire-selection-text);
   }
 
   .skin-choice {

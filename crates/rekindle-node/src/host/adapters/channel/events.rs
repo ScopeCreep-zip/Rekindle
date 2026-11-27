@@ -8,6 +8,8 @@ use rekindle_channel::event::ChannelEvent;
 use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SocialEvent, SubscriptionEvent};
 
+use rekindle_types::thread::thread_reply_key;
+
 use super::HostChannel;
 use crate::host::adapters::governance::community_profile::member_shown_name;
 
@@ -92,11 +94,15 @@ impl HostChannel {
             .strip_prefix("channel_post:")
             .and_then(|scope| scope.rsplit_once(':'))
         {
+            let Ok(author) = self.pseudonym_credentials_impl(community) else {
+                return true;
+            };
+            let message_id = thread_reply_key(&author.pseudonym.to_hex(), &change.client_id);
             let reason = match (&change.wedge_reason, change.state) {
                 (None, SendState::Failed) => Some("the thread reply was discarded".to_owned()),
                 (reason, _) => reason.clone(),
             };
-            self.send_state_impl(community, thread, &change.client_id, change.state, reason);
+            self.send_state_impl(community, thread, &message_id, change.state, reason);
         }
         true
     }

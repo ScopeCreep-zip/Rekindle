@@ -76,6 +76,7 @@
       border-image: var(--skin-region-chat-group-header--still, var(--skin-region-chat-group-header));
     }
   }
+
   @media (forced-colors: active) {
     .chat-window .chat-peer-status,
     .chat-window .chat-call-btn,

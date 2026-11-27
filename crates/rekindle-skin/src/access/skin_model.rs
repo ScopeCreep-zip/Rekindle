@@ -1,20 +1,31 @@
 //! The full pair model ([`super::model`]) on a skin's resolved variant:
 //! each pair measured on the variant's own tokens, named in registry ids.
+//!
+//! The variant is what [`crate::registry::resolve`] serves over the table
+//! the validator runs on: over [`crate::registry::ENTRIES`] a package that
+//! lacks the dialog roles is served them (`dialog::fill` and the one dialog
+//! walk; ST1 rulings b, j), so the model's dialog pairs are measured on the
+//! served roles. The import's base walk runs over
+//! [`crate::registry::BASE_TABLE`], which holds the dialog roles out until
+//! they are derived from the settled base (ST1 ruling 2); a pair reading a
+//! held-out row is not a pair of that table, as the dialog rows' own
+//! constraints are not.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin::{SkinRule, TokenValue};
 
-use super::model::{self, var_name, ModelPair, Rgb};
+use super::model::{self, var_name, var_refs, ModelPair, Rgb};
 use super::Measured;
-use crate::registry::{TokenEntry, TokenType};
+use crate::registry::{TokenEntry, TokenType, ENTRIES};
 use crate::tokens::emit::css_value;
 
-/// The variant as the CSS reads it: custom property → value, and
-/// custom property → registry id.
+/// The variant as the CSS reads it: custom property → value, custom
+/// property → registry id, and the registry rows its table holds out.
 struct Sheet<'a> {
     values: BTreeMap<String, String>,
     ids: BTreeMap<&'a str, &'a str>,
+    held_out: BTreeSet<&'static str>,
 }
 
 impl<'a> Sheet<'a> {
@@ -30,7 +41,45 @@ impl<'a> Sheet<'a> {
                 ids.insert(e.css, e.id);
             }
         }
-        Self { values, ids }
+        let held_out = ENTRIES
+            .iter()
+            .filter(|e| !resolved.iter().any(|(r, _)| r.id == e.id))
+            .map(|e| e.css)
+            .collect();
+        Self {
+            values,
+            ids,
+            held_out,
+        }
+    }
+
+    /// Whether `pair` reads a registry row the variant's table holds out:
+    /// a `var()` of its value or a token of its ground.
+    fn holds_out(&self, pair: &ModelPair<'_>) -> bool {
+        let value = var_refs(pair.value);
+        let ground = pair
+            .ground
+            .split_whitespace()
+            .map(|w| model::share_token(w).unwrap_or(w));
+        value
+            .iter()
+            .map(String::as_str)
+            .chain(ground)
+            .any(|name| self.held_out.contains(name))
+    }
+
+    /// Why `pair` cannot be measured: its opaque ground drawn translucent,
+    /// else the measure's own reason (`why`).
+    fn unmeasured(&self, pair: &ModelPair<'_>, why: String) -> SkinRule {
+        match model::parse_ground(pair.ground) {
+            Ok(g) if model::translucent(&self.values, g.base) => SkinRule::TranslucentGround {
+                token: self.id(g.base).to_owned(),
+            },
+            _ => SkinRule::UnmeasuredPair {
+                rule: rule_of(pair),
+                why,
+            },
+        }
     }
 
     fn id<'s>(&self, css: &'s str) -> &'s str
@@ -74,21 +123,29 @@ fn rule_of(pair: &ModelPair<'_>) -> String {
     format!("{wcag} {}{state}", pair.selector)
 }
 
-/// Every model pair on the variant: measured, or the translucent ground
-/// that keeps it from being measured.
+/// Every model pair of the variant's table: measured, or why it cannot be
+/// (a translucent ground, or [`SkinRule::UnmeasuredPair`] with the
+/// measure's reason).
 pub(super) fn model_pairs(
     resolved: &[(&TokenEntry, TokenValue)],
 ) -> Vec<Result<Measured, SkinRule>> {
+    pairs_on(model::model(), resolved)
+}
+
+/// [`model_pairs`] for `pairs`.
+fn pairs_on(
+    pairs: &[ModelPair<'_>],
+    resolved: &[(&TokenEntry, TokenValue)],
+) -> Vec<Result<Measured, SkinRule>> {
     let sheet = Sheet::new(resolved);
-    model::model()
+    pairs
         .iter()
+        .filter(|pair| !sheet.holds_out(pair))
         .map(|pair| {
             let ground = sheet.describe(pair.ground);
             let m = pair
                 .measure(&sheet.values)
-                .map_err(|_| SkinRule::TranslucentGround {
-                    token: ground.clone(),
-                })?;
+                .map_err(|why| sheet.unmeasured(pair, why))?;
             let fg = var_name(&sheet.values, pair.value).map_or(pair.value, |css| sheet.id(css));
             Ok(Measured {
                 rule: rule_of(pair),

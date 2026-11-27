@@ -34,6 +34,7 @@ pub(crate) async fn control_events_core(
         payload @ ControlPayload::ThreadMessageReceived { .. } => {
             IngestOutcome::follow_up(ShellFollowUp::ThreadControl {
                 community_id: community_id.to_owned(),
+                sender_pseudonym: sender_pseudonym.to_owned(),
                 payload,
             })
         }
@@ -65,14 +66,15 @@ pub(crate) async fn control_events_core(
     }
 }
 
-/// A thread reply: stored by the Host's channel adapter (plan E3.1 E3f),
-/// which reads its body from the thread record; the shell shows the event
-/// it returns. A thread's opening and archive are signed governance ops
+/// A thread reply from its authenticated `sender_pseudonym`: stored by the
+/// Host's channel adapter (plan E3.1 E3f) only from that sender's verified
+/// entry in the thread record; the shell shows the event it returns. A thread's opening and archive are signed governance ops
 /// (plan E3.2 S8-E).
 pub(super) fn handle_thread_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
+    sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     let Some(host) = state.host.current() else {
@@ -80,15 +82,16 @@ pub(super) fn handle_thread_payload(
         return;
     };
     let scope = state_helpers::login_scope_or_closed(state);
-    let (app_handle, community_id, task_scope) = (
+    let (app_handle, community_id, sender, task_scope) = (
         app_handle.clone(),
         community_id.to_string(),
+        sender_pseudonym.to_string(),
         Arc::clone(&scope),
     );
     scope.spawn_or_drop("thread control", async move {
         if let Some(event) = host
             .channel()
-            .on_thread_control(&community_id, &payload, &task_scope)
+            .on_thread_control(&community_id, &sender, &payload, &task_scope)
             .await
         {
             crate::event_dispatch::emit_subscription(

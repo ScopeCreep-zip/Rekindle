@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::message::SendState;
 
+/// The reply id exposed to readers within a thread. The verified author
+/// is a hex pseudonym, so the first colon unambiguously separates it from
+/// the author-chosen wire id.
+#[must_use]
+pub fn thread_reply_key(author: &str, message_id: &str) -> String {
+    format!("{author}:{message_id}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadInfo {

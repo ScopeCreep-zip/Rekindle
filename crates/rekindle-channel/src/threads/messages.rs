@@ -1,12 +1,13 @@
 //! Thread message send/load.
 
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::message::SendState;
 use rekindle_types::message::{ChannelPost, PostEntry};
 
 use super::policy::ThreadMessageView;
 use super::support::{open_thread_body, thread_replies, thread_scope, uuid_simple};
-use crate::deps::ChannelMessagingDeps;
+use crate::deps::{ChannelMessagingDeps, OutboxItem, PendingThreadReply};
 use crate::error::ChannelError;
 
 /// A thread reply we sent: what a receiver's `ThreadMessagePosted`
@@ -140,6 +141,27 @@ pub async fn send_prepared_reply(
     Ok(sent)
 }
 
+enum HistoryReply<'a> {
+    Verified(&'a OutboxItem, &'a ChannelMessage),
+    Pending {
+        reply: PendingThreadReply,
+        author: String,
+    },
+}
+
+impl HistoryReply<'_> {
+    fn position(&self) -> (u64, &str, u64) {
+        match self {
+            Self::Verified(item, message) => (
+                message.timestamp,
+                &message.sender_pseudonym,
+                item.stream_seq,
+            ),
+            Self::Pending { reply, author } => (reply.sent_at_ms, author, reply.stream_seq),
+        }
+    }
+}
+
 /// Load a thread's replies from its authors' outboxes, each opened under
 /// its exact generation at its position, newest `limit` (at most 200) older
 /// than `before_timestamp_secs`, oldest first; in each author's stream
@@ -160,37 +182,64 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
     let Some(scope) = thread_scope(deps, community_id, &thread.parent_channel_id_hex) else {
         return Ok(Vec::new());
     };
-    let mut items = thread_replies(deps, community_id, thread_id).await;
-    items.sort_by(|a, b| {
-        (a.1.timestamp, &a.1.sender_pseudonym, a.0.stream_seq).cmp(&(
-            b.1.timestamp,
-            &b.1.sender_pseudonym,
-            b.0.stream_seq,
-        ))
-    });
+    let replies = thread_replies(deps, community_id, thread_id).await?;
     let before_ms = before_timestamp_secs.map_or(u64::MAX, |ts| ts.saturating_mul(1000));
-    let my_pseudonym = deps.my_pseudonym_hex(community_id).unwrap_or_default();
-    let mut messages: Vec<ThreadMessageView> = items
-        .into_iter()
-        .filter(|(_, message)| message.timestamp < before_ms)
-        .rev()
-        .take(limit.min(200) as usize)
-        .map(|(item, message)| {
-            let body = open_thread_body(deps, community_id, scope, thread_id, &item, &message);
-            ThreadMessageView {
-                is_own: message.sender_pseudonym == my_pseudonym,
-                sender_pseudonym: message.sender_pseudonym.clone(),
-                decryption_failed: body.is_none(),
-                body: body.unwrap_or_default(),
-                timestamp_ms: message.timestamp,
-                server_message_id: message.message_id.clone(),
-                mek_generation: message.mek_generation,
-                stream_seq: item.stream_seq,
-            }
-        })
+    let own = replies.my_pseudonym.as_deref();
+    let mut history: Vec<_> = replies
+        .verified
+        .iter()
+        .map(|(item, message)| HistoryReply::Verified(item, message))
         .collect();
-    messages.reverse();
-    Ok(messages)
+    if let Some(author) = own {
+        history.extend(
+            replies
+                .pending
+                .into_iter()
+                .map(|reply| HistoryReply::Pending {
+                    reply,
+                    author: author.to_owned(),
+                }),
+        );
+    }
+    history.retain(|reply| reply.position().0 < before_ms);
+    history.sort_by(|a, b| a.position().cmp(&b.position()));
+    let first = history.len().saturating_sub(limit.min(200) as usize);
+    Ok(history
+        .into_iter()
+        .skip(first)
+        .map(|reply| match reply {
+            HistoryReply::Verified(item, message) => {
+                let body = open_thread_body(deps, community_id, scope, thread_id, item, message);
+                let is_own = own == Some(&message.sender_pseudonym);
+                ThreadMessageView {
+                    is_own,
+                    send_state: if is_own {
+                        SendState::Sent
+                    } else {
+                        SendState::Delivered
+                    },
+                    sender_pseudonym: message.sender_pseudonym.clone(),
+                    decryption_failed: body.is_none(),
+                    body: body.unwrap_or_default(),
+                    timestamp_ms: message.timestamp,
+                    server_message_id: message.message_id.clone(),
+                    mek_generation: Some(message.mek_generation),
+                    stream_seq: item.stream_seq,
+                }
+            }
+            HistoryReply::Pending { reply, author } => ThreadMessageView {
+                is_own: true,
+                send_state: reply.send_state,
+                sender_pseudonym: author,
+                decryption_failed: false,
+                body: reply.body,
+                timestamp_ms: reply.sent_at_ms,
+                server_message_id: Some(reply.message_id),
+                mek_generation: None,
+                stream_seq: reply.stream_seq,
+            },
+        })
+        .collect())
 }
 
 #[cfg(test)]

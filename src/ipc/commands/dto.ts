@@ -554,15 +554,6 @@ export type MemberGroup =
   | { kind: "online" }
   | { kind: "offline" };
 
-/** The moderation actions we may take against one member (Tier 1
- *  `TargetModeration`): each the governance validator's verdict on the
- *  entry it writes, computed by the Host (plan E3.2 S9). */
-export interface TargetModeration {
-  kick: boolean;
-  ban: boolean;
-  timeout: boolean;
-}
-
 /** `send_thread_message`'s answer (`rekindle_types::thread::ThreadReplyOutcome`,
  *  plan FT1): the reply's id and its send state (D22's `SendState`: `queued` in
  *  our durable outbox, `sent` once written; a mesh failure after the queue is

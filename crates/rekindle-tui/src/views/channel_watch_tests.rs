@@ -52,6 +52,7 @@ fn view_selecting(index: usize) -> ChannelWatchView {
             "pseudonymKey": key, "fingerprint": "a1b2 c3d4", "displayName": name, "roleIds": [],
             "displayRole": "",
             "status": "online", "timeoutUntil": null, "group": {"kind": "online"},
+            "moderation": {"kick": null, "ban": null, "timeout": null, "manageRoles": null, "mute": null, "deafen": null},
         }))
         .unwrap()
     };

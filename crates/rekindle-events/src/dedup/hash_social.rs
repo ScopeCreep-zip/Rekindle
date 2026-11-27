@@ -177,11 +177,23 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(b"|");
             h.update(channel.as_bytes());
         }
-        GovernanceEvent::EffectivePermissionsChanged { community, member } => {
+        GovernanceEvent::EffectivePermissionsChanged {
+            community,
+            member,
+            denied,
+        } => {
             h.update(b"effective_perms|");
             h.update(community.as_bytes());
             h.update(b"|");
             h.update(member.as_bytes());
+            // Two changes for one member with different verdicts are two
+            // events, never one deduplicated away.
+            for (cap, reason) in denied {
+                h.update(b"|");
+                h.update(format!("{cap:?}").as_bytes());
+                h.update(b"=");
+                h.update(reason.as_bytes());
+            }
         }
     }
 }

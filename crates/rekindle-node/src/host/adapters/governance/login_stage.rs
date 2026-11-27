@@ -81,23 +81,34 @@ async fn run(governance: &HostGovernance, stop: &CancellationToken) {
     if stop.is_cancelled() {
         return;
     }
-    let mut communities: Vec<String> = governance
-        .ctx
-        .communities
-        .map()
-        .read()
-        .iter()
-        // A community we were removed from is read-only history: none of
-        // its records open again (plan E3.2 S9 own removal).
-        .filter(|(_, c)| c.own_removal.is_none())
-        .map(|(id, _)| id.clone())
-        .collect();
+    // A community we were removed from is read-only history: none of its
+    // records open again (plan E3.2 S9 own removal); only its removal is
+    // judged again, below.
+    let (mut removed, mut communities) = (Vec::new(), Vec::new());
+    for (id, c) in governance.ctx.communities.map().read().iter() {
+        if c.own_removal.is_some() {
+            removed.push(id.clone());
+        } else {
+            communities.push(id.clone());
+        }
+    }
     communities.sort();
+    removed.sort();
     for community_id in &communities {
         if stop.is_cancelled() {
             return;
         }
         community(governance, community_id, stop).await;
+    }
+    // A removal voided while we were away (logged out, offline, asleep)
+    // left no watch to notice it: each removed community's frontiers are
+    // read again and, if the removal still stands, its removal watch armed
+    // (plan E3.2 S9 own removal, RM2).
+    for community_id in &removed {
+        if stop.is_cancelled() {
+            return;
+        }
+        governance.recheck_removal(community_id).await;
     }
     if stop.is_cancelled() {
         return;

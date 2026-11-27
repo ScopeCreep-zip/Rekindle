@@ -463,8 +463,8 @@ pub fn unsettled_count(conn: &Connection, owner_key: &str) -> rusqlite::Result<i
 mod reads;
 use reads::parse_state;
 pub use reads::{
-    due, expired, get, get_by_seq, latest_with_prefix, next_wake, prefix_rows, stored_state,
-    stream_rows, waiting_for_key,
+    due, expired, get, get_by_seq, latest_with_prefix, next_wake, pending_stream_rows, prefix_rows,
+    stored_state, stream_rows, waiting_for_key,
 };
 
 mod waiting;

@@ -148,7 +148,10 @@ fn a_palette_that_fails_contrast_is_a_draft_with_named_failures() {
     };
     assert!(d.failures.iter().any(|c| c.token == "text.primary"));
     assert!(validate::run(&d.package).is_err());
-    assert!(validate::run(&d.suggested.unwrap().canonical.bytes).is_ok());
+    let Some(suggested) = d.suggested else {
+        panic!("the walk left a refusal unsettled: {:?}", d.unsettled);
+    };
+    assert!(validate::run(&suggested.canonical.bytes).is_ok());
 }
 
 fn has_image(g: &Group) -> bool {

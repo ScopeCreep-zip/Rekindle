@@ -3,8 +3,8 @@
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::{ChannelMessagingDeps as _, ForumPost};
 use rekindle_governance_runtime::{apply::write_forum_thread, GovernanceRuntimeError};
-use rekindle_types::permissions;
-use rekindle_types::thread::ForumPostCreated;
+use rekindle_types::dto::community_capability::ChannelCapability;
+use rekindle_types::thread::{thread_reply_key, ForumPostCreated};
 
 use super::HostChannel;
 
@@ -18,13 +18,16 @@ impl HostChannel {
         community_id: &str,
         post: ForumPost<'_>,
     ) -> Result<ForumPostCreated, ChannelError> {
-        self.refuse_removed(community_id)?;
-        self.require(
+        self.require_thread_capability(
             community_id,
             post.channel_id,
-            permissions::CREATE_PUBLIC_THREADS,
+            ChannelCapability::CreatePublicThreads,
         )?;
-        self.require(community_id, post.channel_id, permissions::SEND_IN_THREADS)?;
+        self.require_thread_capability(
+            community_id,
+            post.channel_id,
+            ChannelCapability::SendInThreads,
+        )?;
         let ops = self
             .ctx()
             .outbox
@@ -41,12 +44,20 @@ impl HostChannel {
                 // The signing pipeline holds the rebuild lock here. Check
                 // the starter's permission against the state used to sign.
                 channel
-                    .require(
+                    .require_thread_capability(
                         &starter.community,
                         &metadata.channel_id,
-                        permissions::SEND_IN_THREADS,
+                        ChannelCapability::SendInThreads,
                     )
-                    .map_err(|_| GovernanceRuntimeError::PermissionDenied)?;
+                    .map_err(|error| match error {
+                        ChannelError::PermissionDenied(reason) => {
+                            GovernanceRuntimeError::ForumStarterRefused(reason)
+                        }
+                        ChannelError::Removed { banned } => {
+                            GovernanceRuntimeError::ForumStarterRemoved { banned }
+                        }
+                        other => GovernanceRuntimeError::Adapter(other.to_string()),
+                    })?;
                 ops.queue_forum_thread(op, starter, metadata)
                     .await
                     .map_err(GovernanceRuntimeError::Adapter)
@@ -55,7 +66,13 @@ impl HostChannel {
         let commit = async {
             commit.await.map_err(|error| match error {
                 GovernanceRuntimeError::PermissionDenied => {
-                    ChannelError::PermissionDenied(error.to_string())
+                    super::thread_refusal::thread_create_refused()
+                }
+                GovernanceRuntimeError::ForumStarterRefused(reason) => {
+                    ChannelError::PermissionDenied(reason)
+                }
+                GovernanceRuntimeError::ForumStarterRemoved { banned } => {
+                    ChannelError::Removed { banned }
                 }
                 _ => ChannelError::Adapter(error.to_string()),
             })
@@ -66,7 +83,7 @@ impl HostChannel {
         .await?;
         let created = ForumPostCreated {
             thread_id,
-            starter_message_id: sent.message_id.clone(),
+            starter_message_id: thread_reply_key(&sent.sender_pseudonym, &sent.message_id),
             starter: sent.send_state,
         };
         self.publish_own_reply(community_id, &created.thread_id, body, sent)
