@@ -52,11 +52,13 @@ describe("Settings Appearance handles a late skin library response", function ()
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         const response = await realFetch(input, init);
         if (!url.endsWith("/list_skins") || !response.ok || state.release) return response;
-        const library = (await response.clone().json()) as {
-          active: string;
-          skins: { id: string; name: string }[];
+        // A Host command answers in its Done envelope ({ value, undo }:
+        // src/ipc/invoke.ts hostInvoke); the library is its value.
+        const done = (await response.clone().json()) as {
+          value?: { active: string; skins: { id: string; name: string }[] };
         };
-        if (state.release || !library.skins.some((skin) => skin.id === library.active && skin.name === expected)) {
+        const library = done.value;
+        if (state.release || !library?.skins?.some((skin) => skin.id === library.active && skin.name === expected)) {
           return response;
         }
 
