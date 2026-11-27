@@ -176,6 +176,34 @@
     "status": "online",
     "timeoutUntil": null
   },
+  "community.profilePatch": {
+    "avatarRef": {
+      "op": "set",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "badges": {
+      "op": "unchanged"
+    },
+    "bannerRef": {
+      "op": "clear"
+    },
+    "bio": {
+      "op": "set",
+      "value": "At the LAN"
+    },
+    "customStatus": {
+      "op": "unchanged"
+    },
+    "displayName": {
+      "op": "unchanged"
+    },
+    "pronouns": {
+      "op": "unchanged"
+    },
+    "themeColor": {
+      "op": "clear"
+    }
+  },
   "dm.disappearingTimer": {
     "maxSeconds": 2419200,
     "presets": [

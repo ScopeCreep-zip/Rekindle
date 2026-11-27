@@ -174,6 +174,8 @@ fn community_view(
         my_pronouns: c.my_pronouns.clone(),
         my_theme_color: c.my_theme_color,
         my_badges: c.my_badges.clone(),
+        my_avatar_ref: c.my_avatar_ref.clone(),
+        my_banner_ref: c.my_banner_ref.clone(),
         my_display_name,
         my_card_name,
         my_custom_status,

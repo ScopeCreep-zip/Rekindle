@@ -9,6 +9,7 @@ mod channel;
 #[cfg(test)]
 mod command_tests;
 mod community;
+mod community_profile;
 mod config;
 mod group_dm;
 mod identity;

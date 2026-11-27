@@ -160,6 +160,12 @@ pub struct CommunityView {
     pub my_theme_color: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub my_badges: Vec<String>,
+    /// The avatar cached for our profile in this community.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_avatar_ref: Option<String>,
+    /// The banner cached for our profile in this community.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_banner_ref: Option<String>,
     /// Our name in this community as it renders, never empty (plan E3.4
     /// S6): our card's name, else our short pseudonym fingerprint; never
     /// the identity's name. Messages render with it before the member
