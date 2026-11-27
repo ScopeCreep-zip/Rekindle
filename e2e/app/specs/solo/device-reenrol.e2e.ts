@@ -301,6 +301,23 @@ describe("a restored copy re-enrols the device: the original is told and offered
       return el ? `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 120) : "none";
     })) as string;
     console.log(`[reenrol] focus before Escape: ${focused}`);
+    // Escape belongs to the topmost layer: a review raised over the open
+    // inbox (Logout's, an ordinary review) takes the first press and only it
+    // closes; the inbox stays, and the next press closes the inbox.
+    await browser.execute(() => {
+      const { invoke } = (
+        window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string): Promise<unknown> } }
+      ).__TAURI_INTERNALS__;
+      void invoke("logout").catch(() => undefined);
+    });
+    await shown(browser, ".intent-dialog", NET_WAIT_MS);
+    expect(await (await browser.$(".notification-panel")).isDisplayed()).toBe(true);
+    await shot("review-over-inbox");
+    await browser.keys("Escape");
+    await gone(browser, ".intent-dialog", NET_WAIT_MS);
+    expect(await (await browser.$(".notification-panel")).isDisplayed()).toBe(true);
+    console.log("[reenrol] Escape closed the review over the inbox only");
+    await shot("inbox-after-review-escape");
     await browser.keys("Escape");
     await gone(browser, ".notification-panel");
     await unlockAgain();
