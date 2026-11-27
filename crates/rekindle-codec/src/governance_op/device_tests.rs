@@ -119,14 +119,14 @@ fn each_device_arm_round_trips_in_an_op() {
 /// form differs with and without one, and with each field changed.
 #[test]
 fn the_op_signature_covers_the_first_device() {
-    let base = op_unsigned_bytes(&op(joined(Some(endorsement(4)))));
-    assert_ne!(op_unsigned_bytes(&op(joined(None))), base);
+    let base = op_unsigned_bytes(&op(joined(Some(endorsement(4))))).unwrap();
+    assert_ne!(op_unsigned_bytes(&op(joined(None))).unwrap(), base);
     let mut changed = endorsement(4);
     changed.incarnation += 1;
-    assert_ne!(op_unsigned_bytes(&op(joined(Some(changed)))), base);
+    assert_ne!(op_unsigned_bytes(&op(joined(Some(changed)))).unwrap(), base);
     let mut changed = endorsement(4);
     changed.device_record_owner.push('x');
-    assert_ne!(op_unsigned_bytes(&op(joined(Some(changed)))), base);
+    assert_ne!(op_unsigned_bytes(&op(joined(Some(changed)))).unwrap(), base);
 }
 
 /// The full element list fits an op and reads back; one element more

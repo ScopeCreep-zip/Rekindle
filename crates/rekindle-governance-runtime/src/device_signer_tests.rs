@@ -103,7 +103,7 @@ fn a_device_signed_checkpoint_endorsement_verifies_under_the_device_key() {
     let body = world.checkpoint_body();
     let op = world.endorse(&creator, body);
     assert_ne!(op.op().device_key, creator.author().0);
-    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(op.op());
+    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(op.op()).unwrap();
     let read = SignedEndorsement::verify(crate::test_world::ANCHOR, op.op(), &unsigned);
     assert_eq!(read.map(|e| e.author), Some(creator.author()));
 }
