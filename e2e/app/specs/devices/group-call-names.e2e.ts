@@ -14,16 +14,30 @@
 
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { byText, NET_WAIT_MS, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY } from "../../../walk/nav.ts";
-import { acceptRequest, createIdentity, friendCode, friendRow, newUser, pendingRequest, requestFriend, type User } from "../../journeys.ts";
+import {
+  acceptRequest,
+  createIdentity,
+  friendCode,
+  friendRow,
+  newUser,
+  pendingRequest,
+  requestFriend,
+  type User,
+} from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
-const app = (name: "alice" | "bob" | "carol"): Browser => multiRemoteBrowser.getInstance(name) as unknown as Browser;
+const app = (name: "alice" | "bob" | "carol"): Browser =>
+  multiRemoteBrowser.getInstance(name) as unknown as Browser;
 
 async function publicKey(b: Browser): Promise<string> {
   return (await b.execute(async () => {
-    const { invoke } = (window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string): Promise<{ value: { publicKey: string } }> } }).__TAURI_INTERNALS__;
+    const { invoke } = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke(cmd: string): Promise<{ value: { publicKey: string } }> };
+      }
+    ).__TAURI_INTERNALS__;
     return (await invoke("get_identity")).value.publicKey;
   })) as string;
 }
@@ -54,10 +68,17 @@ describe("a group call names its members as the Host serves them (VN2)", functio
 
     // Bob starts the group voice call to Alice and Carol through the Host.
     await switchTo(b, BUDDY);
-    await b.execute(async (keys: string[]) => {
-      const { invoke } = (window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> } }).__TAURI_INTERNALS__;
-      await invoke("start_group_call", { participantPubkeys: keys, video: false, groupId: null });
-    }, [aliceKey, carolKey]);
+    await b.execute(
+      async (keys: string[]) => {
+        const { invoke } = (
+          window as unknown as {
+            __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> };
+          }
+        ).__TAURI_INTERNALS__;
+        await invoke("start_group_call", { participantPubkeys: keys, video: false, groupId: null });
+      },
+      [aliceKey, carolKey]
+    );
 
     // Alice's incoming banner names the caller as the Host serves him.
     await switchTo(a, BUDDY);
@@ -67,44 +88,86 @@ describe("a group call names its members as the Host serves them (VN2)", functio
     const place = (await a.execute(() => {
       const box = document.querySelector(".group-call-incoming-banner")!.getBoundingClientRect();
       const chrome = Array.from(
-        document.querySelectorAll('.titlebar, .menu-bar, [data-skin-action="minimize"], [data-skin-action="maximize"], [data-skin-action="close"], [data-skin-action^="menu:"]'),
+        document.querySelectorAll(
+          '.titlebar, .menu-bar, [data-skin-action="minimize"], [data-skin-action="maximize"], [data-skin-action="close"], [data-skin-action^="menu:"]'
+        )
       ).filter((e) => (e as HTMLElement).offsetParent !== null);
       const chromeBottom = Math.max(0, ...chrome.map((e) => e.getBoundingClientRect().bottom));
       const meta = document.querySelector(".group-call-banner-meta")?.getBoundingClientRect();
       return {
-        inWindow: box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight,
+        inWindow:
+          box.left >= 0 &&
+          box.top >= 0 &&
+          box.right <= window.innerWidth &&
+          box.bottom <= window.innerHeight,
         belowChrome: box.top >= chromeBottom,
         metaClear: meta ? box.bottom - meta.bottom >= 8 : false,
         box: [box.left, box.top, box.right, box.bottom].map(Math.round),
         chromeBottom: Math.round(chromeBottom),
         window: [window.innerWidth, window.innerHeight],
       };
-    })) as { inWindow: boolean; belowChrome: boolean; metaClear: boolean; box: number[]; chromeBottom: number; window: number[] };
+    })) as {
+      inWindow: boolean;
+      belowChrome: boolean;
+      metaClear: boolean;
+      box: number[];
+      chromeBottom: number;
+      window: number[];
+    };
     console.log(`[group-call] banner ${JSON.stringify(place)}`);
     await shot("group-call-incoming");
 
-    // She accepts: her call grid names each member.
+    // She accepts: her call grid names each member. Every sample counts, from
+    // the first tile drawn: each tile's name is one the Host served (Bob,
+    // Carol, herself with "(you)"), never empty and never anything else.
+    const served = new Set(["Bob", "Carol", "Alice (you)"]);
+    const offSamples: string[][] = [];
+    let samples = 0;
+    const sample = async (): Promise<string[]> => {
+      const now = (await a.execute(() =>
+        Array.from(document.querySelectorAll(".group-call-tile-name")).map((n) =>
+          (n.textContent ?? "").replace(/\s+/g, " ").trim()
+        )
+      )) as string[];
+      samples += 1;
+      if (now.some((n) => !served.has(n)) && offSamples.length < 10) offSamples.push(now);
+      return now;
+    };
     await press(a, await byText(a, ".group-call-incoming-banner button", "Accept"));
     let names: string[] = [];
     await waitUntil(
       async () => {
-        names = (await a.execute(() =>
-          Array.from(document.querySelectorAll(".group-call-tile-name")).map((n) => (n.textContent ?? "").trim()),
-        )) as string[];
+        names = await sample();
         return names.includes("Bob") && names.includes("Carol") && names.includes("Alice (you)");
       },
       NET_WAIT_MS,
-      "",
+      ""
     ).catch(() => {
-      throw new Error(`Alice's call grid never named Bob, Carol and Alice (you) (it shows ${JSON.stringify(names)})`);
+      throw new Error(
+        `Alice's call grid never named Bob, Carol and Alice (you) (it shows ${JSON.stringify(names)})`
+      );
     });
+    // And it stays so: 5 s more of samples.
+    for (const until = Date.now() + 5_000; Date.now() < until; ) {
+      names = await sample();
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    console.log(
+      `[group-call] ${samples} grid samples; off samples (a tile name empty or not served): ${JSON.stringify(offSamples)}`
+    );
     const callText = (await a.execute(() =>
-      Array.from(document.querySelectorAll(".group-call-incoming-banner, .group-call-grid, .active-call-panel"))
+      Array.from(
+        document.querySelectorAll(
+          ".group-call-incoming-banner, .group-call-grid, .active-call-panel"
+        )
+      )
         .map((el) => el.textContent ?? "")
-        .join(" "),
+        .join(" ")
     )) as string;
     const hexRuns = callText.toLowerCase().match(/[0-9a-f]{8,}/g) ?? [];
-    console.log(`[group-call] Alice's grid: ${JSON.stringify(names)}; hex runs in the call's UI: ${hexRuns.length}`);
+    console.log(
+      `[group-call] Alice's grid: ${JSON.stringify(names)}; hex runs in the call's UI: ${hexRuns.length}`
+    );
     const slivers = (await a.execute(() => {
       const visible = (el: Element): DOMRect | null => {
         let box = el.getBoundingClientRect();
@@ -124,13 +187,18 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       };
       const shows = (el: Element): boolean =>
         /status-dot|dot/.test(typeof el.className === "string" ? el.className : "") ||
-        Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== "");
+        Array.from(el.childNodes).some(
+          (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== ""
+        );
       const chain = (el: Element): string[] => {
         const out: string[] = [];
         for (let p: Element | null = el; p && out.length < 6; p = p.parentElement) {
           const r = p.getBoundingClientRect();
-          const cls = typeof p.className === "string" ? p.className.split(/\s+/).slice(0, 2).join(".") : "";
-          out.push(`${p.tagName.toLowerCase()}${cls ? `.${cls}` : ""}[${Math.round(r.top)}-${Math.round(r.bottom)}]`);
+          const cls =
+            typeof p.className === "string" ? p.className.split(/\s+/).slice(0, 2).join(".") : "";
+          out.push(
+            `${p.tagName.toLowerCase()}${cls ? `.${cls}` : ""}[${Math.round(r.top)}-${Math.round(r.bottom)}]`
+          );
         }
         return out;
       };
@@ -138,7 +206,11 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       for (const el of Array.from(document.body.querySelectorAll("*"))) {
         if (getComputedStyle(el).visibility === "hidden" || !shows(el)) continue;
         const v = visible(el);
-        if (v && v.height > 0 && v.height < 4) found.push({ el: chain(el), visible: [v.left, v.top, v.right, v.bottom].map(Math.round) });
+        if (v && v.height > 0 && v.height < 4)
+          found.push({
+            el: chain(el),
+            visible: [v.left, v.top, v.right, v.bottom].map(Math.round),
+          });
       }
       return found;
     })) as { el: string[]; visible: number[] }[];
@@ -148,11 +220,21 @@ describe("a group call names its members as the Host serves them (VN2)", functio
     expect({
       caller: bannerText.includes("Bob"),
       names: names.includes("Bob") && names.includes("Carol") && names.includes("Alice (you)"),
+      offSamples,
       hexRuns,
       bannerInWindow: place.inWindow,
       bannerBelowChrome: place.belowChrome,
       bannerTextClear: place.metaClear,
       slivers,
-    }).toEqual({ caller: true, names: true, hexRuns: [], bannerInWindow: true, bannerBelowChrome: true, bannerTextClear: true, slivers: [] });
+    }).toEqual({
+      caller: true,
+      names: true,
+      offSamples: [],
+      hexRuns: [],
+      bannerInWindow: true,
+      bannerBelowChrome: true,
+      bannerTextClear: true,
+      slivers: [],
+    });
   });
 });
