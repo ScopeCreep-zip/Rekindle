@@ -20,7 +20,10 @@ import { formatRelativeTime } from "../../utils/formatting";
  * so it shows in the stock layout and under every pack alike, a card
  * centred in the window. Escape or a press outside closes it and gives
  * focus back where it was; closing is the shell's own (the bit stays as
- * the Host left it).
+ * the Host left it). As a WAI-ARIA dialog it takes focus on open from
+ * every trigger (tab, knob, menu, bell), after the trigger has finished its
+ * own focus handling (a menu gives focus back to its button once its item
+ * runs), and Escape closes it wherever focus is while it is open.
  */
 const NotificationPanel: Component = () => {
   let panel: HTMLDivElement | undefined;
@@ -39,6 +42,7 @@ const NotificationPanel: Component = () => {
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       close();
     }
   };
@@ -48,9 +52,16 @@ const NotificationPanel: Component = () => {
       (open) => {
         if (!open) return;
         returnTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        queueMicrotask(() => panel?.focus());
+        // A frame later: the trigger's own focus handling (a closing menu
+        // restoring its button) has run by then, so focus stays in the panel.
+        const frame = requestAnimationFrame(() => panel?.focus());
         document.addEventListener("mousedown", onPointer);
-        onCleanup(() => document.removeEventListener("mousedown", onPointer));
+        document.addEventListener("keydown", onKey);
+        onCleanup(() => {
+          cancelAnimationFrame(frame);
+          document.removeEventListener("mousedown", onPointer);
+          document.removeEventListener("keydown", onKey);
+        });
       }
     )
   );
@@ -63,7 +74,6 @@ const NotificationPanel: Component = () => {
         role="dialog"
         aria-label="Notifications"
         tabindex="-1"
-        onKeyDown={onKey}
       >
         <div class="notification-panel-header">
           <span class="notification-panel-title">Notifications</span>
