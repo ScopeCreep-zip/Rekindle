@@ -7,7 +7,11 @@
 // ReEnrolDevice review at the next unlock (TrustChanging, every word the
 // Host's), and a held deviceReEnrol op shows the Host's label in catch-up.
 //
-// HELD until .10 part 2 lands. Its contract
+// Also the held review's standing (part 2b): it survives a reload and shows
+// in a window opened later, a cancel clears it everywhere and the Host
+// raises it again at the next unlock, and the alert is shown once.
+//
+// Its contract
 // (contract-s7dk10b-2026-11-26.md): `rekindle community re-enrol-device`
 // (no community flag: one DeviceReEnrol in every community the data root
 // holds; TrustChanging, so `--force` is refused), the alert "Signing
@@ -16,11 +20,11 @@
 // catch-up label "Re-enrolling this device".
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, gone, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, peerReviewed, startClone, stopFleet } from "../../fleet.ts";
 import { createCommunity, createIdentity, logOut, newUser, openCommunity, type User } from "../../journeys.ts";
 import { showSkinView } from "../../journeys_skins.ts";
-import { LOGIN, inBuddy } from "../../../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, inBuddy } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = "Restore Hall";
@@ -28,9 +32,26 @@ const COMMUNITY = "Restore Hall";
 /** The CLI subcommand that commits ReEnrolDevice on the copy (.10 part 2). */
 const REENROL = ["community", "re-enrol-device"];
 
+/** Log off and unlock again (the Host raises held reviews at the unlock barrier). */
+async function unlockAgain(): Promise<void> {
+  await logOut(browser, ME);
+  await switchTo(browser, LOGIN, NET_WAIT_MS);
+  await typeInto(await shown(browser, 'form.login-container input[type="password"]'), ME.passphrase);
+  const submit = await browser.$('form.login-container button[type="submit"]');
+  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
+  await submit.click();
+}
+
+/** What the review the window shows says, once it shows. */
+async function reviewSays(b: typeof browser): Promise<string> {
+  return ((await (await shown(b, ".intent-dialog", NET_WAIT_MS)).getText()) ?? "").replace(/\s+/g, " ");
+}
+
+const ME: User = { ...newUser("restore"), displayName: "Ari" };
+
 describe("a restored copy re-enrols the device: the original is told and offered its own re-enrolment (S7d-keys.10)", function () {
   this.timeout(1_200_000);
-  const me: User = { ...newUser("restore"), displayName: "Ari" };
+  const me = ME;
   let peers: Peer[] = [];
 
   after(async () => {
@@ -61,23 +82,53 @@ describe("a restored copy re-enrols the device: the original is told and offered
 
     // The Host raises its ReEnrolDevice review (TrustChanging) at the unlock
     // barrier: log off, unlock, and the review is there before the buddy
-    // list, in the Host's words; it is committed through the intent dialog.
-    await logOut(browser, me);
-    await switchTo(browser, LOGIN, NET_WAIT_MS);
-    await typeInto(await shown(browser, 'form.login-container input[type="password"]'), me.passphrase);
-    const submit = await browser.$('form.login-container button[type="submit"]');
-    await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
-    await submit.click();
-    const review = await shown(browser, ".intent-dialog", NET_WAIT_MS);
-    const said = (await review.getText()).replace(/\s+/g, " ");
+    // list, in the Host's words.
+    await unlockAgain();
+    const said = await reviewSays(browser);
     console.log(`[reenrol] review: ${said.slice(0, 400)}`);
     await shot("reenrol-review");
     expect(said).toContain("this device's key in every community");
     expect(said).toContain("this device's key is retired at seq");
+
+    // The review is the Host's, held (standing heldReviews on every subscribe
+    // and resume): a reload of the window shows it again, and a window opened
+    // now shows it on its first subscribe.
+    await browser.refresh();
+    expect(await reviewSays(browser)).toContain("this device's key in every community");
+    await shot("reenrol-review-after-reload");
+    await browser.execute(async () => {
+      const { invoke } = (window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> } }).__TAURI_INTERNALS__;
+      await invoke("open_settings_window", { tab: null });
+    });
+    await switchTo(browser, SETTINGS, NET_WAIT_MS);
+    expect(await reviewSays(browser)).toContain("this device's key in every community");
+    await shot("reenrol-review-in-new-window");
+
+    // Cancelled from the new window, it is gone from every window; the Host
+    // raises it again at the next unlock, until it is committed.
+    expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
+    await gone(browser, ".intent-dialog", NET_WAIT_MS);
+    await switchTo(browser, BUDDY, NET_WAIT_MS);
+    await gone(browser, ".intent-dialog", NET_WAIT_MS);
+    await shot("reenrol-review-cancelled");
+    await unlockAgain();
+    expect(await reviewSays(browser)).toContain("this device's key in every community");
+
+    // Committed: the dialog answers the review it shows (its holdId).
     const outcome = await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS });
     console.log(`[reenrol] review outcome: ${outcome}`);
     await shot("reenrol-review-done");
     expect(outcome).toBe("committed");
+
+    // The Host's "Signing stopped" alert is one alert (de-duplicated by its
+    // id) through the reload, the new window and two unlocks.
+    await inBuddy(browser);
+    await showSkinView(browser, "notifications");
+    const alerts = (await browser.execute(() =>
+      Array.from(document.querySelectorAll("[class*=notification]")).filter((n) => (n.textContent ?? "").includes("Signing stopped")).length,
+    )) as number;
+    console.log(`[reenrol] Signing stopped alerts shown: ${alerts}`);
+    expect(alerts).toBe(1);
 
     // Its held op shows the Host's label in the community's catch-up status
     // until it lands, and is gone after.
