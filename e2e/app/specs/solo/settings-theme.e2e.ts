@@ -187,6 +187,55 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     expect({ afterEscape, focusBack, focusAfterEscape }).toEqual({ afterEscape: "30 minutes", focusBack: true, focusAfterEscape: true });
   });
 
+  it("selected text is the theme's highlight, focused and unfocused (ST1)", async () => {
+    await tab("Profile");
+    const field = '.settings-content input.form-input[type="text"]';
+    await shown(browser, field, NET_WAIT_MS);
+    await browser.execute((sel: string) => {
+      const f = document.querySelector<HTMLInputElement>(sel);
+      f?.focus();
+      f?.select();
+    }, field);
+    const read = async (): Promise<{ focus: string; bg: string; fg: string; want: Record<string, string> }> =>
+      (await browser.execute((sel: string) => {
+        const probe = document.createElement("div");
+        document.body.append(probe);
+        const tok = (t: string): string => {
+          probe.style.color = `var(--color-xfire-${t})`;
+          return getComputedStyle(probe).color;
+        };
+        const f = document.querySelector<HTMLInputElement>(sel);
+        const sel2 = f ? getComputedStyle(f, "::selection") : null;
+        const out = {
+          focus: document.documentElement.dataset.windowFocus ?? "unset",
+          bg: sel2?.backgroundColor ?? "",
+          fg: sel2?.color ?? "",
+          want: {
+            active: tok("input-selection-bg"), activeText: tok("selection-text"),
+            inactive: tok("input-selection-bg-inactive"), inactiveText: tok("input-text"),
+          },
+        };
+        probe.remove();
+        return out;
+      }, field)) as { focus: string; bg: string; fg: string; want: Record<string, string> };
+    const focused = await read();
+    await shot("selection-focused");
+    // The window's blur sets this attribute (window_focus.ts); the driver
+    // cannot take the OS focus away without another window taking it, so
+    // the attribute the blur sets is set here to read the unfocused rule.
+    await browser.execute(() => {
+      document.documentElement.dataset.windowFocus = "inactive";
+    });
+    const unfocused = await read();
+    await shot("selection-unfocused");
+    await browser.execute(() => {
+      document.documentElement.dataset.windowFocus = document.hasFocus() ? "active" : "inactive";
+    });
+    console.log(`[st1] selection: focused ${JSON.stringify(focused)}; unfocused ${JSON.stringify(unfocused)}`);
+    expect({ focus: focused.focus, bg: focused.bg, fg: focused.fg }).toEqual({ focus: "active", bg: focused.want.active, fg: focused.want.activeText });
+    expect({ bg: unfocused.bg, fg: unfocused.fg }).toEqual({ bg: unfocused.want.inactive, fg: unfocused.want.inactiveText });
+  });
+
   it("a dialog outside Settings (Add Friend) takes the same text-field roles", async () => {
     await switchTo(browser, BUDDY);
     await openAddFriend(browser);

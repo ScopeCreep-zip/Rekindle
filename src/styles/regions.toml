@@ -98,7 +98,7 @@
 '.form-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 # Selected text (plan ST1): the text-field highlight, focused and unfocused.
 '::selection' = { on = ["--color-xfire-input-selection-bg"] }
-'::selection:window-inactive' = { on = ["--color-xfire-input-selection-bg-inactive"] }
+':root[data-window-focus="inactive"] ::selection' = { on = ["--color-xfire-input-selection-bg-inactive"] }
 '.form-btn-primary' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark", "--color-xfire-accent 100% over --color-xfire-bg-panel"] }
 '.form-btn-primary:disabled' = { on = ["--color-xfire-bg-secondary"] }
 '.form-btn-danger:disabled' = { on = ["--color-xfire-bg-secondary"] }

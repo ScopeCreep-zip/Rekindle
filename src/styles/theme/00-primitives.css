@@ -243,7 +243,9 @@
     color: var(--color-xfire-selection-text);
   }
 
-  ::selection:window-inactive {
+  /* The unfocused window's selection: keyed on the window's focus state
+   * (window_focus.ts), since the build drops ::selection:window-inactive. */
+  :root[data-window-focus="inactive"] ::selection {
     background-color: var(--color-xfire-input-selection-bg-inactive);
     color: var(--color-xfire-input-text);
   }
