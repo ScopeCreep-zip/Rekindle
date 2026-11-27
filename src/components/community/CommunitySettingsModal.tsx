@@ -30,10 +30,6 @@ import PrivacyTab from "./settings/PrivacyTab";
 import WelcomeTab from "./settings/WelcomeTab";
 import ExpressionsTab from "./settings/ExpressionsTab";
 
-// Declared in ./settings/types.ts and re-exported here for existing
-// import sites. This file renders every tab and each tab's props name
-// the type, so declaring it here closed six module cycles.
-export type { ConfirmOptions } from "./settings/types";
 import type { ConfirmOptions } from "./settings/types";
 
 interface CommunitySettingsModalProps {

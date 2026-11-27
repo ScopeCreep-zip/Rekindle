@@ -15,7 +15,7 @@ import { syncCommands } from "./commands/sync";
 import { groupDmCommands } from "./commands/group_dm";
 import { lobbyCommands } from "./commands/dto_lobby";
 export type { GroupDmView, GroupDmMemberView } from "./commands/group_dm";
-export type { LobbyRefusal, LobbyState, LobbyVerdict, LobbyView } from "./commands/dto_lobby";
+export type { LobbyRefusal, LobbyVerdict, LobbyView } from "./commands/dto_lobby";
 
 export const commands = {
   ...accountCommands,
@@ -27,8 +27,3 @@ export const commands = {
   ...groupDmCommands,
   ...lobbyCommands,
 };
-
-export function avatarDataUrl(base64: string | null | undefined): string | undefined {
-  if (!base64) return undefined;
-  return `data:image/webp;base64,${base64}`;
-}

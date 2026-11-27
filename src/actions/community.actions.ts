@@ -17,4 +17,4 @@ export * from "./community/roles";
 export * from "./community/invites";
 export * from "./community/profile";
 export * from "./community/events_threads";
-export { typingUsers, type TypingUser } from "./community/shared";
+export { typingUsers } from "./community/shared";

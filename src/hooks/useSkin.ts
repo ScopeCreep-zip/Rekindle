@@ -122,7 +122,7 @@ let loading: HTMLLinkElement | null = null;
  * sheet and the base always belong to the same skin. On any failure the
  * shown skin stays and the error is reported.
  */
-export function applySkin(skin: SkinApplied): void {
+function applySkin(skin: SkinApplied): void {
   const mine = ++generation;
   loading?.remove();
   loading = null;

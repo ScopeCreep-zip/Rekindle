@@ -1,7 +1,6 @@
 import { type Component, onCleanup } from "solid-js";
 
 import {
-  announce,
   assertiveMessage,
   cancelPendingClears,
   politeMessage,
@@ -45,5 +44,4 @@ const AnnounceRegion: Component = () => {
   );
 };
 
-export { announce };
 export default AnnounceRegion;

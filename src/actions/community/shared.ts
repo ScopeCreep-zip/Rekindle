@@ -5,7 +5,7 @@ import type { Role, ScheduledEvent } from "../../stores/community.store";
 import type { EventInfo } from "../../ipc/commands";
 
 // Typing indicator state
-export interface TypingUser {
+interface TypingUser {
   pseudonymKey: string;
   displayName: string;
 }

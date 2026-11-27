@@ -1,7 +1,7 @@
 import { hostInvoke } from "../invoke";
 
 /** A group's game lobby state (`rekindle_types::dto::lobby::LobbyState`, plan E7.2 G6). */
-export type LobbyState = { kind: "open" } | { kind: "launched"; server: string } | { kind: "closed" };
+type LobbyState = { kind: "open" } | { kind: "launched"; server: string } | { kind: "closed" };
 
 /** Why the Host refuses a lobby action (`LobbyRefusal`). */
 export type LobbyRefusal = "notOpen" | "closed" | "ownLobby" | "notHost" | "alreadyIn" | "notIn" | "noMembers";
