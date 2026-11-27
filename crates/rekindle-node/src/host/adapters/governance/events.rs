@@ -63,6 +63,7 @@ impl HostGovernance {
         // One rebuild, two frontend events: the governance and the members.
         if let GovernanceRuntimeEvent::GovernanceRebuilt { community_id } = event {
             self.prune_head_hints(community_id);
+            self.note_retirement_after_rebuild(community_id);
             self.ctx.publish_event(SubscriptionEvent::Governance(
                 GovernanceEvent::GovernanceRebuilt {
                     community: community_id.clone(),

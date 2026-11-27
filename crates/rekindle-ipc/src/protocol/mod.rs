@@ -542,6 +542,8 @@ pub enum IpcRequest {
     AgentRevoke { name: String },
     /// Reload authorization policy from disk.
     PolicyReload,
+    /// This unlocked identity's current backend-held reviews (plan S7d-keys.10).
+    IntentListHeld,
 }
 
 mod capability;

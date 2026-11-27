@@ -72,6 +72,38 @@ pub fn persist_owner(
     stored
 }
 
+/// Stage a replacement prekey owner before the identity database changes.
+///
+/// # Errors
+/// The entry could not be encoded or saved.
+pub fn stage_prekey_owner(vault: &VaultStore, entry: &OwnerEntry) -> Result<(), VaultError> {
+    let bytes = zeroize::Zeroizing::new(
+        serde_json::to_vec(entry).map_err(|e| VaultError::Schema(format!("owner entry: {e}")))?,
+    );
+    vault.put(&VaultKey::PendingPrekeyOwner, &bytes)
+}
+
+/// Complete a replacement only if the identity row and prekeys
+/// committed. Otherwise the old owner remains the committed one.
+///
+/// # Errors
+/// The pending owner could not be read, promoted or discarded.
+pub fn finish_prekey_owner(vault: &VaultStore, record_key: Option<&str>) -> Result<(), VaultError> {
+    let Some(bytes) = vault.get(&VaultKey::PendingPrekeyOwner)? else {
+        return Ok(());
+    };
+    let mut entry: OwnerEntry = serde_json::from_slice(&bytes)
+        .map_err(|e| VaultError::Schema(format!("pending prekey owner: {e}")))?;
+    let promoted = if Some(entry.record_key.as_str()) == record_key {
+        persist_owner(vault, OwnerKey::Prekeys, &entry)
+    } else {
+        Ok(())
+    };
+    entry.keypair.zeroize();
+    promoted?;
+    vault.delete(&VaultKey::PendingPrekeyOwner)
+}
+
 /// Store an invite's request inbox owner keypair (plan E2.5, D17), under
 /// its record key.
 ///

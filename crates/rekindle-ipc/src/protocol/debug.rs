@@ -80,6 +80,7 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("IntentCancel")
                 .field("intent_id", intent_id)
                 .finish(),
+            Self::IntentListHeld => f.write_str("IntentListHeld"),
             Self::GroupDm(request) => std::fmt::Debug::fmt(request, f),
             Self::DisappearingSet {
                 conversation,

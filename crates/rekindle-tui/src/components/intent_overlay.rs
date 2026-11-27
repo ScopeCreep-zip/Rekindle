@@ -32,6 +32,7 @@ use crate::theme::ThemeManager;
 #[derive(Default)]
 pub struct IntentOverlay {
     review: Option<IntentReview>,
+    backend: bool,
     /// Commit has the focus (Cancel first, the safe default).
     commit_focused: bool,
     acknowledged: bool,
@@ -46,6 +47,28 @@ impl IntentOverlay {
             review: Some(review),
             ..Self::default()
         };
+    }
+
+    /// Advance through the current backend-owned reviews. A snapshot
+    /// with the same review keeps whatever proof the user was entering.
+    pub fn replace_held(&mut self, reviews: Vec<rekindle_types::intent::HeldReview>) {
+        if self.review.is_some() && !self.backend {
+            return;
+        }
+        if let Some(current) = &self.review {
+            if reviews
+                .iter()
+                .any(|held| held.review.intent_id == current.intent_id)
+            {
+                return;
+            }
+        }
+        if let Some(held) = reviews.into_iter().next() {
+            self.show(held.review);
+            self.backend = true;
+        } else {
+            *self = Self::default();
+        }
     }
 
     #[must_use]

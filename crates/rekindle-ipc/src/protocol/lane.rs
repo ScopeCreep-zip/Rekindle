@@ -70,6 +70,7 @@ impl IpcRequest {
             // The gate checks who may commit (plan D3.3); the held request
             // runs in its own lane.
             Self::IntentCommit { .. } => ("IntentCommit", Write, Open),
+            Self::IntentListHeld => ("IntentListHeld", Query, Authenticated),
             Self::IntentCancel { .. } => ("IntentCancel", Write, Open),
 
             Self::FriendAddFromCode { .. } => ("FriendAddFromCode", Write, Authenticated),

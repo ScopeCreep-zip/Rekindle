@@ -197,6 +197,23 @@ impl HostGovernance {
         }
     }
 
+    /// Replace this device's member card secret after re-enrolment and
+    /// publish the card signed by the re-enrolled device.
+    pub(super) async fn replace_card_secret(&self, community: &str) -> Result<(), String> {
+        let mut secret = zeroize::Zeroizing::new([0; 32]);
+        self.ctx.rng.fill(secret.as_mut());
+        {
+            let guard = self.ctx.vault.lock();
+            let vault = guard.as_ref().ok_or("the identity is locked")?;
+            rekindle_vault::typed::community_keys::persist_member_hpke_secret(
+                vault, community, &secret,
+            )
+            .map_err(|e| format!("member card secret not saved: {e}"))?;
+        }
+        self.publish_own_card(community, &self.own_card_text(community))
+            .await
+    }
+
     /// Write `text` to our card, then read it back into the card cache.
     async fn publish_own_card(&self, community: &str, text: &OwnCardText) -> Result<(), String> {
         let keys = self.own_record_keys(community)?;

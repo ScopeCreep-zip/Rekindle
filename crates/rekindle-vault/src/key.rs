@@ -103,6 +103,8 @@ pub enum VaultKey {
     AccountOwnerKeypair,
     PersonalSyncOwnerKeypair,
     PrekeyRecordOwnerKeypair,
+    /// A replacement record whose identity row may still be committing.
+    PendingPrekeyOwner,
     /// A friend invite's request inbox: its record key and owner keypair
     /// (plan E2.5, D17), one entry per open invite.
     RequestInboxOwnerKeypair {
@@ -144,6 +146,7 @@ impl VaultKey {
             | Self::AccountOwnerKeypair
             | Self::PersonalSyncOwnerKeypair
             | Self::PrekeyRecordOwnerKeypair
+            | Self::PendingPrekeyOwner
             | Self::DeviceVaultSecret
             | Self::RequestInboxOwnerKeypair { .. }
             | Self::DmParticipantOwner { .. }
@@ -168,12 +171,15 @@ impl VaultKey {
 
     /// Whether this entry belongs to this device only, so an identity export
     /// never carries it (ADR 0022 rule 4: a device key never travels with an
-    /// export). `DeviceVaultSecret` is the one such entry the identity vault
-    /// holds; `DeviceOpKey` lives in the device vault, which export never
-    /// reads, and is named here so no store exports it either.
+    /// export). The identity vault holds `DeviceVaultSecret` and staged
+    /// `PendingPrekeyOwner` locally. `DeviceOpKey` lives in the device vault,
+    /// which export never reads.
     #[must_use]
     pub fn is_device_scoped(&self) -> bool {
-        matches!(self, Self::DeviceVaultSecret | Self::DeviceOpKey { .. })
+        matches!(
+            self,
+            Self::DeviceVaultSecret | Self::DeviceOpKey { .. } | Self::PendingPrekeyOwner
+        )
     }
 
     /// The variant's tag and its fields, in order.
@@ -187,6 +193,7 @@ impl VaultKey {
             Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
             Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
             Self::PrekeyRecordOwnerKeypair => ("prekey_record_owner_keypair", vec![]),
+            Self::PendingPrekeyOwner => ("pending_prekey_owner", vec![]),
             Self::RequestInboxOwnerKeypair { record } => {
                 ("request_inbox_owner_keypair", vec![s(record)])
             }
@@ -263,6 +270,7 @@ impl VaultKey {
             ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
             ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
             ("prekey_record_owner_keypair", []) => Self::PrekeyRecordOwnerKeypair,
+            ("pending_prekey_owner", []) => Self::PendingPrekeyOwner,
             ("request_inbox_owner_keypair", [r]) => {
                 Self::RequestInboxOwnerKeypair { record: r.clone() }
             }

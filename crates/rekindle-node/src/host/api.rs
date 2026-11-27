@@ -6,7 +6,6 @@ use rekindle_events::EventStream;
 use rekindle_ipc::error::IpcError;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
-use rekindle_types::intent::HeldReview;
 use rekindle_types::subscription_events::{Cursor, SubscriptionEvent};
 
 use super::gate::IntentOwner;
@@ -61,22 +60,7 @@ impl super::Host {
     /// unlock barrier's `ReEnrolDevice`) still reaches it.
     #[must_use]
     pub fn held_reviews(&self) -> SubscriptionEvent {
-        let held = self.ctx.require_owner().map_or_else(
-            |_| Vec::new(),
-            |identity| {
-                let owner = IntentOwner {
-                    conn: None,
-                    identity,
-                };
-                self.ctx
-                    .intents
-                    .held_reviews(&owner, self.ctx.clock.now_ms())
-                    .into_iter()
-                    .map(|(hold_id, review)| HeldReview { review, hold_id })
-                    .collect()
-            },
-        );
-        SubscriptionEvent::HeldReviews(held)
+        SubscriptionEvent::HeldReviews(super::held_reviews_of(&self.ctx))
     }
 
     /// Recheck a queued backend review just before delivering it to the shell.
@@ -95,6 +79,46 @@ impl super::Host {
                 .intents
                 .holds_review(hold_id, intent_id, &owner, self.ctx.clock.now_ms())
         })
+    }
+
+    /// Stage a prekey cutover at the point immediately before the
+    /// identity transaction, for the simulated crash/restart scenario.
+    ///
+    /// # Panics
+    /// The simulated Host must be unlocked and its test vault writable.
+    #[cfg(feature = "netsim-entry")]
+    pub fn netsim_stage_prekey_cutover(&self) {
+        let guard = self.ctx.vault.lock();
+        let vault = guard.as_ref().expect("the simulated identity is unlocked");
+        rekindle_vault::typed::owner_keys::stage_prekey_owner(
+            vault,
+            &rekindle_vault::typed::owner_keys::OwnerEntry {
+                record_key: "simulated-provisional-record".to_owned(),
+                keypair: "simulated-provisional-owner".to_owned(),
+            },
+        )
+        .expect("stage the replacement owner");
+    }
+
+    /// The committed prekey record and whether a staged owner remains.
+    ///
+    /// # Panics
+    /// The simulated Host has no unlocked prekey owner or its test vault is unreadable.
+    #[cfg(feature = "netsim-entry")]
+    pub fn netsim_prekey_cutover_state(&self) -> (String, bool) {
+        use rekindle_vault::{
+            typed::owner_keys::{load_owner, OwnerKey},
+            VaultKey,
+        };
+        let guard = self.ctx.vault.lock();
+        let vault = guard.as_ref().expect("the simulated identity is unlocked");
+        let owner = load_owner(vault, OwnerKey::Prekeys)
+            .unwrap()
+            .expect("prekey owner saved");
+        (
+            owner.record_key,
+            vault.get(&VaultKey::PendingPrekeyOwner).unwrap().is_some(),
+        )
     }
 
     /// A fresh `SystemAlert` id, for an alert the shell raises through
