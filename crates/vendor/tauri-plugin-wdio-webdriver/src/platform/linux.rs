@@ -200,6 +200,34 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
         self.timeouts.script
     }
 
+    async fn dispatch_native_key(
+        &self,
+        key: super::NativeKey,
+        is_down: bool,
+        modifiers: super::ModifierState,
+    ) -> Result<(), WebDriverErrorResponse> {
+        let (tx, rx) = oneshot::channel();
+        self.window
+            .with_webview(move |webview| {
+                if tx.is_closed() {
+                    return;
+                }
+                let accepted =
+                    super::linux_keys::dispatch(&webview.inner(), key, is_down, modifiers);
+                let _ = tx.send(accepted);
+            })
+            .map_err(|error| WebDriverErrorResponse::unknown_error(&error.to_string()))?;
+        match tokio::time::timeout(std::time::Duration::from_millis(self.timeouts.script), rx).await
+        {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::element_not_interactable(error)),
+            Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error(
+                "Native key dispatch channel closed",
+            )),
+            Err(_) => Err(WebDriverErrorResponse::script_timeout()),
+        }
+    }
+
     // =========================================================================
     // Core JavaScript Execution
     // =========================================================================
