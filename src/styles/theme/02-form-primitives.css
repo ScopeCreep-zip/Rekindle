@@ -255,7 +255,11 @@
 
   /* ─── Member profile popup ─── */
   .profile-popup {
-    position: fixed;
+    /* relative, not fixed: Kobalte positions and measures its own wrapper
+     * (strategy absolute) and copies this z-index onto it; a fixed popup
+     * left that wrapper empty, so it never saw the editor grow and never
+     * slid it back inside the window. */
+    position: relative;
     z-index: var(--z-popover);
     min-width: 200px;
     /* Never wider or taller than the window leaves it (Kobalte's
