@@ -171,7 +171,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     });
     await switchTo(browser, SETTINGS, NET_WAIT_MS);
     await shown(browser, ".form-tabs", NET_WAIT_MS);
-    expect(await (await browser.$(".intent-dialog")).isDisplayed().catch(() => false)).toBe(false);
+    expect(await browser.execute(() => document.querySelector(".intent-dialog") === null)).toBe(true);
     await shot("reenrol-review-not-in-new-window");
     await switchTo(browser, BUDDY, NET_WAIT_MS);
     expect(await reviewSays(browser)).toContain("this device's key in every community");
