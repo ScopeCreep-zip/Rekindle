@@ -102,7 +102,14 @@ export function useCallStage() {
       // been created yet we therefore show the avatar under a DIFFERENT
       // key ("self-avatar"); the key swap forces a fresh row that mounts
       // the canvas the moment it exists.
-      const selfName = `${authState.displayName ?? "You"} (you)`;
+      // Our own name as this call's context has it: in a community, the
+      // Host's name for our member (the roster row's, never our global
+      // name); in a DM call, our own. The tile adds "(you)" when it draws
+      // the label, so the avatar's initials come from the name alone.
+      const selfKey = selfPseudonymForActiveCall();
+      // Before the roster row hydrates, the tile reads our voice-roster entry
+      // (the Host's name) by key; the global name never stands in.
+      const selfName = selfKey ? (memberNameForActiveCall(selfKey) ?? "") : (authState.displayName ?? "");
       if (pipe && camOn) {
         if (pipe.nativeCapture?.()) {
           const nativeCanvas = pipe.nativeSelfCanvas?.() ?? null;
@@ -110,6 +117,7 @@ export function useCallStage() {
             put(out, "self-camera", {
               canvas: nativeCanvas,
               displayName: selfName,
+              publicKey: selfKey ?? undefined,
               isLocal: true,
               isScreen: false,
               mirror: true,
@@ -117,6 +125,7 @@ export function useCallStage() {
           } else {
             put(out, "self-avatar", {
               displayName: selfName,
+              publicKey: selfKey ?? undefined,
               avatarUrl: authState.avatarUrl ?? undefined,
               isLocal: true,
               isScreen: false,
@@ -126,6 +135,7 @@ export function useCallStage() {
           put(out, "self-camera", {
             bindVideo: pipe.bindCameraVideo,
             displayName: selfName,
+            publicKey: selfKey ?? undefined,
             isLocal: true,
             isScreen: false,
           });
@@ -141,7 +151,8 @@ export function useCallStage() {
       }
       if (!camOn && !scrOn) {
         put(out, "self-avatar", {
-          displayName: `${authState.displayName ?? "You"} (you)`,
+          displayName: selfName,
+          publicKey: selfKey ?? undefined,
           avatarUrl: authState.avatarUrl ?? undefined,
           isLocal: true,
           isScreen: false,

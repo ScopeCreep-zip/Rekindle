@@ -82,7 +82,10 @@ const ParticipantTile: Component<{
         <Show when={isMuted()}>
           <SkinGlyph name="mic.off" class="call-stage-tile-badge call-stage-tile-badge-muted" />
         </Show>
-        <span class="call-stage-tile-name">{name()}</span>
+        <span class="call-stage-tile-name">
+          {name()}
+          {props.tile.isLocal && !props.tile.isScreen ? " (you)" : ""}
+        </span>
       </div>
     </div>
   );
