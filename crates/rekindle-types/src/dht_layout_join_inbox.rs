@@ -12,11 +12,13 @@ pub const FIRST_SLOT: u32 = 1;
 pub const MAX_ENTRY_LEN: usize = 512;
 
 /// An invite allocates one slot per use.
+#[must_use]
 pub fn valid_slots(slots: u8) -> bool {
     slots > 0 && u32::from(slots) <= crate::invite::MAX_USES_PER_INVITE
 }
 
 /// The writer's slots in a validated inbox.
+#[must_use]
 pub fn slots(count: u8) -> std::ops::Range<u32> {
     FIRST_SLOT..FIRST_SLOT + u32::from(count)
 }

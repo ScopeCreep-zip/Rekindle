@@ -370,6 +370,30 @@ impl HostGovernance {
         }
     }
 
+    /// Forget local owner credentials before a leaving community's
+    /// invite rows disappear with the membership.
+    pub(super) async fn forget_join_inbox_owners(&self, community: &str) {
+        let (Ok(owner), Ok(db)) = (self.ctx.require_owner(), self.ctx.db.current()) else {
+            return;
+        };
+        let target = community.to_owned();
+        let Ok(invites) = db
+            .call(move |c| community_invites::list(c, &owner, &target))
+            .await
+        else {
+            return;
+        };
+        if let Some(vault) = self.ctx.vault.lock().as_ref() {
+            for inbox in invites.into_iter().filter_map(|invite| invite.join_inbox) {
+                if let Err(error) = vault.delete(&VaultKey::JoinInboxOwnerKeypair {
+                    invite_id: inbox.invite_id,
+                }) {
+                    tracing::warn!(community, %error, "join inbox owner could not be erased on leave");
+                }
+            }
+        }
+    }
+
     async fn finish_join_inbox_retirement(&self, watch: &Watch, pool: &dyn RecordPort) {
         let (Ok(owner), Ok(db)) = (self.ctx.require_owner(), self.ctx.db.current()) else {
             return;

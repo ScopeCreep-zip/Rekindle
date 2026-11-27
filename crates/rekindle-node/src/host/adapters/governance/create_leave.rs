@@ -430,6 +430,7 @@ impl HostGovernance {
     /// after the leave), bootstrap answers, waiting posts, store entry and
     /// stored membership; `end` names the event its frontends hear.
     pub(crate) async fn forget_left_community(&self, id: &str, end: HoldEnd) -> Result<(), String> {
+        self.forget_join_inbox_owners(id).await;
         self.forget_keys(id);
         self.discard_key_transfers(id, None).await;
         self.discard_bootstrap(id);
