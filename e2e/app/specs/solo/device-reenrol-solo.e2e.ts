@@ -9,7 +9,8 @@
 // silently (the case the ruling refuses).
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, gone, resolveIntent, shown, waitUntil } from "../../../walk/helpers.ts";
+import { inBuddy } from "../../../walk/nav.ts";
 import { type Peer, stopFleet } from "../../fleet.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { copyDivergesAndReEnrols, signingStoppedShown } from "../../reenrol.ts";
@@ -38,6 +39,21 @@ describe("a solo member's original device learns its re-enrolment from its own r
     );
 
     await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy", (copy) => peers.push(copy));
+
+    // The Host opens the review as soon as the old record delivers the
+    // retirement. Answer it before opening the notifications view.
+    await inBuddy(browser);
+    // Through the retirement pointer reaching Ari's own record (no carrier),
+    // as long a bound as the alert had.
+    const review = await shown(browser, ".intent-dialog", NET_WAIT_MS * 2);
+    const reviewText = (await review.getText()).replace(/\s+/g, " ");
+    expect(reviewText).toContain("this device's key in every community");
+    expect(reviewText).toContain("this device's key is retired at seq");
+    await shot("solo-reenrol-review");
+    expect(
+      await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS }),
+    ).toBe("cancelled");
+    await gone(browser, ".intent-dialog", NET_WAIT_MS);
 
     const alert = await signingStoppedShown(browser);
     console.log(`[reenrol] solo alert: ${alert.slice(0, 200)}`);
