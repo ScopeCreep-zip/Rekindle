@@ -7,18 +7,20 @@
 // ReEnrolDevice review at the next unlock (TrustChanging, every word the
 // Host's), and a held deviceReEnrol op shows the Host's label in catch-up.
 //
-// HELD until .10 part 2 lands. Its contract (lead, 2026-11-26):
-// `rekindle community re-enrol-device` (no community flag: one DeviceReEnrol
-// in every community the data root holds; a TrustChanging intent, so
-// `--force` is refused), the alert "Signing stopped", the review
-// IntentKind::ReEnrolDevice, the catch-up label "Re-enrolling this device".
+// HELD until .10 part 2 lands. Its contract
+// (contract-s7dk10b-2026-11-26.md): `rekindle community re-enrol-device`
+// (no community flag: one DeviceReEnrol in every community the data root
+// holds; TrustChanging, so `--force` is refused), the alert "Signing
+// stopped", the review IntentKind::ReEnrolDevice raised by the Host at the
+// unlock barrier (subject "this device's key in every community"), and the
+// catch-up label "Re-enrolling this device".
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, resolveIntent, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, peerReviewed, startClone, stopFleet } from "../../fleet.ts";
-import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { createCommunity, createIdentity, logOut, newUser, openCommunity, type User } from "../../journeys.ts";
 import { showSkinView } from "../../journeys_skins.ts";
-import { inBuddy } from "../../../walk/nav.ts";
+import { LOGIN, inBuddy } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = "Restore Hall";
@@ -57,10 +59,23 @@ describe("a restored copy re-enrols the device: the original is told and offered
     console.log(`[reenrol] alert: ${(await alert.getText()).replace(/\s+/g, " ").slice(0, 200)}`);
     await shot("signing-stopped");
 
-    // The Host raises its ReEnrolDevice review (TrustChanging) for the
-    // original; it is committed through the intent dialog, word for word.
+    // The Host raises its ReEnrolDevice review (TrustChanging) at the unlock
+    // barrier: log off, unlock, and the review is there before the buddy
+    // list, in the Host's words; it is committed through the intent dialog.
+    await logOut(browser, me);
+    await switchTo(browser, LOGIN, NET_WAIT_MS);
+    await typeInto(await shown(browser, 'form.login-container input[type="password"]'), me.passphrase);
+    const submit = await browser.$('form.login-container button[type="submit"]');
+    await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
+    await submit.click();
+    const review = await shown(browser, ".intent-dialog", NET_WAIT_MS);
+    const said = (await review.getText()).replace(/\s+/g, " ");
+    console.log(`[reenrol] review: ${said.slice(0, 400)}`);
+    await shot("reenrol-review");
+    expect(said).toContain("this device's key in every community");
+    expect(said).toContain("this device's key is retired at seq");
     const outcome = await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS });
-    console.log(`[reenrol] review: ${outcome}`);
+    console.log(`[reenrol] review outcome: ${outcome}`);
     await shot("reenrol-review-done");
     expect(outcome).toBe("committed");
 
