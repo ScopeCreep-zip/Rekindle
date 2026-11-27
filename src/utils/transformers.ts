@@ -55,7 +55,7 @@ function transformFriend(f: FriendInfo): Friend {
 }
 
 /** Convert an array of FriendInfo into a keyed Record for the store. */
-export function transformFriendMap(friends: FriendInfo[]): Record<string, Friend> {
+function transformFriendMap(friends: FriendInfo[]): Record<string, Friend> {
   const map: Record<string, Friend> = {};
   for (const f of friends) {
     map[f.publicKey] = transformFriend(f);

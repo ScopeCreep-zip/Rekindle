@@ -39,7 +39,7 @@ export function trackCoCreation(): void {
   });
 }
 
-export async function handleGetCoCreation(): Promise<CoCreationSnapshot | null> {
+async function handleGetCoCreation(): Promise<CoCreationSnapshot | null> {
   try {
     return await commands.getCoCreation();
   } catch (e) {

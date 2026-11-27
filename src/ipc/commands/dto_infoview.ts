@@ -5,7 +5,7 @@
 import type { ActivityListItem, EventInfo, FriendInfo, NotJoinableReason } from "./types";
 
 /// What a window's Infoview shows (`InfoviewSubject`).
-export type InfoviewSubject =
+type InfoviewSubject =
   | { type: "own" }
   | { type: "friend"; publicKey: string }
   | { type: "friendGroup"; groupId: number | null }

@@ -56,29 +56,6 @@ export function canSend(body: string): boolean {
   return body.trim().length > 0;
 }
 
-/// Send the 1:1 draft to `to` and clear the input, when it can be sent
-/// (Enter and the Send button both land here).
-export function sendDraft(to: string, getBody: () => string, clearInput: () => void): void {
-  const body = getBody();
-  if (canSend(body)) {
-    // The backend ends our typing when the message goes out.
-    handleSendMessage(to, body);
-    clearInput();
-  }
-}
-
-export function handleKeyDown(
-  e: KeyboardEvent,
-  to: string,
-  getBody: () => string,
-  clearInput: () => void
-): void {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendDraft(to, getBody, clearInput);
-  }
-}
-
 /// Report the 1:1 draft to `to` after each edit: whether it holds text.
 /// The backend decides what the peer sees (the start, its refresh, the
 /// idle stop; plan E2.3), so the window keeps no typing state. Typing is
