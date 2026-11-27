@@ -216,7 +216,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install sqlfluff
-        run: pip install sqlfluff
+        run: pip install --require-hashes --no-deps -r .github/requirements/sqlfluff.txt
 
       - name: sqlfluff lint
         run: sqlfluff lint crates/rekindle-db/schema/
