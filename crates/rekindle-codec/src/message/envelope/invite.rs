@@ -134,10 +134,7 @@ fn signable_bytes(
     });
     let json = serde_json::to_vec(&signable).unwrap_or_default();
     let domain = rekindle_types::domains::FRIEND_INVITE_SIG.as_bytes();
-    let mut bytes = Vec::with_capacity(domain.len() + json.len());
-    bytes.extend_from_slice(domain);
-    bytes.extend_from_slice(&json);
-    bytes
+    [domain, json.as_slice()].concat()
 }
 
 /// Verify the Ed25519 signature on an invite blob.

@@ -157,7 +157,7 @@ pub async fn enqueue_when_ready(
             tracing::debug!(to = %to, ?kind, reason = %e, "frame committed to wait");
             encode(&Framed::Pending {
                 type_id: kind.as_u16(),
-                body: body.encode(),
+                body: body.encode()?,
             })?
         }
         Err(e) => return Err(e),
@@ -277,6 +277,7 @@ pub(crate) fn refuses(e: &rekindle_records::port::PortError) -> bool {
             | PortError::MessageTooLarge { .. }
             | PortError::KeyText(_)
             | PortError::Codec(_)
+            | PortError::TooLargeToEncode(_)
             | PortError::Crypto(_)
     )
 }

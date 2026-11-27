@@ -422,7 +422,7 @@
   }
 
   .invite-create-form,
-  .profile-popup-edit-image-row {
+  .profile-editor-image-row {
     align-items: center;
     display: flex;
     flex-wrap: wrap;
@@ -519,7 +519,7 @@
   }
 
   .profile-popup-action-btn,
-  .profile-popup-edit-btn {
+  .profile-editor-btn {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
     border-radius: 3px;
     border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
@@ -540,8 +540,11 @@
     justify-content: space-between;
     padding: 2px 12px;
   }
+  /* The community profile editor fills its dialog's body (it had a top
+   * rule to part it from the card when it grew inside the popup). */
   .onboarding-options,
-  .stage-panel-heading {
+  .stage-panel-heading,
+  .profile-editor-form {
     display: flex;
     flex-direction: column;
     gap: 6px;

@@ -203,7 +203,37 @@ impl Scope<'_> {
         top: bool,
         out: &mut Vec<(PathBuf, bool, bool)>,
     ) {
+        // A `macro_rules!` that declares `mod $name;` (a peer-input crate's
+        // panic-lint module macro, `cargo xtask check-panic-lints`): each call
+        // `m!(name)` declares a shipped module `name`.
+        let module_macros: Vec<String> = items
+            .iter()
+            .filter_map(|i| match i {
+                syn::Item::Macro(m) => m.ident.as_ref().filter(|_| {
+                    let body: String = m.mac.tokens.to_string().split_whitespace().collect();
+                    body.contains("mod$")
+                }),
+                _ => None,
+            })
+            .map(ToString::to_string)
+            .collect();
         for item in items {
+            if let syn::Item::Macro(call) = item {
+                let declares = call.ident.is_none()
+                    && call
+                        .mac
+                        .path
+                        .segments
+                        .last()
+                        .is_some_and(|s| module_macros.contains(&s.ident.to_string()));
+                if let Some(name) = declares
+                    .then(|| call.mac.parse_body::<syn::Ident>().ok())
+                    .flatten()
+                {
+                    self.file_module(dir, &name.to_string(), test, out);
+                }
+                continue;
+            }
             let syn::Item::Mod(m) = item else {
                 continue;
             };
@@ -215,13 +245,24 @@ impl Scope<'_> {
                 let base = if top { self.file_dir } else { dir };
                 out.push((normalise(&base.join(p)), test, true));
             } else {
-                let file = dir.join(format!("{name}.rs"));
-                if self.sources.contains_key(&file) {
-                    out.push((file, test, false));
-                } else {
-                    out.push((dir.join(&name).join("mod.rs"), test, true));
-                }
+                self.file_module(dir, &name, test, out);
             }
+        }
+    }
+
+    /// Push the file of module `name` declared without `#[path]` in `dir`.
+    fn file_module(
+        &self,
+        dir: &Path,
+        name: &str,
+        test: bool,
+        out: &mut Vec<(PathBuf, bool, bool)>,
+    ) {
+        let file = dir.join(format!("{name}.rs"));
+        if self.sources.contains_key(&file) {
+            out.push((file, test, false));
+        } else {
+            out.push((dir.join(name).join("mod.rs"), test, true));
         }
     }
 }

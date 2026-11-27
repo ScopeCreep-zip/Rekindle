@@ -57,10 +57,11 @@ fn open_entry(key: &GroupSenderKey, writer: &str, seq: u64) -> ChainEntry {
         lobby_id: [0xab; 16],
         game_id: 4181,
     });
-    let content = sender_key::seal(key, GID, writer, &inner(&body, 1_000 + seq, seq)).unwrap();
+    let content =
+        sender_key::seal(key, GID, writer, &inner(&body, 1_000 + seq, seq).unwrap()).unwrap();
     ChainEntry {
         seq,
-        ciphertext: DirectBody::GroupContent(content).encode(),
+        ciphertext: DirectBody::GroupContent(content).encode().unwrap(),
     }
 }
 

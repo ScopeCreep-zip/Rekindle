@@ -46,7 +46,7 @@ pub(super) fn read_community_successor(
 pub(super) fn write_community_successor(
     mut p: community_successor_entry::Builder<'_>,
     s: &CommunitySuccessor,
-) {
+) -> Result<(), CodecError> {
     p.set_new_anchor(s.new_anchor.as_deref().unwrap_or_default());
     p.set_invites_record(s.invites_record.as_deref().unwrap_or_default());
     p.set_reason(match s.reason {
@@ -62,11 +62,12 @@ pub(super) fn write_community_successor(
     if let Some(accepts) = &s.accepts {
         write_op_ref(p.reborrow().init_accepts(), accepts);
     }
-    let n = u32::try_from(s.links.len()).unwrap_or(u32::MAX);
+    let n = crate::capnp_codec::wire_len(s.links.len())?;
     let mut links = p.init_links(n);
     for (i, link) in (0..n).zip(&s.links) {
         write_creator_link(links.reborrow().get(i), link);
     }
+    Ok(())
 }
 
 fn read_creator_link(l: creator_link::Reader<'_>) -> Result<CreatorLink, CodecError> {
@@ -102,14 +103,15 @@ pub(super) fn read_link_request(
 pub(super) fn write_link_request(
     mut p: successor_link_request_entry::Builder<'_>,
     r: &SuccessorLinkRequest,
-) {
+) -> Result<(), CodecError> {
     write_op_ref(p.reborrow().init_offer(), &r.offer);
     p.set_new_anchor(r.new_anchor.as_str());
-    let n = u32::try_from(r.asked.len()).unwrap_or(u32::MAX);
+    let n = crate::capnp_codec::wire_len(r.asked.len())?;
     let mut asked = p.init_asked(n);
     for (i, k) in (0..n).zip(&r.asked) {
         asked.set(i, &k.0);
     }
+    Ok(())
 }
 
 /// A co-creator's link answering a request (lead decision (46)).

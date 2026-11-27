@@ -24,7 +24,7 @@ fn frame(set: Retire) -> Vec<u8> {
     let mut builder = capnp::message::Builder::new_default();
     let root = builder.init_root::<community_envelope::Builder<'_>>();
     set(root.init_control());
-    pack(&builder)
+    pack(&builder).unwrap()
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn a_frame_with_the_retired_presence_arm_is_not_acted_on() {
     let mut builder = capnp::message::Builder::new_default();
     let mut root = builder.init_root::<community_envelope::Builder<'_>>();
     root.set_obsolete2(());
-    let bytes = pack(&builder);
+    let bytes = pack(&builder).unwrap();
     assert!(
         matches!(
             decode_community_envelope(&bytes),

@@ -21,7 +21,7 @@ async function memberRow(name: string): Promise<Awaited<ReturnType<typeof browse
 
 /** An edit field in our profile's form, by its label's words. */
 async function editField(label: string): Promise<Awaited<ReturnType<typeof browser.$>>> {
-  const field = (await byText(browser, ".profile-popup-edit-label", label)).$("input, textarea");
+  const field = (await byText(browser, ".profile-editor-label", label)).$("input, textarea");
   return field;
 }
 
@@ -49,7 +49,7 @@ describe("our card in a community (E3.4 S6)", function () {
     await press(browser, await byText(browser, ".profile-popup-action-btn", "Edit profile"));
     await typeInto(await editField("Bio"), BIO);
     await typeInto(await editField("Custom status"), STATUS);
-    await press(browser, await shown(browser, '.profile-popup-edit-actions button[type="submit"]'));
+    await press(browser, await shown(browser, '.profile-editor-actions button[type="submit"]'));
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 3000 });
     await byText(browser, ".member-item .member-custom-status", STATUS, NET_WAIT_MS);
     await browser.keys("Escape");

@@ -19,7 +19,10 @@ fn signed() -> (SignedGenesis, SigningKey) {
     cert.additional_creators = vec![PseudonymKey([2; 32]), PseudonymKey([3; 32])];
     cert.predecessor = Some("VLD0:old".into());
     let anchor_owner = k_a.verifying_key().to_bytes();
-    let message = genesis_signing_bytes(ANCHOR, &genesis_unsigned_bytes(&cert, &anchor_owner));
+    let message = genesis_signing_bytes(
+        ANCHOR,
+        &genesis_unsigned_bytes(&cert, &anchor_owner).unwrap(),
+    );
     let signed = SignedGenesis {
         anchor_sig: k_a.sign(&message).to_bytes(),
         creator_sig: creator.sign(&message).to_bytes(),

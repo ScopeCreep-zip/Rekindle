@@ -48,25 +48,29 @@ pub struct PreJoinInvite {
 impl PreJoinInvite {
     /// Append `0x00`, or `0x01 ‖ len ‖ code hash`, to a request's signed
     /// bytes.
-    pub(crate) fn put(invite: Option<&Self>, out: &mut Vec<u8>) {
+    pub(crate) fn put(invite: Option<&Self>, out: &mut Vec<u8>) -> Result<(), CodecError> {
         match invite {
             None => out.push(0),
             Some(invite) => {
                 out.push(1);
-                put_lp(out, invite.code_hash.as_bytes());
+                put_lp(out, invite.code_hash.as_bytes())?;
             }
         }
+        Ok(())
     }
 
     /// The invite of `code` for a request whose signed bytes, once it names
     /// the code's lookup id, `signed` returns.
-    pub(crate) fn of_code(code: &str, signed: impl FnOnce(&Self) -> Vec<u8>) -> Self {
+    pub(crate) fn of_code(
+        code: &str,
+        signed: impl FnOnce(&Self) -> Result<Vec<u8>, CodecError>,
+    ) -> Result<Self, CodecError> {
         let mut invite = Self {
             code_hash: hash_invite_code(code),
             tag: [0; 32],
         };
-        invite.tag = pre_join_read_tag(code, &signed(&invite));
-        invite
+        invite.tag = pre_join_read_tag(code, &signed(&invite)?);
+        Ok(invite)
     }
 
     /// Whether `code` is this invite's code and tagged `signed`.
@@ -120,33 +124,34 @@ impl PreJoinInvite {
 /// the tag a joiner puts on it and the inviter checks.
 pub trait PreJoinRequest: Clone {
     /// The bytes the requester signs, which name the invite's code hash.
-    fn signed_bytes(&self) -> Vec<u8>;
+    fn signed_bytes(&self) -> Result<Vec<u8>, CodecError>;
     /// The invite a joiner's request carries.
     fn invite_slot(&mut self) -> &mut Option<PreJoinInvite>;
     /// The invite, read-only.
     fn invite_ref(&self) -> Option<&PreJoinInvite>;
 
     /// This request as a joiner holding the invite `code` asks it.
-    #[must_use]
-    fn with_invite_code(mut self, code: &str) -> Self {
+    fn with_invite_code(mut self, code: &str) -> Result<Self, CodecError> {
         let invite = PreJoinInvite::of_code(code, |invite| {
             let mut named = self.clone();
             *named.invite_slot() = Some(invite.clone());
             named.signed_bytes()
-        });
+        })?;
         *self.invite_slot() = Some(invite);
-        self
+        Ok(self)
     }
 
     /// Whether this request carries the invite `code`'s tag.
-    #[must_use]
-    fn invite_proven_by(&self, code: &str) -> bool {
-        (self.invite_ref()).is_some_and(|invite| invite.proven_by(code, &self.signed_bytes()))
+    fn invite_proven_by(&self, code: &str) -> Result<bool, CodecError> {
+        let Some(invite) = self.invite_ref() else {
+            return Ok(false);
+        };
+        Ok(invite.proven_by(code, &self.signed_bytes()?))
     }
 }
 
 impl PreJoinRequest for CheckpointStateRequest {
-    fn signed_bytes(&self) -> Vec<u8> {
+    fn signed_bytes(&self) -> Result<Vec<u8>, CodecError> {
         self.signing_bytes()
     }
     fn invite_slot(&mut self) -> &mut Option<PreJoinInvite> {
@@ -173,15 +178,15 @@ pub struct CheckpointStateRequest {
 }
 
 impl CheckpointStateRequest {
-    fn signing_bytes(&self) -> Vec<u8> {
+    fn signing_bytes(&self) -> Result<Vec<u8>, CodecError> {
         let mut out = domains::CHECKPOINT_STATE_REQUEST.as_bytes().to_vec();
-        put_lp(&mut out, self.community.as_bytes());
+        put_lp(&mut out, self.community.as_bytes())?;
         out.extend_from_slice(&self.height.to_be_bytes());
         out.extend_from_slice(&self.digest);
         out.extend_from_slice(&self.offset.to_be_bytes());
         out.extend_from_slice(&self.requester);
-        PreJoinInvite::put(self.invite.as_ref(), &mut out);
-        out
+        PreJoinInvite::put(self.invite.as_ref(), &mut out)?;
+        Ok(out)
     }
 
     /// Sign by the requester's pseudonym `key` and encode.
@@ -197,7 +202,7 @@ impl CheckpointStateRequest {
         }
         check_len("community id", self.community.len(), MAX_COMMUNITY)?;
         let (code_hash, tag) = PreJoinInvite::wire(self.invite.as_ref())?;
-        let sig = sign(key, &self.signing_bytes());
+        let sig = sign(key, &self.signing_bytes()?);
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut b = builder.init_root::<checkpoint_state_request::Builder<'_>>();
@@ -210,7 +215,7 @@ impl CheckpointStateRequest {
             b.set_invite_code_hash(code_hash);
             b.set_invite_tag(tag);
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size(
             "checkpoint state request",
             &out,
@@ -253,7 +258,7 @@ pub fn decode_checkpoint_state_request(data: &[u8]) -> Result<CheckpointStateReq
     };
     verify(
         &request.requester,
-        &request.signing_bytes(),
+        &request.signing_bytes()?,
         b.get_sig().map_err(|e| capnp_err(&e))?,
         "checkpoint state request",
     )?;
@@ -281,7 +286,7 @@ impl CheckpointStateResponse {
             b.set_total(self.total);
             b.set_bytes(&self.bytes);
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size(
             "checkpoint state response",
             &out,

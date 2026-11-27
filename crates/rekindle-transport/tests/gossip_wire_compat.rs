@@ -62,7 +62,7 @@ fn a_broadcast_round_trips_through_the_shared_format() {
     let key = signing_key();
     let envelope_bytes = encode_community_envelope(&broadcast()).expect("encode inner");
     let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), [7u8; 16], &envelope_bytes);
-    let wire = gossip_datagram(&signed);
+    let wire = gossip_datagram(&signed).unwrap();
 
     let received = receive(&wire);
     verify_envelope(&received).expect("signature must verify");
@@ -115,7 +115,7 @@ fn watch_relay_crosses_the_wire() {
 
     let envelope_bytes = encode_community_envelope(&envelope).expect("encode");
     let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), [7u8; 16], &envelope_bytes);
-    let wire = gossip_datagram(&signed);
+    let wire = gossip_datagram(&signed).unwrap();
 
     let received = receive(&wire);
     verify_envelope(&received).expect("verify");
