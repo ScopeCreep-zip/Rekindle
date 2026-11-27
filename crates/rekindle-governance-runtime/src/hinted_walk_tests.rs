@@ -41,6 +41,7 @@ fn snapshot_at(world: &World, heads: &[OpRef]) -> (Checkpoint, CutSnapshot) {
         cert: &world.cert,
         ops: &world.set.ops,
         community_id: [7; 32],
+        anchor: ANCHOR,
     };
     let body = replay.body(None, heads).expect("a body");
     let (state, cut) = merge_cut(&world.cert, &causal_past(&world.set.ops, &body.cut));
@@ -436,14 +437,26 @@ fn an_equivocated_community_uses_no_hint() {
         &frontier(&world),
     )
     .expect("on top");
-    assert!(!equivocates(&world.cert, None, 1, &resumed.gathered.rest));
+    assert!(!equivocates(
+        &world.cert,
+        ANCHOR,
+        None,
+        1,
+        &resumed.gathered.rest
+    ));
     let mut other = cp_body(&cp).clone();
     other.round = 1;
     other.state_root = [9; 32];
     world.endorse(&creator, other);
     let store = Store::of(&world);
     let resumed = resume(&world, &store, &[snap], &frontier(&world)).expect("on top");
-    assert!(equivocates(&world.cert, None, 1, &resumed.gathered.rest));
+    assert!(equivocates(
+        &world.cert,
+        ANCHOR,
+        None,
+        1,
+        &resumed.gathered.rest
+    ));
 }
 
 /// A join racing the checkpoint (plan E3.2 S7c.8 (3)): its deps, taken

@@ -27,6 +27,35 @@ pub struct OpSigner<'a> {
     pub device: &'a SigningKey,
 }
 
+impl<'a> OpSigner<'a> {
+    /// The signer of our op written over `state`, checked before each sign
+    /// (ADR 0022 rule 4, plan E3.2 S7d-keys.9): when `state`'s device set
+    /// holds a `DeviceRetired` of `device` under `author` (another copy of
+    /// this data root, or the user, retired it), this device stops signing
+    /// under it. A retired key is retired for every copy and forever, so
+    /// nothing it signs from here counts; re-enrolment is the
+    /// `ReEnrolDevice` intent's (S7d-keys.10).
+    ///
+    /// # Errors
+    /// [`GovernanceRuntimeError::OwnKeyRetired`], whose text is the notice
+    /// the user is shown.
+    pub fn checked(
+        community: &str,
+        state: &GovernanceState,
+        author: PseudonymKey,
+        device: &'a SigningKey,
+    ) -> Result<Self, GovernanceRuntimeError> {
+        let key = device.verifying_key().to_bytes();
+        match (state.devices.member(&author)).and_then(|md| md.retired_from(&key)) {
+            Some(retired_from) => Err(GovernanceRuntimeError::OwnKeyRetired {
+                community: community.to_owned(),
+                retired_from,
+            }),
+            None => Ok(Self { author, device }),
+        }
+    }
+}
+
 /// This device's op key for `community`. Minted and stored when this
 /// device holds none and `first_op` (the op being written is our
 /// `MemberJoined`, which makes this device its member's first); otherwise
