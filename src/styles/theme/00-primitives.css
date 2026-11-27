@@ -132,19 +132,24 @@
   .buddy-game-text,
   .status-picker .buddy-name,
   .chat-message-sender-other,
-  .chat-message-sender-self {
+  .chat-message-sender-self,
+  .settings-select-value {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* Text fields take the theme's text-field roles (plan ST1: Xfire's
+   * TextFieldBGCG / TextFieldTextCG), outlined in its one control-outline
+   * colour, gated 3:1 on the window ground (WCAG 1.4.11). */
   .form-input,
   .form-select {
-    background-color: var(--color-xfire-bg-input);
+    background-color: var(--color-xfire-input-bg);
     border-radius: 0.25rem;
-    border: 1px solid var(--color-xfire-control-border);
-    color: var(--color-xfire-text);
+    border: 1px solid var(--color-xfire-progress-outline);
+    caret-color: var(--color-xfire-input-text);
+    color: var(--color-xfire-input-text);
     font-family: var(--font-family-xfire);
     font-size: 13px;
     outline: none;
@@ -152,12 +157,108 @@
     width: 100%;
   }
 
-  /* Native checkboxes and radios take the skin's accent (plan E7.7.7: they
-   * drew the platform's own blue under every skin). The engine picks the
-   * check mark's colour against it. */
+  /* Checkboxes and radios are drawn from the theme (plan ST1), never by the
+   * OS (its white box and dot under every skin): the box is a text field's
+   * ground and outline, a checked box the selected fill with the selected
+   * text's mark, a disabled one the disabled text colour. The 24 px target
+   * is the label row each sits in (WCAG 2.5.8). */
   input[type="checkbox"],
   input[type="radio"] {
-    accent-color: var(--color-xfire-accent);
+    appearance: none;
+    background-color: var(--color-xfire-input-bg);
+    border: 1px solid var(--color-xfire-progress-outline);
+    border-radius: 3px;
+    display: inline-grid;
+    flex-shrink: 0;
+    height: 16px;
+    margin: 0;
+    place-content: center;
+    width: 16px;
+  }
+
+  input[type="radio"] {
+    border-radius: 50%;
+  }
+
+  input[type="checkbox"]:checked,
+  input[type="radio"]:checked {
+    background-color: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  /* The mark: a tick (two borders of a rotated box) or a dot. */
+  input[type="checkbox"]:checked::after {
+    border: solid var(--color-xfire-selection-text);
+    border-width: 0 2px 2px 0;
+    content: "";
+    height: 8px;
+    transform: translateY(-1px) rotate(45deg);
+    width: 4px;
+  }
+
+  input[type="radio"]:checked::after {
+    background-color: var(--color-xfire-selection-text);
+    border-radius: 50%;
+    content: "";
+    height: 6px;
+    width: 6px;
+  }
+
+  input[type="checkbox"]:disabled,
+  input[type="radio"]:disabled {
+    border-color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+
+  input[type="checkbox"]:disabled:checked,
+  input[type="radio"]:disabled:checked {
+    background-color: var(--color-xfire-text-disabled);
+  }
+
+  /* The range slider is a progress bar's roles (Xfire's ProgBar*CG): its
+   * well and outline, and the fill and thumb; the fill reaches the value the
+   * control sets as --range-fill. */
+  input[type="range"] {
+    appearance: none;
+    background: linear-gradient(to right, var(--color-xfire-progress-fill) var(--range-fill, 0%), var(--color-xfire-progress-bg) var(--range-fill, 0%));
+    border: 1px solid var(--color-xfire-progress-outline);
+    border-radius: 3px;
+    height: 8px;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    background-color: var(--color-xfire-progress-fill);
+    border: 1px solid var(--color-xfire-progress-outline);
+    border-radius: 50%;
+    height: 16px;
+    width: 16px;
+  }
+
+  /* Selected text, as Xfire's text-field highlight: the focused window's
+   * highlight with the selected text colour, the unfocused window's
+   * inactive highlight with the field's own text.
+   *
+   * Both selection grounds are declared just short of opaque, on purpose:
+   * WebKit paints an opaque author ::selection background through
+   * RenderElement::selectionBackgroundColor (RenderElement.cpp) →
+   * RenderTheme::transformSelectionBackgroundColor → blendWithWhite
+   * (ColorBlending.cpp:61), which swaps it for the alpha-204 colour that
+   * matches it over WHITE; over our dark fields that painted (6,78,147) for
+   * (22,123,192). A non-opaque author colour is left alone in both of
+   * WebKit's branches, so the 99.9% mix (inside the build's Safari 16.4
+   * floor) paints the token exactly (settings-theme
+   * asserts the pixels). Do not "simplify" it back to the bare token. */
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-xfire-input-selection-bg) 99.9%, transparent);
+    color: var(--color-xfire-selection-text);
+  }
+
+  /* The unfocused window's selection: keyed on the window's focus state
+   * (window_focus.ts), since the build drops ::selection:window-inactive. */
+  :root[data-window-focus="inactive"] ::selection {
+    background-color: color-mix(in srgb, var(--color-xfire-input-selection-bg-inactive) 99.9%, transparent);
+    color: var(--color-xfire-input-text);
   }
 
   .form-row,

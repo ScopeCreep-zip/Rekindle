@@ -161,7 +161,7 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (10 made)
+Contrast changes (minimal Oklab-lightness walk) (11 made)
   control-border: #6b6b6b -> #6e6e6e (1.4.11 control-border on bg.panel: 2.89:1 -> 3.02:1, required 3.00:1)
   bg.primary: #151a1e -> #090d11 (D4 text.on-fill on status.online 60.0% over bg.dark: 4.22:1 -> passes, required 4.50:1)
   accent.text: #3491d8 -> #3692d9 (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.44:1 -> passes, required 4.50:1)
@@ -172,3 +172,4 @@ Contrast changes (minimal Oklab-lightness walk) (10 made)
   status.offline-text: #929292 -> #969696 (1.4.3 .invite-status-badge status.offline-text on status.offline 12% over bg.panel: 4.29:1 -> passes, required 4.50:1)
   text.timestamp: #a1a1a1 -> #a5a5a5 (1.4.3 .notification-time text.timestamp on bg.panel: 4.35:1 -> 6.26:1, required 4.50:1)
   status.away-text: #ffcc00 -> #ffd41e (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.panel: 4.27:1 -> passes, required 4.50:1)
+  titlebar.start: #104469 -> #00385d (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 4.04:1 -> 4.53:1, required 4.50:1)

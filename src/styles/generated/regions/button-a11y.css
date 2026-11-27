@@ -42,6 +42,7 @@
       border-image: var(--skin-region-button-primary--disabled--still, var(--skin-region-button-primary--disabled, var(--skin-region-button-primary--still, var(--skin-region-button-primary))));
     }
   }
+
   @media (forced-colors: active) {
     .form-btn-secondary,
     :where(:root[data-window-inactive]) .form-btn-secondary,

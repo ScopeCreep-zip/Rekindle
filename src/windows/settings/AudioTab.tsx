@@ -1,11 +1,18 @@
-import { type Component, onMount, For, Show, createUniqueId } from "solid-js";
+import { type Component, onMount, For, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
+import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { commands } from "../../ipc/commands";
+import type { AudioDeviceInfo } from "../../ipc/commands";
+
+/** A device list's choices: "" is the system default, then each device,
+ *  the one the system uses marked "(default)". */
+const deviceOptions = (devices: AudioDeviceInfo[]): SettingsSelectOption[] => [
+  { value: "", label: "System Default" },
+  ...devices.map((d) => ({ value: d.id, label: `${d.name}${d.isDefault ? " (default)" : ""}` })),
+];
 
 const AudioTab: Component = () => {
-  const inputDeviceId = createUniqueId();
-  const outputDeviceId = createUniqueId();
   // Plan §Failure 1 — load enumerated audio devices + the persisted
   // selection when the audio tab opens. Which device a call opens when the
   // saved one is missing is the backend's decision (plan C7.24).
@@ -71,26 +78,17 @@ const AudioTab: Component = () => {
   return (
     <>
       <div class="settings-section-title">Audio Devices</div>
-      <FormField label="Input Device" controlId={inputDeviceId}>
-        <select
-          id={inputDeviceId}
-          class="form-select"
+      <FormField label="Input Device" labelId="settings-input-device-label">
+        <SettingsSelect
+          labelledBy="settings-input-device-label"
           value={settingsState.selectedInputDevice ?? ""}
-          onChange={(e) => {
-            const next = e.currentTarget.value || null;
+          onChange={(value) => {
+            const next = value || null;
             setSettingsState("selectedInputDevice", next);
             void persistAudioSelection();
           }}
-        >
-          <option value="">System Default</option>
-          <For each={settingsState.inputDevices}>
-            {(d) => (
-              <option value={d.id}>
-                {d.name}{d.isDefault ? " (default)" : ""}
-              </option>
-            )}
-          </For>
-        </select>
+          options={deviceOptions(settingsState.inputDevices)}
+        />
       </FormField>
       <Show when={(inputDevice()?.channels ?? 0) > 1 && inputDevice()}>
         {(device) => (
@@ -110,26 +108,17 @@ const AudioTab: Component = () => {
           </FormField>
         )}
       </Show>
-      <FormField label="Output Device" controlId={outputDeviceId}>
-        <select
-          id={outputDeviceId}
-          class="form-select"
+      <FormField label="Output Device" labelId="settings-output-device-label">
+        <SettingsSelect
+          labelledBy="settings-output-device-label"
           value={settingsState.selectedOutputDevice ?? ""}
-          onChange={(e) => {
-            const next = e.currentTarget.value || null;
+          onChange={(value) => {
+            const next = value || null;
             setSettingsState("selectedOutputDevice", next);
             void persistAudioSelection();
           }}
-        >
-          <option value="">System Default</option>
-          <For each={settingsState.outputDevices}>
-            {(d) => (
-              <option value={d.id}>
-                {d.name}{d.isDefault ? " (default)" : ""}
-              </option>
-            )}
-          </For>
-        </select>
+          options={deviceOptions(settingsState.outputDevices)}
+        />
       </FormField>
       <div class="settings-hint">
         Changes take effect immediately during a call; saved otherwise.

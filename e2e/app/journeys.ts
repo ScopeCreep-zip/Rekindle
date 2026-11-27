@@ -4,7 +4,7 @@
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { CHANNEL_COMPOSER, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, communityWindowLabel, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { BUDDY, LOGIN, chooseSetting, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, settingShown, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
 
@@ -38,8 +38,8 @@ export async function createIdentity(b: Browser, user: User, opts: { keepAutoAwa
   if (!opts.keepAutoAway) await autoAwayOff(b, user);
 }
 
-/** Settings > Application's auto-away select. */
-const AUTO_AWAY = '//div[contains(@class,"form-field")][.//label[contains(.,"Go away after inactivity")]]//select';
+/** Settings > Application's auto-away select (ApplicationTab.tsx). */
+const AUTO_AWAY = "settings-auto-away-label";
 
 /**
  * Turn `user`'s auto-away off (Settings > Application > "Disabled", the
@@ -51,14 +51,14 @@ const AUTO_AWAY = '//div[contains(@class,"form-field")][.//label[contains(.,"Go 
  */
 export async function autoAwayOff(b: Browser, user: User): Promise<void> {
   await openSettings(b, "Application");
-  await setValue(b, AUTO_AWAY, "0");
+  await chooseSetting(b, AUTO_AWAY, "Disabled");
   // Under load the review can come late, and an unanswered one drops the
   // change (it read back "10 minutes"); the read-back below proves it.
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 10_000 });
   await closeSettings(b);
   await openSettings(b, "Application");
   await waitUntil(
-    async () => (await (await b.$(AUTO_AWAY)).getValue()) === "0",
+    async () => (await settingShown(b, AUTO_AWAY)) === "Disabled",
     NET_WAIT_MS,
     `${user.displayName}'s auto-away did not read back Disabled`,
   );
@@ -504,7 +504,7 @@ export async function openGroup(b: Browser, name: string): Promise<void> {
 }
 
 /** In the open community window, open Community Settings on `tab`. */
-async function communitySettings(b: Browser, tab: string): Promise<void> {
+export async function communitySettings(b: Browser, tab: string): Promise<void> {
   if (!(await present(b, ".modal-container .form-tabs"))) {
     await (await shown(b, '[title="Community Settings"]')).click();
     await shown(b, ".modal-container .form-tabs");

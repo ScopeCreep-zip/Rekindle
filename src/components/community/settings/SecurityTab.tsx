@@ -5,12 +5,8 @@ import type { ConfirmOptions } from "./types";
 import { handleRotateMek } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import { commands, type CommunityPolicy } from "../../../ipc/commands";
-import {
-  servedPermissions,
-  hasPermission,
-  MANAGE_COMMUNITY,
-} from "../../../ipc/permissions";
 import FormField from "../../common/FormField";
+import { deniedFor } from "../../../utils/denied";
 
 interface SecurityTabProps {
   community: Community;
@@ -36,9 +32,9 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
   const [defaultNotifLevel, setDefaultNotifLevel] = createSignal<"all" | "mentions" | "nothing">("all");
   const [savingDefaultLevel, setSavingDefaultLevel] = createSignal(false);
 
-  const canManageCommunity = createMemo(() =>
-    hasPermission(servedPermissions(props.community), MANAGE_COMMUNITY),
-  );
+  // Never-hide: each section is drawn; one we may not change is disabled
+  // with the Host's reason.
+  const manageDenied = createMemo(() => deniedFor(props.community, "manageSecurity"));
 
   // Architecture §15 — Plate Gate scaling: when segment 0 (or the
   // highest segment) is full, an admin can write a SegmentAdded
@@ -160,7 +156,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
       </FormField>
 
       {/* Architecture §17.1 tier 2 — community-wide default notification level. */}
-      <Show when={canManageCommunity()}>
+      <fieldset class="settings-fieldset" disabled={manageDenied() !== null} title={manageDenied() ?? undefined} aria-description={manageDenied() ?? undefined}>
         <FormField label="Default Notifications (community-wide)" controlId={defaultNotificationsId}>
           <div class="settings-hint">
             Sets the default notification level for every channel in this
@@ -179,10 +175,10 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             <option value="nothing">Nothing</option>
           </select>
         </FormField>
-      </Show>
+      </fieldset>
 
       {/* Architecture §10.7 + §20.6 — policy editor. */}
-      <Show when={canManageCommunity()}>
+      <fieldset class="settings-fieldset" disabled={manageDenied() !== null} title={manageDenied() ?? undefined} aria-description={manageDenied() ?? undefined}>
         <FormField label="Raid-protection thresholds (architecture §20.6)">
           <div class="settings-hint">
             Each peer alerts moderators when joins exceed
@@ -222,10 +218,10 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             {savingPolicy() ? "Saving..." : "Save policy"}
           </button>
         </FormField>
-      </Show>
+      </fieldset>
 
       {/* Architecture §15 — Plate Gate admin expansion. */}
-      <Show when={canManageCommunity()}>
+      <fieldset class="settings-fieldset" disabled={manageDenied() !== null} title={manageDenied() ?? undefined} aria-description={manageDenied() ?? undefined}>
         <FormField label="Membership Capacity">
           <div class="settings-hint">
             Each segment holds 255 member slots. When the highest
@@ -247,7 +243,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             {expanding() ? "Expanding..." : "Expand to new segment"}
           </button>
         </FormField>
-      </Show>
+      </fieldset>
     </div>
   );
 };

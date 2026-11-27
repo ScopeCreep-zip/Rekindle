@@ -403,6 +403,7 @@ fn an_endorser_recomputes_the_identical_body_before_signing() {
         cert: &c,
         ops: &ops,
         community_id: [3; 32],
+        anchor: crate::fixture::FIXTURE_ANCHOR,
     };
     let built = replay
         .body(None, &[c1.op_ref("VLD0:fixture")])

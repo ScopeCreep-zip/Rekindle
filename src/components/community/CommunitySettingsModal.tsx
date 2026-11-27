@@ -10,10 +10,8 @@ import {
   MANAGE_ROLES,
   KICK_MEMBERS,
   BAN_MEMBERS,
-  MODERATE_MEMBERS,
   CREATE_INVITES,
   VIEW_AUDIT_LOG,
-  VIEW_INSIGHTS,
   MANAGE_EXPRESSIONS,
 } from "../../ipc/permissions";
 import OverviewTab from "./settings/OverviewTab";
@@ -31,6 +29,8 @@ import WelcomeTab from "./settings/WelcomeTab";
 import ExpressionsTab from "./settings/ExpressionsTab";
 
 import type { ConfirmOptions } from "./settings/types";
+import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
+import { deniedFor } from "../../utils/denied";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;
@@ -52,10 +52,8 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const canManageRoles = createMemo(() => hasPermission(myPerms(), MANAGE_ROLES));
   const canKick = createMemo(() => hasPermission(myPerms(), KICK_MEMBERS));
   const canBan = createMemo(() => hasPermission(myPerms(), BAN_MEMBERS));
-  const canModerate = createMemo(() => hasPermission(myPerms(), MODERATE_MEMBERS));
   const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INVITES));
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
-  const canViewInsights = createMemo(() => hasPermission(myPerms(), VIEW_INSIGHTS));
   const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
 
   const isAdmin = createMemo(() =>
@@ -63,34 +61,25 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
       || canManageExpressions()
   );
 
-  const tabs = createMemo((): { id: TabId; label: string }[] => {
-    if (!isAdmin()) {
-      // Non-admins see read-only overview + members, plus their own
-      // privacy/presence consent (a personal setting, not moderation).
-      return [
-        { id: "overview", label: "Overview" },
-        { id: "members", label: "Members" },
-        { id: "privacy", label: "Privacy" },
-      ];
-    }
-
-    const base: { id: TabId; label: string }[] = [
-      { id: "overview", label: "Overview" },
-      { id: "channels", label: "Channels" },
-      { id: "members", label: "Members" },
-      { id: "privacy", label: "Privacy" },
+  // Never-hide: every tab is listed; one we may not open is disabled with
+  // the Host's reason (`denied`), never left out. The bits decide nothing.
+  const tabs = createMemo((): { id: TabId; label: string; denied: string | null }[] => {
+    const why = (cap: CommunityCapability): string | null => deniedFor(props.community, cap);
+    return [
+      { id: "overview", label: "Overview", denied: null },
+      { id: "channels", label: "Channels", denied: why("manageChannels") },
+      { id: "members", label: "Members", denied: null },
+      { id: "privacy", label: "Privacy", denied: null },
+      { id: "invites", label: "Invites", denied: why("createInvite") },
+      { id: "roles", label: "Roles", denied: why("manageRoles") },
+      { id: "bans", label: "Bans", denied: why("banMembers") },
+      { id: "welcome", label: "Welcome", denied: why("manageWelcome") },
+      { id: "expressions", label: "Emoji", denied: why("manageExpressions") },
+      { id: "automod", label: "AutoMod", denied: why("manageAutomod") },
+      { id: "analytics", label: "Analytics", denied: why("viewInsights") },
+      { id: "audit-log", label: "Audit Log", denied: why("viewAuditLog") },
+      { id: "security", label: "Security", denied: why("manageSecurity") },
     ];
-    if (canCreateInvite() || canManageCommunity()) base.push({ id: "invites", label: "Invites" });
-    if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
-    if (canBan()) base.push({ id: "bans", label: "Bans" });
-    if (canManageCommunity()) base.push({ id: "welcome", label: "Welcome" });
-    if (canManageExpressions()) base.push({ id: "expressions", label: "Emoji" });
-    if (canManageCommunity()) base.push({ id: "automod", label: "AutoMod" });
-    if (canViewInsights()) base.push({ id: "analytics", label: "Analytics" });
-    // Merge audit log into security for admins; show standalone if only audit log perm
-    if (canViewAuditLog() && !canManageCommunity()) base.push({ id: "audit-log", label: "Audit Log" });
-    if (canManageCommunity()) base.push({ id: "security", label: "Security" });
-    return base;
   });
 
   createEffect(() => {
@@ -114,6 +103,9 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
             <button
               type="button"
               class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
+              disabled={tab.denied !== null}
+              title={tab.denied ?? undefined}
+              aria-description={tab.denied ?? undefined}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -124,7 +116,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
 
       <div class="settings-content">
         <Show when={activeTab() === "overview"}>
-          <OverviewTab community={props.community} canManage={canManageCommunity()} />
+          <OverviewTab community={props.community} manageDenied={deniedFor(props.community, "manageCommunity")} />
         </Show>
         <Show when={activeTab() === "channels"}>
           <ChannelsTab community={props.community} canManageChannels={canManageChannels()} />
@@ -132,16 +124,14 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         <Show when={activeTab() === "members"}>
           <MembersTab
             community={props.community}
-            canManageRoles={canManageRoles()}
-            canModerate={canModerate()}
-            canManageCommunity={canManageCommunity()}
+            manageDenied={deniedFor(props.community, "manageCommunity")}
           />
         </Show>
         <Show when={activeTab() === "invites"}>
           <InvitesTab
             communityId={props.community.id}
             canCreateInvite={canCreateInvite()}
-            canManage={canManageCommunity()}
+            revokeDenied={deniedFor(props.community, "manageCommunity")}
           />
         </Show>
         <Show when={activeTab() === "roles"}>

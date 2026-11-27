@@ -40,8 +40,13 @@ interface MessageListProps {
   onForward?: (messageId: string) => void;
   onLoadOlder?: () => void;
   isLoadingOlder?: boolean;
-  /** True when the viewer holds MANAGE_MESSAGES — enables the bulk-delete entry button. */
-  canBulkDelete?: boolean;
+  /** The bulk-delete entry, in a community channel: null when we may moderate
+   *  messages here, else the Host's reason (drawn disabled with it, never
+   *  hidden). Absent where there is no such entry (a DM). */
+  bulkDeleteDenied?: string | null;
+  /** A moderator's remove on another member's post: null when we may, else the
+   *  Host's reason (drawn disabled with it). Only with `onAdminDelete`. */
+  adminDeleteDenied?: string | null;
   /** Invoked with the selected ids when the moderator confirms bulk delete. */
   onBulkDelete?: (messageIds: string[]) => void;
   /**
@@ -171,13 +176,15 @@ const MessageList: Component<MessageListProps> = (props) => {
           </button>
         </div>
       </Show>
-      <Show when={!selectionActive() && props.canBulkDelete && props.channelId}>
+      <Show when={!selectionActive() && props.bulkDeleteDenied !== undefined && props.channelId}>
         <div class="message-list-mod-toolbar">
           <button
             type="button"
             class="message-list-mod-btn"
             onClick={handleEnterSelection}
-            title="Enter bulk-delete selection mode"
+            disabled={props.bulkDeleteDenied != null}
+            title={props.bulkDeleteDenied ?? "Enter bulk-delete selection mode"}
+            aria-description={props.bulkDeleteDenied ?? undefined}
           >
             Select messages…
           </button>
@@ -230,6 +237,7 @@ const MessageList: Component<MessageListProps> = (props) => {
               onEdit={selectionActive() ? undefined : props.onEdit}
               onDelete={selectionActive() ? undefined : props.onDelete}
               onAdminDelete={selectionActive() ? undefined : props.onAdminDelete}
+              adminDeleteDenied={props.adminDeleteDenied ?? null}
               onVotePoll={selectionActive() ? undefined : props.onVotePoll}
               onClosePoll={selectionActive() ? undefined : props.onClosePoll}
               onForward={selectionActive() ? undefined : props.onForward}

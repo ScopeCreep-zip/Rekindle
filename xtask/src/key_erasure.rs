@@ -14,8 +14,8 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use syn::visit::Visit;
 
+use crate::test_code::is_test_attr;
 use crate::walk_source_files;
-use crate::wall_clock::{is_test_attr, is_test_file};
 
 /// `rekindle_db::erase::KEY_MATERIAL_TABLES`, read from its source so the
 /// two never disagree.
@@ -121,6 +121,7 @@ pub(crate) fn check_key_erasure(root: &Path) -> Result<()> {
         return Err(anyhow!("{ERASE_FILE}: KEY_MATERIAL_TABLES not found"));
     }
     let mut dirs = vec![root.join("src-tauri/src")];
+    let tests = crate::test_code::TestCode::load(root)?;
     for entry in std::fs::read_dir(root.join("crates"))? {
         dirs.push(entry?.path().join("src"));
     }
@@ -132,7 +133,7 @@ pub(crate) fn check_key_erasure(root: &Path) -> Result<()> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if is_test_file(&rel) || rel == ERASE_FILE {
+            if tests.is_test(&path) || rel == ERASE_FILE {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {
@@ -154,29 +155,5 @@ pub(crate) fn check_key_erasure(root: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{key_tables, scan};
-
-    fn tables() -> Vec<String> {
-        key_tables("pub const KEY_MATERIAL_TABLES: [&str; 2] = [\n \"ratchet_sessions\",\n \"signal_prekeys\",\n];")
-    }
-
-    #[test]
-    fn a_key_delete_outside_the_helper_is_refused() {
-        let raw = "fn f(c: &C) { c.execute(\"DELETE FROM ratchet_sessions WHERE x = 1\", []); }";
-        assert_eq!(scan("crates/x/src/lib.rs", raw, &tables()).len(), 1);
-        let split = "fn f(c: &C) { c.execute(\"DELETE FROM signal_prekeys \\\n WHERE x\", []); }";
-        assert_eq!(scan("crates/x/src/lib.rs", split, &tables()).len(), 1);
-    }
-
-    #[test]
-    fn the_helper_and_other_tables_pass() {
-        let helper =
-            "fn f(c: &C) { crate::erase::delete(c, \"DELETE FROM ratchet_sessions\", []); }";
-        assert!(scan("crates/x/src/lib.rs", helper, &tables()).is_empty());
-        let other = "fn f(c: &C) { c.execute(\"DELETE FROM ratchet_sessions_log\", []); }";
-        assert!(scan("crates/x/src/lib.rs", other, &tables()).is_empty());
-        let test = "#[cfg(test)] mod t { fn f() { x(\"DELETE FROM ratchet_sessions\"); } }";
-        assert!(scan("crates/x/src/lib.rs", test, &tables()).is_empty());
-    }
-}
+#[path = "key_erasure_tests.rs"]
+mod tests;

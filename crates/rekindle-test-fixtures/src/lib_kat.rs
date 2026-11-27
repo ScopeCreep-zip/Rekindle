@@ -1,0 +1,3 @@
+/// NIST SP 800-38A Appendix F.2.5 (CBC-AES256.Encrypt): the AES-256 key.
+pub const NIST_SP800_38A_AES256_KEY: &str =
+    "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";

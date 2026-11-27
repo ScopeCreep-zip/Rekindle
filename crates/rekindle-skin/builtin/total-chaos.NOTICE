@@ -184,7 +184,7 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (19 made)
+Contrast changes (minimal Oklab-lightness walk) (20 made)
   control-border: #6b6b6b -> #767676 (1.4.11 control-border on bg.dark: 2.58:1 -> 3.03:1, required 3.00:1)
   text.secondary: #a0a0a0 -> #a1a1a1 (1.4.3 text.secondary on bg.tertiary: 4.48:1 -> 4.53:1, required 4.50:1)
   danger.text: #ff5955 -> #ff5b56 (1.4.3 danger.text on bg.dark: 4.46:1 -> 4.51:1, required 4.50:1)
@@ -204,3 +204,4 @@ Contrast changes (minimal Oklab-lightness walk) (19 made)
   text.dim: #8fb9d7 -> #91bcda (1.4.3 .event-status-completed text.dim on text.dim 20% over bg.secondary: 4.40:1 -> passes, required 4.50:1)
   mention.everyone: #ffa674 -> #ffb683 (1.4.3 .mention-popover-tag-special mention.everyone on mention.everyone 25% over bg.secondary: 4.21:1 -> passes, required 4.50:1)
   status.away-text: #ffcc00 -> #ffe137 (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.panel: 3.90:1 -> passes, required 4.50:1)
+  titlebar.start: #124466 -> #04395b (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 4.06:1 -> 4.51:1, required 4.50:1)

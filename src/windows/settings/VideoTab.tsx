@@ -1,5 +1,6 @@
-import { type Component, createSignal, onMount, For, Show, createUniqueId } from "solid-js";
+import { type Component, createSignal, onMount, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
+import SettingsSelect from "../../components/common/SettingsSelect";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { commands } from "../../ipc/commands";
 
@@ -11,7 +12,6 @@ interface CameraOption {
 }
 
 const VideoTab: Component = () => {
-  const cameraDeviceId = createUniqueId();
   // Plan §Failure 2 — the persisted selection lives on
   // `settingsState.selectedVideoDeviceId/Label` and on
   // `Preferences.videoDeviceId/videoDeviceLabel`. The LABEL is the
@@ -123,21 +123,16 @@ const VideoTab: Component = () => {
   return (
     <>
       <div class="settings-section-title">Camera</div>
-      <FormField label="Camera Device" controlId={cameraDeviceId}>
-        <select
-          id={cameraDeviceId}
-          class="form-select"
+      <FormField label="Camera Device" labelId="settings-camera-label">
+        <SettingsSelect
+          labelledBy="settings-camera-label"
           value={selectedKey()}
-          onChange={(e) => {
-            const key = e.currentTarget.value;
-            choose(cameras().find((c) => keyOf(c) === key) ?? null);
-          }}
-        >
-          <option value="">System Default</option>
-          <For each={cameras()}>
-            {(c) => <option value={keyOf(c)}>{c.label}</option>}
-          </For>
-        </select>
+          onChange={(key) => choose(cameras().find((c) => keyOf(c) === key) ?? null)}
+          options={[
+            { value: "", label: "System Default" },
+            ...cameras().map((c) => ({ value: keyOf(c), label: c.label })),
+          ]}
+        />
       </FormField>
       <Show when={cameras().length === 0 || videoEnumError()}>
         <button

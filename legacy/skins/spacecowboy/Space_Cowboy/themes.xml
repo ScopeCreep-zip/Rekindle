@@ -1,0 +1,315 @@
+ <Themes>
+ 	<Theme name="default">
+ 		<Colors>
+			<Color name="TooltipCG">RGBA(0,0,0,0)</Color>
+			<Color name="TooltipTextCG">RGBA(185,0,0,0)</Color>  
+			<Color name="MenuHoverCG">RGBA(254,254,254,0)</Color> 
+  			<Color name="MenuDownCG">RGBA(174,174,174,0)</Color> 
+  			<Color name="MenuTextCG">RGBA(118,118,118,0)</Color> 
+  			<Color name="UserNameCG">RGBA(118,118,118,0)</Color>   
+  			<Color name="DialogCG">RGBA(0,0,0,0)</Color> 
+  			<Color name="ListviewCG">RGBA(0,0,0,0)</Color> 
+  			<Color name="TabText">RGBA(204,204,204,0)</Color> 
+  			<Color name="ChatBGCG">RGBA(0,0,0,0)</Color> 
+  			<Color name="InGameChatArea">RGBA(0,0,0,0)</Color> 
+  			<Color name="InGameChatTextColor">RGBA(224,224,224,0)</Color>
+  			<Color name="InGameChatTitleColor">RGBA(224,224,224,0)</Color>
+  			<Color name="ProgressFill">RGBA(2,100,180,0)</Color> 
+  			<Color name="FriendsFavoritesText">RGBA(185,0,0,0)</Color> 
+  			<Color name="AllServersText">RGBA(185,0,0,0)</Color> 
+  			<Color name="DownloadText">RGBA(185,0,0,0)</Color> 
+  			<Color name="FriendNameColor">RGBA(190,0,0)</Color> 
+  			<Color name="FoFNameColor">RGBA(255,0,0,0)</Color> 
+  			<Color name="HeaderText">RGBA(118,118,118,0)</Color> 
+  			<Color name="HeaderColor">RGBA(0,0,0,0)</Color> 
+  			<Color name="StatusText">RGBA(118,118,118,0)</Color> 
+  			<Color name="StatusBG">RGBA(0,0,0,0)</Color> 
+  			<Color name="ChannelText">RGBA(185,0,0,0)</Color> 
+  			<Color name="TopLevelText">RGBA(185,0,0,0)</Color> 
+  			<Color name="OfflineNameColor">RGBA(102,102,102,0)</Color> 
+  			<Color name="Selected">RGBA(20,20,20,0)</Color> 
+  			<Color name="SelectedText">RGBA(185,0,0,0)</Color> 
+  			<Color name="NonFocus">RGBA(20,20,20,0)</Color> 
+  			<Color name="FofText">RGBA(185,0,0,0)</Color> 
+  			<Color name="FriendText">RGBA(185,0,0,0)</Color> 
+  			<Color name="ScrollbarColor">RGBA(48,-102,-102,0)</Color> 
+  			<Color name="ScrollbarColorBG">RGBA(0,0,0,0)</Color>
+  			<Color name="InfoviewCG">RGBA(0,0,0,0)</Color> 
+  			<Color name="InfoViewText">RGBA(185,0,0,0)</Color> 
+  			<Color name="InfoViewFriendText">RGBA(185,0,0,0)</Color> 
+  			<Color name="InfoViewFofText">RGBA(185,0,0,0)</Color> 
+  			<Color name="InfoViewOfflineText">RGBA(102,102,102,0)</Color> 
+  			<Color name="InfoViewHyperlink">RGBA(235,0,0,0)</Color> 
+  			<Color name="ChatOther">RGBA(118,118,118,0)</Color> 
+  			<Color name="ChatOtherText">RGBA(118,118,118,0)</Color> 
+  			<Color name="ChatPersonal">RGBA(185,0,0,0)</Color> 
+  			<Color name="ChatPersonalText">RGBA(185,0,0,0)</Color> 
+  			<Color name="TypingNotification">RGBA(254,254,254,0)</Color> 
+  			<Color name="ClanTextColor">RGBA(153,153,153,0)</Color> 
+  			<Color name="VoiceTalkingShift">RGBA(-40,-40,-40,0)</Color>
+			<Color name="ButtonHoverCG">RGBA(32,32,32,0)</Color> 
+  			<Color name="ButtonDownCG">RGBA(42,42,42,0)</Color> 
+  			<Color name="ButtonCG">RGBA(0,0,0,0)</Color>
+  		</Colors>
+	<ColorShifts>
+	</ColorShifts>
+	<Sounds>
+	</Sounds> 
+	 <Bitmaps>
+ 	 		<Bitmap name="SCLOGO">mainskin/spacecowboy-logo.gif</Bitmap>
+  			<Bitmap name="TMOBILELOGO">mainskin/tmobile_sidekick_logo.gif</Bitmap>
+  			<Bitmap name="ADBG">mainskin/adbg.gif</Bitmap>
+  			<Bitmap name="LVBGTL">mainskin/listbg-top-left.gif</Bitmap>
+  			<Bitmap name="LVBGT">mainskin/listbg-top-middle.gif</Bitmap>
+  			<Bitmap name="LVBGTR">mainskin/listbg-top-right.gif</Bitmap>
+  			<Bitmap name="LVBGL">mainskin/listbg-left.gif</Bitmap>
+  			<Bitmap name="LVBGM">mainskin/listbg-middle.gif</Bitmap>
+  			<Bitmap name="LVBGR">mainskin/listbg-right.gif</Bitmap>
+  			<Bitmap name="LVBGBL">mainskin/listbg-bottom-left.gif</Bitmap>          
+  			<Bitmap name="LVBGB">mainskin/listbg-bottom-middle.gif</Bitmap>
+  			<Bitmap name="LVBGBR">mainskin/listbg-bottom-right.gif</Bitmap>
+  			<Bitmap name="TABCONTROLBASE">mainskin/tab_control_base.gif</Bitmap>
+  			<Bitmap name="LISTVIEWHEADERLEFT">mainskin/listview-header-left.gif</Bitmap> 
+  			<Bitmap name="LISTVIEWHEADERMIDDLE">mainskin/listview-header-middle.gif</Bitmap> 
+  			<Bitmap name="LISTVIEWHEADERRIGHT">mainskin/listview-header-right.gif</Bitmap> 
+  			<Bitmap name="LISTVIEWHEADERARROWUP">mainskin/listview-header-arrowup.gif</Bitmap> 
+  			<Bitmap name="LISTVIEWHEADERARROWDOWN">mainskin/listview-header-arrowdown.gif</Bitmap> 
+  			<Bitmap name="ARROWRIGHT">mainskin/arrow_right.gif</Bitmap> 
+  			<Bitmap name="ARROWDOWN">mainskin/arrow_down.gif</Bitmap>
+  			<Bitmap name="MAINTL">mainskin/main-top-left.gif</Bitmap>
+  			<Bitmap name="MAINT">mainskin/main-top-middle.gif</Bitmap>
+  			<Bitmap name="MAINTR">mainskin/main-top-right.gif</Bitmap>
+  			<Bitmap name="MAINL">mainskin/main-middle-left.gif</Bitmap>
+  			<Bitmap name="MAINM">mainskin/main-mid-middle.gif</Bitmap>
+  			<Bitmap name="MAINR">mainskin/main-middle-right.gif</Bitmap>
+  			<Bitmap name="MAINBL">mainskin/main-bottom-left.gif</Bitmap>          
+  			<Bitmap name="MAINB">mainskin/main-bottom-middle.gif</Bitmap>
+  			<Bitmap name="AGEAR">mainskin/a-gear.gif</Bitmap>
+  			<Bitmap name="IGEAR">mainskin/i-gear.gif</Bitmap>
+   			<Bitmap name="BGEAR">chatskin/b-gear.gif</Bitmap>
+  			<Bitmap name="MGEAR">chatskin/m-gear.gif</Bitmap> 			
+  			<Bitmap name="USERNAMEBGL">mainskin/username-left.gif</Bitmap>
+  			<Bitmap name="USERNAMEBGM">mainskin/username-middle.gif</Bitmap>
+  			<Bitmap name="USERNAMEBGR">mainskin/username-right.gif</Bitmap>
+  			<Bitmap name="MAINBR">mainskin/main-bottom-right.gif</Bitmap>
+  			<Bitmap name="TBBG">buttons/TopButtonsBar.gif</Bitmap>
+  			<Bitmap name="TBHL">mainskin/ButtonHolderL.gif</Bitmap>
+  			<Bitmap name="TBHM">mainskin/ButtonHolderM.gif</Bitmap>
+  			<Bitmap name="TBHR">mainskin/ButtonHolderR.gif</Bitmap>
+  			<Bitmap name="SWL">mainskin/status-left.gif</Bitmap>
+  			<Bitmap name="SWM">mainskin/status-middle.gif</Bitmap>
+  			<Bitmap name="SWR">mainskin/status-right.gif</Bitmap>
+  			<Bitmap name="INFOVIEWTL">infoskin/info-top-left.gif</Bitmap>
+  			<Bitmap name="INFOVIEWT">infoskin/info-top-middle.gif</Bitmap>
+  			<Bitmap name="INFOVIEWTR">infoskin/info-top-right.gif</Bitmap>
+  			<Bitmap name="INFOVIEWL">infoskin/info-middle-left.gif</Bitmap>
+  			<Bitmap name="INFOVIEWM">infoskin/info-middle-middle.gif</Bitmap>
+  			<Bitmap name="INFOVIEWR">infoskin/info-middle-right.gif</Bitmap>
+  			<Bitmap name="INFOVIEWBL">infoskin/info-bottom-left.gif</Bitmap>
+  			<Bitmap name="INFOVIEWB">infoskin/info-bottom-middle.gif</Bitmap>
+  			<Bitmap name="INFOVIEWBR">infoskin/info-bottom-right.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWTL">chatinfoskin/info-top-left.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWT">chatinfoskin/info-top-middle.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWTR">chatinfoskin/info-top-right.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWL">chatinfoskin/info-middle-left.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWM">chatinfoskin/info-middle-middle.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWR">chatinfoskin/info-middle-right.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWBL">chatinfoskin/info-bottom-left.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWB">chatinfoskin/info-bottom-middle.gif</Bitmap>
+  			<Bitmap name="CINFOVIEWBR">chatinfoskin/info-bottom-right.gif</Bitmap>
+  			<Bitmap name="INFOVIEWBACKDROP">infoskin/info-middle-middle.gif</Bitmap>
+  			<Bitmap name="XICON">mainskin/xicon.gif</Bitmap>
+  			<Bitmap name="BRGRIPPER">mainskin/gripperbr.gif</Bitmap>
+  			<Bitmap name="CHATTL">chatskin/chat-topleft.gif</Bitmap>
+  			<Bitmap name="CHATT">chatskin/chat-topmiddle.gif</Bitmap>
+  			<Bitmap name="CHATTR">chatskin/chat-topright.gif</Bitmap>
+  			<Bitmap name="CHATL">chatskin/chat-middleleft.gif</Bitmap>
+  			<Bitmap name="CHATM">chatskin/chat-middlemiddle.gif</Bitmap>
+  			<Bitmap name="CHATR">chatskin/chat-middleright.gif</Bitmap>
+  			<Bitmap name="CHATBL">chatskin/chat-bottomleft.gif</Bitmap>
+  			<Bitmap name="CHATB">chatskin/chat-bottommiddle.gif</Bitmap>
+  			<Bitmap name="CHATBR">chatskin/chat-bottomright.gif</Bitmap>
+  			<Bitmap name="CHATDIV">chatskin/chat-divider.gif</Bitmap> 
+  			<Bitmap name="TYPENBG">chatskin/toolbar.gif</Bitmap>
+  			<Bitmap name="CHATTMBG">chatskin/textbg.gif</Bitmap>
+  			<Bitmap name="IGATL">ingamegraphics/ingame-top-left.gif</Bitmap>
+  			<Bitmap name="IGAT">ingamegraphics/ingame-top-middle.gif</Bitmap>
+  			<Bitmap name="IGATR">ingamegraphics/ingame-top-right.gif</Bitmap>
+  			<Bitmap name="IGAL">ingamegraphics/ingame-left.gif</Bitmap> 
+  			<Bitmap name="IGAM">ingamegraphics/ingame-bg.gif</Bitmap>
+  			<Bitmap name="IGAR">ingamegraphics/ingame-right.gif</Bitmap>
+  			<Bitmap name="IGABL">ingamegraphics/ingame-bottom-left.gif</Bitmap>
+  			<Bitmap name="IGAB">ingamegraphics/ingame-bottom-middle.gif</Bitmap> 
+  			<Bitmap name="IGABR">ingamegraphics/ingame-bottom-right.gif</Bitmap>
+  			<Bitmap name="IGMTL">ingamegraphics/igm-top-left.gif</Bitmap>
+  			<Bitmap name="IGMT">ingamegraphics/igm-top-middle.gif</Bitmap>
+  			<Bitmap name="IGMTR">ingamegraphics/igm-top-right.gif</Bitmap> 
+  			<Bitmap name="IGML">ingamegraphics/igm-left.gif</Bitmap>
+  			<Bitmap name="IGMM">ingamegraphics/igm-bg.gif</Bitmap>
+  			<Bitmap name="IGMR">ingamegraphics/igm-right.gif</Bitmap>
+  			<Bitmap name="IGMBL">ingamegraphics/igm-bottom-left.gif</Bitmap> 
+  			<Bitmap name="IGMB">ingamegraphics/igm-bottom-middle.gif</Bitmap>  
+  			<Bitmap name="IGMBR">ingamegraphics/igm-bottom-right.gif</Bitmap>  
+  			<Bitmap name="IGMTBL">ingamegraphics/ig_chatwindow_left.gif</Bitmap> 
+  			<Bitmap name="IGMTBM">ingamegraphics/ig_chatwindow_middle.gif</Bitmap>
+  			<Bitmap name="IGMTBR">ingamegraphics/ig_chatwindow_right.gif</Bitmap>
+  			<Bitmap name="TABACTIVELEFT">mainskin/tab-active-left.gif</Bitmap>
+  			<Bitmap name="TABACTIVEMIDDLE">mainskin/tab-active-middle.gif</Bitmap>
+  			<Bitmap name="TABACTIVERIGHT">mainskin/tab-active-right.gif</Bitmap>
+  			<Bitmap name="TABDEACTIVELEFT">mainskin/tab-deactive-left.gif</Bitmap>
+  			<Bitmap name="TABDEACTIVEMIDDLE">mainskin/tab-deactive-middle.gif</Bitmap>
+  			<Bitmap name="TABDEACTIVERIGHT">mainskin/tab-deactive-right.gif</Bitmap>
+  			<Bitmap name="TABANIMLEFT">mainskin/tab-anim-left.gif</Bitmap>
+  			<Bitmap name="TABANIMMIDDLE">mainskin/tab-anim-middle.gif</Bitmap>
+  			<Bitmap name="TABANIMRIGHT">mainskin/tab-anim-right.gif</Bitmap>
+  			<Bitmap name="VOICESERVER">infoskin/icon_voice_server.gif</Bitmap> 
+  			<Bitmap name="MICON">infoskin/icon_mic_green.gif</Bitmap> 
+  			<Bitmap name="MICOFF">infoskin/icon_mic_grey.gif</Bitmap> 
+  			<Bitmap name="SPEAKERON">infoskin/icon_speaker_green.gif</Bitmap> 
+  			<Bitmap name="SPEAKEROFF">infoskin/icon_speaker_grey.gif</Bitmap>
+  			<Bitmap name="MICRING">buttons/button_groupchat_throb.gif</Bitmap>
+ 		<!--  MenuBar  --> 
+  			<Bitmap name="1MENUBARNORMAL">mainskin/menubar-middle.gif</Bitmap> 
+  			<Bitmap name="1MENUBARHOVER">mainskin/menubar-middle.gif</Bitmap> 
+  			<Bitmap name="1MENUBARDOWN">mainskin/menubar-middle.gif</Bitmap> 
+ 		<!--  Add Buttons  --> 
+  			<Bitmap name="BUTTONADDNORMAL">buttons/button-add-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONADDHOVER">buttons/button-add-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONADDDOWN">buttons/button-add-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONADDDISABLED">buttons/button-add-disabled.gif</Bitmap> 
+ 		<!--  Refresh Server Buttons  --> 
+ 			<Bitmap name="BUTTONREFRESHNORMAL">buttons/button-refresh-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONREFRESHHOVER">buttons/button-refresh-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONREFRESHDOWN">buttons/button-refresh-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONREFRESHDISABLED">buttons/button-refresh-disabled.gif</Bitmap> 
+ 		<!--  Add-Fav Server Buttons  --> 
+  			<Bitmap name="BUTTONAFACNORMAL">buttons/button-afav-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONAFACHOVER">buttons/button-afav-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONAFACDOWN">buttons/button-afav-click.gif.gif</Bitmap> 
+  			<Bitmap name="BUTTONAFACDISABLED">buttons/button-afav-disabled.gif</Bitmap> 
+ 		<!--  Chat Send Buttons  --> 
+  			<Bitmap name="BUTTONSENDNORMAL">buttons/button-chat-send-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONSENDHOVER">buttons/button-chat-send-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONSENDDOWN">buttons/button-chat-send-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONSENDDISABLED">buttons/button-chat-send-disabled.gif</Bitmap> 
+ 		<!--  IM - Chat Buttons  --> 
+  			<Bitmap name="BUTTONCHATNORMAL">buttons/button-im-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONCHATHOVER">buttons/button-im-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONCHATDOWN">buttons/button-im-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONCHATDISABLED">buttons/button-im-disabled.gif</Bitmap> 
+ 		<!--  Join GameButtons  --> 
+  			<Bitmap name="BUTTONGAMENORMAL">buttons/button-game-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONGAMEHOVER">buttons/button-game-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONGAMEDOWN">buttons/button-game-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONGAMEDISABLED">buttons/button-game-disabled.gif</Bitmap> 
+ 		<!--  Profile Buttons  --> 
+  			<Bitmap name="BUTTONPROFILENORMAL">buttons/button-profile-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONPROFILEHOVER">buttons/button-profile-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONPROFILEDOWN">buttons/button-profile-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONPROFILEDISABLED">buttons/button-profile-disabled.gif</Bitmap> 
+	 	<!--  Start Dload Buttons  --> 
+  			<Bitmap name="BUTTONDOWNLOADNORMAL">buttons/button-download-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONDOWNLOADHOVER">buttons/button-download-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONDOWNLOADDOWN">buttons/button-download-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONDOWNLOADDISABLED">buttons/button-download-disabled.gif</Bitmap> 
+ 		<!--  Stop Dload Buttons  --> 
+  			<Bitmap name="BUTTONSTOPNORMAL">buttons/button-stop-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONSTOPHOVER">buttons/button-stop-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONSTOPDOWN">buttons/button-stop-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONSTOPDISABLED">buttons/button-stop-disabled.gif</Bitmap> 
+ 		<!--  Search Dload Buttons  --> 
+  			<Bitmap name="BUTTONSEARCHNORMAL">buttons/button-search-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONSEARCHHOVER">buttons/button-search-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONSEARCHDOWN">buttons/button-search-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONSEARCHDISABLED">buttons/button-search-disabled.gif</Bitmap> 
+ 		<!--  Launch Dload Buttons  --> 
+  			<Bitmap name="BUTTONEXECNORMAL">buttons/button-execute-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONEXECHOVER">buttons/button-execute-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONEXECDOWN">buttons/button-execute-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONEXECDISABLED">buttons/button-execute-disabled.gif</Bitmap> 
+ 		<!--  Open Infoview Button  --> 
+  			<Bitmap name="BUTTONINFOOPENNORMAL">buttons/button-info-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOOPENHOVER">buttons/button-info-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOOPENDOWN">buttons/button-info-down.gif</Bitmap> 
+ 		<!--  Close Infoview Button  --> 
+  			<Bitmap name="BUTTONINFOCLOSENORMAL">buttons/button-info-retract.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOCLOSEHOVER">buttons/button-info-retract-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOCLOSEDOWN">buttons/button-info-retract-down.gif</Bitmap> 
+ 		<!--  Infoview Voice Call Buttons  --> 
+  			<Bitmap name="BUTTONVOICENORMAL">buttons/info-voice-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONVOICEHOVER">buttons/info-voice-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONVOICEDOWN">buttons/info-voice-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONVOICEDISABLED">buttons/info-voice-disabled.gif</Bitmap> 
+  			<Bitmap name="BUTTONVOICETRANSPARENT">buttons/info-voice-trans.gif</Bitmap> 
+		<!--  Infoview Join GameButtons  --> 
+  			<Bitmap name="BUTTONINFOGAMENORMAL">buttons/info-join-norm.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOGAMEHOVER">buttons/info-join-hover.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOGAMEDOWN">buttons/info-join-click.gif</Bitmap> 
+  			<Bitmap name="BUTTONINFOGAMEDISABLED">buttons/info-join-disabled.gif</Bitmap> 
+		<!--  Close Buttons  --> 
+  			<Bitmap name="CLOSENORMAL">buttons/button-close-norm.gif</Bitmap> 
+  			<Bitmap name="CLOSEHOVER">buttons/button-close-hover.gif</Bitmap> 
+  			<Bitmap name="CLOSEDOWN">buttons/button-close-down.gif</Bitmap>
+ 		<!--  Minimize Buttons  --> 
+  			<Bitmap name="MINIMIZENORMAL">buttons/button-minimize-norm.gif</Bitmap> 
+  			<Bitmap name="MINIMIZEHOVER">buttons/button-minimize-hover.gif</Bitmap> 
+  			<Bitmap name="MINIMIZEDOWN">buttons/button-minimize-down.gif</Bitmap>
+ 		<!--  Maximize Buttons  --> 
+  			<Bitmap name="MAXIMIZENORMAL">buttons/button-maximize-norm.gif</Bitmap> 
+  			<Bitmap name="MAXIMIZEHOVER">buttons/button-maximize-hover.gif</Bitmap> 
+  			<Bitmap name="MAXIMIZEDOWN">buttons/button-maximize-down.gif</Bitmap>
+ 		<!--  Status Arrow Buttons  --> 
+  			<Bitmap name="DOWNARROWNORMAL">buttons/status-arrow.gif</Bitmap> 
+  			<Bitmap name="DOWNARROWHOVER">buttons/status-arrow-hover.gif</Bitmap> 
+  			<Bitmap name="DOWNARROWDOWN">buttons/status-arrow-down.gif</Bitmap>  
+ 	<!--  ScrollbarA  --> 
+ 		<!--  Normal  --> 
+  			<Bitmap name="SCROLLLEFTNORM">scrollbar/scroll-left-norm.gif</Bitmap> 
+  			<Bitmap name="SCROLLRIGHTNORM">scrollbar/scroll-right-norm.gif</Bitmap> 
+  			<Bitmap name="SCROLLUPNORM">scrollbar/scroll-up-norm.gif</Bitmap> 
+  			<Bitmap name="SCROLLDOWNNORM">scrollbar/scroll-down-norm.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZLEFT">scrollbar/scroll-gripper-horz-left.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZMIDDLE">scrollbar/scroll-gripper-horz-middle.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERGRIPSHORZ">scrollbar/scroll-gripper-grips-horz.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZRIGHT">scrollbar/scroll-gripper-horz-right.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTTOP">scrollbar/scroll-gripper-vert-top.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTMIDDLE">scrollbar/scroll-gripper-vert-middle.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERGRIPSVERT">scrollbar/scroll-gripper-grips-vert.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTBOTTOM">scrollbar/scroll-gripper-vert-bottom.gif</Bitmap> 
+  			<Bitmap name="SCROLLBACKGROUNDHORZLEFT">scrollbar/scroll-background-horz-left.gif</Bitmap> 
+  			<Bitmap name="SCROLLBACKGROUNDHORZMIDDLE">scrollbar/scroll-background-horz-middle.gif</Bitmap> 
+  			<Bitmap name="SCROLLBACKGROUNDHORZRIGHT">scrollbar/scroll-background-horz-right.gif</Bitmap> 
+  			<Bitmap name="SCROLLBACKGROUNDVERTTOP">scrollbar/scroll-background-vert-top.gif</Bitmap> 
+  			<Bitmap name="SCROLLBACKGROUNDVERTMIDDLE">scrollbar/scroll-background-vert-middle.gif</Bitmap> 
+  			<Bitmap name="SCROLLBACKGROUNDVERTBOTTOM">scrollbar/scroll-background-vert-bottom.gif</Bitmap> 
+  			<Bitmap name="SCROLLCORNER">scrollbar/scroll-corner.gif</Bitmap> 
+ 		<!--  Hover  --> 
+  			<Bitmap name="SCROLLLEFTHOVER">scrollbar/scroll-left-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLRIGHTHOVER">scrollbar/scroll-right-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLUPHOVER">scrollbar/scroll-up-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLDOWNHOVER">scrollbar/scroll-down-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZLEFTHOVER">scrollbar/scroll-gripper-horz-left-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZMIDDLEHOVER">scrollbar/scroll-gripper-horz-middle-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZRIGHTHOVER">scrollbar/scroll-gripper-horz-right-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTTOPHOVER">scrollbar/scroll-gripper-vert-top-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTMIDDLEHOVER">scrollbar/scroll-gripper-vert-middle-hover.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTBOTTOMHOVER">scrollbar/scroll-gripper-vert-bottom-hover.gif</Bitmap> 
+ 		<!--  Down  --> 
+  			<Bitmap name="SCROLLLEFTDOWN">scrollbar/scroll-left-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLRIGHTDOWN">scrollbar/scroll-right-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLUPDOWN">scrollbar/scroll-up-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLDOWNDOWN">scrollbar/scroll-down-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZLEFTDOWN">scrollbar/scroll-gripper-horz-left-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZMIDDLEDOWN">scrollbar/scroll-gripper-horz-middle-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERHORZRIGHTDOWN">scrollbar/scroll-gripper-horz-right-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTTOPDOWN">scrollbar/scroll-gripper-vert-top-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTMIDDLEDOWN">scrollbar/scroll-gripper-vert-middle-down.gif</Bitmap> 
+  			<Bitmap name="SCROLLGRIPPERVERTBOTTOMDOWN">scrollbar/scroll-gripper-vert-bottom-down.gif</Bitmap> 
+ 		<!--  Disabled  --> 
+  			<Bitmap name="SCROLLLEFTDISABLED">scrollbar/scroll-left-disabled.gif</Bitmap> 
+  			<Bitmap name="SCROLLRIGHTDISABLED">scrollbar/scroll-right-disabled.gif</Bitmap> 
+  			<Bitmap name="SCROLLUPDISABLED">scrollbar/scroll-up-disabled.gif</Bitmap> 
+  			<Bitmap name="SCROLLDOWNDISABLED">scrollbar/scroll-down-disabled.gif</Bitmap> 
+  	</Bitmaps>
+  </Theme> 
+  </Themes>

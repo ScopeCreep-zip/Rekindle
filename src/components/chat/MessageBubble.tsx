@@ -44,6 +44,8 @@ interface MessageBubbleProps {
   /** A moderator's removal of someone else's message (the Host's
    *  `ChannelMessageAdminDelete`, reviewed by the intent gate). */
   onAdminDelete?: (messageId: string) => void;
+  /** Why the moderator's remove is refused here (the Host's words), or null. */
+  adminDeleteDenied?: string | null;
   onCreatePoll?: (messageId: string) => void;
   onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
   onClosePoll?: (pollId: string) => void;
@@ -288,7 +290,14 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             </button>
           </Show>
           <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
-            <button type="button" class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
+            <button type="button"
+              class="message-action-btn"
+              title={props.adminDeleteDenied ?? "Remove as moderator"}
+              aria-label="Remove message as moderator"
+              aria-description={props.adminDeleteDenied ?? undefined}
+              disabled={props.adminDeleteDenied != null}
+              onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}
+            >
               <SkinGlyph name="delete" />
             </button>
           </Show>

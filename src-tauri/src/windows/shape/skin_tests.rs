@@ -51,6 +51,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                 width: 4,
                 height: 1,
                 bits,
+                faint: Vec::new(),
             }],
         }],
     }

@@ -49,17 +49,22 @@ const AppearanceTab: Component = () => {
     setTrial(lib.trial);
   };
 
+  // The newest action's answer stands: a list read issued before a choice
+  // (the previous switch's announce) could answer after it and put the old
+  // skin back as "in use" while the windows showed the new one (every third
+  // switch in a row, settings-theme on both platforms).
+  let latest = 0;
   async function run(action: () => Promise<SkinLibrary | unknown>): Promise<void> {
+    const mine = ++latest;
     setError(null);
     try {
       const answer = await action();
-      if (answer !== null && typeof answer === "object" && "skins" in answer) {
-        apply(answer as SkinLibrary);
-      } else {
-        apply(await commands.listSkins());
-      }
+      const lib = answer !== null && typeof answer === "object" && "skins" in answer
+        ? (answer as SkinLibrary)
+        : await commands.listSkins();
+      if (mine === latest) apply(lib);
     } catch (e) {
-      setError(refusal(e));
+      if (mine === latest) setError(refusal(e));
     }
   }
 

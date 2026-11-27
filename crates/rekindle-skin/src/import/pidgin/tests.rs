@@ -127,6 +127,38 @@ fn a_minimal_theme_imports_and_validates() {
     assert_eq!(again.notice, i.notice);
 }
 
+/// An imported (non-built-in) theme validates with the model's dialog pairs
+/// measured, and so does the same package with every dialog role removed,
+/// on the roles `registry::resolve` serves it at load (`dialog::fill` and
+/// the one dialog walk; ST1 rulings b, j). Fail-without: dropping the base
+/// table's `holds_out` filter (`access/skin_model.rs`) leaves the import's
+/// base walk unsettled on `UnmeasuredPair` (the dialog roles it holds out).
+#[test]
+fn a_minimal_theme_validates_with_its_dialog_pairs_measured() {
+    use crate::registry::{dialog, resolve, Base, ENTRIES};
+    let i = imported(import(&theme(ICONS, SOUNDS), "synth").unwrap());
+    validate::run(&i.canonical.bytes).unwrap();
+    let package = crate::package::read(&i.canonical.bytes).unwrap();
+    let m = crate::manifest::parse(&package).unwrap();
+    assert!(!m.variants.is_empty());
+    for v in &m.variants {
+        let base = Base::of(v.base, v.contrast);
+        let file = package.get(&v.tokens).unwrap();
+        let mut skin = crate::tokens::parse(&v.tokens, file).unwrap();
+        skin.retain(|id, _| !dialog::is_role(id));
+        let served = resolve(ENTRIES, base, &skin);
+        let pairs = crate::access::measured(base, &served);
+        assert!(
+            pairs
+                .iter()
+                .any(|p| p.fg == "selection.text" && p.rule.starts_with("1.4.3 .")),
+            "no model pair measured selection.text"
+        );
+        let failures = crate::access::failures(base, &served);
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+}
+
 #[test]
 fn every_emitted_icon_and_sound_key_is_a_registry_id() {
     use crate::registry::{IconSlot, SoundCue};

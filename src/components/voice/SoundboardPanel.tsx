@@ -2,16 +2,13 @@ import { type Component, For, Show, createMemo, createSignal } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
 import { handlePlaySoundboard } from "../../actions/community.actions";
-import {
-  USE_SOUNDBOARD,
-  servedPermissions,
-  hasPermission,
-} from "../../utils/permissions";
+import { channelDeniedFor } from "../../utils/denied";
 
 /// Plan §Failure 6 — soundboard panel rendered alongside the voice
 /// controls. Lists every community Expression with `kind === "soundboard"`
-/// and dispatches `play_soundboard` on click. Gated by USE_SOUNDBOARD
-/// (bit 39) so members without the permission don't see the panel.
+/// and dispatches `play_soundboard` on click. Never hidden for a missing
+/// permission: each sound is drawn disabled with the Host's reason for the
+/// joined voice channel (CAPR `useSoundboard`, judged with its overwrites).
 const SoundboardPanel: Component = () => {
   const [collapsed, setCollapsed] = createSignal(true);
 
@@ -28,10 +25,8 @@ const SoundboardPanel: Component = () => {
     return c.expressions.filter((e) => e.kind === "soundboard");
   });
 
-  // The backend's flags for the voice channel we are in (plan E3.2 S9).
-  const canUse = createMemo(() =>
-    hasPermission(servedPermissions(community(), voiceState.channelId), USE_SOUNDBOARD),
-  );
+  // The Host's verdict for the voice channel we are in, or null when we may.
+  const useDenied = createMemo(() => channelDeniedFor(community(), voiceState.channelId, "useSoundboard"));
 
   function play(expressionId: string): void {
     const c = community();
@@ -41,7 +36,7 @@ const SoundboardPanel: Component = () => {
   }
 
   return (
-    <Show when={voiceState.isConnected && canUse() && sounds().length > 0}>
+    <Show when={voiceState.isConnected && sounds().length > 0}>
       <div class="soundboard-panel">
         <button
           type="button"
@@ -60,7 +55,9 @@ const SoundboardPanel: Component = () => {
                   type="button"
                   role="listitem"
                   class="soundboard-panel-clip"
-                  title={s.name}
+                  title={useDenied() ?? s.name}
+                  aria-description={useDenied() ?? undefined}
+                  disabled={useDenied() !== null}
                   onClick={() => play(s.id)}
                 >
                   <span class="soundboard-panel-clip-name">{s.name}</span>

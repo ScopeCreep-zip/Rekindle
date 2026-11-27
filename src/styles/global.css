@@ -72,6 +72,7 @@
 @import "./theme/22-skin-frame.css";
 @import "./theme/23-activity.css";
 @import "./theme/24-files-view.css";
+@import "./theme/25-settings-select.css";
 @import "./skin-tree.css";
 @import "./theme/90-top-level.css";
 @import "./theme/91-top-level.css";
@@ -278,6 +279,16 @@
 }
 
 @layer base {
+  /* Never-hide groups controls in a fieldset to disable them with one
+   * reason: no browser border, margin, padding or min-width, at no
+   * specificity, so a component's own box rules apply. */
+  :where(fieldset) {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+
   html,
   body {
     margin: 0;

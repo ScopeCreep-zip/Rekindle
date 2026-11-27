@@ -78,6 +78,16 @@ export const MOD_KEY = process.platform === "darwin" ? Key.Command : Key.Ctrl;
 export { Key };
 
 /**
+ * `text` as an XPath string literal, whitespace collapsed as normalize-space
+ * reads it: XPath 1.0 has no escape, so a value holding a double quote (a
+ * device named USB "Studio", a skin name) is joined with concat().
+ */
+export function xpathString(text: string): string {
+  const parts = text.replace(/\s+/g, " ").trim().split('"').map((part) => `"${part}"`);
+  return parts.length === 1 ? parts[0] : `concat(${parts.join(`, '"', `)})`;
+}
+
+/**
  * The first displayed match of `selector`, once one is. Reads every match,
  * as `present()` does: webdriverio 10's `$` throws on a second match (walk
  * 20: `.skin-row` matched every listed skin).

@@ -89,22 +89,30 @@ fn pack_of(bytes: &[u8]) -> Pack {
 /// (`skin_tree::disabled`): Symbiosis 33 + 70, xfire-classic 24 + 22,
 /// Onyx 10 + 28, Space Cowboy 6 + 28, StealthX 6 + 38, Total Chaos 11 + 30,
 /// xslimfire 10 + 30; Combat, Alloy, Simple X and XGlow ship no Disabled
-/// state (+ 0).
+/// state (+ 0). DIS3: + each distinct package image the served refusal
+/// copies decode that no pair decoded (the Normal pieces of a node that
+/// reaches `skin_tree::dim::copy`, else its nearest painted ancestor's
+/// pieces it crops), once per serve: Symbiosis 103 + 16, xfire-classic
+/// 46 + 40, Combat 15 + 23, Onyx 38 + 11, Space Cowboy 34 + 16, StealthX
+/// 44 + 37, Total Chaos 41 + 16 (28 decoded, 12 already a pair's), xslimfire
+/// 40 + 11, Alloy 16 + 27, Simple X 12 + 21, XGlow 7 + 25; each a still
+/// image (decoded frames = decodes). The copies' own pixels are made from
+/// those frames, never decoded.
 const PINNED: [(&str, [u64; 8]); 11] = [
-    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 103, 103]),
+    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 119, 119]),
     (
         "xfire-classic",
-        [705_960, 40618, 79010, 24, 0, 215_710, 46, 46],
+        [705_960, 40618, 79010, 24, 0, 215_710, 86, 86],
     ),
-    ("combat", [0, 66146, 86310, 15, 0, 147_075, 15, 15]),
-    ("onyx", [0, 660, 2496, 10, 0, 98050, 38, 38]),
-    ("spacecowboy", [0, 3336, 6966, 6, 0, 58830, 34, 34]),
-    ("stealthx", [0, 3522, 5040, 6, 0, 58830, 44, 44]),
-    ("total-chaos", [0, 715_159, 1_117_134, 51, 0, 68635, 41, 41]),
-    ("xslimfire", [1_823_730, 10382, 31110, 9, 0, 68635, 40, 40]),
-    ("alloy", [0, 526, 1734, 12, 0, 117_660, 16, 16]),
-    ("simple-x", [0, 4000, 8514, 12, 0, 117_660, 12, 12]),
-    ("xglow", [0, 32, 126, 3, 0, 29415, 7, 7]),
+    ("combat", [0, 66146, 86310, 15, 0, 147_075, 38, 38]),
+    ("onyx", [0, 660, 2496, 10, 0, 98050, 49, 49]),
+    ("spacecowboy", [0, 3336, 6966, 6, 0, 58830, 50, 50]),
+    ("stealthx", [0, 3522, 5040, 6, 0, 58830, 81, 81]),
+    ("total-chaos", [0, 715_159, 1_117_134, 51, 0, 68635, 57, 57]),
+    ("xslimfire", [1_823_730, 10382, 31110, 9, 0, 68635, 51, 51]),
+    ("alloy", [0, 526, 1734, 12, 0, 117_660, 43, 43]),
+    ("simple-x", [0, 4000, 8514, 12, 0, 117_660, 33, 33]),
+    ("xglow", [0, 32, 126, 3, 0, 29415, 32, 32]),
 ];
 
 fn row(w: Work) -> [u64; 8] {
