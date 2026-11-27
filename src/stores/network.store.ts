@@ -1,6 +1,5 @@
 import { onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { handleGetNetworkStatus } from "../actions/settings.actions";
 import {
   eventStreamLive,
@@ -10,9 +9,15 @@ import {
   subscribeOwnRouteDown,
   subscribeRouteDeaths,
   subscribeRoutePaused,
+  type UnlistenFn,
 } from "../ipc/channels";
+import type {
+  OwnRecordsPhase,
+  OwnRouteClass,
+  RouteAvailability,
+  RoutePauseCause,
+} from "../ipc/channels/notification_events";
 import { addToast } from "./toast.store";
-import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../ipc/channels/notification_events";
 
 /**
  * The node's network state, as the Host reports it: the `network-status`
@@ -89,7 +94,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
 export { networkState };
 
 /** The paused route's status line (owner decision 65): the Host's cause, worded. */
-export function routePausedText(cause: RoutePauseCause | null): string {
+function routePausedText(cause: RoutePauseCause | null): string {
   return cause === "unreadable"
     ? "Route budget couldn't be read; inbound route paused"
     : "Inbound route paused after repeated failures: possible attack";
@@ -113,16 +118,31 @@ function clockTime(ms: number): string {
  * `detail` is Veilid's reason, for the tooltip and the accessible description.
  */
 export function routeStatus(): { text: string; detail: string | null } | null {
-  if (networkState.routePaused) return { text: routePausedText(networkState.routePauseCause), detail: null };
+  if (networkState.routePaused)
+    return { text: routePausedText(networkState.routePauseCause), detail: null };
   const general = networkState.ownRouteDown.general;
-  if (general) return { text: `Unreachable — retrying since ${clockTime(general.sinceMs)}`, detail: general.reason };
+  if (general)
+    return {
+      text: `Unreachable — retrying since ${clockTime(general.sinceMs)}`,
+      detail: general.reason,
+    };
   const media = networkState.ownRouteDown.media;
-  if (media) return { text: `Calls unreachable — retrying since ${clockTime(media.sinceMs)}`, detail: media.reason };
+  if (media)
+    return {
+      text: `Calls unreachable — retrying since ${clockTime(media.sinceMs)}`,
+      detail: media.reason,
+    };
   return null;
 }
 
 /** The deaths warning, from the Host's numbers (plan RV1): what died, how often, against the usual. */
-function routeDeathsText(d: { class: OwnRouteClass; deaths: number; young: number; windowSecs: number; baseline: number }): string {
+function routeDeathsText(d: {
+  class: OwnRouteClass;
+  deaths: number;
+  young: number;
+  windowSecs: number;
+  baseline: number;
+}): string {
   const minutes = Math.max(1, Math.round(d.windowSecs / 60));
   const route = d.class === "media" ? "media route" : "inbound route";
   const young = d.young > 0 ? `, ${d.young} of them within a minute of being made,` : "";
@@ -164,7 +184,8 @@ export type NetworkLabel = "Connected" | "Connecting..." | "No Route" | "Disconn
 export function networkLabel(): NetworkLabel {
   if (isNetworkConnected()) return "Connected";
   if (isNetworkConnecting()) return "Connecting...";
-  if (networkState.publicInternetReady && networkState.generalRoute !== "available") return "No Route";
+  if (networkState.publicInternetReady && networkState.generalRoute !== "available")
+    return "No Route";
   return "Disconnected";
 }
 
@@ -200,11 +221,15 @@ async function readNetworkStatus(): Promise<void> {
     setNetworkState({ ownRecords: status.ownRecords, ownRecordsError: status.ownRecordsError });
   }
   if (applied.routePaused === before.routePaused) {
-    setNetworkState({ routePaused: status.routePaused !== null, routePauseCause: status.routePaused });
+    setNetworkState({
+      routePaused: status.routePaused !== null,
+      routePauseCause: status.routePaused,
+    });
   }
   // A window opened while a route is down learns it here, not only from the
   // next change (plan F9-A).
-  if (applied.ownRouteDown === before.ownRouteDown) setNetworkState("ownRouteDown", status.ownRouteDown);
+  if (applied.ownRouteDown === before.ownRouteDown)
+    setNetworkState("ownRouteDown", status.ownRouteDown);
 }
 
 function keep(subscription: Promise<UnlistenFn>): void {
@@ -227,31 +252,31 @@ function start(): void {
         mediaRoute: event.mediaRoute,
         canWrite: event.canWrite,
       });
-    }),
+    })
   );
   keep(
     subscribeNetworkStrength((bars) => {
       applied.strength += 1;
       setNetworkState("bars", bars);
-    }),
+    })
   );
   keep(
     subscribeOwnRecords((phase, error) => {
       applied.ownRecords += 1;
       setNetworkState({ ownRecords: phase, ownRecordsError: error });
-    }),
+    })
   );
   keep(
     subscribeRoutePaused((cause) => {
       applied.routePaused += 1;
       setNetworkState({ routePaused: cause !== null, routePauseCause: cause });
-    }),
+    })
   );
   keep(
     subscribeOwnRouteDown((cls, down) => {
       applied.ownRouteDown += 1;
       setNetworkState("ownRouteDown", cls, down);
-    }),
+    })
   );
   // Deaths above their baseline: a notice with the Host's numbers, no reaction.
   keep(subscribeRouteDeaths((d) => addToast(routeDeathsText(d), "error")));

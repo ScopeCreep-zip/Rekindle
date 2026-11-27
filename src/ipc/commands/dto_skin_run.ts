@@ -1,8 +1,9 @@
 // What a skin action does (plan SK2-A4, design §2.2): mirrors
 // `rekindle_types::dto::skin_run`. The Host decides; the shell only runs
 // the operation it is handed.
-import type { Capability, EngineMenu, SkinAction } from "./dto_skin_tree";
+
 import type { LocalSearchScope } from "./dto_local_search";
+import type { Capability, EngineMenu, SkinAction } from "./dto_skin_tree";
 import type { TransferTarget } from "./dto_transfer";
 
 type ArgOf<K extends SkinAction["kind"]> = Extract<SkinAction, { kind: K; arg: unknown }>["arg"];
@@ -46,7 +47,10 @@ export type SkinSelection =
    *  server null) or a community window (plan E7.7 HSC1): its community, the channel it
    *  shows and the game server selected in its SERVERS list (null: none
    *  yet; Join takes the first listed). */
-  | { kind: "community"; arg: { community: string; channel: string | null; server: string | null } };
+  | {
+      kind: "community";
+      arg: { community: string; channel: string | null; server: string | null };
+    };
 
 type ShellPanel =
   | "addFriend"

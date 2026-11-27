@@ -1,4 +1,4 @@
-import { Component, For } from "solid-js";
+import { type Component, For } from "solid-js";
 import {
   isNetworkConnected,
   isNetworkConnecting,
@@ -17,7 +17,8 @@ const NetworkIndicator: Component = () => {
   function dotClass(): string {
     if (isNetworkConnected()) return "network-dot network-dot-connected";
     if (isNetworkConnecting()) return "network-dot network-dot-connecting";
-    if (networkState.publicInternetReady && networkState.generalRoute !== "available") return "network-dot network-dot-partial";
+    if (networkState.publicInternetReady && networkState.generalRoute !== "available")
+      return "network-dot network-dot-partial";
     return "network-dot network-dot-disconnected";
   }
 

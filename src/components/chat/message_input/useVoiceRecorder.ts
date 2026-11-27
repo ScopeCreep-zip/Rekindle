@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
-import { bytesToBase64 } from "../../../utils/base64";
 import { handleSendVoiceMessage } from "../../../actions/community.actions";
+import { bytesToBase64 } from "../../../utils/base64";
 
 /** The longest voice message (`rekindle_files::voice_note::MAX_DURATION_MS`):
  *  the recorder stops at exactly this, and the PCM handed over is cut to it,
@@ -40,7 +40,9 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
       window.clearTimeout(limitHandle);
       limitHandle = null;
     }
-    recorderStream?.getTracks().forEach((t) => t.stop());
+    recorderStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     recorderStream = null;
     recorder = null;
     recorderChunks = [];
@@ -55,11 +57,7 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recorderStream = stream;
-      const mimeCandidates = [
-        "audio/ogg; codecs=opus",
-        "audio/webm; codecs=opus",
-        "audio/webm",
-      ];
+      const mimeCandidates = ["audio/ogg; codecs=opus", "audio/webm; codecs=opus", "audio/webm"];
       const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
       recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       recorderChunks = [];

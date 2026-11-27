@@ -3,6 +3,7 @@
 
 mod access;
 mod common;
+mod dialog_roles;
 mod flash;
 mod helper;
 mod images;

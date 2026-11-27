@@ -40,8 +40,6 @@ export type SkinTokenId =
   | "focus-outline"
   | "success.text"
   | "success.fill"
-  | "titlebar.start"
-  | "titlebar.end"
   | "titlebar.text"
   | "tint.fill-strong"
   | "tint.fill"
@@ -60,7 +58,23 @@ export type SkinTokenId =
   | "font.family"
   | "font.icons"
   | "size.chrome-height"
-;
+  | "titlebar.start"
+  | "titlebar.end"
+  | "input.bg"
+  | "input.text"
+  | "input.selection.bg"
+  | "input.selection.bg-inactive"
+  | "selection.text"
+  | "menubar.bg"
+  | "menubar.text"
+  | "progress.bg"
+  | "progress.fill"
+  | "progress.outline"
+  | "progress.text"
+  | "scrollbar.track"
+  | "scrollbar.thumb"
+  | "tooltip.bg"
+  | "tooltip.text";
 
 const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "bg.dark": "--color-xfire-bg-dark",
@@ -71,7 +85,7 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "bg.primary": "--color-xfire-bg-primary",
   "bg.secondary": "--color-xfire-bg-secondary",
   "bg.tertiary": "--color-xfire-bg-tertiary",
-  "border": "--color-xfire-border",
+  border: "--color-xfire-border",
   "control-border": "--color-xfire-control-border",
   "text.primary": "--color-xfire-text-primary",
   "text.secondary": "--color-xfire-text-secondary",
@@ -97,22 +111,20 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "status.busy": "--color-xfire-busy",
   "status.offline": "--color-xfire-offline",
   "status.offline-text": "--color-xfire-offline-text",
-  "link": "--color-xfire-link",
+  link: "--color-xfire-link",
   "focus-outline": "--color-xfire-focus-outline",
   "success.text": "--color-xfire-success",
   "success.fill": "--color-xfire-success-fill",
-  "titlebar.start": "--color-xfire-titlebar-start",
-  "titlebar.end": "--color-xfire-titlebar-end",
   "titlebar.text": "--color-xfire-titlebar-text",
   "tint.fill-strong": "--tint-fill-strong",
   "tint.fill": "--tint-fill",
   "tint.fill-soft": "--tint-fill-soft",
-  "shadow": "--color-xfire-shadow",
+  shadow: "--color-xfire-shadow",
   "scrim.fill": "--color-xfire-scrim",
   "scrim.danger-text": "--color-xfire-scrim-danger-text",
   "video-backing": "--color-xfire-video-backing",
-  "overlay": "--color-xfire-overlay",
-  "shade": "--color-xfire-shade",
+  overlay: "--color-xfire-overlay",
+  shade: "--color-xfire-shade",
   "fill-shade": "--color-xfire-fill-shade",
   "thread-tag": "--color-xfire-thread-tag",
   "mention.everyone": "--color-xfire-mention-everyone",
@@ -121,6 +133,23 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "font.family": "--font-family-xfire",
   "font.icons": "--font-family-icons",
   "size.chrome-height": "--chrome-height",
+  "titlebar.start": "--color-xfire-titlebar-start",
+  "titlebar.end": "--color-xfire-titlebar-end",
+  "input.bg": "--color-xfire-input-bg",
+  "input.text": "--color-xfire-input-text",
+  "input.selection.bg": "--color-xfire-input-selection-bg",
+  "input.selection.bg-inactive": "--color-xfire-input-selection-bg-inactive",
+  "selection.text": "--color-xfire-selection-text",
+  "menubar.bg": "--color-xfire-menubar-bg",
+  "menubar.text": "--color-xfire-menubar-text",
+  "progress.bg": "--color-xfire-progress-bg",
+  "progress.fill": "--color-xfire-progress-fill",
+  "progress.outline": "--color-xfire-progress-outline",
+  "progress.text": "--color-xfire-progress-text",
+  "scrollbar.track": "--color-xfire-scrollbar-track",
+  "scrollbar.thumb": "--color-xfire-scrollbar-thumb",
+  "tooltip.bg": "--color-xfire-tooltip-bg",
+  "tooltip.text": "--color-xfire-tooltip-text",
 };
 
 /** `var(--…)` of a registry token, for inline custom properties. */

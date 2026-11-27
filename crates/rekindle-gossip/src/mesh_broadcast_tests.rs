@@ -116,7 +116,7 @@ fn fake_signed(payload: &[u8]) -> SignedEnvelope {
 async fn empty_peers_enqueues_instead_of_dropping() {
     let deps = Arc::new(MockDeps::new());
     deps.state.lock().peers = Some(Vec::new());
-    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hello"));
+    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hello")).unwrap();
     // Spawned supervisor is short-circuited; enqueue happened synchronously.
     let st = deps.state.lock();
     assert_eq!(st.pending_queue.len(), 1);
@@ -130,7 +130,7 @@ async fn empty_peers_enqueues_instead_of_dropping() {
 async fn missing_overlay_enqueues_for_the_drain() {
     let deps = Arc::new(MockDeps::new());
     // peers = None means overlay missing.
-    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hello"));
+    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hello")).unwrap();
     let st = deps.state.lock();
     assert_eq!(st.pending_queue.len(), 1);
     assert!(st.sent_payloads.is_empty());
@@ -145,7 +145,7 @@ async fn successful_send_marks_reliable() {
     }]);
     deps.state.lock().send_results.push_back(Ok(()));
 
-    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hi"));
+    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hi")).unwrap();
     // Wait for spawned supervisor to finish.
     tokio::task::yield_now().await;
     for _ in 0..20 {
@@ -206,7 +206,7 @@ async fn failure_then_fresh_route_succeeds_and_updates_route() {
         .statuses
         .insert("bob".into(), "away".into());
 
-    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"x"));
+    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"x")).unwrap();
     for _ in 0..40 {
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         if !deps.state.lock().route_updates.is_empty() {
@@ -235,7 +235,7 @@ async fn failure_with_no_fresh_route_records_nothing_extra() {
     }]);
     deps.state.lock().send_results.push_back(Err("dead".into()));
 
-    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"y"));
+    send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"y")).unwrap();
     for _ in 0..40 {
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         if !deps.state.lock().reliability.is_empty() {

@@ -150,7 +150,7 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
     };
     let link = &hints[resumed.index].link;
     let below = hints.get(resumed.index + 1).map(|h| &h.snapshot.state);
-    if equivocates(cert, below, link.height, &resumed.gathered.rest) {
+    if equivocates(cert, anchor, below, link.height, &resumed.gathered.rest) {
         tracing::warn!(community = %anchor, "a checkpoint equivocation: no hint, full walk");
         return full_walk(deps, anchor, cert, frontier, Vec::new()).await;
     }

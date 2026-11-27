@@ -61,8 +61,7 @@ pub(crate) fn sign_and_record<D: GossipDeps>(
         &identity_secret,
         community_id,
     );
-    let envelope_bytes = encode_community_envelope(envelope)
-        .map_err(|e| GossipError::EncodeFailed(e.to_string()))?;
+    let envelope_bytes = encode_community_envelope(envelope)?;
     let message_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
     let signed = envelope::sign_envelope(
         &signing_key,
@@ -90,8 +89,7 @@ pub fn send_to_mesh<D: GossipDeps>(
     envelope: &CommunityEnvelope,
 ) -> Result<(), GossipError> {
     let signed = sign_and_record(&deps, community_id, envelope)?;
-    send_to_mesh_raw(deps, community_id, signed);
-    Ok(())
+    send_to_mesh_raw(deps, community_id, signed)
 }
 
 /// Fan-out a pre-signed envelope. Idempotent + crash-safe by design:
@@ -101,9 +99,13 @@ pub fn send_to_mesh<D: GossipDeps>(
 /// applies the architecture §3 fan-out degree + spawns a single
 /// supervising tokio task with a `JoinSet` so per-peer tasks are
 /// owned (M9.6, not orphaned).
-pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed: SignedEnvelope) {
+pub fn send_to_mesh_raw<D: GossipDeps>(
+    deps: Arc<D>,
+    community_id: &str,
+    signed: SignedEnvelope,
+) -> Result<(), GossipError> {
     // The `'G'` gossip datagram (§6 ingress ledger), as every gossip send.
-    let signed_bytes = gossip_datagram(&signed);
+    let signed_bytes = gossip_datagram(&signed)?;
 
     // No overlay yet (a community just joined, before its first presence
     // poll builds one) holds the send like an empty one: the poll that
@@ -115,7 +117,7 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
             community = %community_id,
             "send_to_mesh_raw: peers empty, queued for later drain",
         );
-        return;
+        return Ok(());
     }
 
     let selected = select_fanout(&*deps, community_id, peers);
@@ -128,6 +130,7 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
     deps.scope().spawn_or_drop("mesh fan-out", async move {
         fan_out(deps, cid_owner, selected, signed_bytes).await;
     });
+    Ok(())
 }
 
 /// Sign `envelope` and send it to the fan-out now, awaiting every peer's
@@ -151,7 +154,7 @@ pub async fn send_to_mesh_awaited<D: GossipDeps>(
         deps,
         community_id.to_owned(),
         selected,
-        gossip_datagram(&signed),
+        gossip_datagram(&signed)?,
     )
     .await;
     Ok(sent)

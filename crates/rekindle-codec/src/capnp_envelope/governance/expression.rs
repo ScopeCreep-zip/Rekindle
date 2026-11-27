@@ -13,7 +13,7 @@ use rekindle_types::governance::GovernanceEntry;
 pub(super) fn write_expression_added(
     mut p: schema_pkg::expression_added_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::ExpressionAdded {
         expression_id,
         name,
@@ -38,9 +38,9 @@ pub(super) fn write_expression_added(
     // inline_data path. Bytes travel via the AttachmentOffer + Lost Cargo.
     p.set_has_inline_data(false);
     p.set_animated(*animated);
-    let mut tag_list = p.reborrow().init_tags(len_u32(tags.len()));
-    for (i, t) in tags.iter().enumerate() {
-        tag_list.set(len_u32(i), t.as_str());
+    let mut tag_list = p.reborrow().init_tags(len_u32(tags.len())?);
+    for (i, t) in (0u32..).zip(tags.iter()) {
+        tag_list.set(i, t.as_str());
     }
     p.set_has_sound_meta(sound_meta.is_some());
     if let Some(sm) = sound_meta {
@@ -60,14 +60,15 @@ pub(super) fn write_expression_added(
     }
     p.set_has_attachment(attachment.is_some());
     if let Some(offer) = attachment {
-        write_attachment_offer(p.reborrow().init_attachment(), offer);
+        write_attachment_offer(p.reborrow().init_attachment(), offer)?;
     }
+    Ok(())
 }
 
 pub(super) fn write_attachment_offer(
     mut p: schema_pkg::attachment_offer::Builder<'_>,
     offer: &rekindle_types::attachment::AttachmentOffer,
-) {
+) -> Result<(), CodecError> {
     uuid16_to_capnp(p.reborrow().init_attachment_id(), &offer.attachment_id);
     p.set_filename(&offer.filename);
     p.set_mime_type(&offer.mime_type);
@@ -77,12 +78,13 @@ pub(super) fn write_attachment_offer(
     p.set_merkle_root(&offer.merkle_root);
     let mut hashes = p
         .reborrow()
-        .init_chunk_hashes(len_u32(offer.chunk_hashes.len()));
-    for (i, h) in offer.chunk_hashes.iter().enumerate() {
-        hashes.set(len_u32(i), h);
+        .init_chunk_hashes(len_u32(offer.chunk_hashes.len())?);
+    for (i, h) in (0u32..).zip(offer.chunk_hashes.iter()) {
+        hashes.set(i, h);
     }
     p.set_wrapped_fek(&offer.wrapped_fek);
     p.set_fek_mek_generation(offer.fek_mek_generation);
+    Ok(())
 }
 
 pub(super) fn write_expression_removed(

@@ -1,7 +1,7 @@
-import { Component, For, Show, onMount } from "solid-js";
-import type { Community } from "../../../stores/community.store";
-import { commands } from "../../../ipc/commands";
+import { type Component, For, onMount, Show } from "solid-js";
 import { handleLoadExpressions } from "../../../actions/community.actions";
+import { commands } from "../../../ipc/commands";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 
 interface ExpressionsTabProps {
@@ -38,8 +38,11 @@ const ExpressionsTab: Component<ExpressionsTabProps> = (props) => {
         <For each={props.community.expressions}>
           {(x) => (
             <div class="settings-list-item">
-              <span>:{x.name}: ({x.kind})</span>
+              <span>
+                :{x.name}: ({x.kind})
+              </span>
               <button
+                type="button"
                 class="form-btn-danger"
                 aria-label={`Delete ${x.kind} ${x.name}`}
                 onClick={() => void remove(x.id, x.name)}

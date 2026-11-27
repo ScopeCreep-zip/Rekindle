@@ -1,7 +1,8 @@
-import { Component, createSignal, onMount, For, Show } from "solid-js";
+import { type Component, createSignal, onMount, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
-import { settingsState, setSettingsState } from "../../stores/settings.store";
+import SettingsSelect from "../../components/common/SettingsSelect";
 import { commands } from "../../ipc/commands";
+import { setSettingsState, settingsState } from "../../stores/settings.store";
 
 /** One camera choice: the webview deviceId when the webview path lists
  *  it, and the label both paths resolve by. */
@@ -30,12 +31,10 @@ const VideoTab: Component = () => {
     setVideoEnumError(null);
     // A failure is reported, not read as "no native capture": a missing
     // grant once made this window fall back silently (plan C7.28).
-    const nativeAvailable = await commands
-      .nativeVideoCaptureAvailable()
-      .catch((e: unknown) => {
-        setVideoEnumError(`Could not check for native camera capture: ${String(e)}`);
-        return null;
-      });
+    const nativeAvailable = await commands.nativeVideoCaptureAvailable().catch((e: unknown) => {
+      setVideoEnumError(`Could not check for native camera capture: ${String(e)}`);
+      return null;
+    });
     if (nativeAvailable === null) return;
     setNative(nativeAvailable);
     if (nativeAvailable) {
@@ -45,7 +44,7 @@ const VideoTab: Component = () => {
           devices
             .map((d) => d.displayName)
             .filter((label) => label)
-            .map((label) => ({ deviceId: null, label })),
+            .map((label) => ({ deviceId: null, label }))
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -59,7 +58,9 @@ const VideoTab: Component = () => {
         video: true,
         audio: false,
       });
-      stream.getTracks().forEach((t) => t.stop());
+      stream.getTracks().forEach((track) => {
+        track.stop();
+      });
     } catch (e) {
       const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       setVideoEnumError(msg);
@@ -73,7 +74,7 @@ const VideoTab: Component = () => {
           .map((d) => ({
             deviceId: d.deviceId,
             label: d.label || `Camera ${d.deviceId.slice(0, 6)}`,
-          })),
+          }))
       );
     } catch (inner) {
       console.error("Failed to enumerate video devices:", inner);
@@ -97,22 +98,19 @@ const VideoTab: Component = () => {
   function choose(option: CameraOption | null): void {
     setSettingsState("selectedVideoDeviceId", option?.deviceId ?? null);
     setSettingsState("selectedVideoDeviceLabel", option?.label ?? null);
-    commands
-      .setVideoDevice(option?.deviceId ?? null, option?.label ?? null)
-      .catch((e) => {
-        console.error("Failed to set the camera:", e);
-      });
+    commands.setVideoDevice(option?.deviceId ?? null, option?.label ?? null).catch((e) => {
+      console.error("Failed to set the camera:", e);
+    });
   }
 
   /** The option key: deviceId on the webview path, label on native. */
-  const keyOf = (option: CameraOption): string =>
-    option.deviceId ?? `label:${option.label}`;
+  const keyOf = (option: CameraOption): string => option.deviceId ?? `label:${option.label}`;
 
   const selectedKey = (): string => {
     const id = settingsState.selectedVideoDeviceId;
     const label = settingsState.selectedVideoDeviceLabel;
     const match = cameras().find(
-      (c) => (id !== null && c.deviceId === id) || (label !== null && c.label === label),
+      (c) => (id !== null && c.deviceId === id) || (label !== null && c.label === label)
     );
     return match ? keyOf(match) : "";
   };
@@ -120,41 +118,30 @@ const VideoTab: Component = () => {
   return (
     <>
       <div class="settings-section-title">Camera</div>
-      <FormField label="Camera Device">
-        <select
-          class="form-select"
+      <FormField label="Camera Device" labelId="settings-camera-label">
+        <SettingsSelect
+          labelledBy="settings-camera-label"
           value={selectedKey()}
-          onChange={(e) => {
-            const key = e.currentTarget.value;
-            choose(cameras().find((c) => keyOf(c) === key) ?? null);
-          }}
-        >
-          <option value="">System Default</option>
-          <For each={cameras()}>
-            {(c) => <option value={keyOf(c)}>{c.label}</option>}
-          </For>
-        </select>
+          onChange={(key) => choose(cameras().find((c) => keyOf(c) === key) ?? null)}
+          options={[
+            { value: "", label: "System Default" },
+            ...cameras().map((c) => ({ value: keyOf(c), label: c.label })),
+          ]}
+        />
       </FormField>
       <Show when={cameras().length === 0 || videoEnumError()}>
-        <button
-          type="button"
-          class="form-button"
-          onClick={() => void refreshDevices()}
-        >
+        <button type="button" class="form-button" onClick={() => void refreshDevices()}>
           Request camera access / refresh devices
         </button>
       </Show>
       <Show when={videoEnumError()}>
         <div class="settings-hint">
-          Camera access failed: {videoEnumError()} — the device list stays
-          empty until access succeeds (also logged to the app terminal).
+          Camera access failed: {videoEnumError()} — the device list stays empty until access
+          succeeds (also logged to the app terminal).
         </div>
       </Show>
       <div class="settings-hint">
-        <Show
-          when={native()}
-          fallback="Selection applies to the next outgoing video call."
-        >
+        <Show when={native()} fallback="Selection applies to the next outgoing video call.">
           A camera already on in a call switches to the selection.
         </Show>{" "}
         Screen sharing uses the OS picker.

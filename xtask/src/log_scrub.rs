@@ -1,7 +1,7 @@
 //! `check-log-scrub`: every log sink scrubs identifiers (rule B19).
 //!
 //! Two checks over production code (`src-tauri/src` and every
-//! `crates/*/src`; `tests/` trees, `tests.rs`, `*_tests.rs` and items
+//! `crates/*/src`; the files [`crate::test_code`] knows as test code by declaration, and items
 //! under `#[cfg(test)]` or a test attribute are skipped):
 //! - every statement that builds a tracing subscriber (a call through
 //!   `tracing_subscriber::{fmt, registry, fmt::layer, fmt::init, …}` or
@@ -161,10 +161,6 @@ fn binary_installs_hook(main_src: &str, lib_src: Option<&str>) -> bool {
     })
 }
 
-fn is_test_file(rel: &str) -> bool {
-    rel.contains("/tests/") || rel.ends_with("/tests.rs") || rel.ends_with("_tests.rs")
-}
-
 fn package_src_dirs(root: &Path) -> Result<Vec<std::path::PathBuf>> {
     let mut dirs = vec![root.join("src-tauri/src")];
     for entry in std::fs::read_dir(root.join("crates"))? {
@@ -178,6 +174,7 @@ fn package_src_dirs(root: &Path) -> Result<Vec<std::path::PathBuf>> {
 }
 
 pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut hits = Vec::new();
     for src_dir in package_src_dirs(root)? {
         for path in walk_source_files(&src_dir, &["rs"])? {
@@ -186,7 +183,7 @@ pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if is_test_file(&rel) {
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {

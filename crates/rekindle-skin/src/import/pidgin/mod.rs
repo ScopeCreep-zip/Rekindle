@@ -315,8 +315,8 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
         name: id.to_owned(),
         description: "Imported from a Pidgin theme; see the NOTICE beside the package.".to_owned(),
         license: SkinLicense::Text(
-            "Third-party Pidgin theme. Not covered by Rekindle's MIT licence; provenance and \
-             every change are in the NOTICE beside the package."
+            "Third-party Pidgin theme. Not covered by Rekindle's MIT OR Apache-2.0 licence; \
+             provenance and every change are in the NOTICE beside the package."
                 .to_owned(),
         ),
         source: Some(SkinSource {

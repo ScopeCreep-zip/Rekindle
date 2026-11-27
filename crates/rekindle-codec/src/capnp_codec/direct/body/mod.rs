@@ -56,13 +56,24 @@ use super::{decode_root, encode_root, DmTypeId};
 use crate::capnp_codec::CodecError;
 use crate::direct_capnp as schema;
 
+/// Adapt an infallible scalar or text writer to the root encoder.
+macro_rules! write_direct_body {
+    (checked, $body:expr, $builder:expr) => {
+        $body.write($builder)
+    };
+    (plain, $body:expr, $builder:expr) => {{
+        $body.write($builder);
+        Ok(())
+    }};
+}
+
 /// `bodies` read fallibly (text, data, fixed-size fields); `scalar` bodies
 /// hold only scalars, so reading them cannot fail; `empty` kinds carry no
 /// bytes.
 macro_rules! direct_bodies {
     (
-        bodies { $( $kind:ident($ty:ident) = $schema:ident, )* }
-        scalar { $( $skind:ident($sty:ident) = $sschema:ident, )* }
+        bodies { $( $kind:ident($ty:ident) = $schema:ident($writer:ident), )* }
+        scalar { $( $skind:ident($sty:ident) = $sschema:ident($swriter:ident), )* }
         empty { $( $empty:ident, )* }
     ) => {
         /// A decoded body, by kind.
@@ -86,16 +97,15 @@ macro_rules! direct_bodies {
 
             /// The body's bytes (packed Cap'n Proto; empty for the kinds
             /// without a body).
-            #[must_use]
-            pub fn encode(&self) -> Vec<u8> {
+                        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
                 match self {
                     $( Self::$kind(body) => {
-                        encode_root::<schema::$schema::Owned>(|b| body.write(b))
+                        encode_root::<schema::$schema::Owned>(|b| write_direct_body!($writer, body, b))
                     } )*
                     $( Self::$skind(body) => {
-                        encode_root::<schema::$sschema::Owned>(|b| body.write(b))
+                        encode_root::<schema::$sschema::Owned>(|b| write_direct_body!($swriter, body, b))
                     } )*
-                    $( Self::$empty => Vec::new(), )*
+                    $( Self::$empty => Ok(Vec::new()), )*
                 }
             }
 
@@ -125,68 +135,68 @@ macro_rules! direct_bodies {
 
 direct_bodies! {
     bodies {
-        FriendRequest(FriendRequest) = friend_request,
-        RelayEnvelope(RelayEnvelope) = relay_envelope,
-        PreKeyRejected(PreKeyRejected) = pre_key_rejected,
-        RetryRequest(RetryRequest) = retry_request,
-        SessionResetRequest(SessionResetRequest) = session_reset_request,
-        SessionResetDecline(SessionResetDecline) = session_reset_decline,
-        DmAck(DmAck) = dm_ack,
-        DmText(DmText) = dm_text,
-        FriendAccept(FriendAccept) = friend_accept,
-        ProfileKeyRotated(ProfileKeyRotated) = profile_key_rotated,
-        FriendsKey(FriendsKey) = friends_key,
-        StreamRecord(StreamRecord) = stream_record,
-        IdentityRotated(IdentityRotated) = identity_rotated,
-        DmEdit(DmEdit) = dm_edit,
-        DmDelete(DmDelete) = dm_delete,
-        DmReaction(DmReaction) = dm_reaction,
-        GroupDmInvite(GroupDmInvite) = group_dm_invite,
-        GroupDmAccept(GroupDmAccept) = group_dm_accept,
-        GroupDmDecline(GroupDmDecline) = group_dm_decline,
-        GroupDmLeave(GroupDmLeave) = group_dm_leave,
-        GroupContent(GroupContent) = group_content,
-        GroupDmRename(GroupDmRename) = group_dm_rename,
-        GroupDmRosterGrow(GroupDmRosterGrow) = group_dm_roster_grow,
-        LobbyOpen(LobbyOpen) = lobby_open,
-        LobbyJoin(LobbyRef) = lobby_ref,
-        LobbyLeave(LobbyRef) = lobby_ref,
-        LobbyLaunch(LobbyLaunch) = lobby_launch,
-        LobbyClose(LobbyRef) = lobby_ref,
-        RelayOffer(RelayOffer) = relay_offer,
-        RelayWithdraw(RelayWithdraw) = relay_withdraw,
-        RelayOfferAck(RelayOfferAck) = relay_offer_ack,
-        StatusRequest(StatusRequest) = status_request,
-        StatusResponse(StatusResponse) = status_response,
-        DisappearingTimer(DisappearingTimer) = disappearing_timer,
-        GameInvite(GameInvite) = game_invite,
-        ProfileBio(ProfileBio) = profile_bio,
-        GameTotals(GameTotals) = game_totals,
-        CreatorInvite(CreatorInvite) = creator_invite,
-        CreatorAccept(CreatorAccept) = creator_accept,
-        CreatorDecline(CreatorDecline) = creator_decline,
-        CreatorWithdrawn(CreatorWithdrawn) = creator_withdrawn,
-        CreatorJoin(CreatorJoin) = creator_join,
-        CallInvite(CallInvite) = call_invite,
-        CallRinging(CallRinging) = call_ringing,
-        CallAccept(CallAccept) = call_accept,
-        CallDecline(CallClosed) = call_closed,
-        CallEnd(CallClosed) = call_closed,
-        CallMediaState(CallMediaState) = call_media_state,
-        CallReaction(CallReaction) = call_reaction,
-        GroupCallOffer(GroupCallOffer) = group_call_offer,
-        GroupCallAccept(GroupCallMember) = group_call_member,
-        GroupCallDecline(CallClosed) = call_closed,
-        GroupCallParticipantJoined(GroupCallMember) = group_call_member,
-        GroupCallParticipantLeft(GroupCallParticipantLeft) = group_call_participant_left,
-        DmVideoFragment(DmVideoFragment) = dm_video_fragment,
-        RegisterPushRelay(RegisterPushRelay) = register_push_relay,
-        UnregisterPushRelay(UnregisterPushRelay) = unregister_push_relay,
+        FriendRequest(FriendRequest) = friend_request(plain),
+        RelayEnvelope(RelayEnvelope) = relay_envelope(plain),
+        PreKeyRejected(PreKeyRejected) = pre_key_rejected(plain),
+        RetryRequest(RetryRequest) = retry_request(plain),
+        SessionResetRequest(SessionResetRequest) = session_reset_request(plain),
+        SessionResetDecline(SessionResetDecline) = session_reset_decline(plain),
+        DmAck(DmAck) = dm_ack(checked),
+        DmText(DmText) = dm_text(plain),
+        FriendAccept(FriendAccept) = friend_accept(plain),
+        ProfileKeyRotated(ProfileKeyRotated) = profile_key_rotated(plain),
+        FriendsKey(FriendsKey) = friends_key(plain),
+        StreamRecord(StreamRecord) = stream_record(plain),
+        IdentityRotated(IdentityRotated) = identity_rotated(plain),
+        DmEdit(DmEdit) = dm_edit(plain),
+        DmDelete(DmDelete) = dm_delete(plain),
+        DmReaction(DmReaction) = dm_reaction(plain),
+        GroupDmInvite(GroupDmInvite) = group_dm_invite(checked),
+        GroupDmAccept(GroupDmAccept) = group_dm_accept(plain),
+        GroupDmDecline(GroupDmDecline) = group_dm_decline(plain),
+        GroupDmLeave(GroupDmLeave) = group_dm_leave(plain),
+        GroupContent(GroupContent) = group_content(plain),
+        GroupDmRename(GroupDmRename) = group_dm_rename(plain),
+        GroupDmRosterGrow(GroupDmRosterGrow) = group_dm_roster_grow(checked),
+        LobbyOpen(LobbyOpen) = lobby_open(plain),
+        LobbyJoin(LobbyRef) = lobby_ref(plain),
+        LobbyLeave(LobbyRef) = lobby_ref(plain),
+        LobbyLaunch(LobbyLaunch) = lobby_launch(plain),
+        LobbyClose(LobbyRef) = lobby_ref(plain),
+        RelayOffer(RelayOffer) = relay_offer(plain),
+        RelayWithdraw(RelayWithdraw) = relay_withdraw(plain),
+        RelayOfferAck(RelayOfferAck) = relay_offer_ack(plain),
+        StatusRequest(StatusRequest) = status_request(plain),
+        StatusResponse(StatusResponse) = status_response(plain),
+        DisappearingTimer(DisappearingTimer) = disappearing_timer(plain),
+        GameInvite(GameInvite) = game_invite(plain),
+        ProfileBio(ProfileBio) = profile_bio(plain),
+        GameTotals(GameTotals) = game_totals(checked),
+        CreatorInvite(CreatorInvite) = creator_invite(plain),
+        CreatorAccept(CreatorAccept) = creator_accept(plain),
+        CreatorDecline(CreatorDecline) = creator_decline(plain),
+        CreatorWithdrawn(CreatorWithdrawn) = creator_withdrawn(plain),
+        CreatorJoin(CreatorJoin) = creator_join(plain),
+        CallInvite(CallInvite) = call_invite(checked),
+        CallRinging(CallRinging) = call_ringing(plain),
+        CallAccept(CallAccept) = call_accept(checked),
+        CallDecline(CallClosed) = call_closed(plain),
+        CallEnd(CallClosed) = call_closed(plain),
+        CallMediaState(CallMediaState) = call_media_state(plain),
+        CallReaction(CallReaction) = call_reaction(plain),
+        GroupCallOffer(GroupCallOffer) = group_call_offer(checked),
+        GroupCallAccept(GroupCallMember) = group_call_member(plain),
+        GroupCallDecline(CallClosed) = call_closed(plain),
+        GroupCallParticipantJoined(GroupCallMember) = group_call_member(plain),
+        GroupCallParticipantLeft(GroupCallParticipantLeft) = group_call_participant_left(plain),
+        DmVideoFragment(DmVideoFragment) = dm_video_fragment(plain),
+        RegisterPushRelay(RegisterPushRelay) = register_push_relay(checked),
+        UnregisterPushRelay(UnregisterPushRelay) = unregister_push_relay(plain),
     }
     scalar {
-        WakeNotify(WakeNotify) = wake_notify,
-        ReadUpTo(ReadUpTo) = read_up_to,
-        Typing(Typing) = typing,
+        WakeNotify(WakeNotify) = wake_notify(plain),
+        ReadUpTo(ReadUpTo) = read_up_to(plain),
+        Typing(Typing) = typing(plain),
     }
     empty {
         SessionResetAccept,

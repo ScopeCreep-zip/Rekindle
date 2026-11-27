@@ -1,18 +1,19 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   handleCreateCommunityInvite,
-  handleRevokeCommunityInvite,
   handleListCommunityInvites,
+  handleRevokeCommunityInvite,
 } from "../../../actions/community.actions";
-import { communityState } from "../../../stores/community.store";
 import type { InviteDto } from "../../../ipc/commands/dto";
-import { formatExpiry } from "../../../utils/formatting";
+import { communityState } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
+import { formatExpiry } from "../../../utils/formatting";
 
 interface InvitesTabProps {
   communityId: string;
   canCreateInvite: boolean;
-  canManage: boolean;
+  /** Why we may not revoke invites, in the Host's words, or null (never-hide). */
+  revokeDenied: string | null;
 }
 
 /** The redemptions an invite may allow (IJ1): explicit choices, never a
@@ -39,7 +40,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   onCleanup(() => clearInterval(expiryTimer));
 
   createEffect(() => {
-    if ((props.canManage || props.canCreateInvite) && !loaded()) {
+    if ((props.revokeDenied === null || props.canCreateInvite) && !loaded()) {
       setLoaded(true);
       handleListCommunityInvites(props.communityId);
     }
@@ -81,7 +82,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   }
 
   function truncateHash(hash: string): string {
-    if (hash.length > 12) return hash.slice(0, 12) + "...";
+    if (hash.length > 12) return `${hash.slice(0, 12)}...`;
     return hash;
   }
 
@@ -91,7 +92,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
         <Show
           when={creatingInvite()}
           fallback={
-            <button class="form-btn-primary" onClick={() => setCreatingInvite(true)}>
+            <button type="button" class="form-btn-primary" onClick={() => setCreatingInvite(true)}>
               Create Invite
             </button>
           }
@@ -122,10 +123,14 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
               <option value="86400">1 day</option>
               <option value="604800">7 days</option>
             </select>
-            <button class="form-btn-primary" onClick={submitInvite}>
+            <button type="button" class="form-btn-primary" onClick={submitInvite}>
               Create
             </button>
-            <button class="form-btn-secondary" onClick={() => setCreatingInvite(false)}>
+            <button
+              type="button"
+              class="form-btn-secondary"
+              onClick={() => setCreatingInvite(false)}
+            >
               Cancel
             </button>
           </div>
@@ -143,23 +148,19 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
             onClick={(e) => e.currentTarget.select()}
           />
           <button
+            type="button"
             class="form-btn-primary"
             onClick={() => copyToClipboard(createdLink()!)}
           >
             Copy Link
           </button>
-          <button
-            class="form-btn-secondary"
-            onClick={() => setCreatedLink(null)}
-          >
+          <button type="button" class="form-btn-secondary" onClick={() => setCreatedLink(null)}>
             Dismiss
           </button>
         </div>
       </Show>
 
-      <Show when={invites().length > 0} fallback={
-        <div class="settings-hint">No invites yet.</div>
-      }>
+      <Show when={invites().length > 0} fallback={<div class="settings-hint">No invites yet.</div>}>
         <div class="settings-hint">
           Ask the person joining to check this matches what their screen shows.
         </div>
@@ -171,8 +172,10 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 <span class="settings-list-role">
                   by {(() => {
                     const community = communityState.communities[props.communityId];
-                    const member = community?.members.find((m) => m.pseudonymKey === invite.createdBy);
-                    return member?.displayName ?? (invite.createdBy.slice(0, 8) + "...");
+                    const member = community?.members.find(
+                      (m) => m.pseudonymKey === invite.createdBy
+                    );
+                    return member?.displayName ?? `${invite.createdBy.slice(0, 8)}...`;
                   })()}
                 </span>
                 <span class="invite-fingerprint">
@@ -182,13 +185,18 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   Uses: {invite.uses} / {invite.maxUses}
                   {" \u00B7 "}
                   Expires: {formatExpiry(invite.expiresAt)}
-                  <Show when={invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)}>
+                  <Show
+                    when={
+                      invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)
+                    }
+                  >
                     {" (expired)"}
                   </Show>
                 </span>
               </div>
               <div class="settings-list-actions">
                 <button
+                  type="button"
                   class="form-btn-secondary"
                   onClick={() => copyToClipboard(invite.fingerprint, undefined, "Fingerprint")}
                 >
@@ -196,23 +204,25 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 </button>
                 <Show when={invite.url}>
                   {(url) => (
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => copyToClipboard(url(), invite.codeHash)}
-                  >
-                    {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
-                  </button>
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={() => copyToClipboard(url(), invite.codeHash)}
+                    >
+                      {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
+                    </button>
                   )}
                 </Show>
-                <Show when={props.canManage}>
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => revokeInvite(invite.inviteId)}
-                    disabled={revokingHash() === invite.inviteId}
-                  >
-                    {revokingHash() === invite.inviteId ? "Revoking..." : "Revoke"}
-                  </button>
-                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary"
+                  onClick={() => revokeInvite(invite.inviteId)}
+                  disabled={revokingHash() === invite.inviteId || props.revokeDenied !== null}
+                  title={props.revokeDenied ?? undefined}
+                  aria-description={props.revokeDenied ?? undefined}
+                >
+                  {revokingHash() === invite.inviteId ? "Revoking..." : "Revoke"}
+                </button>
               </div>
             </div>
           )}

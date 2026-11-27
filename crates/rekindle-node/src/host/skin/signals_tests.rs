@@ -7,7 +7,7 @@ use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, OwnRecordsPhase, SubscriptionEvent, VoiceEvent, VoiceScope,
 };
 
-use super::actions::Selections;
+use super::actions::{Launchers, Selections};
 use rekindle_types::dto::skin_signals::{DisableCause, DisableSignal};
 use rekindle_types::subscription_events::RouteAvailability;
 
@@ -271,6 +271,7 @@ fn two_chat_windows_with_different_peers_get_different_sets() {
     let sets = window_sets(
         &Inputs::default(),
         &selections,
+        &Launchers::default(),
         &SkinWorld::default(),
         |k| {
             let status = if k == "onlinekey" {

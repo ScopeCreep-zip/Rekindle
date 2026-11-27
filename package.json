@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "packageManager": "pnpm@10.28.1",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "type": "module",
   "engines": {
     "node": "^22.18.0 || >=23.6.0"
@@ -25,9 +26,10 @@
     "@kobalte/core": "^0.13.11",
     "@tauri-apps/api": "^2.12.1",
     "qr-scanner": "^1.4.2",
-    "solid-js": "^1.9.0"
+    "solid-js": "^1.9.20"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.16",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.12.1",
     "@types/node": "^26.5.0",
@@ -41,6 +43,8 @@
     "dependency-cruiser": "^18.2.0",
     "expect-webdriverio": "8.1.0",
     "knip": "^6.39.0",
+    "stylelint": "18.0.0",
+    "stylelint-config-standard": "41.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",

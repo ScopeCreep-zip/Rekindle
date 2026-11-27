@@ -415,6 +415,7 @@ async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
                 pending.issued_at_ms,
             ),
         )
+        .unwrap()
         .into_iter()
         .map(|p| p.value)
         .collect::<Vec<_>>()

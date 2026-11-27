@@ -51,6 +51,18 @@ fn announce<D: GovernanceRuntimeDeps>(deps: &D, community_id: &str, barrier: &Un
     deps.emit_catch_up(community_id, view);
 }
 
+/// A forum post answers only once the thread and starter are committed.
+/// While another op holds the signing turn, the caller can retry later.
+pub(crate) fn take_immediate<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<SigningTurn, GovernanceRuntimeError> {
+    let barrier = deps.unlock_barrier(community_id);
+    refuse_unheld(&barrier, community_id)?;
+    SigningTurn::try_now(barrier)
+        .ok_or_else(|| GovernanceRuntimeError::OwnOpsPending(community_id.to_owned()))
+}
+
 /// The write's slot in `community_id`: its turn now, or held (built by
 /// `held` from its id, and announced). A write whose `landing` is the
 /// invite link's is never held: it waits in line for its turn, up to its
@@ -69,12 +81,8 @@ pub(crate) async fn take_slot<D: GovernanceRuntimeDeps>(
     held: impl FnOnce(String) -> PendingGovOp,
 ) -> Result<BarrierSlot, GovernanceRuntimeError> {
     let barrier = deps.unlock_barrier(community_id);
-    if let Some(turn) = barrier.try_turn_now() {
-        return Ok(BarrierSlot::Now(SigningTurn {
-            barrier,
-            held: None,
-            _order: turn,
-        }));
+    if let Some(turn) = SigningTurn::try_now(Arc::clone(&barrier)) {
+        return Ok(BarrierSlot::Now(turn));
     }
     let deadline = match landing {
         OpLanding::FirstAttempt | OpLanding::Queued => None,
@@ -229,10 +237,24 @@ impl HeldGovWrite {
 }
 
 impl SigningTurn {
+    fn try_now(barrier: Arc<UnlockBarrier>) -> Option<Self> {
+        let order = barrier.try_turn_now()?;
+        Some(Self {
+            barrier,
+            held: None,
+            _order: order,
+        })
+    }
+
     /// Our op `op_hash` (hex) is signed and queued: the next write waits
     /// for it to land.
     pub(crate) fn signed(&self, op_hash: &str) {
         self.barrier.signed(op_hash);
+    }
+
+    /// Undo the signing reservation after a failed commit.
+    pub(crate) fn settled(&self, op_hash: &str) {
+        self.barrier.settled(op_hash);
     }
 
     /// The write is done (signed, or refused before signing): drop it from

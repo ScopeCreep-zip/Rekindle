@@ -1,46 +1,4 @@
 @layer components {
-  /* Architecture §32 a11y — global focus-visible. Every interactive
-   * element gets a 2px accent ring on keyboard focus; mouse focus is
-   * suppressed so the dense Xfire UI stays clean for sighted users.
-   * Per-element overrides can wrap their own ring in a corresponding
-   * `:focus-visible` rule, but the global ring is the safety net so
-   * the audit's "0 focus-visible rules" gap closes in one cascade. */
-  *:focus-visible {
-    outline: 2px solid var(--color-xfire-focus-outline);
-    outline-offset: 2px;
-    border-radius: inherit;
-  }
-  /* The ring above reaches 4px past an element (2px outline + 2px
-   * offset): scrolling an element into view, as focus does, leaves that
-   * room so a scroll pane's edge never cuts the ring. */
-  * {
-    scroll-margin: 4px;
-  }
-  *:focus:not(:focus-visible) {
-    outline: none;
-  }
-
-  /* Rows, tabs and bar buttons fill a clipping list or bar edge to edge, so an outset
-   * ring would be cut; theirs is drawn inside the box (plan E7.12), deep
-   * enough for the 3px ring `prefers-contrast: more` asks for. */
-  .buddy-tab:focus-visible,
-  .form-tab:focus-visible,
-  .menu-bar-item:focus-visible,
-  .header-add-btn:focus-visible,
-  .buddy-item:focus-visible,
-  .channel-item:focus-visible,
-  .xfire-titlebar-btn:focus-visible,
-  .member-item:focus-visible,
-  .group-dm-row:focus-visible,
-  .sidebar-section-more:focus-visible,
-  /* "+ Category" sits at the foot of the channel list, which clips it. */
-  .channel-create-category-btn:focus-visible,
-  /* A message log is the scroller its pane clips (plan E7.3: focusable for
-   * SC 2.1.1), so its ring is drawn inside too. */
-  [role="log"][tabindex]:focus-visible {
-    outline-offset: -3px;
-  }
-
   /* Architecture §32 a11y — skip link rendered as the first focusable
    * child of each top-level window. Hidden via `clip-path: inset(100%)`
    * (modern 2026-canon pattern; not the deprecated `left: -9999px`
@@ -56,7 +14,7 @@
     padding: 8px 16px;
     text-decoration: none;
     font-weight: 600;
-    border-radius: 0 0 4px 0;
+    border-radius: 0 0 4px;
     clip-path: inset(100%);
   }
   .skip-link:focus {
@@ -128,7 +86,7 @@
     display: block;
     width: 100%;
     height: 100%;
-    fill: currentColor;
+    fill: currentcolor;
   }
   .skin-glyph-served {
     background: var(--skin-glyph-image) center / contain no-repeat;
@@ -179,7 +137,7 @@
 
   .xfire-titlebar-btn:hover {
     color: var(--color-xfire-titlebar-text);
-    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-titlebar-text) 15%, transparent);
   }
 
   .xfire-titlebar-btn-close:hover {
@@ -205,7 +163,7 @@
 
 
   .form-select:disabled {
-    opacity: 0.5;
+    color: var(--color-xfire-text-disabled);
     cursor: not-allowed;
   }
 
@@ -237,7 +195,7 @@
   .form-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -247,7 +205,7 @@
     width: 100%;
     padding: 8px;
     background: var(--color-xfire-accent);
-    color: var(--color-xfire-accent-fg);
+    color: var(--color-xfire-selection-text);
     border: none;
     border-radius: 0.25rem;
     font-size: 13px;
@@ -257,12 +215,16 @@
     transition: background var(--motion-duration-fast);
   }
 
+  /* Hover rings in selection.text (4.5:1 on the fill): the label's ground stays. */
   .form-btn-primary:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
+    box-shadow: inset 0 0 0 1px var(--color-xfire-selection-text);
   }
 
-  .form-btn-primary:disabled {
-    opacity: 0.5;
+  /* Disabled: the theme's DisabledTextCG on bg.secondary, never a fade (ST1). */
+  .form-btn-primary:disabled,
+  .form-btn-danger:disabled {
+    background: var(--color-xfire-bg-secondary);
+    color: var(--color-xfire-text-disabled);
     cursor: not-allowed;
   }
 
@@ -271,9 +233,9 @@
   .form-btn-secondary,
   .skin-row-btn {
     padding: 8px 16px;
-    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
+    background: var(--color-xfire-bg-secondary);
     color: var(--color-xfire-text);
-    border: 1px solid var(--color-xfire-border);
+    border: 1px solid var(--color-xfire-progress-outline);
     border-radius: 0.25rem;
     font-size: 12px;
     font-weight: 600;
@@ -284,12 +246,12 @@
 
   .form-btn-secondary:hover,
   .skin-row-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-overlay) 12%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, var(--color-xfire-bg-secondary));
   }
 
   .form-btn-secondary:disabled,
   .skin-row-btn:disabled {
-    opacity: 0.4;
+    color: var(--color-xfire-text-disabled);
     cursor: not-allowed;
   }
 
@@ -311,10 +273,6 @@
     background: var(--color-xfire-danger);
   }
 
-  .form-btn-danger:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
 
   .form-field {
     padding: 4px 12px;
@@ -324,7 +282,7 @@
   .form-field-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     text-transform: uppercase;
     margin-bottom: 4px;
     display: block;
@@ -353,7 +311,8 @@
     flex-shrink: 0;
     padding: 0 8px;
     gap: 2px;
-    background: var(--color-xfire-bg-dark);
+    /* The rail is the dialog's menu bar (ST1: menu ground, MenuTextCG). */
+    background: var(--color-xfire-menubar-bg);
     /* Every tab stays in view: a narrow window wraps them to a second
        row rather than hiding the last ones in a sideways scroller. */
     flex-wrap: wrap;
@@ -376,7 +335,7 @@
     padding: 6px 12px;
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-menubar-text);
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
@@ -390,14 +349,17 @@
     flex-shrink: 0;
   }
 
+  /* Hover marks the underline (Xfire's tab cue); the label keeps its ground. */
   .form-tab:hover:not(.form-tab-active) {
-    color: var(--color-xfire-text-primary);
+    border-bottom-color: color-mix(in srgb, var(--color-xfire-accent) 60%, transparent);
   }
 
+  /* The chosen tab is Xfire's selected row: the fill with selection.text. */
   .form-tab-active,
   .form-tab.active,
   .form-tab[aria-selected="true"] {
-    color: var(--color-xfire-accent-text);
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-selection-text);
     border-bottom-color: var(--color-xfire-accent);
   }
 

@@ -1,21 +1,19 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
+import { handleSubmitOnboarding } from "../../actions/community.actions";
 import ForwardMessageDialog from "../../components/chat/ForwardMessageDialog";
-import CreateCommunityModal from "../../components/community/CreateCommunityModal";
-import CreateChannelModal from "../../components/community/CreateChannelModal";
-import JoinCommunityModal from "../../components/community/JoinCommunityModal";
+import SearchPanel from "../../components/chat/SearchPanel";
 import CommunitySettingsModal from "../../components/community/CommunitySettingsModal";
-import RenameChannelModal from "../../components/community/RenameChannelModal";
-import RenameCategoryModal from "../../components/community/RenameCategoryModal";
 import CreateCategoryModal from "../../components/community/CreateCategoryModal";
+import CreateChannelModal from "../../components/community/CreateChannelModal";
+import CreateCommunityModal from "../../components/community/CreateCommunityModal";
 import CreateEventModal from "../../components/community/CreateEventModal";
 import CreatePollModal from "../../components/community/CreatePollModal";
-import OnboardingWizard from "../../components/community/OnboardingWizard";
-import SearchPanel from "../../components/chat/SearchPanel";
 import CreateThreadModal from "../../components/community/CreateThreadModal";
+import JoinCommunityModal from "../../components/community/JoinCommunityModal";
+import OnboardingWizard from "../../components/community/OnboardingWizard";
+import RenameCategoryModal from "../../components/community/RenameCategoryModal";
+import RenameChannelModal from "../../components/community/RenameChannelModal";
 import { setCommunityState } from "../../stores/community.store";
-import {
-  handleSubmitOnboarding,
-} from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// All modal / overlay dialogs for `CommunityWindow`, rendered as a flat
@@ -58,7 +56,10 @@ const CommunityModals: Component<{ vm: CommunityVm }> = (props) => {
         <CreateEventModal
           isOpen={vm.showCreateEvent()}
           communityId={vm.selectedCommunityId()}
-          onClose={() => { vm.setShowCreateEvent(false); vm.setEditingEvent(null); }}
+          onClose={() => {
+            vm.setShowCreateEvent(false);
+            vm.setEditingEvent(null);
+          }}
           isEditing={vm.editingEvent() !== null}
           eventId={vm.editingEvent()?.id}
           initialTitle={vm.editingEvent()?.title}

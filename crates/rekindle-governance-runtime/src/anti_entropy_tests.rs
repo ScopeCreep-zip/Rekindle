@@ -84,7 +84,7 @@ fn fetchable() -> (Vec<u8>, Vec<u8>) {
         },
         sig: [0; 64],
     };
-    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(&op);
+    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(&op).unwrap();
     let hash = rekindle_governance::op::op_hash(&unsigned, &op.sig);
     let encoded = rekindle_codec::governance_op::encode_op(&op).expect("op encodes");
     let frontier = rekindle_codec::governance_op::encode_frontier(&Frontier {

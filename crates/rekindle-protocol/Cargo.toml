@@ -3,7 +3,7 @@ name = "rekindle-protocol"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Veilid networking layer and message serialization for Rekindle"
 
 [lints]
@@ -42,6 +42,7 @@ veilid-core = { version = "0.5", default-features = true, features = [ "app-life
 
 
 [dev-dependencies]
+proptest = "1"
 # `tests/log_scrub_veilid.rs` checks the log scrubber against the real
 # Display/Debug output of veilid-core key types (this crate is one of the
 # two allowed to depend on veilid-core).

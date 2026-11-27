@@ -103,6 +103,11 @@
     flex-shrink: 0;
   }
 
+  .call-stage-tile-spotlight-btn {
+    position: absolute;
+    inset: 0;
+  }
+
   .call-stage-tile {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -124,9 +129,7 @@
   }
 
   .call-stage-tile-video,
-  .call-stage-tile-canvas,
-
-  .call-stage-tile-video {
+  .call-stage-tile-canvas {
     transform: scaleX(-1); /* mirror own CAMERA preview, Discord-style */
   }
 

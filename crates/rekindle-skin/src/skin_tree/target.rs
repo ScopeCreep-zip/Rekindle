@@ -116,7 +116,7 @@ fn clip(g: &mut [i32; 4], a: [i32; 4], b: [i32; 4], want_b: [i32; 4]) {
         return;
     }
     let (axis, after, gap) = match (side(a, b, 0), side(a, b, 1)) {
-        (Some((ax, gx)), Some((ay, gy))) if gy > gx => (1, ay, gy),
+        (Some((_, gx)), Some((ay, gy))) if gy > gx => (1, ay, gy),
         (Some((ax, gx)), _) => (0, ax, gx),
         (None, Some((ay, gy))) => (1, ay, gy),
         (None, None) => return,

@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
+import { decodePng, encodePng, type Rgba } from "./png.ts";
 
 const SHOTS = path.join(import.meta.dirname, "out", "shots");
 
@@ -67,7 +68,31 @@ interface ShotEntry {
   sha: string;
 }
 
-/** Save session `b`'s current window as `file` in the test's folder, and index it. */
+/** One checkerboard square's side, in image pixels. */
+const CHECK = 8;
+
+/**
+ * `image` laid over a grey checkerboard, as an image editor shows
+ * transparency (lead, 2026-11-26): a transparent pixel reads as the board,
+ * never as white. TAB1 began when a window's transparent column read as a
+ * white gap.
+ */
+export function checkered(image: Rgba): Rgba {
+  const data = new Uint8Array(image.data.length);
+  for (let y = 0; y < image.height; y++) {
+    for (let x = 0; x < image.width; x++) {
+      const i = (y * image.width + x) * 4;
+      const board = (Math.floor(x / CHECK) + Math.floor(y / CHECK)) % 2 === 0 ? 204 : 153;
+      const alpha = image.data[i + 3] / 255;
+      for (let k = 0; k < 3; k++) data[i + k] = Math.round(image.data[i + k] * alpha + board * (1 - alpha));
+      data[i + 3] = 255;
+    }
+  }
+  return { width: image.width, height: image.height, data };
+}
+
+/** Save session `b`'s current window as `file` in the test's folder (the
+ *  raw PNG, and `<name>.checker.png` over a checkerboard), and index it. */
 async function save(b: Browser, user: string, file: string): Promise<void> {
   const now = current();
   const dir = path.join(SHOTS, now.spec, now.test);
@@ -77,7 +102,9 @@ async function save(b: Browser, user: string, file: string): Promise<void> {
   const skin = ((await b
     .execute(() => document.getElementById("rekindle-skin")?.getAttribute("href") ?? "")
     .catch(() => "")) as string) || "none";
-  await b.saveScreenshot(path.join(dir, file));
+  const raw = Buffer.from(await b.takeScreenshot(), "base64");
+  writeFileSync(path.join(dir, file), raw);
+  writeFileSync(path.join(dir, file.replace(/\.png$/, ".checker.png")), encodePng(checkered(decodePng(raw))));
   const index = path.join(dir, "index.json");
   const entries: ShotEntry[] = existsSync(index) ? (JSON.parse(readFileSync(index, "utf8")) as ShotEntry[]) : [];
   entries.push({ file, test: now.test, user, window, skin, sha: SHA });
@@ -94,6 +121,16 @@ async function running(b: Browser): Promise<boolean> {
       throw e;
     },
   );
+}
+
+/** An image the test computed (a crop, a diff), saved as `<name>.png` and
+ *  `<name>.checker.png` in the test's folder. */
+export function saveImage(name: string, image: Rgba): void {
+  const now = current();
+  const dir = path.join(SHOTS, now.spec, now.test);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, `${slug(name)}.png`), encodePng(image));
+  writeFileSync(path.join(dir, `${slug(name)}.checker.png`), encodePng(checkered(image)));
 }
 
 /** The state a spec asserts mid-test (a dialog open, a toast shown): each running user's current window,

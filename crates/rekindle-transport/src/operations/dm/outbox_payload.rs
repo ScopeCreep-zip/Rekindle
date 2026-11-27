@@ -23,7 +23,7 @@ struct Payload {
 pub fn payload(body: &DirectBody) -> Result<Vec<u8>, FriendError> {
     serde_json::to_vec(&Payload {
         type_id: body.type_id().as_u16(),
-        body: body.encode(),
+        body: body.encode()?,
     })
     .map_err(|e| FriendError::Failed(format!("serialize the outbox payload: {e}")))
 }

@@ -10,16 +10,9 @@
  */
 
 import { createStore } from "solid-js/store";
-import {
-  hostInvoke,
-  invoke,
-  registerIntentPresenter,
-  registerUndoPresenter,
-} from "../ipc/invoke";
-import type {
-  CommandError, Done, IntentProof, IntentReview, UndoOffer,
-} from "../ipc/commands/dto";
+import type { CommandError, Done, IntentProof, IntentReview, UndoOffer } from "../ipc/commands/dto";
 import { isCommandError } from "../ipc/commands/dto";
+import { hostInvoke, invoke, registerIntentPresenter, registerUndoPresenter } from "../ipc/invoke";
 import { errorMessage } from "../utils/error";
 import { kindPhrase } from "../utils/intent_text";
 import { addToast, removeToast } from "./toast.store";
@@ -143,7 +136,7 @@ function presentUndo(offer: UndoOffer): void {
 
 /** Take back the offered action. The inverse is a request of its own: a
  *  review it needs is shown like any other. */
-export async function takeUndo(): Promise<void> {
+async function takeUndo(): Promise<void> {
   const offer = intentState.undo;
   if (offer === null) return;
   clearUndo();

@@ -1,10 +1,15 @@
-import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import SkinCredits from "../../components/settings/SkinCredits";
+import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
+import {
+  type SkinApplyFailed,
+  subscribeSkinApplyFailed,
+  subscribeSkinEvents,
+  subscribeSkinTrial,
+} from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
-import { subscribeSkinApplyFailed, subscribeSkinEvents, subscribeSkinTrial, type SkinApplyFailed } from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
-import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
-import SkinCredits from "../../components/settings/SkinCredits";
 
 /** A Host refusal as the line the tab shows. */
 function refusal(e: unknown): string | null {
@@ -19,10 +24,13 @@ function refusal(e: unknown): string | null {
 
 /** Why a window could not show a skin, as one sentence (plan SK2-T1). */
 function failureText(f: SkinApplyFailed, name: string): string {
-  const why = f.cause.type === "imageDecode"
-    ? `its image ${f.cause.data.path.split("/").pop() ?? f.cause.data.path} did not load`
-    : "its style sheet did not load";
-  const after = f.reverted ? "It was on trial, so the previous skin is back." : "The skin shown before stays.";
+  const why =
+    f.cause.type === "imageDecode"
+      ? `its image ${f.cause.data.path.split("/").pop() ?? f.cause.data.path} did not load`
+      : "its style sheet did not load";
+  const after = f.reverted
+    ? "It was on trial, so the previous skin is back."
+    : "The skin shown before stays.";
   return `${name} could not be shown: ${why}. ${after}`;
 }
 
@@ -49,17 +57,23 @@ const AppearanceTab: Component = () => {
     setTrial(lib.trial);
   };
 
+  // The newest action's answer stands: a list read issued before a choice
+  // (the previous switch's announce) could answer after it and put the old
+  // skin back as "in use" while the windows showed the new one (every third
+  // switch in a row, settings-theme on both platforms).
+  let latest = 0;
   async function run(action: () => Promise<SkinLibrary | unknown>): Promise<void> {
+    const mine = ++latest;
     setError(null);
     try {
       const answer = await action();
-      if (answer !== null && typeof answer === "object" && "skins" in answer) {
-        apply(answer as SkinLibrary);
-      } else {
-        apply(await commands.listSkins());
-      }
+      const lib =
+        answer !== null && typeof answer === "object" && "skins" in answer
+          ? (answer as SkinLibrary)
+          : await commands.listSkins();
+      if (mine === latest) apply(lib);
     } catch (e) {
-      setError(refusal(e));
+      if (mine === latest) setError(refusal(e));
     }
   }
 
@@ -88,11 +102,15 @@ const AppearanceTab: Component = () => {
 
   /** The skin every window shows now: the trial's, else the stored one. */
   const shown = (): string => trial()?.id ?? library()?.active ?? "";
-  // Plan SK14: the shown skin's entry, and the conforming built-in the Host
-  // lists (the accessible variant), both as served.
-  const shownEntry = (): SkinEntry | undefined => library()?.skins.find((s) => s.id === shown());
-  const conformingAlternate = (): SkinEntry | undefined =>
-    library()?.skins.find((s) => s.conforming && s.importedAt === null && s.id !== shown());
+  // Plan SK14: both the current skin and its conforming alternate come from the Host.
+  const alternateHint = () => {
+    const currentId = shown();
+    const skins = library()?.skins ?? [];
+    const current = skins.find((skin) => skin.id === currentId);
+    if (!current || current.conforming) return;
+    const alternate = skins.find((skin) => skin.conforming && skin.importedAt === null);
+    return alternate ? { current, alternate } : undefined;
+  };
   const secondsLeft = (t: SkinTrial): number =>
     Math.max(0, Math.ceil((t.revertsAtMs - now()) / 1000));
 
@@ -127,6 +145,7 @@ const AppearanceTab: Component = () => {
       </Show>
       <div class="skin-actions">
         <button
+          type="button"
           class="skin-row-btn skin-info"
           aria-label={`Credits for ${skin.name}`}
           aria-expanded={creditsOf() === skin.id}
@@ -137,6 +156,7 @@ const AppearanceTab: Component = () => {
         </button>
         <Show when={library()?.login !== skin.id}>
           <button
+            type="button"
             class="skin-row-btn skin-action"
             onClick={() => void run(() => commands.setLoginSkin(skin.id))}
           >
@@ -145,6 +165,7 @@ const AppearanceTab: Component = () => {
         </Show>
         <Show when={skin.importedAt !== null}>
           <button
+            type="button"
             class="skin-row-btn skin-action"
             disabled={shown() === skin.id || library()?.active === skin.id}
             onClick={() => void run(() => commands.removeSkin(skin.id))}
@@ -174,7 +195,7 @@ const AppearanceTab: Component = () => {
         {(f) => (
           <div class="settings-hint skin-error" role="alert">
             {failureText(f(), library()?.skins.find((s) => s.id === f().skin)?.name ?? f().skin)}{" "}
-            <button class="skin-row-btn skin-action" onClick={() => setFailed(null)}>
+            <button type="button" class="skin-row-btn skin-action" onClick={() => setFailed(null)}>
               Dismiss
             </button>
           </div>
@@ -183,12 +204,16 @@ const AppearanceTab: Component = () => {
       <div class="settings-section-title">Skin</div>
       {/* A skin whose controls are smaller than 24 px points to the skin that
           meets the size (plan SK14, WCAG 2.2 5.2.1), one action away. */}
-      <Show when={shownEntry() && !shownEntry()!.conforming && conformingAlternate()}>
-        {(alt) => (
+      <Show when={alternateHint()}>
+        {(hint) => (
           <div class="settings-hint skin-alternate">
-            {`${shownEntry()!.name} has ${shownEntry()!.shortTargets} control${shownEntry()!.shortTargets === 1 ? "" : "s"} under 24 px. ${alt().name} meets target sizes.`}{" "}
-            <button class="skin-row-btn skin-action" onClick={() => void run(() => commands.selectSkin(alt().id))}>
-              Use {alt().name}
+            {`${hint().current.name} has ${hint().current.shortTargets} control${hint().current.shortTargets === 1 ? "" : "s"} under 24 px. ${hint().alternate.name} meets target sizes.`}{" "}
+            <button
+              type="button"
+              class="skin-row-btn skin-action"
+              onClick={() => void run(() => commands.selectSkin(hint().alternate.id))}
+            >
+              Use {hint().alternate.name}
             </button>
           </div>
         )}
@@ -197,7 +222,7 @@ const AppearanceTab: Component = () => {
         <For each={library()?.skins ?? []}>{row}</For>
       </div>
       <div class="skin-import">
-        <button class="form-btn-secondary" onClick={() => fileInput?.click()}>
+        <button type="button" class="form-btn-secondary" onClick={() => fileInput?.click()}>
           Import skin…
         </button>
         <input
@@ -213,6 +238,7 @@ const AppearanceTab: Component = () => {
           }}
         />
         <button
+          type="button"
           class="form-btn-secondary"
           onClick={() => void run(() => commands.openSkinEditorWindow())}
         >
@@ -221,7 +247,11 @@ const AppearanceTab: Component = () => {
         <span class="settings-hint">A skin is checked before it is added.</span>
       </div>
       <Show when={error()}>
-        {(message) => <div class="settings-hint skin-error" role="alert">{message()}</div>}
+        {(message) => (
+          <div class="settings-hint skin-error" role="alert">
+            {message()}
+          </div>
+        )}
       </Show>
     </>
   );

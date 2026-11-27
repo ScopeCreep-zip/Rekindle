@@ -54,7 +54,7 @@ pub(super) fn keep_out(g: &mut [i32; 4], a: [i32; 4], o: [i32; 4], views: bool) 
         return;
     }
     let (axis, after) = match (side(a, o, 0), side(a, o, 1)) {
-        (Some((ax, gx)), Some((ay, gy))) if gy > gx => (1, ay),
+        (Some((_, gx)), Some((ay, gy))) if gy > gx => (1, ay),
         (Some((ax, _)), _) => (0, ax),
         (None, Some((ay, _))) => (1, ay),
         (None, None) if views => {

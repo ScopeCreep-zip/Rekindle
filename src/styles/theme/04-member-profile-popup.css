@@ -76,16 +76,19 @@
      * `animationend` ReactionFloater removes it on still fires. */
     animation: call-reaction-hold 2s linear forwards;
   }
+
   @media (prefers-reduced-motion: no-preference) {
     .call-reaction-float {
       animation: call-reaction-float 2s ease-out forwards;
     }
   }
+
   @keyframes call-reaction-hold {
     0%   { opacity: 1; }
     80%  { opacity: 1; }
     100% { opacity: 0; }
   }
+
   @keyframes call-reaction-float {
     0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
     20%  { opacity: 1; transform: translate(-50%, -20px) scale(1.0); }
@@ -254,6 +257,10 @@
     max-width: 100%;
   }
 
+  .tooltip-wrapper:is(:hover, :focus-within) > .tooltip-bubble {
+    display: block;
+  }
+
   .tooltip-bubble {
     position: absolute;
     bottom: 100%;
@@ -269,6 +276,7 @@
     white-space: nowrap;
     pointer-events: none;
     z-index: var(--z-tooltip);
+    display: none;
   }
 
   /* Scroll area */
@@ -295,6 +303,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: left;
   }
 
   .identity-bar-name:hover {

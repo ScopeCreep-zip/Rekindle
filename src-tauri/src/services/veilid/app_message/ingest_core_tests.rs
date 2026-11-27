@@ -135,9 +135,16 @@ async fn shell_arms_are_one_follow_up_and_no_event() {
         assert!(out.events.is_empty(), "{arm}: no event from the core");
         assert_eq!(out.shell.len(), 1, "{arm}: exactly one follow-up");
         let matched = match (&out.shell[0], arm) {
-            (ShellFollowUp::ThreadControl { community_id, .. }, "thread")
-            | (ShellFollowUp::MekRequest { community_id, .. }, "mek") => community_id == "c1",
+            (ShellFollowUp::MekRequest { community_id, .. }, "mek") => community_id == "c1",
             (
+                ShellFollowUp::ThreadControl {
+                    community_id,
+                    sender_pseudonym,
+                    ..
+                },
+                "thread",
+            )
+            | (
                 ShellFollowUp::VoiceSignaling {
                     community_id,
                     sender_pseudonym,

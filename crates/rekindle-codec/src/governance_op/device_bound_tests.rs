@@ -97,7 +97,7 @@ fn the_extended_set_bound_is_what_fits_one_op() {
 /// encoding's: the rest of the op is 1,928 words, each element 7.
 #[test]
 fn the_bounds_derivation_matches_the_encoding() {
-    let words = |n| op_unsigned_bytes(&worst_case_device_op(n)).len() / 8;
+    let words = |n| op_unsigned_bytes(&worst_case_device_op(n)).unwrap().len() / 8;
     assert_eq!(words(0), 1_928);
     assert_eq!(words(2) - words(1), 7);
     assert_eq!(

@@ -1,12 +1,13 @@
-import { Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { GameServer } from "../../stores/community.store";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
+import type { GameServer } from "../../stores/community.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface GameServerListProps {
   servers: GameServer[];
   communityId: string;
-  canManage: boolean;
+  /** Why we may not manage the server list, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
   onRemove: (communityId: string, serverId: string) => void;
   onAdd: (communityId: string, gameId: string, label: string, address: string) => void;
 }
@@ -71,7 +72,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
 
   function handleJoin(gameId: string, address: string): void {
     const id = parseInt(gameId, 10);
-    if (!isNaN(id)) {
+    if (!Number.isNaN(id)) {
       void commands.launchGame(id, address, "community");
     }
   }
@@ -97,51 +98,61 @@ const GameServerList: Component<GameServerListProps> = (props) => {
                     <div class="game-server-address">{server.address}</div>
                   </div>
                   <button
+                    type="button"
                     class="game-server-join-btn"
                     onClick={() => handleJoin(server.gameId, server.address)}
                     title="Connect to server"
                   >
                     Join
                   </button>
-                  <Show when={props.canManage}>
-                    <button
-                      class="game-server-remove-btn"
-                      onClick={() => props.onRemove(props.communityId, server.id)}
-                      title="Remove server"
-                    >
-                      <SkinGlyph name="delete" />
-                    </button>
-                  </Show>
+                  <button
+                    type="button"
+                    class="game-server-remove-btn"
+                    onClick={() => props.onRemove(props.communityId, server.id)}
+                    disabled={props.manageDenied !== null}
+                    title={props.manageDenied ?? "Remove server"}
+                    aria-label="Remove server"
+                    aria-description={props.manageDenied ?? undefined}
+                  >
+                    <SkinGlyph name="delete" />
+                  </button>
                 </div>
               )}
             </For>
           </div>
         )}
       </For>
-      <Show when={props.canManage}>
-        <div class="game-server-add-form">
-          <input
-            class="form-input"
-            placeholder="Game ID"
-            value={addGameId()}
-            onInput={(e) => setAddGameId(e.currentTarget.value)}
-          />
-          <input
-            class="form-input"
-            placeholder="Label"
-            value={addLabel()}
-            onInput={(e) => setAddLabel(e.currentTarget.value)}
-          />
-          <input
-            class="form-input"
-            placeholder="ip:port"
-            value={addAddress()}
-            onInput={(e) => setAddAddress(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-          />
-          <button class="form-btn-primary" onClick={handleAdd}>Add</button>
-        </div>
-      </Show>
+      <fieldset
+        class="game-server-add-form"
+        disabled={props.manageDenied !== null}
+        title={props.manageDenied ?? undefined}
+        aria-description={props.manageDenied ?? undefined}
+      >
+        <input
+          class="form-input"
+          placeholder="Game ID"
+          value={addGameId()}
+          onInput={(e) => setAddGameId(e.currentTarget.value)}
+        />
+        <input
+          class="form-input"
+          placeholder="Label"
+          value={addLabel()}
+          onInput={(e) => setAddLabel(e.currentTarget.value)}
+        />
+        <input
+          class="form-input"
+          placeholder="ip:port"
+          value={addAddress()}
+          onInput={(e) => setAddAddress(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleAdd();
+          }}
+        />
+        <button type="button" class="form-btn-primary" onClick={handleAdd}>
+          Add
+        </button>
+      </fieldset>
     </div>
   );
 };

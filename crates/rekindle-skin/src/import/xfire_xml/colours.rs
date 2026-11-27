@@ -42,10 +42,10 @@ pub const NAMES: &[(&str, Target)] = &[
     ("ChatPersonalTextCG", Target::NoRole("chat.self.text")),
     ("ChatTitleCG", Target::Token("titlebar.text")),
     ("ChatViewBGCG", Target::Token("bg.panel")),
-    ("DisabledText", Target::NoRole("text.disabled")),
+    ("DisabledText", Target::Token("text.disabled")),
     // Symbiosis's spelling of the same role (its components' `Disabled`
     // text states name it).
-    ("DisabledTextCG", Target::NoRole("text.disabled")),
+    ("DisabledTextCG", Target::Token("text.disabled")),
     ("FriendNameCG", Target::Token("text.primary")),
     ("HeaderTextCG", Target::Token("text.secondary")),
     ("InfoViewBGCG", Target::Token("bg.secondary")),
@@ -62,25 +62,32 @@ pub const NAMES: &[(&str, Target)] = &[
         "ListColorSelectedDiabledCG",
         Target::NoRole("list.selected.bg.inactive"),
     ),
-    ("ListColorSelectedTextCG", Target::Fixed("accent.fg")),
+    ("ListColorSelectedTextCG", Target::Token("selection.text")),
     (
         "ListFoFTextCG",
         Target::Dropped("friends of friends (E7.8 research)"),
     ),
     ("ListFriendTextCG", Target::Token("text.base")),
     ("ListOfflineTextCG", Target::Token("status.offline-text")),
-    ("MenuTextCG", Target::NoRole("menubar.text")),
-    ("ProgBarBGCG", Target::NoRole("progress.bg")),
-    ("ProgBarFillCG", Target::NoRole("progress.fill")),
-    ("ProgBarOutlineCG", Target::NoRole("progress.border")),
-    ("ProgBarTextCG", Target::NoRole("progress.text")),
+    ("MenuTextCG", Target::Token("menubar.text")),
+    ("ProgBarBGCG", Target::Token("progress.bg")),
+    ("ProgBarFillCG", Target::Token("progress.fill")),
+    ("ProgBarOutlineCG", Target::Token("progress.outline")),
+    ("ProgBarTextCG", Target::Token("progress.text")),
     ("PushButtonCG", Target::Shift),
     ("PushButtonDeactivatedCG", Target::Shift),
     ("PushButtonDownCG", Target::Shift),
     ("PushButtonHoverCG", Target::Shift),
-    ("RoomNameEditBGCG", Target::NoRole("input.bg")),
-    ("RoomNameEditTextCG", Target::NoRole("input.text")),
-    ("ScrollbarBGCG", Target::NoRole("scrollbar.track")),
+    // The group-chat room-name box; the dialog fields are TextField*CG's.
+    (
+        "RoomNameEditBGCG",
+        Target::Dropped("room-name box (input.bg is TextFieldBGCG's)"),
+    ),
+    (
+        "RoomNameEditTextCG",
+        Target::Dropped("room-name box (input.text is TextFieldTextCG's)"),
+    ),
+    ("ScrollbarBGCG", Target::Token("scrollbar.track")),
     ("ScrollbarCG", Target::Shift),
     ("SideCG", Target::Shift),
     ("StatusBackgroundCG", Target::Token("bg.status")),
@@ -90,18 +97,19 @@ pub const NAMES: &[(&str, Target)] = &[
     ("TextDepth3", SERVERS),
     ("TextDepth4", SERVERS),
     ("TextFavServersCG", SERVERS),
+    // The dialog text field (bg.input stays ChatEditBGCG's chat edit box).
+    ("TextFieldBGCG", Target::Token("input.bg")),
+    ("TextFieldTextCG", Target::Token("input.text")),
     (
-        "TextFieldBGCG",
-        Target::NoRole("input.bg (bg.input is ChatEditBGCG's)"),
+        "TextFieldTextHighlightCG",
+        Target::Token("input.selection.bg"),
     ),
-    ("TextFieldTextCG", Target::NoRole("input.text")),
-    ("TextFieldTextHighlightCG", Target::NoRole("selection.bg")),
     (
         "TextFieldTextHighlightInactiveCG",
-        Target::NoRole("selection.bg.inactive"),
+        Target::Token("input.selection.bg-inactive"),
     ),
-    ("ToolTipBGCG", Target::NoRole("tooltip.bg")),
-    ("ToolTipTextCG", Target::NoRole("tooltip.text")),
+    ("ToolTipBGCG", Target::Token("tooltip.bg")),
+    ("ToolTipTextCG", Target::Token("tooltip.text")),
     ("UserNameCG", Target::NoRole("self.name")),
     ("UserTypingMessageCG", Target::NoRole("chat.typing.text")),
     ("XIGActiveWindowTitleCG", XIG),
@@ -256,76 +264,5 @@ pub fn absolute(name: &str, value: &str, c: [i16; 3]) -> Result<[u8; 3], ImportE
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn table_is_sorted_and_counts_hold() {
-        assert!(NAMES.windows(2).all(|w| w[0].0 < w[1].0));
-        assert_eq!(NAMES.len(), 73);
-        let dropped = NAMES
-            .iter()
-            .filter(|(_, t)| matches!(t, Target::Dropped(_)))
-            .count();
-        assert_eq!(dropped, 23);
-        assert_eq!(target("DisabledTextCG"), Target::NoRole("text.disabled"));
-        assert_eq!(target("XIGEditModeTitleCG"), XIG);
-    }
-
-    #[test]
-    fn alpha_is_refused() {
-        assert_eq!(parse_rgba("A", "RGBA(1,2,3,0)").unwrap(), [1, 2, 3]);
-        assert_eq!(
-            parse_rgba("A", "RGBA(-34,-11,57,0)").unwrap(),
-            [-34, -11, 57]
-        );
-        assert!(matches!(
-            parse_rgba("A", "RGBA(1,2,3,7)"),
-            Err(ImportError::NonZeroAlpha { alpha: 7, .. })
-        ));
-        assert!(parse_rgba("A", "RGBA(1,2,300,0)").is_err());
-        assert!(absolute("A", "v", [-1, 0, 0]).is_err());
-    }
-
-    fn attrs<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
-        move |k| {
-            pairs
-                .iter()
-                .find(|(n, _)| *n == k)
-                .map(|(_, v)| (*v).to_owned())
-        }
-    }
-
-    #[test]
-    fn attribute_colours_take_the_same_alpha_rule() {
-        let ok = [
-            ("red", "-34"),
-            ("green", "-11"),
-            ("blue", "57"),
-            ("alpha", "0"),
-        ];
-        assert_eq!(
-            parse_attrs("A", attrs(&ok)).unwrap().unwrap(),
-            [-34, -11, 57]
-        );
-        // Absent alpha: Classic v3's `AllServersText`, `ScrollbarColor`.
-        let absent = [("red", "141"), ("green", "190"), ("blue", "255")];
-        assert_eq!(
-            parse_attrs("A", attrs(&absent)).unwrap().unwrap(),
-            [141, 190, 255]
-        );
-        let alpha = [("red", "1"), ("green", "2"), ("blue", "3"), ("alpha", "9")];
-        assert!(matches!(
-            parse_attrs("A", attrs(&alpha)),
-            Some(Err(ImportError::NonZeroAlpha { alpha: 9, .. }))
-        ));
-        let missing = [("red", "1"), ("blue", "3"), ("alpha", "0")];
-        assert!(matches!(
-            parse_attrs("A", attrs(&missing)),
-            Some(Err(ImportError::BadColour { .. }))
-        ));
-        let wide = [("red", "1"), ("green", "256"), ("blue", "3")];
-        assert!(parse_attrs("A", attrs(&wide)).unwrap().is_err());
-        assert!(parse_attrs("A", attrs(&[])).is_none());
-    }
-}
+#[path = "colours_tests.rs"]
+mod tests;

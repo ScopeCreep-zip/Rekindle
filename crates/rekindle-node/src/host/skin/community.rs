@@ -110,7 +110,10 @@ pub(crate) async fn load(
     for (id, view) in &mut views {
         match host.game_servers(id).await {
             Ok(servers) => view.servers = servers.into_iter().map(CommunityServer::of).collect(),
-            Err(GovernanceRuntimeError::PermissionDenied) => {}
+            Err(
+                GovernanceRuntimeError::PermissionDenied
+                | GovernanceRuntimeError::PermissionRequired(_),
+            ) => {}
             Err(e) => tracing::warn!(community = %id, error = %e, "skin: game servers not read"),
         }
     }

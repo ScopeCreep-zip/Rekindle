@@ -59,9 +59,6 @@ impl shell_hooks::ShellHooks for Recorder {
     fn spawn_departure_rotation(&self, _community_id: &str, departed: &str) {
         self.0.lock().push(format!("rotation {departed}"));
     }
-    fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
-        Ok(())
-    }
     fn spawn_presence_poll_tick(&self, _community_id: &str) {}
     async fn presence_refresh(&self, _community_id: &str) {}
 
@@ -243,9 +240,6 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn own_gossip_signed(&self, _community_id: &str, _sender: &str, _dedup_key: &str) {}
         fn community_left(&self, _community_id: &str) {}
         fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
-        fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
-            Ok(())
-        }
         fn spawn_presence_poll_tick(&self, _community_id: &str) {}
         async fn presence_refresh(&self, _community_id: &str) {}
 

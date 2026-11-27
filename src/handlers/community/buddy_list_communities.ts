@@ -1,8 +1,7 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeCommunityEvents } from "../../ipc/channels";
+import { subscribeCommunityEvents, type UnlistenFn } from "../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
-import { reduceSubscriptionMembership } from "./dispatcher_members";
 import { applySuccessorEvent } from "../../stores/successor.store";
+import { reduceSubscriptionMembership } from "./dispatcher_members";
 
 /// The buddy list's community list (lead decision (41)): it hears each
 /// community's arrival from the Host, as the community windows do, so a
@@ -23,7 +22,8 @@ export function subscribeBuddyListCommunityEvents(): Promise<UnlistenFn> {
     // drops it. The other membership events are the community windows'.
     if ("membership" in event) {
       const m = event.membership;
-      if ("kicked" in m || "banned" in m || "joinWithdrawn" in m) reduceSubscriptionMembership(event, true);
+      if ("kicked" in m || "banned" in m || "joinWithdrawn" in m)
+        reduceSubscriptionMembership(event, true);
       else if ("forgotten" in m) reduceSubscriptionMembership(event);
       return;
     }

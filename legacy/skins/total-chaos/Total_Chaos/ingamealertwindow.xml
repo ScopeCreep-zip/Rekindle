@@ -1,0 +1,10 @@
+<Tile Name="StandardInGameAlertWindow" ResizeX="100" ResizeY="100" Component="InGameAlertWindow">
+	<Tile Name="XfireTopRow" ResizeX="100" Component="XfireTopRow"></Tile>
+	<Tile Name="InfoMiddle" Y="33" IndentBottom="30" ResizeX="100" ResizeY="100" Component="InfoMiddle">
+		<Tile Name="InfoTopLeft" ResizeY="100" Component="InfoTopLeft"></Tile>
+		<Tile Name="InfoTopRight" JustX="RIGHT" ResizeY="100" Component="InfoTopRight"></Tile>
+		<Tile Name="InfoBG" X="30" IndentRight="30" ResizeX="100" ResizeY="100" Component="InfoBG"></Tile>
+	</Tile>
+	<Tile Name="InfoBottomRow" Y="InfoMiddle.BOTTOM" ResizeX="100" Component="InfoBottomRow"></Tile>
+	<Tile Name="TextTile" X="23" Y="25" IndentRight="23" IndentBottom="25" ResizeX="100" ResizeY="100" Z="100" Component="InGameTextTile"></Tile>
+</Tile>

@@ -316,13 +316,25 @@ impl View for ChannelWatchView {
                 let text = self.input_box.content();
                 if !text.trim().is_empty() && !self.input_box.is_over_limit() {
                     use crate::components::input_box::InputMode;
-                    let action = match self.input_box.mode() {
-                        InputMode::Edit { message_id } => Action::EditChannelMessage {
+                    let forum_post = text
+                        .strip_prefix("/post ")
+                        .and_then(|rest| rest.split_once(" | "))
+                        .map(|(title, body)| (title.trim().to_owned(), body.to_owned()));
+                    let action = match (self.input_box.mode(), forum_post) {
+                        (InputMode::Edit { message_id }, _) => Action::EditChannelMessage {
                             channel: self.channel.clone(),
                             message_id: message_id.clone(),
                             text,
                         },
-                        mode => Action::SendChannelMessage {
+                        // `/post <title> | <body>`: a forum post (FT1).
+                        (_, Some((title, body))) => Action::CreateForumPost {
+                            community: self.community.clone(),
+                            channel: self.channel.clone(),
+                            title,
+                            tag: None,
+                            body,
+                        },
+                        (mode, None) => Action::SendChannelMessage {
                             community: self.community.clone(),
                             channel: self.channel.clone(),
                             text,

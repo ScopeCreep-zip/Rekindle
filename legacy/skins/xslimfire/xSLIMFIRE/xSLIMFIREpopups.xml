@@ -1,0 +1,81 @@
+<Popups>
+	
+<!-- MAIN INFOVIEW  -->
+
+	<Tile Name="MainInfoViewPopup" JustX="LEFT" JustY="TOP" X="ResizeRight.RIGHT-15" Y="58" Z="6" IndentBottom="49" Component="MainInfoWindow">
+		<Tile Name="InfoTopRow" ResizeX="100" Component="InfoTopRow"></Tile>
+		<Tile Name="InfoBottomRow" ResizeX="100"  JustY="BOTTOM" Component="InfoBottomRow">
+			<Tile Name="InfoBottomRowBG" JustX="RIGHT" JustY="BOTTOM" X="20" Y="5" Component="InfoInfoBottomRowBG" />
+			<Tile Name="InfoJoinGameButton" JustX="RIGHT" JustY="BOTTOM" X="20" Y="5" Z="4" Component="InfoJoinGameButton" />
+			<Tile Name="InfoJoinChatTab" JustX="RIGHT" X="InfoJoinGameButton.LEFT-12" JustY="BOTTOM" Y="5" Z="4" Component="InfoJoinChatTab">
+				<Tile Name="InfoHostChatButton" ResizeX="100" ResizeY="100" Component="InfoHostChatButton" />
+				<Tile Name="InfoJoinChatButton" ResizeX="100" ResizeY="100" Component="InfoJoinChatButton" />
+				<Tile Name="InfoLeaveChatButton"  ResizeX="100" ResizeY="100" Component="InfoLeaveChatButton">
+					<Tile Name="InfoTalkingStateButton" Z="10" Component="InfoTalkingStateButton" />
+				</Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="InfoMiddleRow" ResizeX="100" ResizeY="100" Y="InfoTopRow.BOTTOM" IndentBottom="InfoBottomRow.height" Component="InfoMiddleRow" />
+		<!-- "InfoViewButton" name matches the one from the MainWindow heirarchy or open/closed is not saved -->
+		<Tile Name="InfoViewButton" JustX="RIGHT" JustY="CENTER" IndentTop="18" OutdentBottom="18" Z="5" Component="InfoInfoViewButton"></Tile>
+		<!-- "InfoView" name matches the one from the MainWindow heirarchy or open/closed is not saved -->
+		<Tile Name="InfoView" Y="32" X="2" IndentRight="16" IndentBottom="33" ResizeX="100" ResizeY="100" Component="InfoInfoView" />
+		<Tile Name="InfoBackDrop" ResizeX="100" ResizeY="100" X="2" Y="2" Z="-1" IndentRight="16" IndentBottom="33" Component="InfoBackDrop" />
+		<Tile Name="InfoResizeRight" JustX="RIGHT" X="0" ResizeY="100" Z="4" Component="InfoInfoResizeRight"></Tile>
+	</Tile>
+	
+<!-- CHAT INFOVIEW  -->
+
+	<Tile Name="ChatInfoViewPopup" JustX="LEFT" JustY="TOP" X="ChatRightOuterEdge.RIGHT-17" Y="67" Z="5" IndentBottom="44" Component="MainInfoWindow">
+		<Tile Name="InfoTopRow" ResizeX="100" Component="ChatInfoTopRow"></Tile>
+		<Tile Name="InfoBottomRow" ResizeX="100" JustY="BOTTOM" Component="ChatInfoBottomRow">
+			<Tile Name="InfoBottomRowBG" JustX="RIGHT" JustY="BOTTOM" X="20" Y="5" Component="InfoInfoBottomRowBG"></Tile>
+			<Tile Name="InfoJoinGameButton" JustX="RIGHT" JustY="BOTTOM" X="20" Y="5" Z="4" Component="InfoJoinGameButton"></Tile>
+			<Tile Name="InfoJoinChatTab" JustX="RIGHT" X="InfoJoinGameButton.LEFT-12" JustY="BOTTOM" Y="5" Z="4" Component="InfoJoinChatTab">
+				<Tile Name="InfoHostChatButton" ResizeX="100" ResizeY="100" Component="InfoHostChatButton"></Tile>
+				<Tile Name="InfoJoinChatButton" ResizeX="100" ResizeY="100" Component="InfoJoinChatButton"></Tile>
+				<Tile Name="InfoLeaveChatButton"  ResizeX="100" ResizeY="100" Component="InfoLeaveChatButton">
+					<Tile Name="InfoTalkingStateButton" Z="10" Component="InfoTalkingStateButton"></Tile>
+				</Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="InfoMiddleRow" ResizeX="100" ResizeY="100" Y="InfoTopRow.BOTTOM" IndentBottom="InfoBottomRow.height" Component="ChatInfoMiddleRow"></Tile>
+		<!-- "InfoViewButton" name matches the one from the MainWindow heirarchy or open/closed is not saved -->
+		<Tile Name="InfoViewButton" JustX="RIGHT" JustY="CENTER" IndentTop="12" OutdentBottom="12" Z="6" Component="ChatInfoInfoViewButton"></Tile>
+		<!-- "InfoView" name matches the one from the MainWindow heirarchy or open/closed is not saved -->
+		<Tile Name="InfoView" Y="32" X="16" IndentRight="16" IndentBottom="33" ResizeX="100" ResizeY="100" Component="InfoInfoView"></Tile>
+		<Tile Name="InfoBackDrop" ResizeX="100" ResizeY="100" Y="32" X="16" IndentRight="16" IndentBottom="33" Component="InfoBackDrop"></Tile>
+		<Tile Name="InfoResizeRight" JustX="RIGHT" X="0" ResizeY="100" Z="4" Component="InfoInfoResizeRight"></Tile>
+	</Tile>
+	
+<!-- GROUPCHAT INFOVIEW  -->
+
+	<Tile Name="GroupChatInfoViewPopup" JustX="LEFT" JustY="TOP" X="ChatRightOuterEdge.RIGHT-17" Y="67" Z="5" IndentBottom="44" Component="MainInfoWindow">
+		<Tile Name="InfoTopRow" ResizeX="100" Component="ChatInfoTopRow"></Tile>
+		<Tile Name="InfoBottomRow" ResizeX="100" JustY="BOTTOM" Component="ChatInfoBottomRow">
+			<Tile Name="InfoBottomRowBG" JustX="RIGHT" JustY="BOTTOM" X="20" Y="5" Component="InfoInfoBottomRowBG"></Tile>
+			<Tile Name="InfoJoinGameTab" JustX="RIGHT" JustY="BOTTOM" X="20" Y="5" Z="4" Component="InfoJoinGameTab">
+				<Tile Name="HostGameLobbyButton" ResizeX="100" ResizeY="100" Component="InGameHostGameLobbyButton"></Tile>
+				<Tile Name="JoinGameLobbyButton" ResizeX="100" ResizeY="100" Component="InGameJoinGameLobbyButton"></Tile>
+				<Tile Name="LeaveGameLobbyButton" ResizeX="100" ResizeY="100" Component="InGameLeaveGameLobbyButton"></Tile>
+				<Tile Name="LaunchGameLobbyButton" ResizeX="100" ResizeY="100" Component="InGameLaunchGameLobbyButton"></Tile>
+				<Tile Name="DisabledGameLobbyButton" ResizeX="100" ResizeY="100" Component="InGameDisabledGameLobbyButton"></Tile>
+			</Tile>
+			<Tile Name="InfoJoinChatTab" JustX="RIGHT" X="InfoJoinGameTab.LEFT-12" JustY="BOTTOM" Y="5" Z="4" Component="InfoJoinGroupChatTab">
+				<Tile Name="InfoHostChatButton" ResizeX="100" ResizeY="100" Component="InfoHostGroupChatButton"></Tile>
+				<Tile Name="InfoJoinChatButton" ResizeX="100" ResizeY="100" Component="InfoJoinGroupChatButton"></Tile>
+				<Tile Name="InfoLeaveChatButton" ResizeX="100" ResizeY="100" Component="InfoLeaveGroupChatButton">
+					<Tile Name="InfoTalkingStateButton" Z="10" Component="InfoTalkingStateButton"></Tile>
+				</Tile>
+				<Tile Name="DisabledChatButton" ResizeX="100" ResizeY="100" Component="InfoDisabledChatButton"></Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="InfoMiddleRow" ResizeX="100" ResizeY="100" Y="InfoTopRow.BOTTOM" IndentBottom="InfoBottomRow.height" Component="ChatInfoMiddleRow"></Tile>
+		<!-- "InfoViewButton" name matches the one from the MainWindow heirarchy or open/closed is not saved -->
+		<Tile Name="InfoViewButton" JustX="RIGHT" JustY="CENTER" IndentTop="12" OutdentBottom="12" Z="6" Component="GroupChatInfoInfoViewButton" />
+		<!-- "InfoView" name matches the one from the MainWindow heirarchy or open/closed is not saved -->
+		<Tile Name="InfoView" Y="32" X="16" IndentRight="16" IndentBottom="33" ResizeX="100" ResizeY="100" Component="GroupChatInfoView"></Tile>
+		<Tile Name="InfoBackDrop" ResizeX="100" ResizeY="100" Y="32" X="16" IndentRight="16" IndentBottom="33" Component="InfoBackDrop"></Tile>
+		<Tile Name="InfoResizeRight" JustX="RIGHT" X="0" ResizeY="100" Z="4" Component="InfoInfoResizeRight"></Tile>
+	</Tile>
+</Popups>

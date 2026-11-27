@@ -1,14 +1,18 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
-
-import Modal from "../common/Modal";
-import LoadingButton from "../common/LoadingButton";
-import { errorMessage } from "../../utils/error";
-import { handleCreateCommunity } from "../../actions/community.actions";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handleCreateWithCoCreators, trackCoCreation } from "../../actions/community/co_create";
+import { handleCreateCommunity } from "../../actions/community.actions";
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
+import {
+  CREATE_WAIT_REASON,
+  canCreateCommunity,
+  networkLabel,
+  trackNetworkStatus,
+} from "../../stores/network.store";
+import { errorMessage } from "../../utils/error";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
 import CoCreatorStatusView from "./CoCreatorStatusView";
-import { CREATE_WAIT_REASON, canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
 
 // The Host's cap on named co-creators (`MAX_ADDITIONAL_CREATORS`); the
 // picker stops there, and the Host still refuses anything past it.
@@ -47,7 +51,8 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
       setSubmitting(false);
       // A watched creation that finished while the dialog was closed.
       const watching = coCreatorState.watching;
-      if (watching && coCreatorState.finished[watching.anchor] !== undefined) stopWatchingCreation();
+      if (watching && coCreatorState.finished[watching.anchor] !== undefined)
+        stopWatchingCreation();
     }
   });
 
@@ -91,9 +96,14 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
               autofocus
             />
             <div class="group-dm-picker-hint" id="co-creator-hint">
-              Co-creators (optional, friends only, up to {MAX_CO_CREATORS}): {picked().length} chosen
+              Co-creators (optional, friends only, up to {MAX_CO_CREATORS}): {picked().length}{" "}
+              chosen
             </div>
-            <div class="group-dm-picker" role="group" aria-label="Co-creators" aria-describedby="co-creator-hint">
+            <fieldset
+              class="group-dm-picker"
+              aria-label="Co-creators"
+              aria-describedby="co-creator-hint"
+            >
               <Show
                 when={friends().length > 0}
                 fallback={<div class="empty-placeholder-subtitle">No friends to name</div>}
@@ -112,14 +122,16 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
                   )}
                 </For>
               </Show>
-            </div>
+            </fieldset>
             <Show when={!canCreateCommunity()}>
               <div class="form-hint" role="status">
                 Waiting for the network ({networkLabel()}): {CREATE_WAIT_REASON}.
               </div>
             </Show>
             <Show when={error()}>
-              <div class="form-error" role="alert">{error()}</div>
+              <div class="form-error" role="alert">
+                {error()}
+              </div>
             </Show>
             <div class="form-field-row">
               <button

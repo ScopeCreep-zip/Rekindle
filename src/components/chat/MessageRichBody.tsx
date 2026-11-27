@@ -1,4 +1,4 @@
-import { Component, For, createMemo } from "solid-js";
+import { type Component, createMemo, For } from "solid-js";
 
 import { communityState } from "../../stores/community.store";
 
@@ -10,7 +10,12 @@ interface MessageRichBodyProps {
 type Segment =
   | { type: "text"; value: string }
   | { type: "emoji"; name: string; src: string }
-  | { type: "mention"; raw: string; kind: "everyone" | "here" | "role" | "user"; matchesMe: boolean };
+  | {
+      type: "mention";
+      raw: string;
+      kind: "everyone" | "here" | "role" | "user";
+      matchesMe: boolean;
+    };
 
 const EMOJI_RE = /:([A-Za-z0-9_]{2,32}):/g;
 
@@ -38,17 +43,18 @@ const MessageRichBody: Component<MessageRichBodyProps> = (props) => {
     const expressions = new Map(
       (community?.expressions ?? [])
         .filter((expression) => expression.kind === "emoji" && expression.inlineDataUrl)
-        .map((expression) => [expression.name, expression.inlineDataUrl!] as const),
+        .map((expression) => [expression.name, expression.inlineDataUrl!] as const)
     );
 
     const myRoleNames = new Set<string>(
       (community?.myRoleIds ?? [])
         .map((id) => community?.roles?.find((r) => r.id === id)?.name?.toLowerCase())
-        .filter((name): name is string => typeof name === "string"),
+        .filter((name): name is string => typeof name === "string")
     );
     const myDisplayName =
-      community?.members?.find((m) => m.pseudonymKey === community?.myPseudonymKey)?.displayName?.toLowerCase()
-      ?? null;
+      community?.members
+        ?.find((m) => m.pseudonymKey === community?.myPseudonymKey)
+        ?.displayName?.toLowerCase() ?? null;
 
     const mentions = collectMentions(props.body, community, myRoleNames, myDisplayName);
     const emojiSpans = collectEmojiSpans(props.body, expressions);
@@ -107,7 +113,7 @@ function collectMentions(
     | { roles?: { name: string; mentionable: boolean }[]; members?: { displayName: string }[] }
     | undefined,
   myRoleNames: Set<string>,
-  myDisplayName: string | null,
+  myDisplayName: string | null
 ): ResolvedMention[] {
   const out: ResolvedMention[] = [];
   for (const match of body.matchAll(MENTION_RE)) {
@@ -130,7 +136,7 @@ function collectMentions(
       matchesMe = true;
     } else {
       const matchedRole = community?.roles?.find(
-        (r) => r.name.toLowerCase() === lower && r.mentionable,
+        (r) => r.name.toLowerCase() === lower && r.mentionable
       );
       if (matchedRole) {
         kind = "role";
@@ -148,8 +154,10 @@ function collectMentions(
   return out;
 }
 
-function collectEmojiSpans(body: string, expressions: Map<string, string>):
-  { start: number; length: number; name: string; src: string }[] {
+function collectEmojiSpans(
+  body: string,
+  expressions: Map<string, string>
+): { start: number; length: number; name: string; src: string }[] {
   const out: { start: number; length: number; name: string; src: string }[] = [];
   for (const match of body.matchAll(EMOJI_RE)) {
     const fullMatch = match[0];
@@ -165,14 +173,14 @@ function collectEmojiSpans(body: string, expressions: Map<string, string>):
 function interleaveSpans(
   body: string,
   mentions: ResolvedMention[],
-  emojis: { start: number; length: number; name: string; src: string }[],
+  emojis: { start: number; length: number; name: string; src: string }[]
 ): Segment[] {
   type Span =
     | { kind: "mention"; data: ResolvedMention }
     | { kind: "emoji"; data: { start: number; length: number; name: string; src: string } };
   const all: Span[] = [
-    ...mentions.map((m) => ({ kind: "mention", data: m } as Span)),
-    ...emojis.map((e) => ({ kind: "emoji", data: e } as Span)),
+    ...mentions.map((m) => ({ kind: "mention", data: m }) as Span),
+    ...emojis.map((e) => ({ kind: "emoji", data: e }) as Span),
   ];
   all.sort((a, b) => a.data.start - b.data.start);
 

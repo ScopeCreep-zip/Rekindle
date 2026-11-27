@@ -12,7 +12,7 @@ use serde_json::{json, Map, Value};
 use rekindle_types::dto::skin_library::SkinPaletteColour;
 
 use crate::registry::{resolve, Base, Class, TokenEntry, TokenType, ENTRIES, FONTS};
-use crate::tokens::emit::{css_value, declarations};
+use crate::tokens::emit::{css_value, declarations_with};
 use crate::tokens::EXTENSIONS_NAMESPACE;
 
 pub const HEADER: &str =
@@ -35,6 +35,23 @@ fn css_syntax(ty: TokenType) -> Option<&'static str> {
     }
 }
 
+/// The generated stylesheet uses short hex when each channel has two identical digits.
+fn sheet_value(e: &TokenEntry, value: &rekindle_types::dto::skin::TokenValue) -> Option<String> {
+    let value = css_value(e, value)?;
+    let Some(hex) = value.strip_prefix('#').filter(|hex| {
+        hex.as_bytes()
+            .chunks_exact(2)
+            .all(|pair| pair[0] == pair[1])
+    }) else {
+        return Some(value);
+    };
+    Some(
+        std::iter::once('#')
+            .chain(hex.bytes().step_by(2).map(char::from))
+            .collect(),
+    )
+}
+
 /// `src/styles/generated/tokens.css`: `@property` registrations of the
 /// typed tokens, the dark defaults as Tailwind 4 `@theme`, and the light
 /// values that differ, in `@layer xfire-defaults`.
@@ -48,16 +65,17 @@ pub fn tokens_css() -> String {
     let light = defaults(Base::Light);
     let mut out = format!("/* {HEADER}\n *\n * The dark defaults are `@theme`; the light base revalues\n * what differs under `:root[data-skin-base=\"light\"]` (E7.7.2's apply\n * step sets the attribute). */\n");
     for (e, v) in &dark {
-        let (Some(syntax), Some(value)) = (css_syntax(e.ty), css_value(e, v)) else {
+        let (Some(syntax), Some(value)) = (css_syntax(e.ty), sheet_value(e, v)) else {
             continue;
         };
         let _ = write!(
             out,
-            "@property {} {{\n  syntax: \"{syntax}\";\n  inherits: true;\n  initial-value: {value};\n}}\n",
+            "\n@property {} {{\n  syntax: \"{syntax}\";\n  inherits: true;\n  initial-value: {value};\n}}\n",
             e.css
         );
     }
-    let theme = declarations(&dark, 2).expect("registry defaults fit their types");
+    let theme =
+        declarations_with(&dark, 2, sheet_value).expect("registry defaults fit their types");
     let _ = write!(out, "\n@theme {{\n{theme}}}\n");
     let differ: Vec<_> = light
         .into_iter()
@@ -65,7 +83,8 @@ pub fn tokens_css() -> String {
         .filter(|((_, l), (_, d))| l != d)
         .map(|(l, _)| l)
         .collect();
-    let light_decls = declarations(&differ, 4).expect("registry defaults fit their types");
+    let light_decls =
+        declarations_with(&differ, 4, sheet_value).expect("registry defaults fit their types");
     let _ = write!(
         out,
         "\n@layer xfire-defaults {{\n  :root[data-skin-base=\"light\"] {{\n{light_decls}  }}\n}}\n"
@@ -77,13 +96,25 @@ pub fn tokens_css() -> String {
 /// typed `var(--…)` accessor.
 #[must_use]
 pub fn tokens_ts() -> String {
-    let mut out = format!("// {HEADER}\n\n/** A token id of the closed skin registry. */\nexport type SkinTokenId =\n");
+    let mut out = format!(
+        "// {HEADER}\n\n/** A token id of the closed skin registry. */\nexport type SkinTokenId ="
+    );
     for e in ENTRIES {
-        let _ = writeln!(out, "  | \"{}\"", e.id);
+        let _ = write!(out, "\n  | \"{}\"", e.id);
     }
     out.push_str(";\n\nconst CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {\n");
     for e in ENTRIES {
-        let _ = writeln!(out, "  \"{}\": \"{}\",", e.id, e.css);
+        // Match the frontend formatter's bare property spelling for identifiers.
+        let mut bytes = e.id.bytes();
+        let bare = bytes
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b'$'))
+            && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$'));
+        if bare {
+            let _ = writeln!(out, "  {}: \"{}\",", e.id, e.css);
+        } else {
+            let _ = writeln!(out, "  \"{}\": \"{}\",", e.id, e.css);
+        }
     }
     out.push_str(
         "};\n\n/** `var(--…)` of a registry token, for inline custom properties. */\n\
@@ -297,37 +328,5 @@ pub fn json_schema() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rekindle_types::dto::skin::TokenValue;
-
-    fn colour(r: u8, g: u8, b: u8, a: u8) -> TokenValue {
-        TokenValue::Color { r, g, b, a }
-    }
-
-    fn role(colours: &[SkinPaletteColour], role: &str) -> [u8; 3] {
-        colours
-            .iter()
-            .find(|c| c.role == role)
-            .map_or_else(|| panic!("no {role}"), |c| c.rgb)
-    }
-
-    #[test]
-    fn a_skins_colours_map_to_the_tui_roles() {
-        let skin = BTreeMap::from([
-            ("accent.text".to_owned(), colour(0x11, 0x22, 0x33, 255)),
-            ("bg.dark".to_owned(), colour(0x20, 0x40, 0x60, 255)),
-            ("bg.tertiary".to_owned(), colour(255, 255, 255, 128)),
-        ]);
-        let colours = tui_colours(&resolve(ENTRIES, Base::Dark, &skin));
-        assert_eq!(colours.len(), TUI_TOKENS.len());
-        assert_eq!(role(&colours, "accent.primary"), [0x11, 0x22, 0x33]);
-        assert_eq!(role(&colours, "mode.active"), [0x11, 0x22, 0x33]);
-        assert_eq!(role(&colours, "bg.base"), [0x20, 0x40, 0x60]);
-        // White at 128/255 over the window background.
-        assert_eq!(role(&colours, "bg.highlight"), [0x90, 0xa0, 0xb0]);
-        let defaults = tui_colours(&defaults(Base::Dark));
-        assert_eq!(role(&defaults, "text.primary"), [0xe7, 0xe7, 0xe7]);
-        assert_eq!(role(&colours, "text.primary"), [0xe7, 0xe7, 0xe7]);
-    }
-}
+#[path = "generate_tests.rs"]
+mod tests;

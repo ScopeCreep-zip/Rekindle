@@ -152,7 +152,7 @@ export interface OnboardingConfig {
   guideSteps: GuideStep[];
 }
 
-export interface OnboardingQuestion {
+interface OnboardingQuestion {
   questionId: string;
   title: string;
   description: string | null;
@@ -161,7 +161,7 @@ export interface OnboardingQuestion {
   options: OnboardingOption[];
 }
 
-export interface OnboardingOption {
+interface OnboardingOption {
   optionId: string;
   title: string;
   description: string | null;
@@ -254,12 +254,7 @@ export type LifecycleState =
 
 export type IntentKind = string;
 
-type IntentClass =
-  | "routine"
-  | "consequential"
-  | "trustChanging"
-  | "destructive"
-  | "protected";
+type IntentClass = "routine" | "consequential" | "trustChanging" | "destructive" | "protected";
 
 type ProofRequired = "none" | "commit" | "acknowledge" | "typeSubject" | "passphrase";
 
@@ -348,11 +343,7 @@ export interface IntentReview {
 }
 
 /** The proof a commit carries. */
-export type IntentProof =
-  | "commit"
-  | "acknowledged"
-  | { typed: string }
-  | { passphrase: string };
+export type IntentProof = "commit" | "acknowledged" | { typed: string } | { passphrase: string };
 
 /** How an action that ran can be taken back while it lasts. */
 export interface UndoOffer {
@@ -554,11 +545,34 @@ export type MemberGroup =
   | { kind: "online" }
   | { kind: "offline" };
 
-/** The moderation actions we may take against one member (Tier 1
- *  `TargetModeration`): each the governance validator's verdict on the
- *  entry it writes, computed by the Host (plan E3.2 S9). */
-export interface TargetModeration {
-  kick: boolean;
-  ban: boolean;
-  timeout: boolean;
+/** One field of a community profile edit (plan PF2, `rekindle_types::dto::community_profile::ProfileField`). */
+export type ProfileField<T> = { op: "unchanged" } | { op: "clear" } | { op: "set"; value: T };
+
+/** `update_community_profile`'s patch: every field explicit (PF2). */
+export interface CommunityProfilePatch {
+  bio: ProfileField<string>;
+  pronouns: ProfileField<string>;
+  themeColor: ProfileField<number>;
+  badges: ProfileField<string[]>;
+  avatarRef: ProfileField<string>;
+  bannerRef: ProfileField<string>;
+  customStatus: ProfileField<string>;
+  displayName: ProfileField<string>;
+}
+
+/** `send_thread_message`'s answer (`rekindle_types::thread::ThreadReplyOutcome`,
+ *  plan FT1): the reply's id and its send state (D22's `SendState`: `queued` in
+ *  our durable outbox, `sent` once written; a mesh failure after the queue is
+ *  `queued`, never an error). Later changes come as `ChannelSendStatus`. */
+export interface ThreadReplyOutcome {
+  messageId: string;
+  sendState: SendState;
+}
+
+/** `create_forum_post`'s answer (`rekindle_types::thread::ForumPostCreated`): the
+ *  thread and its starter, created as one; a refusal creates nothing. */
+export interface ForumPostCreated {
+  threadId: string;
+  starterMessageId: string;
+  starter: SendState;
 }

@@ -176,6 +176,7 @@ impl World {
             cert: &self.cert,
             ops: &self.set.ops,
             community_id: [7; 32],
+            anchor: ANCHOR,
         };
         replay.body(None, &heads).expect("a checkpoint body")
     }

@@ -1,10 +1,7 @@
-import { Component, createSignal, createEffect, createMemo, For, Show } from "solid-js";
-import Modal from "../common/Modal";
-import {
-  handleCreateChannel,
-  handleSetChannelForumTags,
-} from "../../actions/community.actions";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { handleCreateChannel, handleSetChannelForumTags } from "../../actions/community.actions";
 import { communityState } from "../../stores/community.store";
+import Modal from "../common/Modal";
 
 interface CreateChannelModalProps {
   isOpen: boolean;
@@ -14,7 +11,9 @@ interface CreateChannelModalProps {
 
 const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
   const [name, setName] = createSignal("");
-  const [channelType, setChannelType] = createSignal<"text" | "voice" | "announcement" | "forum" | "stage">("text");
+  const [channelType, setChannelType] = createSignal<
+    "text" | "voice" | "announcement" | "forum" | "stage"
+  >("text");
   const [parentVoiceChannelId, setParentVoiceChannelId] = createSignal<string>("");
   // Architecture §28.6 — forum channels filter by client-side tag list
   // attached to the channel record. Tags are committed via
@@ -69,15 +68,14 @@ const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
     const n = name().trim();
     if (!n) return;
     try {
-      const parent = channelType() === "text" && parentVoiceChannelId()
-        ? parentVoiceChannelId()
-        : undefined;
+      const parent =
+        channelType() === "text" && parentVoiceChannelId() ? parentVoiceChannelId() : undefined;
       const newChannelId = await handleCreateChannel(
         props.communityId,
         n,
         channelType(),
         undefined,
-        parent,
+        parent
       );
       if (channelType() === "forum" && forumTags().length > 0) {
         await handleSetChannelForumTags(props.communityId, newChannelId, forumTags());
@@ -106,7 +104,11 @@ const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
         <select
           class="form-select"
           value={channelType()}
-          onChange={(e) => setChannelType(e.currentTarget.value as "text" | "voice" | "announcement" | "forum" | "stage")}
+          onChange={(e) =>
+            setChannelType(
+              e.currentTarget.value as "text" | "voice" | "announcement" | "forum" | "stage"
+            )
+          }
         >
           <option value="text">Text Channel</option>
           <option value="voice">Voice Channel</option>

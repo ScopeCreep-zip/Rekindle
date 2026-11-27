@@ -1,14 +1,18 @@
 //! Community commands: create, join, leave, list, info.
 
 use rekindle_ipc::protocol::LifecycleRequest;
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+use rekindle_types::display::CommunityDetail;
 
 use crate::cli::CommunityCmd;
+use crate::community_ref;
 use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
+
+mod profile;
 
 pub async fn dispatch(
     cmd: &CommunityCmd,
@@ -81,19 +85,12 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::SetName { community, name } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Settings(
-                    SettingsRequest::CommunitySetDisplayName {
-                        community: community.clone(),
-                        display_name: name.clone(),
-                    },
-                )),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+        CommunityCmd::SetName {
+            community,
+            name,
+            clear,
+        } => profile::set_name(client, mode, community, name.as_deref(), *clear).await,
+        CommunityCmd::Profile(args) => profile::update(client, mode, args).await,
         CommunityCmd::Forget { community } => {
             let value = helpers::send(
                 client,
@@ -106,46 +103,17 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::List => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
-            )
-            .await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            let rows = value
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|c| {
-                            vec![
-                                c.get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?")
-                                    .to_string(),
-                                c.get("memberCount")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                c.get("channelCount")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                rekindle_client::fmt::abbreviate_key(
-                                    c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
-                                ),
-                                removal_text(c.get("removed")),
-                            ]
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            table::print_table(
-                &["Name", "Members", "Channels", "Key", "Standing"],
-                &rows,
-                mode,
-            )
+        CommunityCmd::Focus {
+            community,
+            channel,
+            voice,
+        } => {
+            let detail = community_ref::detail(client, community).await?;
+            let request = focus_request(&detail, channel.as_deref(), *voice)?;
+            let value = helpers::send(client, request).await?;
+            format::print_structured(&value, mode)
         }
+        CommunityCmd::List => list(client, mode).await,
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
                 client,
@@ -313,6 +281,61 @@ pub async fn dispatch(
             crate::community_watch::watch(client, community.as_deref(), mode).await
         }
     }
+}
+
+async fn list(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let value = community_ref::list(client).await?;
+    if mode.is_structured() {
+        return format::print_structured(&value, mode);
+    }
+    let rows = value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|c| {
+                    vec![
+                        c.get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?")
+                            .to_string(),
+                        c.get("memberCount")
+                            .and_then(serde_json::Value::as_u64)
+                            .map_or("?".into(), |n| n.to_string()),
+                        c.get("channelCount")
+                            .and_then(serde_json::Value::as_u64)
+                            .map_or("?".into(), |n| n.to_string()),
+                        rekindle_client::fmt::abbreviate_key(
+                            c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
+                        ),
+                        removal_text(c.get("removed")),
+                    ]
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    table::print_table(
+        &["Name", "Members", "Channels", "Key", "Standing"],
+        &rows,
+        mode,
+    )
+}
+
+/// The active-channel request for a community already resolved to its anchor.
+pub fn focus_request(
+    detail: &CommunityDetail,
+    channel: Option<&str>,
+    voice: bool,
+) -> anyhow::Result<IpcRequest> {
+    let channel = channel
+        .map(|channel| community_ref::channel_id(detail, channel).map(str::to_owned))
+        .transpose()?;
+    Ok(IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelSetActive {
+            community: detail.anchor.clone(),
+            channel,
+            kind: if voice { "voice" } else { "text" }.into(),
+        },
+    )))
 }
 
 /// `community info --full`: the channel list and the roles with their
@@ -560,39 +583,5 @@ async fn lifecycle(
 }
 
 #[cfg(test)]
-mod removal_tests {
-    use super::removal_text;
-
-    #[test]
-    fn info_shows_our_unlanded_ops() {
-        use serde_json::json;
-        assert_eq!(super::publications_text(None), "none");
-        assert_eq!(super::publications_text(Some(&json!({}))), "none");
-        let states = json!({
-            "aa": { "kind": "pending" },
-            "bb": { "kind": "failed", "reason": "removed" },
-        });
-        assert_eq!(
-            super::publications_text(Some(&states)),
-            "1 pending, 1 failed: removed"
-        );
-    }
-
-    #[test]
-    fn standing_names_who_removed_us() {
-        assert_eq!(removal_text(None), "member");
-        assert_eq!(removal_text(Some(&serde_json::Value::Null)), "member");
-        let kicked = serde_json::json!({ "banned": false, "by": "ab".repeat(32), "byName": null });
-        assert!(
-            removal_text(Some(&kicked)).starts_with("removed by "),
-            "{}",
-            removal_text(Some(&kicked))
-        );
-        let named = serde_json::json!({ "banned": true, "by": "ab".repeat(32), "byName": "Ann" });
-        assert_eq!(removal_text(Some(&named)), "banned by Ann");
-        let why = serde_json::json!({ "banned": false, "by": "ab".repeat(32), "byName": "Ann", "reason": "spam" });
-        assert_eq!(removal_text(Some(&why)), "removed by Ann: spam");
-        let nobody = serde_json::json!({ "banned": false, "by": null, "byName": null });
-        assert_eq!(removal_text(Some(&nobody)), "removed");
-    }
-}
+#[path = "community_removal_tests.rs"]
+mod removal_tests;

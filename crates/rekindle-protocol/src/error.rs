@@ -43,6 +43,9 @@ pub enum ProtocolError {
     #[error("serialization error: {0}")]
     Serialization(String),
 
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
+
     #[error("deserialization error: {0}")]
     Deserialization(String),
 
@@ -106,6 +109,7 @@ impl From<rekindle_codec::CodecError> for ProtocolError {
         use rekindle_codec::CodecError;
         match e {
             CodecError::Serialization(m) => Self::Serialization(m),
+            CodecError::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             CodecError::Deserialization(m) => Self::Deserialization(m),
             CodecError::UnknownVariant(m) | CodecError::UnknownGovernanceArm(m) => {
                 Self::UnknownVariant(m)
@@ -142,6 +146,7 @@ impl From<rekindle_records::port::PortError> for ProtocolError {
             PortError::KeyText(m) => Self::DhtError(format!("bad key text: {m}")),
             PortError::Node(m) => Self::Internal(m),
             PortError::Codec(m) => Self::Deserialization(m),
+            PortError::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             PortError::Crypto(m) => Self::CryptoError(m),
         }
     }
@@ -170,6 +175,7 @@ impl From<ProtocolError> for rekindle_records::port::PortError {
             | ProtocolError::Internal(m) => Self::Node(m),
             ProtocolError::NodeNotInitialized => Self::Node("node not initialized".into()),
             ProtocolError::Serialization(m) => Self::Codec(format!("serialization: {m}")),
+            ProtocolError::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             ProtocolError::Deserialization(m) => Self::Codec(format!("deserialization: {m}")),
             ProtocolError::UnknownVariant(m) => Self::Codec(format!("unknown variant: {m}")),
             ProtocolError::Verification(m) => Self::Crypto(format!("verification: {m}")),
@@ -179,20 +185,5 @@ impl From<ProtocolError> for rekindle_records::port::PortError {
 }
 
 #[cfg(test)]
-mod tests {
-    use rekindle_records::port::PortError;
-
-    use super::ProtocolError;
-
-    /// A route-unusable failure keeps its class both ways: the importer
-    /// must still forget the route.
-    #[test]
-    fn route_unusable_survives_the_port_round_trip() {
-        let port = PortError::from(ProtocolError::RouteUnusable("no connection".into()));
-        assert_eq!(port, PortError::RouteUnusable("no connection".into()));
-        assert!(matches!(
-            ProtocolError::from(port),
-            ProtocolError::RouteUnusable(m) if m == "no connection"
-        ));
-    }
-}
+#[path = "error_tests.rs"]
+mod tests;

@@ -48,7 +48,7 @@ fn scalability_mode_from_capnp(m: cap::ScalabilityMode) -> ScalabilityMode {
 pub(super) fn write_request_attachment(
     mut p: cap::request_attachment_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::RequestAttachment {
         channel_id,
         attachment_id,
@@ -62,11 +62,12 @@ pub(super) fn write_request_attachment(
     p.set_attachment_id(attachment_id);
     let mut list = p
         .reborrow()
-        .init_requested_chunks(len_u32(requested_chunks.len()));
-    for (i, c) in requested_chunks.iter().enumerate() {
-        list.set(len_u32(i), *c);
+        .init_requested_chunks(len_u32(requested_chunks.len())?);
+    for (i, c) in (0u32..).zip(requested_chunks.iter()) {
+        list.set(i, *c);
     }
     p.set_requester_pseudonym(requester_pseudonym);
+    Ok(())
 }
 
 pub(super) fn write_attachment_chunk(
@@ -95,9 +96,9 @@ pub(super) fn write_multi_attachment_chunk(
     let ControlPayload::MultiAttachmentChunk { chunks } = payload else {
         unreachable!("write_multi_attachment_chunk: variant mismatch")
     };
-    let mut list = p.reborrow().init_chunks(len_u32(chunks.len()));
-    for (i, c) in chunks.iter().enumerate() {
-        encode_control_payload(list.reborrow().get(len_u32(i)), c)?;
+    let mut list = p.reborrow().init_chunks(len_u32(chunks.len())?);
+    for (i, c) in (0u32..).zip(chunks.iter()) {
+        encode_control_payload(list.reborrow().get(i), c)?;
     }
     Ok(())
 }
@@ -188,7 +189,7 @@ pub(super) fn write_keyframe_request(
 pub(super) fn write_media_capabilities(
     mut p: cap::media_capabilities_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::MediaCapabilities {
         channel_id,
         max_pixel_count,
@@ -208,25 +209,26 @@ pub(super) fn write_media_capabilities(
     {
         let mut list = p
             .reborrow()
-            .init_encode_codecs(len_u32(encode_codecs.len()));
-        for (i, c) in encode_codecs.iter().enumerate() {
-            list.set(len_u32(i), codec_to_capnp(*c));
+            .init_encode_codecs(len_u32(encode_codecs.len())?);
+        for (i, c) in (0u32..).zip(encode_codecs.iter()) {
+            list.set(i, codec_to_capnp(*c));
         }
     }
     {
         let mut list = p
             .reborrow()
-            .init_decode_codecs(len_u32(decode_codecs.len()));
-        for (i, c) in decode_codecs.iter().enumerate() {
-            list.set(len_u32(i), codec_to_capnp(*c));
+            .init_decode_codecs(len_u32(decode_codecs.len())?);
+        for (i, c) in (0u32..).zip(decode_codecs.iter()) {
+            list.set(i, codec_to_capnp(*c));
         }
     }
     let mut modes = p
         .reborrow()
-        .init_supported_scalability_modes(len_u32(supported_scalability_modes.len()));
-    for (i, m) in supported_scalability_modes.iter().enumerate() {
-        modes.set(len_u32(i), scalability_mode_to_capnp(*m));
+        .init_supported_scalability_modes(len_u32(supported_scalability_modes.len())?);
+    for (i, m) in (0u32..).zip(supported_scalability_modes.iter()) {
+        modes.set(i, scalability_mode_to_capnp(*m));
     }
+    Ok(())
 }
 
 pub(super) fn write_topology_change(

@@ -331,18 +331,5 @@ impl std::str::FromStr for ConversationType {
 }
 
 #[cfg(test)]
-mod conversation_type_tests {
-    use super::ConversationType;
-
-    #[test]
-    fn every_type_round_trips_and_others_are_refused() {
-        for t in [
-            ConversationType::Dm,
-            ConversationType::GroupDm,
-            ConversationType::Channel,
-        ] {
-            assert_eq!(t.as_str().parse::<ConversationType>(), Ok(t));
-        }
-        assert!("group".parse::<ConversationType>().is_err());
-    }
-}
+#[path = "message_conversation_type_tests.rs"]
+mod conversation_type_tests;

@@ -694,6 +694,9 @@
     "governance": {
       "effectivePermissionsChanged": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "denied": {
+          "banMembers": "You're timed out until 14:05."
+        },
         "member": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
       }
     }

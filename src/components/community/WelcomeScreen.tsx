@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { WelcomeScreen as WelcomeScreenData } from "../../ipc/commands/dto";
 
 interface WelcomeScreenProps {
@@ -25,6 +25,7 @@ const WelcomeScreen: Component<WelcomeScreenProps> = (props) => {
             <For each={props.screen.channels}>
               {(ch) => (
                 <button
+                  type="button"
                   class="welcome-channel-entry"
                   onClick={() => props.onChannelClick(ch.channelId)}
                 >

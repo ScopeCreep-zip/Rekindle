@@ -1,7 +1,8 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
-import { successorsOf } from "../../../stores/successor.store";
-import { communityState } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handlePublishSuccessor, trackSuccessors } from "../../../actions/community/successor";
+import { communityState } from "../../../stores/community.store";
+import { successorsOf } from "../../../stores/successor.store";
+import { deniedFor } from "../../../utils/denied";
 import FormField from "../../common/FormField";
 
 interface SuccessorSectionProps {
@@ -25,8 +26,11 @@ const SuccessorSection: Component<SuccessorSectionProps> = (props) => {
   // Offers made before this window opened (lead decision (33)).
   createEffect(() => trackSuccessors(props.communityId));
   const offers = () => successorsOf(props.communityId);
-  const creator = (): boolean => communityState.communities[props.communityId]?.weAreCreator === true;
-  const reasonText = (reason: string): string => (reason === "transfer" ? "Handed over" : "Re-created");
+  // Never-hide: Re-create is drawn for everyone; the Host says why not.
+  const denied = (): string | null =>
+    deniedFor(communityState.communities[props.communityId], "offerSuccessor");
+  const reasonText = (reason: string): string =>
+    reason === "transfer" ? "Handed over" : "Re-created";
   const heldText = (anchor: string): string =>
     communityState.communities[anchor] ? "you are a member" : "not joined here";
 
@@ -44,21 +48,26 @@ const SuccessorSection: Component<SuccessorSectionProps> = (props) => {
         <button
           type="button"
           class="form-btn-danger"
-          disabled={busy() || !creator()}
-          aria-describedby={creator() ? undefined : "successor-creator-only"}
+          disabled={busy() || denied() !== null}
+          title={denied() ?? undefined}
+          aria-describedby={denied() === null ? undefined : "successor-denied"}
           aria-label="Re-create community under a new anchor and invite every member"
           onClick={() => void publish()}
         >
           {busy() ? "Re-creating..." : "Re-create community…"}
         </button>
       </div>
-      <Show when={!creator()}>
-        <div class="settings-hint" id="successor-creator-only">
-          Only a creator of this community can re-create it.
-        </div>
+      <Show when={denied()}>
+        {(why) => (
+          <div class="settings-hint" id="successor-denied">
+            {why()}
+          </div>
+        )}
       </Show>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <Show
         when={offers().length > 0}

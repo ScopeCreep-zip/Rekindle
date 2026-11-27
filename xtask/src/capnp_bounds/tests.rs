@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 
 use super::{scan, READER_FILE};
 
@@ -123,28 +122,6 @@ fn only_the_codec_may_depend_on_capnp() {
 #[test]
 fn a_file_that_does_not_parse_is_refused() {
     assert_eq!(scan("crates/x/src/lib.rs", "fn (").len(), 1);
-}
-
-/// Test files are known from the module tree, not their names.
-#[test]
-fn test_files_come_from_cfg_test_declarations() {
-    let lib = (
-        PathBuf::from("/c/src/lib.rs"),
-        "mod codec; #[cfg(test)] mod tests; #[cfg(test)] #[path = \"x_t.rs\"] mod x;".to_owned(),
-    );
-    let codec = (
-        PathBuf::from("/c/src/codec.rs"),
-        "mod tests; mod inner { #[cfg(test)] mod deep; }".to_owned(),
-    );
-    let roots = [PathBuf::from("/c/src/lib.rs")].into_iter().collect();
-    let t = super::test_modules(&[lib, codec], &roots);
-    assert!(t.contains(Path::new("/c/src/tests.rs")));
-    assert!(t.contains(Path::new("/c/src/tests/helpers.rs")));
-    assert!(t.contains(Path::new("/c/src/x_t.rs")));
-    assert!(t.contains(Path::new("/c/src/codec/inner/deep.rs")));
-    // A production module that happens to be named `tests`.
-    assert!(!t.contains(Path::new("/c/src/codec/tests.rs")));
-    assert!(!t.contains(Path::new("/c/src/codec.rs")));
 }
 
 #[test]

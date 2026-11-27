@@ -26,15 +26,24 @@
 name: Lint
 
 on:
+  # A pull request runs once, on pull_request. push covers only the long-lived
+  # branches a merge lands on (main and the integration branch); a push to a PR
+  # branch would otherwise start a second, identical run (GitHub: "If multiple
+  # triggering events for your workflow occur at the same time, multiple workflow
+  # runs will be triggered").
   push:
-    branches: [main, "codex/**"]
+    branches: [main, codex/communities-merge-cli-claude-remote]
   pull_request:
     branches: [main, "codex/**"]
+  # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
+  merge_group:
   workflow_dispatch:
 
+# A new commit on a pull request cancels that PR's older run; pushes to main and
+# the integration branch never cancel, so every merged commit keeps its result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -46,23 +55,22 @@ jobs:
   frontend:
     name: Frontend (biome / stylelint / knip)
     runs-on: ubuntu-24.04
+    env:
+      # Pin pnpm's runtime for install and exec. The shared action bootstraps Node from the 22 range.
+      npm_config_use_node_version: "22.22.2" # Stylelint 18 requires ^22.22.2 on Node 22.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+        id: frontend-install
 
-      # The package.json devDependencies for biome / stylelint / knip
-      # are pending; once they land the next steps just work. Until
-      # then this job is skipped at install time. See
-      # docs/contributor/linting.md "Pending devDependencies".
       - name: Biome — check
-        if: ${{ hashFiles('node_modules/.bin/biome') != '' }}
         run: pnpm exec biome check src/
 
       - name: Stylelint — CSS lint
-        if: ${{ hashFiles('node_modules/.bin/stylelint') != '' }}
+        if: ${{ !cancelled() && steps.frontend-install.outcome == 'success' }}
         run: pnpm exec stylelint 'src/styles/**/*.css'
 
       - name: knip — unused exports / files
@@ -216,7 +224,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install sqlfluff
-        run: pip install sqlfluff
+        run: pip install --require-hashes --no-deps -r .github/requirements/sqlfluff.txt
 
       - name: sqlfluff lint
         run: sqlfluff lint crates/rekindle-db/schema/

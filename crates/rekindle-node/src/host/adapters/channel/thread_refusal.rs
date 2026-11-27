@@ -7,9 +7,45 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::timed_out_until;
+use rekindle_governance::permissions::{
+    channel_permission_bit, channel_permission_name, CapabilityDenial,
+};
 use rekindle_governance::state::GovernanceState;
+use rekindle_types::dto::community_capability::ChannelCapability;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::id::{ChannelId, PseudonymKey};
+
+use super::HostChannel;
+use crate::host::adapters::governance::capability_words::denial_words;
+
+impl HostChannel {
+    /// Check a thread control against the same rule used in the channel view.
+    pub(super) fn require_thread_capability(
+        &self,
+        community: &str,
+        channel: &str,
+        capability: ChannelCapability,
+    ) -> Result<(), ChannelError> {
+        self.refuse_removed(community)?;
+        let channel = ChannelId::from_hex(channel)
+            .ok_or_else(|| ChannelError::InvalidId("Invalid parent channel.".into()))?;
+        self.gov
+            .require_own_permissions(
+                community,
+                Some(&channel),
+                channel_permission_bit(capability),
+            )
+            .map_err(ChannelError::PermissionDenied)
+    }
+}
+
+/// The governance writer checked creation permissions on its signing snapshot.
+pub(super) fn thread_create_refused() -> ChannelError {
+    let denial = CapabilityDenial::Missing {
+        permission: channel_permission_name(ChannelCapability::CreatePublicThreads),
+    };
+    ChannelError::PermissionDenied(denial_words(denial, 0))
+}
 
 /// Refuse `entry` when it creates a thread and `writer` is timed out at
 /// `now_secs`.
@@ -26,66 +62,17 @@ pub(super) fn refuse_timed_out_thread(
         return Ok(());
     }
     match timed_out_until(gov, writer, now_secs) {
-        Some(until_secs) => Err(ChannelError::PermissionDenied(format!(
-            "timed out until {until_secs}: no thread can be created"
+        Some(until_secs) => Err(ChannelError::PermissionDenied(denial_words(
+            CapabilityDenial::TimedOut {
+                until_secs,
+                permission: channel_permission_name(ChannelCapability::CreatePublicThreads),
+            },
+            now_secs,
         ))),
         None => Ok(()),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use rekindle_governance::state::TimeoutState;
-    use rekindle_types::id::{ChannelId, ThreadId};
-
-    use super::*;
-
-    fn thread() -> GovernanceEntry {
-        GovernanceEntry::ThreadCreated {
-            thread_id: ThreadId([4; 16]),
-            parent_channel_id: ChannelId([5; 16]),
-            name: "side".into(),
-            thread_type: "public".into(),
-            invited: Vec::new(),
-            forum_tag: None,
-            auto_archive_seconds: 3600,
-        }
-    }
-
-    fn timed_out(member: PseudonymKey) -> GovernanceState {
-        let mut gov = GovernanceState::default();
-        gov.timeouts.insert(
-            member,
-            TimeoutState {
-                duration_seconds: 60,
-                started_at: 100,
-                reason: None,
-                stamp: rekindle_governance::fixture::stamp(1),
-            },
-        );
-        gov
-    }
-
-    #[test]
-    fn a_timed_out_member_creates_no_thread_until_the_timeout_ends() {
-        let member = PseudonymKey([2; 32]);
-        let gov = timed_out(member.clone());
-        let refused = refuse_timed_out_thread(&thread(), &gov, &member, 159).unwrap_err();
-        assert!(
-            matches!(&refused, ChannelError::PermissionDenied(m) if m.contains("160")),
-            "{refused}"
-        );
-        assert!(refuse_timed_out_thread(&thread(), &gov, &member, 160).is_ok());
-    }
-
-    #[test]
-    fn other_members_and_other_entries_pass() {
-        let member = PseudonymKey([2; 32]);
-        let gov = timed_out(member.clone());
-        assert!(refuse_timed_out_thread(&thread(), &gov, &PseudonymKey([3; 32]), 120).is_ok());
-        let archive = GovernanceEntry::ThreadArchived {
-            thread_id: ThreadId([4; 16]),
-        };
-        assert!(refuse_timed_out_thread(&archive, &gov, &member, 120).is_ok());
-    }
-}
+#[path = "thread_refusal_tests.rs"]
+mod tests;

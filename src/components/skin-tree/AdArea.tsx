@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import type { Component, JSX } from "solid-js";
 
 /**
  * N4 (design §3, §7.1): the pack's ad slot. Xfire's ad was served and is

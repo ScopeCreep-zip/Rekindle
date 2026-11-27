@@ -88,13 +88,6 @@ pub trait ShellHooks: Send + Sync {
     /// the MEK adapters at E3.5.
     fn spawn_departure_rotation(&self, community_id: &str, departed_pseudonym_hex: &str);
 
-    /// The shell's permission check over its own role mirror. Ported when
-    /// the Host's `community_membership` reads the community store (E3.1 B2).
-    ///
-    /// # Errors
-    /// We lack the permission, or the community is unknown.
-    fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String>;
-
     /// The Host projected merged governance onto the community
     /// (`adapters::governance::projection`): the shell's effects of a merge
     /// that the Host cannot run yet (the Host itself syncs the pinned set

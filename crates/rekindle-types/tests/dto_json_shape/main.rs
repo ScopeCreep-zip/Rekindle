@@ -4,20 +4,22 @@
 //! shape (and per enum variant), every key camelCase, and the JSON equal to
 //! `tests/golden/dto.json` (`UPDATE_GOLDEN=1` after a deliberate change).
 
+mod community_profile;
 mod dm;
 #[path = "../common/json.rs"]
 mod json;
 mod lobby;
 mod local_search;
+mod onboarding;
 mod servers;
 mod skin;
+mod thread;
 
 use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
-    CommunityMemberView, MemberGroup, TargetModeration,
 };
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -25,10 +27,6 @@ use rekindle_types::dto::friends::{
 };
 use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
-use rekindle_types::dto::onboarding::{
-    GuideStepDto, OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto,
-    OnboardingQuestionDto, WelcomeChannelEntryDto, WelcomeScreenDto,
-};
 use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, NotJoinableReason};
@@ -263,94 +261,15 @@ fn samples() -> Map<String, Value> {
         }),
     );
     friend_samples(&mut add);
-    onboarding_samples(&mut add);
+    onboarding::samples(&mut add);
     skin::samples(&mut add);
+    community_profile::samples(&mut add);
     dm::samples(&mut add);
     servers::samples(&mut add, &pk('b'));
     local_search::samples(&mut add, &pk('c'));
     lobby::samples(&mut add, &pk('c'));
+    thread::samples(&mut add);
     out
-}
-
-/// The onboarding flow, welcome screen and member view the Host answers
-/// (plan E3.1 D3); `roleIds` is what an onboarding grant changes.
-fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
-    let channel = "0c".repeat(16);
-    add(
-        "onboarding.config.guided",
-        to(OnboardingConfigDto {
-            enabled: true,
-            mode: OnboardingModeDto::Guided,
-            default_channels: vec![channel.clone()],
-            questions: vec![OnboardingQuestionDto {
-                question_id: "q_01".into(),
-                title: "What do you play?".into(),
-                description: Some("Pick one".into()),
-                required: true,
-                single_select: true,
-                options: vec![OnboardingOptionDto {
-                    option_id: "opt_fps".into(),
-                    title: "Shooters".into(),
-                    description: None,
-                    roles_to_assign: vec!["05".repeat(16)],
-                    channels_to_show: vec![channel.clone()],
-                }],
-            }],
-            welcome_message: Some("Welcome!".into()),
-            guide_steps: vec![GuideStepDto {
-                title: "Say hello".into(),
-                description: "Introduce yourself".into(),
-                channel_id: Some(channel.clone()),
-                emoji: Some("👋".into()),
-            }],
-        }),
-    );
-    add(
-        "onboarding.config.default",
-        to(OnboardingConfigDto::default()),
-    );
-    add(
-        "onboarding.welcomeScreen",
-        to(WelcomeScreenDto {
-            description: "LAN party HQ".into(),
-            channels: vec![WelcomeChannelEntryDto {
-                channel_id: channel,
-                description: "Chat with everyone".into(),
-                emoji: None,
-            }],
-        }),
-    );
-    add(
-        "community.memberView",
-        to(CommunityMemberView {
-            pseudonym_key: pk('b'),
-            display_name: "Bea".into(),
-            fingerprint: "bbbb bbbb".into(),
-            custom_status: Some("brb".into()),
-            role_ids: vec!["00".repeat(16), "05".repeat(16)],
-            display_role: "Shooters".into(),
-            status: "online".into(),
-            timeout_until: None,
-            bio: None,
-            pronouns: None,
-            theme_color: None,
-            badges: Vec::new(),
-            avatar_ref: None,
-            banner_ref: None,
-            location: None,
-            last_active: 0,
-            group: MemberGroup::Role {
-                id: "05".repeat(16),
-                name: "Shooters".into(),
-            },
-            can_moderate_target: TargetModeration {
-                kick: true,
-                ban: false,
-                timeout: true,
-            },
-            outranks: true,
-        }),
-    );
 }
 
 /// The friend and DM DTOs (plan E2.1).

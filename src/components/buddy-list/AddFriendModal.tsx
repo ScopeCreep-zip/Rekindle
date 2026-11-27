@@ -1,7 +1,7 @@
-import { Component, Show, createSignal, createEffect, on } from "solid-js";
-import Modal from "../common/Modal";
-import { friendsState, setFriendsState } from "../../stores/friends.store";
+import { type Component, createEffect, createSignal, on, Show } from "solid-js";
 import { handleLoadOutgoingInvites } from "../../actions/buddy.actions";
+import { friendsState, setFriendsState } from "../../stores/friends.store";
+import Modal from "../common/Modal";
 import InviteLinkTab from "./InviteLinkTab";
 import PublicKeyTab from "./PublicKeyTab";
 
@@ -17,8 +17,8 @@ const AddFriendModal: Component = () => {
         if (isOpen && tab() === "invite") {
           handleLoadOutgoingInvites();
         }
-      },
-    ),
+      }
+    )
   );
 
   createEffect(
@@ -26,7 +26,7 @@ const AddFriendModal: Component = () => {
       if (friendsState.showAddFriend && currentTab === "invite") {
         handleLoadOutgoingInvites();
       }
-    }),
+    })
   );
 
   function handleClose(): void {
@@ -34,13 +34,10 @@ const AddFriendModal: Component = () => {
   }
 
   return (
-    <Modal
-      isOpen={friendsState.showAddFriend}
-      title="Add Friend"
-      onClose={handleClose}
-    >
+    <Modal isOpen={friendsState.showAddFriend} title="Add Friend" onClose={handleClose}>
       <div class="form-tabs-equal">
         <button
+          type="button"
           class="form-tab"
           classList={{ active: tab() === "invite" }}
           onClick={() => setTab("invite")}
@@ -48,6 +45,7 @@ const AddFriendModal: Component = () => {
           Invite Link
         </button>
         <button
+          type="button"
           class="form-tab"
           classList={{ active: tab() === "key" }}
           onClick={() => setTab("key")}

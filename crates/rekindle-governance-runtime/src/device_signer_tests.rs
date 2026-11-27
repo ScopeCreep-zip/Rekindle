@@ -103,7 +103,80 @@ fn a_device_signed_checkpoint_endorsement_verifies_under_the_device_key() {
     let body = world.checkpoint_body();
     let op = world.endorse(&creator, body);
     assert_ne!(op.op().device_key, creator.author().0);
-    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(op.op());
+    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(op.op()).unwrap();
     let read = SignedEndorsement::verify(crate::test_world::ANCHOR, op.op(), &unsigned);
     assert_eq!(read.map(|e| e.author), Some(creator.author()));
+}
+
+/// Before each sign the device checks its member set for a `DeviceRetired`
+/// of its own key (plan E3.2 S7d-keys.9, ADR 0022 rule 4): once another
+/// copy of this data retired it, this device stops signing under it and the
+/// refusal's text is the notice the plan words; the copy that retired it
+/// still signs.
+#[test]
+fn a_device_stops_signing_on_a_retirement_of_its_own_key() {
+    use rekindle_governance::device_writer::{endorse, retire, DeviceRecord};
+    use rekindle_types::governance::GovernanceEntry;
+
+    use crate::test_member::Member;
+    use crate::test_world::World;
+    let creator = Member::new(1);
+    let member = Member::new(2);
+    let mut world = World::new(&creator);
+    world.join(&member, &creator, "code");
+    let (author, record) = (member.author(), member.record());
+    // This device: the member's second key, enrolled by its seq-0 op.
+    let this = Member {
+        pseudonym: member.pseudonym.clone(),
+        owner: member.owner.clone(),
+        device: SigningKey::from_bytes(&[42; 32]),
+    };
+    let ours = this.device.verifying_key().to_bytes();
+    let rec = Member::new(52);
+    let set = |w: &World| w.state.devices.member(&author).cloned();
+    let endorsement = endorse(
+        &member.pseudonym,
+        ANCHOR,
+        &record,
+        set(&world).as_ref(),
+        ours,
+        DeviceRecord {
+            record: rec.record(),
+            owner: rec.owner_text(),
+        },
+        [0; 32],
+    )
+    .unwrap();
+    world.author(
+        &this,
+        GovernanceEntry::DeviceKey(endorsement),
+        Deps::Frontier,
+    );
+    let signs = |w: &World, d: &SigningKey| {
+        OpSigner::checked(ANCHOR, &w.state, author.clone(), d).map(|s| s.device.to_bytes())
+    };
+    assert_eq!(signs(&world, &this.device).unwrap(), this.device.to_bytes());
+    // Another copy of this data retires our key above its seq 0.
+    let held = set(&world).unwrap();
+    let retired = retire(&member.pseudonym, ANCHOR, &record, &held, ours, 0).unwrap();
+    world.author(
+        &member,
+        GovernanceEntry::DeviceRetired(retired),
+        Deps::Frontier,
+    );
+    let refused = signs(&world, &this.device).unwrap_err();
+    assert!(
+        matches!(
+            &refused,
+            GovernanceRuntimeError::OwnKeyRetired { community, retired_from: 1 }
+                if community == ANCHOR
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(
+        refused.to_string(),
+        "this device's key was retired by another copy of this data"
+    );
+    // The copy that retired it keeps signing under its own key.
+    assert!(signs(&world, &member.device).is_ok());
 }

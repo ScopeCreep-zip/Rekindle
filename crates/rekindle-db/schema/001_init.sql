@@ -242,12 +242,14 @@ CREATE TABLE IF NOT EXISTS group_lobby_members (
 CREATE TABLE IF NOT EXISTS group_dm_rendezvous (
     owner_key TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    record_key TEXT NOT NULL CHECK(length(record_key) > 0),
-    slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 7),
-    writer TEXT NOT NULL CHECK(length(writer) > 0),
-    slots TEXT NOT NULL CHECK(json_valid(slots)),
+    record_key TEXT NOT NULL CHECK (length(record_key) > 0),
+    slot INTEGER NOT NULL CHECK (slot BETWEEN 0 AND 7),
+    writer TEXT NOT NULL CHECK (length(writer) > 0),
+    slots TEXT NOT NULL CHECK (json_valid(slots)),
     PRIMARY KEY (owner_key, group_id),
-    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms (
+        owner_key, group_id
+    ) ON DELETE CASCADE
 );
 
 -- Plan E2.6: a creator's verified invite we have not answered yet, held
@@ -618,7 +620,8 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     -- Plan RV2: the reply inbox the request carried and its one-time writer.
     reply_inbox_key TEXT NOT NULL,
     reply_writer TEXT NOT NULL,
-    -- Decision 67 item 2: the requester's dm chain record, adopted once accepted.
+    -- Decision 67 item 2: the requester's dm chain record, adopted once
+    -- accepted.
     chain_record_key TEXT NOT NULL,
     PRIMARY KEY (owner_key, public_key)
 );
@@ -928,7 +931,7 @@ CREATE TABLE IF NOT EXISTS community_held_threads (
 -- Thread messages (messages within a thread).
 -- Thread reply messages (architecture §11). The synthetic `id` PK is
 -- required by FTS5 (`content_rowid` must be a single INTEGER column),
--- with the original logical key kept as a UNIQUE constraint.
+-- with the author-scoped logical key kept as a UNIQUE constraint.
 CREATE TABLE IF NOT EXISTS thread_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_key TEXT NOT NULL,
@@ -939,7 +942,7 @@ CREATE TABLE IF NOT EXISTS thread_messages (
     body TEXT NOT NULL DEFAULT '',
     timestamp INTEGER NOT NULL,
     reply_to_id TEXT,
-    UNIQUE (owner_key, community_id, thread_id, message_id),
+    UNIQUE (owner_key, community_id, thread_id, sender_pseudonym, message_id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities (
         owner_key, id
     ) ON DELETE CASCADE
