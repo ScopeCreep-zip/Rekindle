@@ -66,10 +66,10 @@ pub async fn receive<D: GovernanceRuntimeDeps>(
     let lease = port
         .acquire(&locator.author_record, None, OpenIntent::Check)
         .await
-        .map_err(record_error)?;
+        .map_err(|error| record_error(&error))?;
     let actual = port.owner_of(lease);
     port.release(lease).await;
-    if actual.map_err(record_error)? != owner {
+    if actual.map_err(|error| record_error(&error))? != owner {
         return Ok(false);
     }
     crate::op_receive::store_received_op(deps, community, encoded).await?;
@@ -78,7 +78,7 @@ pub async fn receive<D: GovernanceRuntimeDeps>(
     Ok(true)
 }
 
-fn record_error(error: rekindle_records::port::PortError) -> GovernanceRuntimeError {
+fn record_error(error: &rekindle_records::port::PortError) -> GovernanceRuntimeError {
     GovernanceRuntimeError::Adapter(format!("retirement successor record: {error}"))
 }
 
