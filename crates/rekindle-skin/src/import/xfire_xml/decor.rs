@@ -126,7 +126,8 @@ fn inside_content(layout: &WindowLayout, t: &FrameTile) -> bool {
 }
 
 /// Adds `layout`'s (the window's layout file) decorations and outsets to
-/// `built`, each image decoded by `piece(bitmap, shift colour)`.
+/// `built`, each image decoded by `piece(bitmap, shift colour)`. The tree
+/// draws the `stacked_rows` in their XML boxes.
 ///
 /// # Errors
 /// What `piece` returns, or an image too large for a tile.
@@ -134,6 +135,7 @@ pub fn apply(
     window: SkinWindow,
     layout: &Node,
     components: &[Node],
+    stacked_rows: &[String],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
     built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>),
 ) -> Result<(), ImportError> {
@@ -177,6 +179,15 @@ pub fn apply(
         built.0.tiles.push(t);
     }
     for tile in layout.children_named("Tile") {
+        // Compositing a stack row over itself can make its faint pixels
+        // opaque in row_decor's area probe. Only the tree owns this row.
+        if tile.attr_ci("Name").is_some_and(|name| {
+            stacked_rows
+                .iter()
+                .any(|row| row.eq_ignore_ascii_case(name.trim()))
+        }) {
+            continue;
+        }
         let Some(component) = tile
             .attr_ci("Component")
             .and_then(|c| by_name.get(&c.to_ascii_lowercase()))
@@ -316,7 +327,8 @@ pub fn main_window(
         stack::layout(w, main, components, piece)?
     };
     if let Some((mut built, rows)) = built {
-        apply(w, main, components, piece, &mut built)?;
+        let stacked_rows = if stacked { rows.as_slice() } else { &[] };
+        apply(w, main, components, stacked_rows, piece, &mut built)?;
         super::title::add(w, main, components, colours, piece, &mut built)?;
         // The tree also reads the popups a component launches (StealthX's
         // rail); nothing else reads them.

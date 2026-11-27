@@ -32,6 +32,7 @@ fn indents_are_outsets_and_tiles_above_the_frame_are_decorations() {
         SkinWindow::Main,
         &layout,
         &[components],
+        &[],
         |name, _| {
             Ok(match name {
                 "tab" => solid(13, 20),
@@ -182,6 +183,8 @@ fn a_frame_read_from_the_trees_rows_is_drawn_only_by_the_tree() {
 /// Chaos's rows are its tree's tiles, so the stack laid at the window's
 /// edges (its `BottomBar` at end 0, 5 px above where the tree lays it)
 /// draws none of them again; each row is drawn once, by its node.
+/// A faint title cap would cross the silhouette threshold if the row
+/// decoration pass laid a second copy over the provisional stack.
 #[test]
 fn a_row_stack_under_the_tree_is_drawn_only_by_the_tree() {
     let main = parse(
@@ -210,11 +213,14 @@ fn a_row_stack_under_the_tree_is_drawn_only_by_the_tree() {
         |name, _| {
             let (w, h) = name.rsplit_once('-').unwrap().1.split_once('x').unwrap();
             let (w, h) = (w.parse().unwrap(), h.parse().unwrap());
-            Ok(RgbaImage::from_pixel(
-                w,
-                h,
-                rekindle_image::Rgba([9, 9, 9, 255]),
-            ))
+            Ok(RgbaImage::from_fn(w, h, |x, y| {
+                let alpha = if name == "tl-75x52" && (x, y) == (26, 6) {
+                    101
+                } else {
+                    255
+                };
+                rekindle_image::Rgba([9, 9, 9, alpha])
+            }))
         },
         &[],
         &mut windows,

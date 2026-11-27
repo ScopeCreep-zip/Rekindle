@@ -30,6 +30,7 @@ fn a_row_is_kept_only_where_it_adds_to_the_outline() {
         SkinWindow::Main,
         &layout,
         &[components],
+        &[],
         |_, _| Ok(RgbaImage::from_pixel(10, 2, px(255))),
         &mut built,
     )
@@ -85,6 +86,7 @@ fn an_undefined_side_bitmap_lays_nothing_and_a_missing_file_stops() {
         SkinWindow::Main,
         &layout,
         std::slice::from_ref(&components),
+        &[],
         undefined,
         &mut built,
     )
@@ -109,6 +111,7 @@ fn an_undefined_side_bitmap_lays_nothing_and_a_missing_file_stops() {
             SkinWindow::Main,
             &layout,
             &[components],
+            &[],
             missing,
             &mut built
         ),
@@ -142,6 +145,7 @@ fn a_stretch_its_component_caps_is_no_row() {
         SkinWindow::Main,
         &layout,
         &[components],
+        &[],
         |_, _| Ok(RgbaImage::from_pixel(10, 2, px(255))),
         &mut built,
     )
