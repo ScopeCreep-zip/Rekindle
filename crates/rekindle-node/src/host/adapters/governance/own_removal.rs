@@ -278,6 +278,8 @@ impl HostGovernance {
     /// deleting the vault's keys: stop the tasks, drop the watches and the
     /// gossip mesh, release the leases and drop the in-memory keys.
     async fn tear_down_removed(&self, community_id: &str) {
+        // A removed member is in none of the community's voice channels.
+        self.ctx.own_voice.leave_community(community_id);
         let daemon_tasks = self.ctx.community_scopes.lock().remove(community_id);
         let store_tasks = self
             .ctx

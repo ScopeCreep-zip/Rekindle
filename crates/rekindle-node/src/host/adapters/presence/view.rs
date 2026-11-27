@@ -86,14 +86,11 @@ pub(crate) fn take_extras(
     }
 }
 
-/// Hand the shell's voice roster every member's voice claim in
-/// `community` as its beats show it now (plan E3.4 S8-pre: the beat
-/// ring's `voiceChannel` view feeds the reconcile). Nothing on `rekindled`,
-/// which holds no voice session.
+/// Hand our voice roster every member's voice claim in `community` as its
+/// beats show it now (plan E3.4 S8-pre: the beat ring's `voiceChannel`
+/// view feeds the reconcile).
 pub(crate) fn reconcile_voice(ctx: &DaemonContext, community: &str) {
-    let Some(session) = super::session_presence(ctx) else {
-        return;
-    };
+    let session = super::session_presence(ctx);
     let rows = (ctx.communities.map().read())
         .get(community)
         .map(|c| c.beat_view.voice_rows());

@@ -1,9 +1,8 @@
 //! `CommunityPresenceDeps` impl — delegation plus the recorded gaps.
 //!
 //! Methods that return empty do so for a checked reason, named at each
-//! one — not as a placeholder. One that looks like it should be empty is
-//! not: `active_voice_channel` (`session_presence.rs`) is blocked by
-//! missing local state rather than a missing subsystem.
+//! one — not as a placeholder. Our voice channel is the Host's own record
+//! (`host::own_voice`, read through `adapters::presence::session_presence`).
 
 use rekindle_records::port::OpenIntent;
 use std::collections::{HashMap, HashSet};
@@ -23,7 +22,7 @@ use super::DaemonPresenceAdapter;
 #[async_trait]
 impl CommunityPresenceDeps for DaemonPresenceAdapter {
     fn session_presence(&self) -> std::sync::Arc<dyn rekindle_presence::SessionPresence> {
-        std::sync::Arc::new(super::session_presence::DaemonSessionPresence)
+        crate::host::adapters::presence::session_presence(&self.ctx)
     }
 
     fn now_secs(&self) -> u64 {

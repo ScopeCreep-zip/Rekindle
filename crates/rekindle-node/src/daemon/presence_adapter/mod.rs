@@ -42,7 +42,7 @@
 //! |---|---|
 //! | channel message catch-up | no local message store to catch up *into* — the DHT read itself works, both tracks now writing SMPL channel segment records |
 //! | event RSVPs | no event store |
-//! | voice roster | no voice engine |
+//! | voice roster | no media engine until E4.1 (our own channel is `host::own_voice`) |
 //!
 //! Each is a recorded capability gap, not a stub to be forgotten: the
 //! presence poll degrades to "roster and gossip overlay only", which is
@@ -52,7 +52,6 @@ mod deps_impl;
 mod events;
 mod lifecycle;
 mod registry;
-mod session_presence;
 mod state_reads;
 pub mod supervisor;
 
