@@ -121,7 +121,7 @@ async fn write_empty_slot(
     lease: rekindle_records::lease::LeaseId,
     row: &Submission,
 ) -> AttemptOutcome {
-    let slots = Vec::from_iter(layout::slots(row.capability.slots));
+    let slots = layout::slots(row.capability.slots).collect::<Vec<_>>();
     let Ok(values) = pool.read_hinted(lease, &slots).await else {
         return AttemptOutcome::Deferred;
     };

@@ -200,7 +200,7 @@ impl HostGovernance {
             pool.release(lease).await;
             return;
         }
-        let slots = Vec::from_iter(layout::slots(watch.inbox.slots));
+        let slots = layout::slots(watch.inbox.slots).collect::<Vec<_>>();
         if let Err(error) = pool.watch(lease, &slots).await {
             tracing::debug!(community, %error, "join inbox watch will be re-armed by the pool");
         }
@@ -363,7 +363,7 @@ impl HostGovernance {
             self.ctx
                 .community_scope(community)
                 .spawn_or_drop("retire join inbox", async move {
-                    let slots = Vec::from_iter(layout::slots(watch.inbox.slots));
+                    let slots = layout::slots(watch.inbox.slots).collect::<Vec<_>>();
                     host.read_join_inbox(&watch, &*pool, &slots).await;
                     host.finish_join_inbox_retirement(&watch, &*pool).await;
                 });
