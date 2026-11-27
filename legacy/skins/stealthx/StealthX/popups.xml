@@ -1,0 +1,200 @@
+<Popups>
+    <Tile Name="MainMenuPopup" JustX="LEFT" X="0" Z="50" IndentTop="29" IndentBottom="28" Component="MainMenuWindow">
+        <Tile Name="MainMenuBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="MenuBackground">
+            <Tile Name="MenuBar" X="1" Y="10" Component="MenuBar">
+                <Tile Name="XfireMenuText" X="1" Y="4" Z="10" IndentLeft="27" Component="XfireMenuText">
+                    <Tile Name="FileMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="FileMenu" />
+                </Tile>
+                <Tile Name="ToolsMenuText" X="1" Y="XfireMenuText.BOTTOM" Z="10" IndentLeft="27" Component="ToolsMenuText">
+                    <Tile Name="ToolsMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="ToolsMenu" />
+                </Tile>
+                <Tile Name="HelpMenuText" X="1" Y="ToolsMenuText.BOTTOM" Z="10" IndentLeft="27" Component="HelpMenuText">
+                    <Tile Name="HelpMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="HelpMenu" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="TabHeader" X="1" Y="MenuBar.BOTTOM+20" Component="TabHeader">
+                <Tile Name="TabNormalText" X="1" Y="0" Z="10" IndentLeft="27" Component="TabNormalText">
+                    <Tile Name="TabNormalButton" X="0" Y="-4" Z="-4" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="TabNormalButton" />
+                </Tile>
+                <Tile Name="TabServerText" X="1" Y="TabNormalText.BOTTOM" Z="10" IndentLeft="27" Component="TabServerText">
+                    <Tile Name="TabServerButton" X="0" Y="-4" Z="-4" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="TabServerButton" />
+                </Tile>
+                <Tile Name="TabDownloadText" X="1" Y="TabServerText.BOTTOM" Z="10" IndentLeft="27" Component="TabDownloadText">
+                    <Tile Name="TabDownloadButton" X="0" Y="-4" Z="-4" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="TabDownloadButton" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="ButtonArea" X="2" Y="TabHeader.BOTTOM+16" MinWidth="110" Component="TabbedControl">
+                <Tile Name="FriendsButtons" Component="ButtonRow">
+                    <Tile Name="AddFriendButton" Component="AddFriendButton">
+                        <Tile Name="AddFriendButtonText" X="27" Y="4" Component="AddFriendButtonText" />
+                    </Tile>
+                    <Tile Name="ChatButton" Y="AddFriendButton.BOTTOM" Component="ChatButton">
+                        <Tile Name="ChatButtonText" X="27" Y="4" Component="ChatButtonText" />
+                    </Tile>
+                    <Tile Name="GameButton1" Y="ChatButton.BOTTOM" Component="GameButton">
+                        <Tile Name="GameButtonText" X="27" Y="4" Component="GameButtonText" />
+                    </Tile>
+                    <Tile Name="InfoButton1" Y="GameButton1.BOTTOM" Component="InfoButton">
+                        <Tile Name="InfoButtonText" X="27" Y="4" Component="InfoButtonText" />
+                    </Tile>
+                </Tile>
+
+                <Tile Name="ServersButtons" Component="ButtonRow">
+                    <Tile Name="AddServerButton" Component="AddServerButton">
+                        <Tile Name="AddServerButtonText" X="27" Y="4" Component="AddServerButtonText" />
+                    </Tile>
+                    <Tile Name="RefreshButton" Y="AddServerButton.BOTTOM" Component="RefreshButton">
+                        <Tile Name="RefreshButtonText" X="27" Y="4" Component="RefreshButtonText" />
+                    </Tile>
+                    <Tile Name="GameButton2" Y="RefreshButton.BOTTOM" Component="GameButton">
+                        <Tile Name="GameButtonText" X="27" Y="4" Component="GameButtonText" />
+                    </Tile>
+                    <Tile Name="InfoButton2" Y="GameButton2.BOTTOM" Component="InfoButton">
+                        <Tile Name="InfoButtonText" X="27" Y="4" Component="InfoButtonText" />
+                    </Tile>
+                </Tile>
+
+                <Tile Name="FilesButtons" Component="ButtonRow">
+                    <Tile Name="FindButton" Component="FindButton">
+                        <Tile Name="FindButtonText" X="27" Y="4" Component="FindButtonText" />
+                    </Tile>
+                    <Tile Name="DownloadButton" Y="FindButton.BOTTOM" Component="DownloadButton">
+                        <Tile Name="DownloadButtonText" X="27" Y="4" Component="DownloadButtonText" />
+                    </Tile>
+                    <Tile Name="StopButton" Y="DownloadButton.BOTTOM" Component="StopButton">
+                        <Tile Name="StopButtonText" X="27" Y="4" Component="StopButtonText" />
+                    </Tile>
+                    <Tile Name="ExecuteButton" Y="StopButton.BOTTOM" Component="ExecuteButton">
+                        <Tile Name="ExecuteButtonText" X="27" Y="4" Component="ExecuteButtonText" />
+                    </Tile>
+                </Tile>
+            </Tile>
+
+            <Tile Name="InfoJoinChatTab" X="2" Y="TabHeader.BOTTOM+100" Z="49" Component= "ChatTab">
+                <Tile Name="HostChatButton" Component="HostChatButton">
+                    <Tile Name="HostChatButtonText" X="27" Y="4" Component="HostChatButtonText" />
+                </Tile>
+                <Tile Name="JoinChatButton" Component="JoinChatButton">
+                    <Tile Name="JoinChatButtonText" X="27" Y="4" Component="JoinChatButtonText" />
+                </Tile>
+                <Tile Name="LeaveChatButton" Component="LeaveChatButton">
+                    <Tile Name="LeaveChatButtonText" X="27" Y="4" Component="LeaveChatButtonText" />
+                </Tile>
+            </Tile>
+
+            <!--
+            <Tile Name="InfoViewButtonMenu" X="2" Y="TabHeader.BOTTOM+141" Z="50" Component="InfoViewButtonMenu">
+                <Tile Name="InfoViewButtonText" X="27" Y="4" Component="InfoViewButtonText" />
+            </Tile>
+            -->
+        </Tile>
+    </Tile>
+
+    <!-- ##### MainInfoview ##### -->
+
+    <Tile Name="MainInfoViewPopup" JustX="LEFT" X="MainBackground.RIGHT" Z="100" IndentTop="29" IndentBottom="28" Component="MainInfoWindow">
+        <Tile Name="MainInfoBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InfoBackground">
+            <Tile Name="InfoView" Y="5" X="3" IndentRight="21" IndentBottom="5" ResizeX="100" ResizeY="100" Component="InfoViewTile" />
+        
+            <Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Component="ResizeRight" />
+        </Tile>
+    </Tile>
+    
+    <!-- ##### Chatwindow ##### -->
+    
+    <Tile Name="ChatMenuPopup" JustX="LEFT" X="0" Z="50" IndentTop="29" IndentBottom="28" Component="MainMenuWindow">
+        <Tile Name="ChatMenuBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="MenuBackground">
+            <Tile Name="MenuBar" X="1" Y="10" Component="MenuBar">
+                <Tile Name="SystemMenuText" X="1" Y="4" Z="10" IndentLeft="27" Component="SystemMenuText">
+                    <Tile Name="SystemMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="SystemMenu" />
+                </Tile>
+                <Tile Name="ActionsMenuText" X="1" Y="SystemMenuText.BOTTOM" Z="10" IndentLeft="27" Component="ActionsMenuText">
+                    <Tile Name="ActionsMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="ActionsMenu" />
+                </Tile>
+                <Tile Name="HelpMenuCText" X="1" Y="ActionsMenuText.BOTTOM" Z="10" IndentLeft="27" Component="HelpMenuCText">
+                    <Tile Name="HelpMenuC" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="HelpMenuC" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="GameButton1" X="2" Y="MenuBar.BOTTOM+16" Component="GameButton">
+                <Tile Name="GameButtonText" X="27" Y="4" Component="GameButtonText" />
+            </Tile>
+
+            <Tile Name="InfoJoinChatTab" X="2" Y="GameButton1.BOTTOM" Z="49" Component= "ChatTab">
+                <Tile Name="HostChatButton" Component="HostChatButton">
+                    <Tile Name="HostChatButtonText" X="27" Y="4" Component="HostChatButtonText" />
+                </Tile>
+                <Tile Name="JoinChatButton" Component="JoinChatButton">
+                    <Tile Name="JoinChatButtonText" X="27" Y="4" Component="JoinChatButtonText" />
+                </Tile>
+                <Tile Name="LeaveChatButton" Component="LeaveChatButton">
+                    <Tile Name="LeaveChatButtonText" X="27" Y="4" Component="LeaveChatButtonText" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="SendButton" X="2" Y="GameButton1.BOTTOM+37" Z="50" Component="SendButton">
+                <Tile Name="SendButtonText" X="27" Y="4" Component="SendButtonText" />
+            </Tile>
+        </Tile>
+    </Tile>
+
+    <!-- ##### GroupChat MainInfoview ##### -->
+
+    <Tile Name="GCInfoViewPopup" JustX="LEFT" X="MainBackground.RIGHT" Z="100" IndentTop="29" IndentBottom="28" Component="MainInfoWindow">
+        <Tile Name="MainInfoBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InfoBackground">
+            <Tile Name="InfoView" Y="5" X="3" IndentRight="21" IndentBottom="5" ResizeX="100" ResizeY="100" Component="GroupChatInfoView" />
+
+            <Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Component="ResizeRight" />
+        </Tile>
+    </Tile>
+
+    <Tile Name="GroupChatMenuPopup" JustX="LEFT" X="0" Z="50" IndentTop="29" IndentBottom="28" Component="MainMenuWindow">
+        <Tile Name="ChatMenuBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="MenuBackground">
+            <Tile Name="MenuBar" X="1" Y="10" Component="MenuBar">
+                <Tile Name="SystemMenuText" X="1" Y="4" Z="10" IndentLeft="27" Component="SystemMenuText">
+                    <Tile Name="SystemMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="SystemMenu" />
+                </Tile>
+                <Tile Name="ActionsMenuText" X="1" Y="SystemMenuText.BOTTOM" Z="10" IndentLeft="27" Component="ActionsMenuText">
+                    <Tile Name="ActionsMenu" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="ActionsMenu" />
+                </Tile>
+                <Tile Name="HelpMenuCText" X="1" Y="ActionsMenuText.BOTTOM" Z="10" IndentLeft="27" Component="HelpMenuCText">
+                    <Tile Name="HelpMenuC" X="0" Y="-4" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="HelpMenuC" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="InfoJoinGameTab" X="2" Y="MenuBar.BOTTOM+16" Component="InfoJoinGameTab">
+                <Tile Name="HostGameLobbyButton" Component="HostGameLobbyButton">
+                    <Tile Name="HostGameLobbyButtonText" X="27" Y="4" Component="HostGameLobbyButtonText" />
+                </Tile>
+                <Tile Name="JoinGameLobbyButton" Component="JoinGameLobbyButton">
+                    <Tile Name="JoinGameLobbyButtonText" X="27" Y="4" Component="JoinGameLobbyButtonText" />
+                </Tile>
+                <Tile Name="LeaveGameLobbyButton" Component="LeaveGameLobbyButton">
+                    <Tile Name="LeaveGameLobbyButtonText" X="27" Y="4" Component="LeaveGameLobbyButtonText" />
+                </Tile>
+                <Tile Name="LaunchGameLobbyButton" Component="LaunchGameLobbyButton">
+                    <Tile Name="LaunchGameLobbyButtonText" X="27" Y="4" Component="LaunchGameLobbyButtonText" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="InfoJoinChatTab" X="2" Y="MenuBar.BOTTOM+37" Z="49" Component= "GroupChatTab">
+                <Tile Name="HostGroupChatButton" Component="HostGroupChatButton">
+                    <Tile Name="HostGroupChatButtonText" X="27" Y="4" Component="HostGroupChatButtonText" />
+                </Tile>
+                <Tile Name="JoinGroupChatButton" Component="JoinGroupChatButton">
+                    <Tile Name="JoinGroupChatButtonText" X="27" Y="4" Component="JoinGroupChatButtonText" />
+                </Tile>
+                <Tile Name="LeaveGroupChatButton" Component="LeaveGroupChatButton">
+                    <Tile Name="LeaveGroupChatButtonText" X="27" Y="4" Component="LeaveGroupChatButtonText" />
+                </Tile>
+            </Tile>
+
+            <Tile Name="GCSendButton" X="2" Y="MenuBar.BOTTOM+74" Z="50" Component="GCSendButton">
+                <Tile Name="GCSendButtonText" X="27" Y="4" Component="GCSendButtonText" />
+            </Tile>
+        </Tile>
+    </Tile>
+
+</Popups>

@@ -268,6 +268,7 @@ pub(crate) async fn redeem(
 ) -> Result<(), FriendError> {
     let request = super::request::build(host, message, RequestAuth::Invite(invite_id)).await?;
     super::request::remember_reply(host, &blob.public_key, &request).await?;
+    let request = super::request::named_chain(host, &blob.public_key, request).await?;
     let frame = dm::reply_frame(host, &blob.public_key, &request).await?;
     if frame.len() > request_inbox::MAX_SUBKEY_VALUE_LEN {
         return Err(FriendError::Failed(format!(

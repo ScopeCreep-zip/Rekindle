@@ -12,7 +12,7 @@ use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 /// ML-KEM-768 ciphertext.
 pub(super) const ML_KEM_CIPHERTEXT_LEN: usize = 1_088;
 /// 3.5× the largest 1-hop route blob measured (1,178 B).
-const ROUTE_BLOB_LEN: usize = 4_096;
+pub(super) const ROUTE_BLOB_LEN: usize = 4_096;
 /// The AEAD tag on a ratchet or HPKE ciphertext.
 const AEAD_TAG_LEN: usize = 16;
 
@@ -55,6 +55,7 @@ fn samples() -> Vec<DirectBody> {
                 record_key: dht_key(),
                 writer: "w".repeat(93),
             },
+            chain_record_key: dht_key(),
         }),
         DirectBody::RelayEnvelope(RelayEnvelope {
             target_pubkey: "ab".repeat(32),
@@ -91,6 +92,11 @@ fn samples() -> Vec<DirectBody> {
             profile_dht_key: dht_key(),
             route_blob: vec![8; 32],
             mailbox_dht_key: dht_key(),
+            friends_key: FriendsKey {
+                epoch: 1,
+                key: [7; 32],
+            },
+            chain_record_key: dht_key(),
         }),
         DirectBody::Unfriended,
         DirectBody::UnfriendedAck,
@@ -384,6 +390,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
             record_key: dht_key(),
             writer: "w".repeat(93),
         },
+        chain_record_key: dht_key(),
     });
     assert_eq!(
         DirectBody::decode(DmTypeId::FriendRequest, &request.encode()),
@@ -401,12 +408,12 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
 }
 
 /// The `'D'` datagram length of `frame`.
-fn datagram_len(frame: &DmFrame) -> usize {
+pub(super) fn datagram_len(frame: &DmFrame) -> usize {
     1 + frame.encode().len()
 }
 
 /// A PreKeyInit whose first payload is `body`, at full PQXDH size.
-fn pre_key_init(body: &DirectBody) -> DmFrame {
+pub(super) fn pre_key_init(body: &DirectBody) -> DmFrame {
     let content = DmContent {
         stream_seq: 0,
         chain_seq: 0,
@@ -440,21 +447,6 @@ fn sealed(body: &DirectBody) -> DmFrame {
 }
 
 #[test]
-fn a_pre_key_init_carrying_friend_accept_fits() {
-    let frame = pre_key_init(&DirectBody::FriendAccept(FriendAccept {
-        profile_dht_key: dht_key(),
-        route_blob: vec![0xAB; ROUTE_BLOB_LEN],
-        mailbox_dht_key: dht_key(),
-    }));
-    assert_eq!(DmFrame::decode(&frame.encode()).as_ref(), Ok(&frame));
-    let len = datagram_len(&frame);
-    assert!(
-        len <= MAX_APP_MESSAGE_LEN,
-        "PreKeyInit(FriendAccept) {len} B"
-    );
-}
-
-#[test]
 fn a_pre_key_init_carrying_session_reset_accept_fits() {
     let len = datagram_len(&pre_key_init(&DirectBody::SessionResetAccept));
     assert!(
@@ -477,6 +469,7 @@ fn every_sealed_handshake_frame_fits() {
                 record_key: dht_key(),
                 writer: "w".repeat(93),
             },
+            chain_record_key: dht_key(),
         })),
         sealed(&DirectBody::SessionResetRequest(SessionResetRequest {
             reason: widest(256),
@@ -509,6 +502,7 @@ fn bodies_a_peer_could_abuse_are_refused() {
                 record_key: dht_key(),
                 writer: "w".repeat(93),
             },
+            chain_record_key: dht_key(),
         })
     };
     let max_name = rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN;

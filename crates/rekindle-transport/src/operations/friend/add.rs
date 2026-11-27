@@ -126,6 +126,7 @@ pub async fn add(
     state::echo_failed(host, public_key, ended, "superseded by a new friendship");
     super::list_record::queued(host, "our request");
     super::request::remember_reply(host, public_key, &request).await?;
+    let request = super::request::named_chain(host, public_key, request).await?;
 
     let committed = dm::send_friend_request(host, public_key, &request).await;
     match &committed {

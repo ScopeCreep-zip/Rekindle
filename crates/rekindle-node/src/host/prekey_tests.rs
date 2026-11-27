@@ -81,6 +81,11 @@ async fn a_forged_prekey_rejection_leaves_the_pending_init() {
             profile_dht_key: String::new(),
             route_blob: Vec::new(),
             mailbox_dht_key: String::new(),
+            friends_key: rekindle_codec::capnp_codec::direct::FriendsKey {
+                epoch: 1,
+                key: [7; 32],
+            },
+            chain_record_key: format!("VLD0:{}", "A".repeat(43)),
         });
         let sent = frame::initiate_frame(
             &friends,
@@ -215,6 +220,11 @@ async fn a_strangers_prekey_init_consumes_nothing() {
         profile_dht_key: String::new(),
         route_blob: Vec::new(),
         mailbox_dht_key: String::new(),
+        friends_key: rekindle_codec::capnp_codec::direct::FriendsKey {
+            epoch: 1,
+            key: [7; 32],
+        },
+        chain_record_key: format!("VLD0:{}", "A".repeat(43)),
     });
     for first in [accept, text(9)] {
         let sent = frame::initiate_frame(

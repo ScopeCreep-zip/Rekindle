@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE XfireSkin SYSTEM "xfireskin.dtd">
+
+<XfireSkin>
+	<!-- Skin Themes -->
+	<Include File="xfirethemes.xml" />
+
+	<GlobalPrefs>
+		<TooltipColor>TooltipCG</TooltipColor>
+		<TooltipTextColor>TooltipTextCG</TooltipTextColor>
+	</GlobalPrefs>
+
+	<!-- Language String Translations -->
+	<Include File="strings.xml" /> -->
+
+	<!-- Component Definitions -->
+	<Include File="xfirecomponents.xml" />
+	
+	<!-- Popup tiles -->
+	<Include File="xfirepopups.xml" />
+
+	<!-- Main Window -->
+	<MainSkin>
+		<Include File="xfiremainwindow.xml" />
+	</MainSkin>
+
+	<!-- Chat Window -->
+	<ChatSkin>
+ 		<Include File="xfirechatwindow.xml" />
+	</ChatSkin>
+
+	<!-- Group Chat Window -->
+	<GroupChatSkin>
+		<Include File="xfiregroupchatwindow.xml" />
+	</GroupChatSkin>
+
+	<!-- InGame Main Window -->
+	<InGameMainSkin>
+		<Include File="xfireingamewindow.xml" />
+	</InGameMainSkin>
+
+	<!-- InGame Alert Window -->
+	<InGameAlertSkin>
+		<Include File="xfireingamealertwindow.xml" />
+	</InGameAlertSkin>
+
+  <XIG>
+    <ActiveWindows>
+      <Include File="xfireingamefriends_pm.xml" />
+      <Include File="xfireingamechats_pm.xml" />
+      <Include File="xfireingameoptions_pm.xml" />
+      <Include File="xfireingamehelp_pm.xml" />
+    </ActiveWindows>
+    <Overlays>
+      <Include File="xfireingamealert_pm.xml" />
+      <Include File="xfireingamefps_pm.xml" />
+      <Include File="xfireingameclock_pm.xml" />
+      <Include File="xfireingamevoice_pm.xml" />
+    </Overlays>
+    <SystemDialogs>
+      <Include File="xfireingameinviteuserstoroom_pm.xml" />
+      <Include File="xfireingamemessagebox_pm.xml" />
+    </SystemDialogs>
+  </XIG>
+</XfireSkin>
+

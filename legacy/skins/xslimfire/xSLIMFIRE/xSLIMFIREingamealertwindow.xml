@@ -1,0 +1,6 @@
+<Tile Name="xSLIMFIREInGameAlertWindow" Component="InGameAlertWindow">
+	<Tile Name="ChatTile" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InGameChatTile">
+		<Tile Name="MainBody" ResizeX="100" ResizeY="100" Z="1" Component="InGameAlertBody"></Tile>
+	</Tile>
+	<Tile Name="TextTile" X="22" Y="40" ResizeX="100" ResizeY="100" IndentBottom="40" IndentRight="22" Z="100" Component="InGameTextTile"></Tile>
+</Tile>

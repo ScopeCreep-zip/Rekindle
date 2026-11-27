@@ -184,6 +184,7 @@ async fn the_list_right_after_two_accepts_names_each_friend_with_its_group_dm_el
                 invite_id: None,
                 reply_inbox_key: "VLD0:reply",
                 reply_writer: "VLD0:p:s",
+                chain_record_key: "VLD0:chain",
             };
             rekindle_db::repo::pending_requests::upsert(conn, &o2, &request)?;
         }

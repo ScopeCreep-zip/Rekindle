@@ -147,6 +147,18 @@ pub fn load_participant_owner(
         .transpose()
 }
 
+/// Remove our dm participant record's owner keypair for the conversation
+/// with `conversation`: the peer's row went (a cancelled or expired
+/// request, a removal), so the record is abandoned and nothing writes it.
+///
+/// # Errors
+/// The vault write failed.
+pub fn forget_participant_owner(vault: &VaultStore, conversation: &str) -> Result<(), VaultError> {
+    vault.delete(&VaultKey::DmParticipantOwner {
+        conversation: conversation.to_string(),
+    })
+}
+
 /// Remove an invite's request inbox owner keypair: the invite left
 /// `pending` and its inbox is dropped.
 ///

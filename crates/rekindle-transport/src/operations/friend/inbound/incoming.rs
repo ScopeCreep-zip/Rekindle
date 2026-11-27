@@ -42,6 +42,7 @@ async fn persist_request(
     let rb = req.route_blob.to_vec();
     let mdk = req.mailbox_dht_key.to_string();
     let (rik, rw) = (req.reply.record_key.clone(), req.reply.writer.clone());
+    let crk = req.chain_record_key.to_string();
     let iid = match req.auth {
         RequestAuth::Invite(id) => Some(id.clone()),
         RequestAuth::Token(_) => None,
@@ -65,6 +66,7 @@ async fn persist_request(
                 invite_id: iid.as_deref(),
                 reply_inbox_key: &rik,
                 reply_writer: &rw,
+                chain_record_key: &crk,
             },
         )?;
         Ok(if new { Persisted::New } else { Persisted::Held })
@@ -293,6 +295,18 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     host.sync_reply_inboxes().await;
     if !a.profile_dht_key.is_empty() {
         host.watch_friend(a.sender_hex, a.profile_dht_key).await;
+    }
+    // Their presence key and their chain came with the accept (decision 67
+    // item 2): applied as their `FriendsKey` and `StreamRecord` are, now
+    // that they are accepted, so their first presence and first DM reach
+    // us by the chain's watch even while no call between us lands (F3).
+    if !crate::operations::friend::presence_key::on_friends_key(host, a.sender_hex, a.friends_key)
+        .await
+    {
+        return false;
+    }
+    if !crate::operations::dm::stream::adopt_chain(host, a.sender_hex, a.chain_record_key).await {
+        return false;
     }
     crate::operations::friend::presence_key::send(host, a.sender_hex).await;
     crate::operations::friend::game_totals::send(host, a.sender_hex).await;

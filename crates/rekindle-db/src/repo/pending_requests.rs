@@ -29,6 +29,9 @@ pub struct Answer {
     /// The reply inbox the request carried and its one-time writer (plan
     /// RV2): our first contact is written there too.
     pub reply: Option<(String, String)>,
+    /// The requester's dm chain record (decision 67 item 2), adopted once
+    /// the request is accepted.
+    pub chain_record_key: Option<String>,
 }
 
 /// A request as it arrives.
@@ -45,6 +48,8 @@ pub struct Incoming<'a> {
     /// The reply inbox's record key and one-time writer (plan RV2).
     pub reply_inbox_key: &'a str,
     pub reply_writer: &'a str,
+    /// The requester's dm chain record (decision 67 item 2).
+    pub chain_record_key: &'a str,
 }
 
 /// Store a request, replacing an earlier, different one from the same
@@ -63,7 +68,8 @@ pub fn upsert(
             "SELECT 1 FROM pending_friend_requests \
              WHERE owner_key = ?1 AND public_key = ?2 AND display_name = ?3 AND message = ?4 \
                AND profile_dht_key IS ?5 AND route_blob IS ?6 AND mailbox_dht_key IS ?7 \
-               AND invite_id IS ?8 AND reply_inbox_key = ?9 AND reply_writer = ?10",
+               AND invite_id IS ?8 AND reply_inbox_key = ?9 AND reply_writer = ?10 \
+               AND chain_record_key = ?11",
             params![
                 owner_key,
                 request.public_key,
@@ -75,6 +81,7 @@ pub fn upsert(
                 request.invite_id,
                 request.reply_inbox_key,
                 request.reply_writer,
+                request.chain_record_key,
             ],
             |_| Ok(()),
         )
@@ -86,8 +93,9 @@ pub fn upsert(
     conn.execute(
         "INSERT OR REPLACE INTO pending_friend_requests \
          (owner_key, public_key, display_name, message, received_at, profile_dht_key, \
-          route_blob, mailbox_dht_key, invite_id, reply_inbox_key, reply_writer) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+          route_blob, mailbox_dht_key, invite_id, reply_inbox_key, reply_writer, \
+          chain_record_key) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             owner_key,
             request.public_key,
@@ -100,6 +108,7 @@ pub fn upsert(
             request.invite_id,
             request.reply_inbox_key,
             request.reply_writer,
+            request.chain_record_key,
         ],
     )?;
     Ok(true)
@@ -139,7 +148,7 @@ pub fn answer(
 ) -> rusqlite::Result<Option<Answer>> {
     conn.query_row(
         "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id, \
-                    reply_inbox_key, reply_writer \
+                    reply_inbox_key, reply_writer, chain_record_key \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
         params![owner_key, public_key],
         |row| {
@@ -150,6 +159,7 @@ pub fn answer(
                 route_blob: row.get(3)?,
                 invite_id: row.get(4)?,
                 reply: Some((row.get(5)?, row.get(6)?)),
+                chain_record_key: Some(row.get(7)?),
             })
         },
     )
@@ -184,5 +194,81 @@ pub fn delete_received_before(
 }
 
 #[cfg(test)]
-#[path = "pending_requests_tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+    use crate::repo::fixture::{self, OWNER};
+
+    fn incoming(public_key: &str, received_at: i64) -> Incoming<'_> {
+        Incoming {
+            public_key,
+            display_name: "Bob",
+            message: "hi",
+            received_at,
+            profile_dht_key: "profile",
+            route_blob: &[1, 2],
+            mailbox_dht_key: "mailbox",
+            invite_id: Some("invite"),
+            reply_inbox_key: "VLD0:reply",
+            reply_writer: "VLD0:pub:sec",
+            chain_record_key: "VLD0:chain",
+        }
+    }
+
+    #[test]
+    fn the_same_request_again_changes_nothing() {
+        let conn = fixture::conn();
+        assert!(upsert(&conn, OWNER, &incoming("bob", 5)).unwrap());
+        assert!(!upsert(&conn, OWNER, &incoming("bob", 9)).unwrap());
+        assert_eq!(list(&conn, OWNER).unwrap()[0].received_at, 5);
+        let changed = Incoming {
+            message: "hello again",
+            ..incoming("bob", 9)
+        };
+        assert!(upsert(&conn, OWNER, &changed).unwrap());
+        assert_eq!(list(&conn, OWNER).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_stored_request_lists_and_answers() {
+        let conn = fixture::conn();
+        upsert(&conn, OWNER, &incoming("bob", 5)).unwrap();
+        assert_eq!(
+            list(&conn, OWNER).unwrap(),
+            [PendingFriendRequest {
+                public_key: "bob".into(),
+                display_name: "Bob".into(),
+                message: "hi".into(),
+                received_at: 5,
+            }]
+        );
+        let a = answer(&conn, OWNER, "bob").unwrap().expect("bob asked");
+        assert_eq!(a.route_blob.as_deref(), Some(&[1, 2][..]));
+        assert_eq!(a.invite_id.as_deref(), Some("invite"));
+        assert_eq!(
+            answer(&conn, OWNER, "ghost").unwrap(),
+            None,
+            "no request, no answer"
+        );
+    }
+
+    #[test]
+    fn a_second_request_replaces_the_first_and_old_ones_expire() {
+        let conn = fixture::conn();
+        upsert(&conn, OWNER, &incoming("bob", 5)).unwrap();
+        let second = Incoming {
+            message: "hi again",
+            ..incoming("bob", 9)
+        };
+        assert!(upsert(&conn, OWNER, &second).unwrap());
+        upsert(&conn, OWNER, &incoming("carol", 1)).unwrap();
+        assert_eq!(delete_received_before(&conn, OWNER, 6).unwrap(), 1);
+        let left = list(&conn, OWNER).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(
+            (left[0].public_key.as_str(), left[0].received_at),
+            ("bob", 9)
+        );
+        delete(&conn, OWNER, "bob").unwrap();
+        assert!(list(&conn, OWNER).unwrap().is_empty());
+    }
+}

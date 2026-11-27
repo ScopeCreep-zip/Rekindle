@@ -1,9 +1,12 @@
 //! Shared fixtures for the skin-tree import tests: an empty frame and solid
-//! art pieces sized by their names.
+//! art pieces sized by their names, the built-in packs and node walks.
 
 use rekindle_image::{Rgba, RgbaImage};
 use rekindle_types::dto::skin::{Insets, WindowLayout};
 use rekindle_types::dto::skin_tree::SkinNode;
+
+use crate::builtin;
+use crate::package::{self, Package};
 
 /// No insets on any side.
 pub(super) const Z: Insets = Insets {
@@ -38,6 +41,20 @@ pub(super) fn piece(path: &str) -> RgbaImage {
         h.parse().unwrap(),
         Rgba([10, 20, 30, 255]),
     )
+}
+
+/// The built-in pack `id`, read.
+pub(super) fn pack(id: &str) -> Package<'static> {
+    let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
+    package::read(b.bytes).unwrap()
+}
+
+/// Calls `f` on every node under `nodes`, depth first.
+pub(super) fn each<'a>(nodes: &'a [SkinNode], f: &mut impl FnMut(&'a SkinNode)) {
+    for n in nodes {
+        f(n);
+        each(&n.children, f);
+    }
 }
 
 /// The node `id` under `nodes`, depth first.

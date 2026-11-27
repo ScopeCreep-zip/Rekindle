@@ -192,7 +192,7 @@ fn tree(tree: &mut SkinTree, at: (i32, i32)) {
     walk(&mut tree.root, laid_window(tree.outsets, at), false);
 }
 
-fn branded(n: &SkinNode) -> bool {
+pub(super) fn branded(n: &SkinNode) -> bool {
     n.role == NodeRole::Logo || XFIRE_DECOR.iter().any(|d| n.id.eq_ignore_ascii_case(d))
 }
 

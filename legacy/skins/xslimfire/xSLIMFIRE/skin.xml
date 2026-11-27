@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE XfireSkin SYSTEM "XfireSkin.dtd">
+
+<XfireSkin>
+	<!-- Skin Themes -->
+	<Include File="xSLIMFIREthemes.xml" />
+
+	<GlobalPrefs>
+		<TooltipColor>TooltipCG</TooltipColor>
+		<TooltipTextColor>TooltipTextCG</TooltipTextColor>
+	</GlobalPrefs>
+
+	<!-- Language String Translations -->
+	<Include File="strings.xml" /> -->
+
+	<!-- Component Definitions -->
+	<Include File="xSLIMFIREcomponents.xml" />
+	
+	<!-- Popup tiles -->
+	<Include File="xSLIMFIREpopups.xml" />
+
+	<!-- Main Window -->
+	<MainSkin>
+		<Include File="xSLIMFIREmainwindow.xml" />
+	</MainSkin>
+
+	<!-- Chat Window -->
+	<ChatSkin>
+ 		<Include File="xSLIMFIREchatwindow.xml" />
+	</ChatSkin>
+
+	<!-- Group Chat Window -->
+	<GroupChatSkin>
+		<Include File="xSLIMFIREgroupchatwindow.xml" />
+	</GroupChatSkin>
+
+	<!-- InGame Main Window -->
+	<InGameMainSkin>
+		<Include File="xSLIMFIREingamewindow.xml" />
+	</InGameMainSkin>
+
+	<!-- InGame Alert Window -->
+	<InGameAlertSkin>
+		<Include File="xSLIMFIREingamealertwindow.xml" />
+	</InGameAlertSkin>
+</XfireSkin>

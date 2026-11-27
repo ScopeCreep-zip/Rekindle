@@ -108,6 +108,18 @@ pub(super) async fn writer(
     })
 }
 
+/// Forget our record for `peer`: its writer goes from the vault with the
+/// peer's row (decision 67 item 2: a request's chain record, named before
+/// any consent, is never written again once the request ends unanswered).
+/// The record itself holds no lease of ours: each write releases it.
+pub(super) fn forget(host: &HostFriends, peer: &str) {
+    if let Some(vault) = host.ctx().vault.lock().as_ref() {
+        if let Err(e) = owner_keys::forget_participant_owner(vault, peer) {
+            tracing::warn!(error = %e, "dm participant owner keypair not forgotten");
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "participant_tests.rs"]
 mod tests;

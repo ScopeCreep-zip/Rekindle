@@ -22,6 +22,8 @@ mod silhouette;
 pub mod title;
 
 #[cfg(test)]
+mod ad_tests;
+#[cfg(test)]
 mod nodes_tests;
 #[cfg(test)]
 mod tests;

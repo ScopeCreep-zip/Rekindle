@@ -24,6 +24,9 @@ pub(crate) struct IncomingFriendRequest<'a> {
     pub auth: &'a rekindle_codec::capnp_codec::direct::RequestAuth,
     /// The requester's reply inbox (plan RV2).
     pub reply: &'a rekindle_codec::message::envelope::InboxCapability,
+    /// The requester's dm chain record to us (decision 67 item 2), adopted
+    /// only once we accept.
+    pub chain_record_key: &'a str,
 }
 
 /// An incoming friend accept: the first payload of the PreKeyInit that
@@ -33,4 +36,8 @@ pub(crate) struct IncomingFriendAccept<'a> {
     pub profile_dht_key: &'a str,
     pub route_blob: Vec<u8>,
     pub mailbox_dht_key: &'a str,
+    /// The accepter's presence key (decision 67 item 2).
+    pub friends_key: &'a rekindle_codec::capnp_codec::direct::FriendsKey,
+    /// The accepter's dm chain record to us (decision 67 item 2).
+    pub chain_record_key: &'a str,
 }
