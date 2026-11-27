@@ -1,0 +1,135 @@
+// SKC4c's real-app proof: a pack's tiles join at every window size. The
+// importer chains a resize tile on a moving sibling's edge and paints
+// stacked title rows once (Total Chaos declares one title row with a 1 px
+// left outdent; the merged pack painted a second, un-outdented row). In
+// Total Chaos and in Alloy, the buddy list at its served minimum (squeezed
+// below it, the shell grows it back: window-fit) and resized larger:
+//   1. its four 16 px edges agree with the shaper's own silhouette at that
+//      size (cargo xtask skin-silhouette, silhouette.ts): no gap the CSS
+//      leaves, no art outside the cut;
+//   2. no art is painted twice: no two painted skin nodes draw the same
+//      image at the same position and size over overlapping boxes. The
+//      silhouette is shared by the serve side, so a doubled row it shares
+//      would not show there; this check is the one that sees it.
+
+import { browser, expect } from "@wdio/globals";
+import { switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { createIdentity, newUser, type User } from "../../journeys.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { decodePng } from "../../png.ts";
+import { shot } from "../../shots.ts";
+import { disagreements, silhouette } from "../../silhouette.ts";
+
+const PACKS: { name: string; file: string }[] = [
+  { name: "Total Chaos", file: "total-chaos" },
+  { name: "Alloy", file: "alloy" },
+];
+
+/** The buddy list's inner size, once it holds still for a second. */
+async function settledSize(): Promise<[number, number]> {
+  let last = "";
+  let still = 0;
+  let size: [number, number] = [0, 0];
+  await waitUntil(
+    async () => {
+      size = (await browser.execute(() => [window.innerWidth, window.innerHeight])) as [
+        number,
+        number,
+      ];
+      const now = size.join("x");
+      still = now === last ? still + 1 : 0;
+      last = now;
+      return still >= 4;
+    },
+    15_000,
+    "the window never held its size"
+  );
+  return size;
+}
+
+/** Pairs of painted skin nodes drawing the same art in the same place. */
+async function doubledArt(): Promise<string[]> {
+  return (await browser.execute(() => {
+    const painted = Array.from(
+      document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")
+    )
+      .map((el) => {
+        const st = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return {
+          node: el.getAttribute("data-skin-node") ?? "",
+          art: st.backgroundImage,
+          at: `${st.backgroundPosition}|${st.backgroundSize}|${st.backgroundRepeat}`,
+          r,
+        };
+      })
+      .filter((p) => p.art !== "none" && p.r.width > 0 && p.r.height > 0);
+    const out: string[] = [];
+    for (let i = 0; i < painted.length; i++) {
+      for (let j = i + 1; j < painted.length; j++) {
+        const a = painted[i];
+        const b = painted[j];
+        if (a.art !== b.art || a.at !== b.at) continue;
+        const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (w > 0 && h > 0)
+          out.push(`${a.node} over ${b.node} (${Math.round(w)}x${Math.round(h)} px)`);
+      }
+    }
+    return out;
+  })) as string[];
+}
+
+describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", function () {
+  this.timeout(900_000);
+  const ada: User = { ...newUser("resize-tiles"), displayName: "Ada" };
+
+  it("Total Chaos and Alloy: edges match the silhouette and no art is painted twice, at both sizes", async () => {
+    await createIdentity(browser, ada);
+    const faults: string[] = [];
+    for (const pack of PACKS) {
+      await openSettings(browser, "Appearance");
+      const href = await applySkin(browser, ada, pack.name);
+      await switchTo(browser, BUDDY);
+      await skinShown(browser, href);
+      // Below the minimum, then larger than it.
+      await browser.setWindowSize(200, 300);
+      const min = await settledSize();
+      const sizes: [string, () => Promise<void>][] = [
+        ["minimum", async () => undefined],
+        ["larger", async () => browser.setWindowSize(min[0] + 160, min[1] + 120)],
+      ];
+      for (const [label, resize] of sizes) {
+        await resize();
+        const [w, h] = await settledSize();
+        const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+        const scale = img.width / w;
+        const cut = silhouette(pack.file, "main", w, h, Math.round(scale * 1000));
+        const edge = Math.round(16 * scale);
+        const off = disagreements(
+          img,
+          cut,
+          [
+            [0, edge],
+            [img.width - edge, img.width],
+          ],
+          12,
+          [
+            [0, edge],
+            [img.height - edge, img.height],
+          ]
+        );
+        const doubled = await doubledArt();
+        console.log(
+          `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}`
+        );
+        await shot(`${pack.file}-${label}`);
+        if (off.outsideDrawn + off.insideClear > 0)
+          faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
+        if (doubled.length > 0) faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
+      }
+    }
+    expect(faults).toEqual([]);
+  });
+});
