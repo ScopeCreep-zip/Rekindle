@@ -1,6 +1,7 @@
 import { createEffect, onMount, onCleanup } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 import { initVoiceEventListener } from "../../actions/voice.actions";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import {
@@ -175,6 +176,15 @@ export function useCommunityWindow() {
     // semantics of `handleTogglePins` / `handleToggleThreadList`.
     setRightPanel(rightPanel() === "members" ? null : "members");
   }
+
+  // An open thread the Host stops listing (deleted, or our access to it
+  // lost) closes its panel with the reason, rather than showing the old copy.
+  createEffect(() => {
+    if (s.openedThread() && !s.activeThread()) {
+      handleCloseThread();
+      addToast("This thread is no longer available.", "info");
+    }
+  });
 
   function handleOpenThread(thread: Thread): void {
     setActiveThread(thread);
