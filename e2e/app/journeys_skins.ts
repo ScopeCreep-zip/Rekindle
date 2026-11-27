@@ -4,7 +4,7 @@
 // which re-exports them.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, sleep, switchTo, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, sleep, switchTo, waitForHandle, waitUntil, xpathString } from "../walk/helpers.ts";
 import { BUDDY, SETTINGS, pickNextFile } from "../walk/nav.ts";
 import type { User } from "./user.ts";
 
@@ -45,7 +45,7 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     // One fresh query per attempt for the row naming `name`: the list
     // re-renders (its library refreshes after an apply), and a row held
     // across that went stale ("element wasn't found" on Simple X).
-    const radio = `//*[contains(concat(" ", normalize-space(@class), " "), " skin-row ")][.//*[contains(concat(" ", normalize-space(@class), " "), " skin-name ") and normalize-space(.)="${name}"]]//input[@type="radio"]`;
+    const radio = `//*[contains(concat(" ", normalize-space(@class), " "), " skin-row ")][.//*[contains(concat(" ", normalize-space(@class), " "), " skin-name ") and normalize-space(.)=${xpathString(name)}]]//input[@type="radio"]`;
     let lastError = "";
     await waitUntil(
       async () => {

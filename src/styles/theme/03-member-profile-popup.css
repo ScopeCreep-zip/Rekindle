@@ -178,7 +178,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
     gap: 6px;
-    padding: 6px 10px 10px 10px;
+    padding: 6px 10px 10px;
   }
   .soundboard-panel-clip {
     background: var(--color-xfire-bg-input);

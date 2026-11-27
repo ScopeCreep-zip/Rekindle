@@ -121,7 +121,8 @@
 
   .sec-review-subject {
     font-weight: 600;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: anywhere;
   }
 
   .sec-review-facts {

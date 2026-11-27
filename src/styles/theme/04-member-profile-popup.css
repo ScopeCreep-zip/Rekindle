@@ -76,16 +76,19 @@
      * `animationend` ReactionFloater removes it on still fires. */
     animation: call-reaction-hold 2s linear forwards;
   }
+
   @media (prefers-reduced-motion: no-preference) {
     .call-reaction-float {
       animation: call-reaction-float 2s ease-out forwards;
     }
   }
+
   @keyframes call-reaction-hold {
     0%   { opacity: 1; }
     80%  { opacity: 1; }
     100% { opacity: 0; }
   }
+
   @keyframes call-reaction-float {
     0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
     20%  { opacity: 1; transform: translate(-50%, -20px) scale(1.0); }

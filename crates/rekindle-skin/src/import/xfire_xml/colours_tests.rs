@@ -8,8 +8,9 @@ fn table_is_sorted_and_counts_hold() {
         .iter()
         .filter(|(_, t)| matches!(t, Target::Dropped(_)))
         .count();
-    assert_eq!(dropped, 23);
-    assert_eq!(target("DisabledTextCG"), Target::NoRole("text.disabled"));
+    assert_eq!(dropped, 25);
+    assert_eq!(target("DisabledTextCG"), Target::Token("text.disabled"));
+    assert_eq!(target("TextFieldTextCG"), Target::Token("input.text"));
     assert_eq!(target("XIGEditModeTitleCG"), XIG);
 }
 

@@ -23,6 +23,9 @@
 
 pub mod credit;
 pub mod credits;
+pub mod dialog_roles;
+#[cfg(test)]
+mod dialog_roles_tests;
 pub mod miranda;
 mod notice;
 pub mod pidgin;
@@ -38,7 +41,7 @@ pub mod xfire_xml;
 pub use credit::XfireCredit;
 pub use qt::{mumble, teamspeak};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_image::{encode_png, DynamicImage, RgbaImage};
 use rekindle_types::dto::skin::{
@@ -47,7 +50,7 @@ use rekindle_types::dto::skin::{
 
 use crate::colour;
 use crate::output::Canonical;
-use crate::registry::Base;
+use crate::registry::{dialog, Base};
 
 /// A legacy tree: relative `/`-separated paths to file bytes.
 pub type Tree = BTreeMap<String, Vec<u8>>;
@@ -223,13 +226,22 @@ pub(crate) fn conclude(
     notice: impl FnOnce(&[walk::Change]) -> String,
 ) -> Result<Outcome, ImportError> {
     let package = build(&tokens)?;
+    let named: BTreeSet<String> = tokens.keys().cloned().collect();
     let (settled, changes) = walk::settle(&mut tokens, base, build)?;
+    // Lead round 4 b: a dialog role the pack does not name is ours, derived
+    // and settled as `registry::resolve` settles it at load; its move is
+    // recorded in the NOTICE but is no failure of the pack's colours.
+    let failures: Vec<walk::Change> = changes
+        .iter()
+        .filter(|c| named.contains(&c.token) || !dialog::is_role(&c.token))
+        .cloned()
+        .collect();
     let canonical = match settled {
         walk::WalkResult::Passed(c) => c,
         walk::WalkResult::Unsettled(u) => {
             return Ok(Outcome::Draft(Box::new(ImportDraft {
                 package,
-                failures: changes,
+                failures,
                 unsettled: Some(u),
                 suggested: None,
             })));
@@ -240,12 +252,12 @@ pub(crate) fn conclude(
         canonical,
         changes,
     };
-    if imported.changes.is_empty() {
+    if failures.is_empty() {
         return Ok(Outcome::Passed(imported));
     }
     Ok(Outcome::Draft(Box::new(ImportDraft {
         package,
-        failures: imported.changes.clone(),
+        failures,
         unsettled: None,
         suggested: Some(imported),
     })))
