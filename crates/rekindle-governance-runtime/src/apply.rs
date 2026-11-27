@@ -19,6 +19,10 @@ use crate::op_log;
 use crate::unlock_hold;
 use rekindle_types::display_catch_up::{PendingGovKind, PendingGovOp, PendingGovTarget};
 
+mod publication;
+use publication::{publish_signed, ForumCommit};
+pub use publication::{write_forum_thread, ForumCommitFuture};
+
 /// Apply a governance entry as our next signed op: validate it against the
 /// merged state, store it in `governance_ops`, gossip it, re-merge, emit
 /// the UI events and publish it on the governance-op outbox stream,
@@ -139,6 +143,7 @@ pub(crate) type Build<D> =
 pub(crate) enum WriteEntry<D> {
     Ready(Box<GovernanceEntry>),
     Built(Build<D>, PendingGovKind),
+    ForumThread(Box<GovernanceEntry>, ForumCommit),
 }
 
 /// Our op for the entry `build` returns under the rebuild lock, answered
@@ -245,35 +250,37 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     op_deps: op_log::Deps,
     not_admitted: NotAdmitted,
 ) -> Result<Written, GovernanceRuntimeError> {
-    if let WriteEntry::Ready(ready) = &entry {
-        refuse_out_of_bounds(ready)?;
-    }
     // Validation and our endorsement (ADR 0022 rule 3) precede the barrier:
     // neither a malformed entry nor an unendorsed device's op is ever held.
     let (ready, enrols) = match &entry {
-        WriteEntry::Ready(ready) => (Some(&**ready), false),
+        WriteEntry::Ready(ready) | WriteEntry::ForumThread(ready, _) => {
+            refuse_out_of_bounds(ready)?;
+            (Some(&**ready), false)
+        }
         WriteEntry::Built(_, kind) => (None, *kind == PendingGovKind::DeviceKey),
     };
     refuse_now(deps, community_id, ready, enrols, landing, not_admitted).await?;
-    // The unlock barrier (plan E3.2 S7d-keys.8): nothing is signed before
-    // it passed, held writes sign in arrival order, each after our
-    // previous op's append landed; a restore signs nothing. A held write
-    // is answered at once and signed in the background, a leave too (it
-    // takes effect locally at once, lead ruling 2026-11-24); an invite
-    // link (handed out only once landed) waits in line instead, bounded.
+    // Held writes sign in arrival order after the unlock barrier and the
+    // previous op's landing. Forum posts need a durable answer immediately.
     let (kind, target) = match &entry {
-        WriteEntry::Ready(ready) => (PendingGovKind::of(ready), PendingGovTarget::of(ready)),
+        WriteEntry::Ready(ready) | WriteEntry::ForumThread(ready, _) => {
+            (PendingGovKind::of(ready), PendingGovTarget::of(ready))
+        }
         WriteEntry::Built(_, kind) => (*kind, PendingGovTarget::default()),
     };
-    let slot = unlock_hold::take_slot(deps, community_id, landing, |id| {
-        let name = deps.pending_target_name(community_id, &target);
-        let op = PendingGovOp::held_as(id, kind, target);
-        match name {
-            Some(name) => op.with_name(&name),
-            None => op,
-        }
-    })
-    .await?;
+    let slot = if matches!(entry, WriteEntry::ForumThread(..)) {
+        unlock_hold::BarrierSlot::Now(unlock_hold::take_immediate(deps, community_id)?)
+    } else {
+        unlock_hold::take_slot(deps, community_id, landing, |id| {
+            let name = deps.pending_target_name(community_id, &target);
+            let op = PendingGovOp::held_as(id, kind, target);
+            match name {
+                Some(name) => op.with_name(&name),
+                None => op,
+            }
+        })
+        .await?
+    };
     match slot {
         unlock_hold::BarrierSlot::Now(turn) => {
             let written = write_signed(
@@ -358,8 +365,9 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
         }
     }
     let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
-    let (mut entry, built_on) = match entry {
-        WriteEntry::Ready(ready) => (*ready, None),
+    let (mut entry, built_on, commit) = match entry {
+        WriteEntry::Ready(ready) => (*ready, None, None),
+        WriteEntry::ForumThread(ready, commit) => (*ready, None, Some(commit)),
         WriteEntry::Built(build, _) => {
             let held = deps.op_store().governance_ops(community_id).await?;
             let set = op_log::verify_held_with(deps, community_id, &held);
@@ -370,7 +378,7 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
             };
             let built = build(deps, &on)?;
             refuse_out_of_bounds(&built)?;
-            (built, Some(set))
+            (built, Some(set), None)
         }
     };
     refuse_invalid(&pseudo, &entry, &gov_state)?;
@@ -404,17 +412,8 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
     // ADR 0022 rules 3 and 10): a `MemberJoined` under the endorsement it
     // carries, any later op under the state's.
     let record = device_signer::op_record_of(deps, community_id, &gov_state, op.op())?;
-    // The outbox row before our store, state or gossip (ruling 2026-11-26 item 2).
-    let publication = deps
-        .publish_governance_op(community_id, encoded.clone(), landing)
-        .await?;
-    deps.op_store()
-        .store_signed_governance_op(
-            community_id,
-            &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
-        )
-        .await?;
-    turn.signed(&hex::encode(op.hash().0));
+    let held = op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied);
+    let publication = publish_signed(deps, community_id, held, landing, turn, commit).await?;
     // Gossip before the install, which prunes a removed member it removes.
     deps.gossip_governance_op(community_id, &encoded);
 

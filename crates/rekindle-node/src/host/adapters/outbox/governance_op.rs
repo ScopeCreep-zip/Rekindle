@@ -326,7 +326,7 @@ impl GovernanceOps {
         if let Err(error) = self
             .outbox
             .deps()
-            .insert_all(vec![created_row, revoke_row])
+            .insert_all(vec![(created_row, None), (revoke_row, None)], |_, _| Ok(()))
             .await
         {
             self.waiters.forget(community, &client_id);
@@ -351,6 +351,50 @@ impl GovernanceOps {
                 Err(_) => Ok(Published::Queued(format!("not landed within {within:?}"))),
             }
         }))
+    }
+
+    /// Store the thread's op and its starter in one transaction, along
+    /// with the local signed-op store, head, and thread metadata.
+    pub(crate) async fn queue_forum_thread(
+        &self,
+        op: rekindle_governance_runtime::op_log::HeldOp,
+        post: rekindle_types::message::ChannelPost,
+        thread: rekindle_types::thread::ThreadInfo,
+    ) -> Result<(), String> {
+        let (entry, hash) = row(&post.community, &op.author_record, &op.encoded)?;
+        let thread_op = self.outbox.new_row(entry);
+        let starter = super::channel_post::post_entry(&post, Deadline::Horizon)
+            .map_err(|error| error.to_string())?;
+        let starter = self.outbox.new_row(starter);
+        self.outbox
+            .deps()
+            .insert_all(
+                vec![(thread_op, None), (starter, Some(hash))],
+                move |tx, owner| {
+                    crate::host::adapters::governance::store_op_and_head(
+                        tx,
+                        owner,
+                        &post.community,
+                        &op,
+                        true,
+                    )?;
+                    rekindle_db::repo::threads::upsert(tx, owner, &post.community, &thread)
+                },
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        self.outbox.wake();
+        Ok(())
+    }
+
+    /// Notify subscribers after a rebuild refused the starter's thread op.
+    pub(crate) fn announce_abandoned_starters(&self, rows: Vec<rekindle_db::repo::outbox::Row>) {
+        super::forum_starters::publish_abandoned(
+            &self.outbox.deps().changes,
+            rows,
+            "the community refused the thread creation",
+        );
+        self.outbox.wake();
     }
 
     /// Where each of our op rows of `community` not yet sent stands, by op

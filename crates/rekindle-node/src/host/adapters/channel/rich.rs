@@ -11,7 +11,7 @@ use rekindle_channel::ChannelMessagingDeps;
 use rekindle_types::dto::channel_message::ChannelMessageView;
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
-use rekindle_types::thread::ThreadInfo;
+use rekindle_types::thread::{ThreadInfo, ThreadReplyOutcome};
 
 use super::HostChannel;
 
@@ -104,7 +104,12 @@ impl HostChannel {
             .ok_or_else(|| ChannelError::InvalidId(format!("thread {thread_id} not found")))
     }
 
-    fn require(&self, community_id: &str, channel_id: &str, bits: u64) -> Result<(), ChannelError> {
+    pub(super) fn require(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        bits: u64,
+    ) -> Result<(), ChannelError> {
         // Reads of a community we were removed from stay open; every
         // write is refused (plan E3.2 S9 own removal).
         if bits != permissions::VIEW_CHANNELS {
@@ -229,20 +234,26 @@ impl HostChannel {
     /// receiver does (plan E7.13 M76), since the mesh never echoes it.
     ///
     /// # Errors
-    /// We may not send in the parent channel, or the write failed.
+    /// We may not send in the parent channel's threads (`SEND_IN_THREADS`,
+    /// Discord's model), or the queue failed; a mesh failure after the
+    /// queue still answers `Queued`.
     pub(crate) async fn send_thread_message(
         &self,
         community_id: &str,
         thread_id: &str,
         body: &str,
-    ) -> Result<(), ChannelError> {
+    ) -> Result<ThreadReplyOutcome, ChannelError> {
         let channel = self.thread_parent(community_id, thread_id)?;
-        self.require(community_id, &channel, permissions::SEND_MESSAGES)?;
+        self.require(community_id, &channel, permissions::SEND_IN_THREADS)?;
         let sent =
             rekindle_channel::send_thread_message(self, community_id, thread_id, body).await?;
+        let outcome = ThreadReplyOutcome {
+            message_id: sent.message_id.clone(),
+            send_state: sent.send_state,
+        };
         self.publish_own_reply(community_id, thread_id, body, sent)
             .await;
-        Ok(())
+        Ok(outcome)
     }
 
     /// Attach a poll to our message; the poll's id.

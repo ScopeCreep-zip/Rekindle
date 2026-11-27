@@ -67,10 +67,9 @@ impl HostChannel {
         Some(event)
     }
 
-    /// Store and publish our own reply `sent` of `body` to `thread_id`,
-    /// as [`on_thread_control`](Self::on_thread_control) does a received
-    /// one. Without an unlocked identity or a stored row nothing is
-    /// published: the reply is already written and sent.
+    /// Publish our durably queued reply to our own frontends. Its local
+    /// search row is a projection of the outbox, so a write failure there
+    /// does not suppress the echo.
     pub(crate) async fn publish_own_reply(
         &self,
         community_id: &str,
@@ -78,9 +77,6 @@ impl HostChannel {
         body: &str,
         sent: rekindle_channel::ThreadReplySent,
     ) {
-        let Ok((owner, db)) = self.owner_and_db() else {
-            return;
-        };
         let event = SocialEvent::ThreadMessagePosted {
             community: community_id.to_string(),
             thread_id: thread_id.to_string(),
@@ -90,9 +86,10 @@ impl HostChannel {
             timestamp: sent.timestamp,
             reply_to_id: None,
         };
-        if store_reply(&db, owner, &event).await.is_some() {
-            self.ctx().publish_event(SubscriptionEvent::Social(event));
+        if let Ok((owner, db)) = self.owner_and_db() {
+            store_reply(&db, owner, &event).await;
         }
+        self.ctx().publish_event(SubscriptionEvent::Social(event));
     }
 
     /// The body of reply `message_id`, read from the thread record on the
@@ -156,5 +153,6 @@ async fn store_reply(db: &rekindle_db::Db, owner: String, event: &SocialEvent) -
         threads::insert_message(conn, &owner, &community, &row)
     })
     .await
+    .inspect_err(|error| tracing::warn!(%error, "thread reply projection was not stored"))
     .ok()
 }

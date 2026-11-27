@@ -50,6 +50,7 @@ mod first_contact_receipt;
 mod first_contact_retry;
 mod first_contact_waits;
 mod first_login;
+mod forum_post;
 mod forward_cross_audience;
 mod founder_online;
 mod fresh_invite_join;

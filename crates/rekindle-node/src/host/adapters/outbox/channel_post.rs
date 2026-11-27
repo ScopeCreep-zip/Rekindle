@@ -39,20 +39,23 @@ pub fn post_of_row(row: &OutboxRow) -> Result<ChannelPost, String> {
     serde_json::from_slice(&row.payload).map_err(|e| format!("unreadable channel post row: {e}"))
 }
 
+pub(super) fn post_entry(post: &ChannelPost, deadline: Deadline) -> Result<Entry, OutboxError> {
+    Ok(Entry {
+        kind: StreamKind::ChannelPost,
+        scope: post.scope(),
+        client_id: post.message.clone(),
+        payload: serde_json::to_vec(post).map_err(|e| storage(&e))?,
+        deadline,
+    })
+}
+
 impl ChannelPosts {
     /// Store `post`'s row, its echo the post already written `queued`.
     ///
     /// # Errors
     /// The storage failed, or no queued post is `post.message`.
     pub async fn queue(&self, post: &ChannelPost) -> Result<(), OutboxError> {
-        let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
-        let row = self.0.new_row(Entry {
-            kind: StreamKind::ChannelPost,
-            scope: post.scope(),
-            client_id: post.message.clone(),
-            payload,
-            deadline: Deadline::Horizon,
-        });
+        let row = self.0.new_row(post_entry(post, Deadline::Horizon)?);
         let (db, owner) = self.0.deps().db()?;
         db.call(move |conn| {
             let new = repo::NewRow {
@@ -80,33 +83,14 @@ impl ChannelPosts {
     /// # Errors
     /// The storage failed.
     pub async fn queue_change(&self, post: &ChannelPost) -> Result<u64, OutboxError> {
-        let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
-        let row = self.0.new_row(Entry {
-            kind: StreamKind::ChannelPost,
-            scope: post.scope(),
-            client_id: post.message.clone(),
-            payload,
-            deadline: Deadline::Horizon,
-        });
-        let (db, owner) = self.0.deps().db()?;
-        let seq = db
-            .call(move |conn| {
-                let new = repo::NewRow {
-                    owner_key: &owner,
-                    stream: &row.stream,
-                    client_id: &row.client_id,
-                    kind: row.kind.as_str(),
-                    payload: &row.payload,
-                    next_at: row.next_at,
-                    deadline: row.deadline,
-                    depends_on: None,
-                };
-                repo::enqueue_with_echo(conn, &new, None)
-            })
-            .await
-            .map_err(|e| storage(&e))?;
+        let row = self.0.new_row(post_entry(post, Deadline::Horizon)?);
+        let seqs = self
+            .0
+            .deps()
+            .insert_all(vec![(row, None)], |_, _| Ok(()))
+            .await?;
         self.0.wake();
-        u64::try_from(seq).map_err(|e| storage(&e))
+        u64::try_from(seqs[0]).map_err(|e| storage(&e))
     }
 
     /// Store `post`'s row waiting for its channel's key until `deadline`
@@ -119,14 +103,7 @@ impl ChannelPosts {
         post: &ChannelPost,
         deadline: i64,
     ) -> Result<(), OutboxError> {
-        let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
-        let row = self.0.new_row(Entry {
-            kind: StreamKind::ChannelPost,
-            scope: post.scope(),
-            client_id: post.message.clone(),
-            payload,
-            deadline: Deadline::At(deadline),
-        });
+        let row = self.0.new_row(post_entry(post, Deadline::At(deadline))?);
         let (db, owner) = self.0.deps().db()?;
         db.call(move |conn| {
             let new = repo::NewRow {

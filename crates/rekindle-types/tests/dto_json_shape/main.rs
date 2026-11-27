@@ -11,6 +11,7 @@ mod lobby;
 mod local_search;
 mod servers;
 mod skin;
+mod thread;
 
 use std::path::PathBuf;
 
@@ -269,6 +270,7 @@ fn samples() -> Map<String, Value> {
     servers::samples(&mut add, &pk('b'));
     local_search::samples(&mut add, &pk('c'));
     lobby::samples(&mut add, &pk('c'));
+    thread::samples(&mut add);
     out
 }
 

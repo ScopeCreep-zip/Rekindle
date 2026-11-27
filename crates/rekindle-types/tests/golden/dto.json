@@ -1,4 +1,13 @@
 {
+  "ForumPostCreated.queued": {
+    "starter": "queued",
+    "starterMessageId": "tmsg_4567",
+    "threadId": "abababababababababababababababab"
+  },
+  "ThreadReplyOutcome.queued": {
+    "messageId": "tmsg_0123",
+    "sendState": "queued"
+  },
   "audit.entry": {
     "actorPub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "atMs": 1700000000000,

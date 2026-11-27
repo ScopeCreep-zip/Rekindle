@@ -51,6 +51,19 @@ macro_rules! dependency_settled {
     };
 }
 
+/// A forum starter is released explicitly when its governance op lands.
+macro_rules! forum_starter_waiting {
+    ($alias:literal) => {
+        concat!(
+            "(",
+            $alias,
+            ".kind = 'channel_post' AND ",
+            $alias,
+            ".depends_on IS NOT NULL)"
+        )
+    };
+}
+
 /// A row due at `?2` that nothing holds: on a dependency stream
 /// ([`by_dependency`]) its named dependency settled; on any other stream no
 /// earlier row is wedged (`failed`) or still to send (`queued`) and not due
@@ -69,7 +82,9 @@ const DUE_UNBLOCKED: &str = concat!(
      AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
      AND ((h.state = 'failed' AND ",
     holds_chain!(),
-    ") OR (h.state = 'queued' AND h.next_at > ?2)))))"
+    ") OR (h.state = 'queued' AND (h.next_at > ?2 OR ",
+    forum_starter_waiting!("h"),
+    "))))))"
 );
 
 /// A row nothing holds whatever its time: on a dependency stream its named
@@ -128,7 +143,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     })
 }
 
-fn query_rows(
+pub(super) fn query_rows(
     conn: &Connection,
     filter: &str,
     args: impl rusqlite::Params,
@@ -155,7 +170,8 @@ pub fn due(
         conn,
         &format!(
             "o.owner_key = ?1 AND o.state IN ('queued', 'sent') AND o.next_at <= ?2 \
-             AND {DUE_UNBLOCKED} ORDER BY o.next_at, o.stream, o.stream_seq"
+             AND NOT {waiting} AND {DUE_UNBLOCKED} ORDER BY o.next_at, o.stream, o.stream_seq",
+            waiting = forum_starter_waiting!("o"),
         ),
         params![owner_key, now, kinds_param(by_dependency)],
     )
@@ -227,10 +243,11 @@ pub fn next_wake(
         &format!(
             "SELECT MIN(t) FROM ( \
                SELECT o.next_at AS t FROM outbox o WHERE o.owner_key = ?1 \
-                 AND o.state IN ('queued', 'sent') AND {UNBLOCKED} \
+                 AND o.state IN ('queued', 'sent') AND NOT {waiting} AND {UNBLOCKED} \
                UNION ALL \
                SELECT o.deadline FROM outbox o WHERE o.owner_key = ?1 \
-                 AND o.state IN ('awaiting_key', 'queued', 'sent'))"
+                 AND o.state IN ('awaiting_key', 'queued', 'sent'))",
+            waiting = forum_starter_waiting!("o"),
         ),
         params![owner_key, kinds_param(by_dependency)],
         |r| r.get(0),

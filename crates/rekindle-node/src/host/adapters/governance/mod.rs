@@ -165,3 +165,5 @@ impl crate::host::Host {
         HostGovernance::new(Arc::clone(&self.ctx))
     }
 }
+
+pub(crate) use ops::store_op_and_head;
