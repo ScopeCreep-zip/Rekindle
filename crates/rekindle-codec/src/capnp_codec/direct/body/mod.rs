@@ -86,8 +86,7 @@ macro_rules! direct_bodies {
 
             /// The body's bytes (packed Cap'n Proto; empty for the kinds
             /// without a body).
-            #[must_use]
-            pub fn encode(&self) -> Vec<u8> {
+                        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
                 match self {
                     $( Self::$kind(body) => {
                         encode_root::<schema::$schema::Owned>(|b| body.write(b))
@@ -95,7 +94,7 @@ macro_rules! direct_bodies {
                     $( Self::$skind(body) => {
                         encode_root::<schema::$sschema::Owned>(|b| body.write(b))
                     } )*
-                    $( Self::$empty => Vec::new(), )*
+                    $( Self::$empty => Ok(Vec::new()), )*
                 }
             }
 

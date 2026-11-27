@@ -23,9 +23,10 @@ pub struct LobbyOpen {
 }
 
 impl LobbyOpen {
-    pub(super) fn write(&self, mut b: lobby_open::Builder<'_>) {
+    pub(super) fn write(&self, mut b: lobby_open::Builder<'_>) -> Result<(), CodecError> {
         b.set_lobby_id(&self.lobby_id);
         b.set_game_id(self.game_id);
+        Ok(())
     }
 
     pub(super) fn read(r: lobby_open::Reader<'_>) -> Result<Self, CodecError> {
@@ -48,8 +49,9 @@ pub struct LobbyRef {
 }
 
 impl LobbyRef {
-    pub(super) fn write(&self, mut b: lobby_ref::Builder<'_>) {
+    pub(super) fn write(&self, mut b: lobby_ref::Builder<'_>) -> Result<(), CodecError> {
         b.set_lobby_id(&self.lobby_id);
+        Ok(())
     }
 
     pub(super) fn read(r: lobby_ref::Reader<'_>) -> Result<Self, CodecError> {
@@ -70,9 +72,10 @@ pub struct LobbyLaunch {
 }
 
 impl LobbyLaunch {
-    pub(super) fn write(&self, mut b: lobby_launch::Builder<'_>) {
+    pub(super) fn write(&self, mut b: lobby_launch::Builder<'_>) -> Result<(), CodecError> {
         b.set_lobby_id(&self.lobby_id);
         b.set_server(self.server.as_str());
+        Ok(())
     }
 
     pub(super) fn read(r: lobby_launch::Reader<'_>) -> Result<Self, CodecError> {

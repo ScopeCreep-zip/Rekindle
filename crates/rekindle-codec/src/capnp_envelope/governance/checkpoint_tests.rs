@@ -34,7 +34,7 @@ fn checkpoint(heads: u8, prev: bool, pages: usize) -> GovernanceEntry {
 fn a_checkpoint_round_trips() {
     for entry in [checkpoint(1, false, 0), checkpoint(63, true, 16)] {
         let bytes = encode_governance_entry(&entry);
-        assert_eq!(decode_governance_entry(&bytes).expect("decodes"), entry);
+        assert_eq!(decode_governance_entry(&bytes.unwrap()).expect("decodes"), entry);
     }
 }
 
@@ -107,7 +107,7 @@ fn the_largest_checkpoint_op_fits_a_gossiped_app_message() {
     let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
     let community = format!("VLD0:{}", "A".repeat(150));
     let signed = sign_envelope(&key, &community, &"ab".repeat(32), [7u8; 16], &envelope);
-    let wire = encode_signed_envelope(&signed);
+    let wire = encode_signed_envelope(&signed).unwrap();
     assert!(
         wire.len() <= MAX_APP_MESSAGE_LEN,
         "{} B over the {MAX_APP_MESSAGE_LEN} B app_message cap",

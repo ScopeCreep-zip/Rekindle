@@ -87,16 +87,30 @@ pub(crate) fn ed25519_verify(
         .map_err(|e| CodecError::Verification(format!("{what} signature: {e}")))
 }
 
-pub(crate) use packing::pack;
+/// Serialize a Cap'n Proto builder into packed bytes with capnp's own
+/// packed writer.
+///
+/// # Errors
+/// `Serialization` when capnp's writer fails (into a `Vec` its only
+/// error source, `write_all`, does not; the `Result` is still capnp's to
+/// give, so it is propagated rather than assumed away).
+pub(crate) fn pack(
+    builder: &capnp::message::Builder<capnp::message::HeapAllocator>,
+) -> Result<Vec<u8>, CodecError> {
+    let mut output = Vec::new();
+    capnp::serialize_packed::write_message(&mut output, builder)
+        .map_err(|e| CodecError::Serialization(format!("capnp packed write: {e}")))?;
+    Ok(output)
+}
 
-/// A list or field length as Cap'n Proto's `u32` (lists index by `u32`). A
-/// length past `u32::MAX` belongs to a value over 4 GiB, which no carrier
-/// takes (an `app_message` is at most `MAX_APP_MESSAGE_LEN`, a subkey
-/// `MAX_SUBKEY_SIZE`, both enforced by Veilid), so such an encoding is
-/// refused before it leaves; the length saturates there instead of
-/// panicking. Every decoded value is far below it (its traversal bound).
-pub(crate) fn wire_len(n: usize) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
+/// A list or field length as Cap'n Proto's `u32` (lists index by `u32`).
+///
+/// # Errors
+/// `TooLargeToEncode` for a length past `u32::MAX`: such a value is over
+/// 4 GiB, which no carrier takes, and is refused rather than written with a
+/// wrong length.
+pub(crate) fn wire_len(n: usize) -> Result<u32, CodecError> {
+    u32::try_from(n).map_err(|_| CodecError::TooLargeToEncode(n))
 }
 
 /// The deepest pointer nesting a decoder follows (security roadmap 2.11;
@@ -197,7 +211,6 @@ pub mod chain;
 pub mod direct;
 pub mod friend;
 pub mod identity;
-mod packing;
 pub mod presence;
 pub mod transport_feedback;
 pub mod voice;

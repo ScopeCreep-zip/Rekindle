@@ -13,7 +13,7 @@ fn round_trip_presence_update() {
     };
 
     let encoded = presence::encode_update(1, Some(&game), 1_700_000_000_000);
-    let (status, game_opt) = presence::decode_update(&encoded).unwrap();
+    let (status, game_opt) = presence::decode_update(&encoded.unwrap()).unwrap();
     assert_eq!(status, 1);
     let g = game_opt.unwrap();
     assert_eq!(g.game_id, 42);
@@ -27,7 +27,7 @@ fn round_trip_presence_update() {
 
     // Without game
     let encoded2 = presence::encode_update(3, None, 1_700_000_000_000);
-    let (status2, game2) = presence::decode_update(&encoded2).unwrap();
+    let (status2, game2) = presence::decode_update(&encoded2.unwrap()).unwrap();
     assert_eq!(status2, 3);
     assert!(game2.is_none());
 }
@@ -54,7 +54,7 @@ fn round_trip_friend_list() {
     ];
 
     let encoded = friend::encode_friend_list(&entries);
-    let decoded = friend::decode_friend_list(&encoded).unwrap();
+    let decoded = friend::decode_friend_list(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].public_key, "abc123");
@@ -81,7 +81,7 @@ fn round_trip_voice_signaling() {
     };
 
     let encoded = voice::encode_signaling(&sig);
-    let decoded = voice::decode_signaling(&encoded).unwrap();
+    let decoded = voice::decode_signaling(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.signal_type, voice::SignalType::Offer);
     assert_eq!(decoded.channel_id, "voice-room-1");
@@ -102,7 +102,7 @@ fn round_trip_game_status() {
     };
 
     let encoded = presence::encode_game_status(&info);
-    let decoded = presence::decode_game_status(&encoded).unwrap();
+    let decoded = presence::decode_game_status(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.game_id, 7);
     assert_eq!(decoded.game_name, "Team Fortress 2");
@@ -125,7 +125,7 @@ fn round_trip_account_header() {
     };
 
     let encoded = account::encode_account_header(&header);
-    let decoded = account::decode_account_header(&encoded).unwrap();
+    let decoded = account::decode_account_header(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.display_name, "xXGamerXx");
     assert_eq!(decoded.status_message, "Playing games");
@@ -149,7 +149,7 @@ fn account_header_without_avatar() {
         updated_at: 7,
     };
 
-    let decoded = account::decode_account_header(&account::encode_account_header(&header)).unwrap();
+    let decoded = account::decode_account_header(&account::encode_account_header(&header).unwrap()).unwrap();
 
     assert_eq!(decoded.display_name, "no_avatar");
     assert!(decoded.status_message.is_empty());
@@ -185,12 +185,12 @@ fn full_slot() -> identity::OpkSlot {
 fn the_prekey_record_round_trips() {
     let head = full_head();
     assert_eq!(
-        identity::decode_prekey_head(&identity::encode_prekey_head(&head)).unwrap(),
+        identity::decode_prekey_head(&identity::encode_prekey_head(&head).unwrap()).unwrap(),
         head
     );
     let slot = full_slot();
     assert_eq!(
-        identity::decode_opk_slot(&identity::encode_opk_slot(&slot)).unwrap(),
+        identity::decode_opk_slot(&identity::encode_opk_slot(&slot).unwrap()).unwrap(),
         slot
     );
     let list = identity::PrekeyRecordList {
@@ -200,12 +200,12 @@ fn the_prekey_record_round_trips() {
         }],
     };
     assert_eq!(
-        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&list)).unwrap(),
+        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&list).unwrap()).unwrap(),
         list
     );
     let empty = identity::PrekeyRecordList::default();
     assert_eq!(
-        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&empty)).unwrap(),
+        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&empty).unwrap()).unwrap(),
         empty
     );
 }
@@ -237,7 +237,7 @@ fn a_short_prekey_or_signature_is_refused() {
         root.set_opk_sig(&[2; 64]);
         root.set_pq_opk_sig(&[3; 64]);
     }
-    assert!(identity::decode_opk_slot(&super::pack(&builder)).is_err());
+    assert!(identity::decode_opk_slot(&super::pack(&builder).unwrap()).is_err());
     assert!(identity::decode_prekey_head(b"not a head").is_err());
 }
 
@@ -264,7 +264,7 @@ fn nested_chain(depth: usize) -> Vec<u8> {
                 .expect("root"),
         )
         .expect("copy");
-    super::pack(&builder)
+    super::pack(&builder).unwrap()
 }
 
 #[test]

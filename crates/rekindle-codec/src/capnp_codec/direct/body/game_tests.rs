@@ -7,14 +7,14 @@ use crate::capnp_codec::direct::{DirectBody, DmTypeId};
 fn bad_bios_are_refused_and_blank_is_none() {
     for bad in ["x".repeat(191), "a\u{1b}b".to_string()] {
         let bytes = DirectBody::ProfileBio(ProfileBio { bio: Some(bad) }).encode();
-        assert!(DirectBody::decode(DmTypeId::ProfileBio, &bytes).is_err());
+        assert!(DirectBody::decode(DmTypeId::ProfileBio, &bytes.unwrap()).is_err());
     }
     let bytes = DirectBody::ProfileBio(ProfileBio {
         bio: Some(" ".into()),
     })
     .encode();
     assert_eq!(
-        DirectBody::decode(DmTypeId::ProfileBio, &bytes).unwrap(),
+        DirectBody::decode(DmTypeId::ProfileBio, &bytes.unwrap()).unwrap(),
         DirectBody::ProfileBio(ProfileBio { bio: None })
     );
 }
@@ -35,11 +35,11 @@ fn bad_game_invites_are_refused() {
         "1.2.3.4:27015 +exec x",
         "1.2.3.4",
     ] {
-        assert!(DirectBody::decode(DmTypeId::GameInvite, &bytes(7, server)).is_err());
+        assert!(DirectBody::decode(DmTypeId::GameInvite, &bytes(7, server).unwrap()).is_err());
     }
-    assert!(DirectBody::decode(DmTypeId::GameInvite, &bytes(0, "1.2.3.4:27015")).is_err());
+    assert!(DirectBody::decode(DmTypeId::GameInvite, &bytes(0, "1.2.3.4:27015").unwrap()).is_err());
     assert_eq!(
-        DirectBody::decode(DmTypeId::GameInvite, &bytes(7, "1.2.3.4:27015")).unwrap(),
+        DirectBody::decode(DmTypeId::GameInvite, &bytes(7, "1.2.3.4:27015").unwrap()).unwrap(),
         DirectBody::GameInvite(GameInvite {
             game_id: 7,
             server: ServerAddress::parse("1.2.3.4:27015").unwrap(),
@@ -64,6 +64,6 @@ fn bad_game_totals_are_refused() {
             .collect(),
     ] {
         let bytes = DirectBody::GameTotals(GameTotals { totals }).encode();
-        assert!(DirectBody::decode(DmTypeId::GameTotals, &bytes).is_err());
+        assert!(DirectBody::decode(DmTypeId::GameTotals, &bytes.unwrap()).is_err());
     }
 }

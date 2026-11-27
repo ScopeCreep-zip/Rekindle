@@ -45,7 +45,7 @@ fn every_lobby_kind_round_trips_and_its_bytes_are_pinned() {
         let bytes = body.encode();
         assert_eq!(hex::encode(&bytes), golden, "{:?}", body.type_id());
         assert_eq!(
-            DirectBody::decode(body.type_id(), &bytes),
+            DirectBody::decode(body.type_id(), &bytes.unwrap()),
             Ok(body.clone()),
             "{:?}",
             body.type_id()
@@ -74,7 +74,7 @@ fn a_launch_whose_server_is_not_an_address_is_dropped() {
         });
         assert!(
             matches!(
-                DirectBody::decode(DmTypeId::LobbyLaunch, &bytes),
+                DirectBody::decode(DmTypeId::LobbyLaunch, &bytes.unwrap()),
                 Err(CodecError::Deserialization(_))
             ),
             "{server:?}"
@@ -93,11 +93,11 @@ fn a_short_lobby_id_or_game_zero_is_dropped() {
         DmTypeId::LobbyLeave,
         DmTypeId::LobbyClose,
     ] {
-        assert!(DirectBody::decode(kind, &short).is_err(), "{kind:?}");
+        assert!(DirectBody::decode(kind, &short.unwrap()).is_err(), "{kind:?}");
     }
     let game_zero = DirectBody::LobbyOpen(LobbyOpen {
         lobby_id: LOBBY,
         game_id: 0,
     });
-    assert!(DirectBody::decode(DmTypeId::LobbyOpen, &game_zero.encode()).is_err());
+    assert!(DirectBody::decode(DmTypeId::LobbyOpen, &game_zero.encode().unwrap()).is_err());
 }

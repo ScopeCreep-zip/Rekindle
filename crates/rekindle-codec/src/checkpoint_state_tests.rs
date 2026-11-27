@@ -54,7 +54,7 @@ fn a_request_whose_signature_does_not_bind_it_is_refused() {
     assert!(request(&key).encode(&other).is_err());
     let mut changed = request(&key);
     changed.offset = 0;
-    let sig = sign(&key, &request(&key).signing_bytes());
+    let sig = sign(&key, &request(&key).signing_bytes().unwrap());
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut b = builder.init_root::<checkpoint_state_request::Builder<'_>>();
@@ -65,7 +65,7 @@ fn a_request_whose_signature_does_not_bind_it_is_refused() {
         b.set_requester(&changed.requester);
         b.set_sig(&sig);
     }
-    assert!(decode_checkpoint_state_request(&pack(&builder)).is_err());
+    assert!(decode_checkpoint_state_request(&pack(&builder).unwrap()).is_err());
 }
 
 /// A full chunk of incompressible bytes, in its envelope, fits the 32,768 B
@@ -103,11 +103,11 @@ fn a_full_chunk_fits_the_app_call_cap() {
 #[test]
 fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
     let key = SigningKey::from_bytes(&[3; 32]);
-    let joiner = request(&key).with_invite_code(&"ab".repeat(16));
+    let joiner = request(&key).with_invite_code(&"ab".repeat(16)).unwrap();
     let encoded = joiner.encode(&key).unwrap();
     assert!(encoded.len() <= CHECKPOINT_STATE_REQUEST_MAX_BYTES);
-    assert_eq!(decode_checkpoint_state_request(&encoded).unwrap(), joiner);
-    let sig = sign(&key, &request(&key).signing_bytes());
+    assert_eq!(decode_checkpoint_state_request(&encoded).unwrap(), joiner.unwrap());
+    let sig = sign(&key, &request(&key).signing_bytes().unwrap());
     let invite = joiner.invite.as_ref().unwrap();
     let mut builder = capnp::message::Builder::new_default();
     {
@@ -121,7 +121,7 @@ fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
         b.set_invite_code_hash(&invite.code_hash);
         b.set_invite_tag(&invite.tag);
     }
-    assert!(decode_checkpoint_state_request(&pack(&builder)).is_err());
+    assert!(decode_checkpoint_state_request(&pack(&builder).unwrap()).is_err());
 }
 
 /// Plan E3.2 S7c.8 (2): the public code hash alone proves nothing. A
@@ -132,7 +132,7 @@ fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
 fn only_the_invite_code_proves_a_joiners_request() {
     let key = SigningKey::from_bytes(&[3; 32]);
     let code = "ab".repeat(16);
-    let joiner = request(&key).with_invite_code(&code);
+    let joiner = request(&key).with_invite_code(&code).unwrap();
     let decoded = decode_checkpoint_state_request(&joiner.encode(&key).unwrap()).unwrap();
     assert!(decoded.invite_proven_by(&code));
     assert!(!decoded.invite_proven_by(&"cd".repeat(16)));
@@ -150,7 +150,7 @@ fn only_the_invite_code_proves_a_joiners_request() {
     );
     let moved = CheckpointStateRequest {
         offset: 0,
-        ..joiner.clone()
+        ..joiner.clone().unwrap()
     };
     assert!(!moved.invite_proven_by(&code), "the tag binds the offset");
     assert!(!request(&key).invite_proven_by(&code), "a member's request");

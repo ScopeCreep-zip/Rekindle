@@ -43,7 +43,7 @@ pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, Cod
     let root =
         builder.init_root::<crate::community_envelope_capnp::community_envelope::Builder<'_>>();
     write_community_envelope(root, env)?;
-    Ok(pack(&builder))
+    pack(&builder)
 }
 
 /// Decode a `CommunityEnvelope` from packed Cap'n Proto bytes.
@@ -76,7 +76,7 @@ pub fn try_decode_community_envelope(
 /// Encode a `SignedEnvelope` into packed Cap'n Proto bytes. The inner
 /// `payload` field is treated as opaque — callers must already have
 /// encoded the inner `CommunityEnvelope` via `encode_community_envelope`.
-pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Vec<u8> {
+pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let mut root =
         builder.init_root::<crate::community_envelope_capnp::signed_envelope::Builder<'_>>();

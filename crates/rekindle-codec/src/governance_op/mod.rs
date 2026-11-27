@@ -92,7 +92,7 @@ pub enum ReadOp {
 /// with more than [`GOVERNANCE_OP_MAX_DEPS`] deps.
 pub fn encode_op(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
     check_len("governance op deps", op.deps.len(), GOVERNANCE_OP_MAX_DEPS)?;
-    seal_op(&op_unsigned_bytes(op), &op.sig)
+    seal_op(&op_unsigned_bytes(op)?, &op.sig)
 }
 
 /// Seal an op's canonical unsigned bytes (as [`op_unsigned_bytes`] or
@@ -112,7 +112,7 @@ pub fn seal_op(unsigned: &[u8], sig: &[u8; 64]) -> Result<Vec<u8>, CodecError> {
         .get_root::<governance_op::Builder<'_>>()
         .map_err(|e| capnp_err(&e))?;
     root.set_sig(sig);
-    let out = pack(&builder);
+    let out = pack(&builder)?;
     check_len("governance op", out.len(), GOVERNANCE_OP_MAX_BYTES)?;
     Ok(out)
 }
@@ -133,7 +133,9 @@ fn packed_literal(segment: &[u8]) -> Result<Vec<u8>, CodecError> {
     })?;
     let mut header = 0u32.to_le_bytes().to_vec();
     header.extend_from_slice(&words.to_le_bytes());
-    // A capacity hint: the segment, its run counts and the header.
+    // A capacity hint: the segment, its run counts and the header. Saturation
+    // would only under-reserve (a slice is at most `isize::MAX` bytes, so it
+    // never saturates); the bytes written do not depend on it.
     let mut out = Vec::with_capacity(segment
         .len()
         .saturating_add(segment.len() / 1024)
@@ -152,12 +154,12 @@ fn packed_literal(segment: &[u8]) -> Result<Vec<u8>, CodecError> {
 
 /// The canonical unsigned bytes of `op`: the bytes its author signs (after
 /// `GOV_OP ‖ anchor`) and the op hash covers (before the signature).
-#[must_use]
-pub fn op_unsigned_bytes(op: &GovernanceOp) -> Vec<u8> {
-    let builder = build(op);
-    let root = builder.get_root_as_reader::<governance_op::Reader<'_>>();
-    // A builder's own root always reads back and canonicalizes.
-    root.and_then(canonical).unwrap_or_default()
+pub fn op_unsigned_bytes(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
+    let builder = build(op)?;
+    builder
+        .get_root_as_reader::<governance_op::Reader<'_>>()
+        .and_then(canonical)
+        .map_err(|e| capnp_err(&e))
 }
 
 /// Decode an op off the network, with its canonical unsigned bytes; an op
@@ -233,7 +235,7 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
         sig,
         device_key,
     };
-    if op_unsigned_bytes(&op) != unsigned {
+    if op_unsigned_bytes(&op)? != unsigned {
         return unknown(Uninterpretable::Version);
     }
     Ok(ReadOp::Known(Box::new(DecodedOp { op, unsigned })))
@@ -257,7 +259,12 @@ fn received_unsigned(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
 fn canonical(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
     // One first segment that holds it all (plus the root pointer): the
     // canonical form is a single segment.
-    let words = u32::try_from(r.total_size()?.word_count.saturating_add(1)).unwrap_or(u32::MAX);
+    let words = r
+        .total_size()?
+        .word_count
+        .checked_add(1)
+        .and_then(|w| u32::try_from(w).ok())
+        .ok_or_else(|| capnp::Error::failed("governance op too large for one segment".to_owned()))?;
     let mut out = capnp::message::Builder::new(
         capnp::message::HeapAllocator::new().first_segment_words(words),
     );
@@ -266,7 +273,7 @@ fn canonical(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
         .get_segments_for_output()
         .first()
         .map(|s| s.to_vec())
-        .unwrap_or_default())
+        .ok_or_else(|| capnp::Error::failed("canonical form has no segment".to_owned()))?)
 }
 
 /// Encode a member record's `Frontier` (`M`/3), refusing more than
@@ -276,7 +283,7 @@ pub fn encode_frontier(value: &Frontier) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let mut b = builder.init_root::<frontier::Builder<'_>>();
     b.set_roster_checksum(&value.roster_checksum.0);
-    let count = u32::try_from(value.heads.len()).unwrap_or(u32::MAX);
+    let count = crate::capnp_codec::wire_len(value.heads.len())?;
     let mut list = b.reborrow().init_heads(count);
     for (i, head) in (0..count).zip(&value.heads) {
         write_op_ref(list.reborrow().get(i), head);
@@ -286,7 +293,7 @@ pub fn encode_frontier(value: &Frontier) -> Result<Vec<u8>, CodecError> {
         value.fork_proof.len(),
         MAX_FORK_PROOF_OPS,
     )?;
-    let count = u32::try_from(value.fork_proof.len()).unwrap_or(u32::MAX);
+    let count = crate::capnp_codec::wire_len(value.fork_proof.len())?;
     let mut proof = b.reborrow().init_fork_proof(count);
     for (i, op) in (0..count).zip(&value.fork_proof) {
         proof.set(i, op);
@@ -296,12 +303,12 @@ pub fn encode_frontier(value: &Frontier) -> Result<Vec<u8>, CodecError> {
         value.fork_refs.len(),
         MAX_FORK_PROOF_OPS,
     )?;
-    let count = u32::try_from(value.fork_refs.len()).unwrap_or(u32::MAX);
+    let count = crate::capnp_codec::wire_len(value.fork_refs.len())?;
     let mut refs = b.init_fork_refs(count);
     for (i, op_ref) in (0..count).zip(&value.fork_refs) {
         write_op_ref(refs.reborrow().get(i), op_ref);
     }
-    let out = pack(&builder);
+    let out = pack(&builder)?;
     check_len("frontier", out.len(), MAX_SUBKEY_VALUE_LEN)?;
     Ok(out)
 }
@@ -351,7 +358,9 @@ pub fn decode_frontier(data: &[u8]) -> Result<Frontier, CodecError> {
 }
 
 /// The op without `sig`; [`seal_op`] adds it to the canonical form.
-fn build(op: &GovernanceOp) -> capnp::message::Builder<capnp::message::HeapAllocator> {
+fn build(
+    op: &GovernanceOp,
+) -> Result<capnp::message::Builder<capnp::message::HeapAllocator>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let mut b = builder.init_root::<governance_op::Builder<'_>>();
     b.set_author(&op.author.0);
@@ -359,15 +368,15 @@ fn build(op: &GovernanceOp) -> capnp::message::Builder<capnp::message::HeapAlloc
     if let Some(prev) = op.prev {
         b.set_prev(&prev.0);
     }
-    let count = u32::try_from(op.deps.len()).unwrap_or(u32::MAX);
+    let count = crate::capnp_codec::wire_len(op.deps.len())?;
     let mut deps = b.reborrow().init_deps(count);
     for (i, dep) in (0..count).zip(&op.deps) {
         write_op_ref(deps.reborrow().get(i), dep);
     }
     b.set_issued_at(op.issued_at);
     b.set_device_key(&op.device_key);
-    write_governance_entry(b.reborrow().init_body(), &op.body);
-    builder
+    write_governance_entry(b.reborrow().init_body(), &op.body)?;
+    Ok(builder)
 }
 
 pub(crate) fn write_op_ref(mut b: op_ref::Builder<'_>, r: &OpRef) {

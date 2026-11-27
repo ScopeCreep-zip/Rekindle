@@ -102,7 +102,7 @@ pub(super) fn read_sound_meta(
 pub(super) fn write_onboarding_question(
     mut b: schema_pkg::onboarding_question::Builder<'_>,
     q: &OnboardingQuestion,
-) {
+) -> Result<(), CodecError> {
     b.set_question_id(&q.question_id);
     b.set_title(&q.title);
     b.set_has_description(q.description.is_some());
@@ -111,10 +111,11 @@ pub(super) fn write_onboarding_question(
     }
     b.set_required(q.required);
     b.set_single_select(q.single_select);
-    let mut opts = b.reborrow().init_options(len_u32(q.options.len()));
-    for (i, o) in q.options.iter().enumerate() {
-        write_onboarding_option(opts.reborrow().get(len_u32(i)), o);
+    let mut opts = b.reborrow().init_options(len_u32(q.options.len())?);
+    for (i, o) in (0u32..).zip(q.options.iter()) {
+        write_onboarding_option(opts.reborrow().get(i), o)?;
     }
+    Ok(())
 }
 
 pub(super) fn read_onboarding_question(
@@ -145,7 +146,7 @@ pub(super) fn read_onboarding_question(
 pub(super) fn write_onboarding_option(
     mut b: schema_pkg::onboarding_option::Builder<'_>,
     o: &OnboardingOption,
-) {
+) -> Result<(), CodecError> {
     b.set_option_id(&o.option_id);
     b.set_title(&o.title);
     b.set_has_description(o.description.is_some());
@@ -158,16 +159,17 @@ pub(super) fn write_onboarding_option(
     }
     let mut roles = b
         .reborrow()
-        .init_roles_to_assign(len_u32(o.roles_to_assign.len()));
-    for (i, r) in o.roles_to_assign.iter().enumerate() {
-        uuid16_to_capnp(roles.reborrow().get(len_u32(i)), &r.0);
+        .init_roles_to_assign(len_u32(o.roles_to_assign.len())?);
+    for (i, r) in (0u32..).zip(o.roles_to_assign.iter()) {
+        uuid16_to_capnp(roles.reborrow().get(i), &r.0);
     }
     let mut chans = b
         .reborrow()
-        .init_channels_to_show(len_u32(o.channels_to_show.len()));
-    for (i, c) in o.channels_to_show.iter().enumerate() {
-        uuid16_to_capnp(chans.reborrow().get(len_u32(i)), &c.0);
+        .init_channels_to_show(len_u32(o.channels_to_show.len())?);
+    for (i, c) in (0u32..).zip(o.channels_to_show.iter()) {
+        uuid16_to_capnp(chans.reborrow().get(i), &c.0);
     }
+    Ok(())
 }
 
 pub(super) fn read_onboarding_option(

@@ -149,16 +149,15 @@ pub fn paginate(entries: &[SealedInvite]) -> Result<Vec<InvitesPage>, InviteSeal
 }
 
 /// Encode one page.
-#[must_use]
-pub fn encode_invites_page(page: &InvitesPage) -> Vec<u8> {
+pub fn encode_invites_page(page: &InvitesPage) -> Result<Vec<u8>, CodecError> {
     let mut message = capnp::message::Builder::new_default();
     let mut b = message.init_root::<successor_invites_page::Builder<'_>>();
-    let n = u32::try_from(page.pages.len()).unwrap_or(u32::MAX);
+    let n = crate::capnp_codec::wire_len(page.pages.len())?;
     let mut keys = b.reborrow().init_pages(n);
     for (i, key) in (0..n).zip(&page.pages) {
         keys.set(i, key.as_str());
     }
-    let n = u32::try_from(page.entries.len()).unwrap_or(u32::MAX);
+    let n = crate::capnp_codec::wire_len(page.entries.len())?;
     let mut entries = b.init_entries(n);
     for (i, entry) in (0..n).zip(&page.entries) {
         let mut e = entries.reborrow().get(i);

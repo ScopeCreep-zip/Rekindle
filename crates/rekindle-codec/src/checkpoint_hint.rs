@@ -51,14 +51,14 @@ pub struct CheckpointHintRequest {
 }
 
 impl CheckpointHintRequest {
-    fn signing_bytes(&self) -> Vec<u8> {
+    fn signing_bytes(&self) -> Result<Vec<u8>, CodecError> {
         let mut out = domains::CHECKPOINT_HINT_REQUEST.as_bytes().to_vec();
-        put_lp(&mut out, self.community.as_bytes());
+        put_lp(&mut out, self.community.as_bytes())?;
         out.extend_from_slice(&self.height.to_be_bytes());
         out.extend_from_slice(&self.digest);
         out.extend_from_slice(&self.requester);
-        PreJoinInvite::put(self.invite.as_ref(), &mut out);
-        out
+        PreJoinInvite::put(self.invite.as_ref(), &mut out)?;
+        Ok(out)
     }
 
     /// Sign by the requester's pseudonym `key` and encode.
@@ -74,7 +74,7 @@ impl CheckpointHintRequest {
         }
         check_len("community id", self.community.len(), MAX_COMMUNITY)?;
         let (code_hash, tag) = PreJoinInvite::wire(self.invite.as_ref())?;
-        let sig = sign(key, &self.signing_bytes());
+        let sig = sign(key, &self.signing_bytes()?);
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut b = builder.init_root::<checkpoint_hint_request::Builder<'_>>();
@@ -86,7 +86,7 @@ impl CheckpointHintRequest {
             b.set_invite_tag(tag);
             b.set_sig(&sig);
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size(
             "checkpoint hint request",
             &out,
@@ -97,7 +97,7 @@ impl CheckpointHintRequest {
 }
 
 impl PreJoinRequest for CheckpointHintRequest {
-    fn signed_bytes(&self) -> Vec<u8> {
+    fn signed_bytes(&self) -> Result<Vec<u8>, CodecError> {
         self.signing_bytes()
     }
     fn invite_slot(&mut self) -> &mut Option<PreJoinInvite> {
@@ -131,7 +131,7 @@ pub fn decode_checkpoint_hint_request(data: &[u8]) -> Result<CheckpointHintReque
     };
     verify(
         &request.requester,
-        &request.signing_bytes(),
+        &request.signing_bytes()?,
         b.get_sig().map_err(|e| capnp_err(&e))?,
         "checkpoint hint request",
     )?;
@@ -177,7 +177,7 @@ impl CheckpointHintResponse {
                 write_op_ref(list.reborrow().get(i), r);
             }
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size(
             "checkpoint hint response",
             &out,

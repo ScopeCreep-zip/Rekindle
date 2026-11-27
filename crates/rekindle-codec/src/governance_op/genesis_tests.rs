@@ -39,7 +39,7 @@ fn a_short_signature_is_refused() {
     b.set_anchor_owner(&[2; 32]);
     b.set_anchor_sig(&[3; 10]);
     b.set_creator_sig(&[4; 64]);
-    assert!(decode_genesis(&pack(&builder)).is_err());
+    assert!(decode_genesis(&pack(&builder).unwrap()).is_err());
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn a_ninth_additional_creator_is_refused() {
     for i in 0..9 {
         list.set(i, &[u8::try_from(i).unwrap() + 10; 32]);
     }
-    assert!(decode_genesis(&pack(&builder)).is_err());
+    assert!(decode_genesis(&pack(&builder).unwrap()).is_err());
     s.cert.additional_creators.pop();
     assert!(decode_genesis(&encode_genesis(&s).unwrap()).is_ok());
 }

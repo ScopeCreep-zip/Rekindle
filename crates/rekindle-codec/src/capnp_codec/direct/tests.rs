@@ -348,7 +348,7 @@ fn every_body_round_trips_under_its_kind() {
     for body in &samples {
         let bytes = body.encode();
         assert_eq!(
-            DirectBody::decode(body.type_id(), &bytes).as_ref(),
+            DirectBody::decode(body.type_id(), &bytes.unwrap()).as_ref(),
             Ok(body),
             "{:?}",
             body.type_id()
@@ -376,7 +376,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
         expire_seconds: 0,
     });
     assert_eq!(
-        DirectBody::decode(DmTypeId::DmText, &text.encode()),
+        DirectBody::decode(DmTypeId::DmText, &text.encode().unwrap()),
         Ok(text)
     );
     let request = DirectBody::FriendRequest(FriendRequest {
@@ -393,7 +393,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
         chain_record_key: dht_key(),
     });
     assert_eq!(
-        DirectBody::decode(DmTypeId::FriendRequest, &request.encode()),
+        DirectBody::decode(DmTypeId::FriendRequest, &request.encode().unwrap()),
         Ok(request)
     );
 
@@ -401,7 +401,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
     let bytes = encode_root::<crate::direct_capnp::dm_delete::Owned>(|mut b| {
         b.set_target_client_id(&[1; 15]);
     });
-    assert!(DirectBody::decode(DmTypeId::DmDelete, &bytes).is_err());
+    assert!(DirectBody::decode(DmTypeId::DmDelete, &bytes.unwrap()).is_err());
     // An empty-bodied kind with bytes, and bytes of another kind.
     assert!(DirectBody::decode(DmTypeId::UnfriendedAck, &[0]).is_err());
     assert!(DirectBody::decode(DmTypeId::DmText, &[0xFF; 3]).is_err());
@@ -419,7 +419,7 @@ pub(super) fn pre_key_init(body: &DirectBody) -> DmFrame {
         chain_seq: 0,
         content_hint: ContentHint::Resendable,
         sent_at_ms: u64::MAX,
-        payload: body.encode(),
+        payload: body.encode().unwrap(),
     };
     DmFrame {
         type_id: DmTypeId::PreKeyInit,
@@ -433,7 +433,7 @@ fn sealed(body: &DirectBody) -> DmFrame {
     let content = SealedContent {
         nonce: [0x5A; 16],
         sent_at_ms: u64::MAX,
-        payload: body.encode(),
+        payload: body.encode().unwrap(),
     };
     DmFrame {
         type_id: body.type_id(),
@@ -479,7 +479,7 @@ fn every_sealed_handshake_frame_fits() {
         })),
     ];
     for frame in frames {
-        assert_eq!(DmFrame::decode(&frame.encode()).as_ref(), Ok(&frame));
+        assert_eq!(DmFrame::decode(&frame.encode().unwrap()).as_ref(), Ok(&frame));
         let len = datagram_len(&frame);
         assert!(len <= MAX_APP_MESSAGE_LEN, "{:?} {len} B", frame.type_id);
     }
@@ -566,7 +566,7 @@ fn bodies_a_peer_could_abuse_are_refused() {
     for body in refused {
         assert!(
             matches!(
-                DirectBody::decode(body.type_id(), &body.encode()),
+                DirectBody::decode(body.type_id(), &body.encode().unwrap()),
                 Err(CodecError::Deserialization(_))
             ),
             "{body:?}"
@@ -575,7 +575,7 @@ fn bodies_a_peer_could_abuse_are_refused() {
     // At the bounds, in 4-byte characters, with an emoji joiner: accepted.
     let accepted = request(widest(max_name), widest(max_note), dht_key());
     assert_eq!(
-        DirectBody::decode(accepted.type_id(), &accepted.encode()).as_ref(),
+        DirectBody::decode(accepted.type_id(), &accepted.encode().unwrap()).as_ref(),
         Ok(&accepted)
     );
     let family = DirectBody::DmText(DmText {
@@ -585,7 +585,7 @@ fn bodies_a_peer_could_abuse_are_refused() {
         expire_seconds: 0,
     });
     assert_eq!(
-        DirectBody::decode(DmTypeId::DmText, &family.encode()).as_ref(),
+        DirectBody::decode(DmTypeId::DmText, &family.encode().unwrap()).as_ref(),
         Ok(&family)
     );
 }

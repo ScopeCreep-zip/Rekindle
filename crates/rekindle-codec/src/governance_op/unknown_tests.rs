@@ -45,7 +45,7 @@ fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
 fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
     let op = left_op();
     let unsigned = op_unsigned_bytes(&op);
-    let bytes = seal_op(&unsigned, &op.sig).unwrap();
+    let bytes = seal_op(&unsigned.unwrap(), &op.sig).unwrap();
     let ReadOp::Known(decoded) = read_op(&bytes).unwrap() else {
         panic!("a known op reads as known");
     };
@@ -56,7 +56,7 @@ fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
 #[test]
 fn an_op_of_an_arm_beyond_the_schema_reads_with_the_bytes_its_author_signed() {
     let op = left_op();
-    let unsigned = with_arm(&op_unsigned_bytes(&op), 0x7fff);
+    let unsigned = with_arm(&op_unsigned_bytes(&op).unwrap(), 0x7fff);
     let bytes = seal_op(&unsigned, &op.sig).unwrap();
     let ReadOp::Unknown(unknown) = read_op(&bytes).unwrap() else {
         panic!("an arm beyond the schema is not interpretable");

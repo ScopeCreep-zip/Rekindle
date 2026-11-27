@@ -22,16 +22,17 @@ pub struct CallInvite {
 }
 
 impl CallInvite {
-    pub(super) fn write(&self, mut b: call_invite::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_invite::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_offer_kind(self.offer_kind);
         b.set_initiator_pubkey(&self.initiator_pubkey);
         b.set_initiator_x25519_pub(&self.initiator_x25519_pub);
         b.set_expires_at_ms(self.expires_at_ms);
         set_text_list(
-            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)),
+            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)?),
             &self.video_decode_codecs,
         );
+        Ok(())
     }
 
     pub(super) fn read(r: call_invite::Reader<'_>) -> Result<Self, CodecError> {
@@ -53,8 +54,9 @@ pub struct CallRinging {
 }
 
 impl CallRinging {
-    pub(super) fn write(&self, mut b: call_ringing::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_ringing::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
+        Ok(())
     }
 
     pub(super) fn read(r: call_ringing::Reader<'_>) -> Result<Self, CodecError> {
@@ -73,13 +75,14 @@ pub struct CallAccept {
 }
 
 impl CallAccept {
-    pub(super) fn write(&self, mut b: call_accept::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_accept::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_acceptor_x25519_pub(&self.acceptor_x25519_pub);
         set_text_list(
-            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)),
+            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)?),
             &self.video_decode_codecs,
         );
+        Ok(())
     }
 
     pub(super) fn read(r: call_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -100,9 +103,10 @@ pub struct CallClosed {
 }
 
 impl CallClosed {
-    pub(super) fn write(&self, mut b: call_closed::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_closed::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_reason(&self.reason);
+        Ok(())
     }
 
     pub(super) fn read(r: call_closed::Reader<'_>) -> Result<Self, CodecError> {
@@ -124,12 +128,13 @@ pub struct CallMediaState {
 }
 
 impl CallMediaState {
-    pub(super) fn write(&self, mut b: call_media_state::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_media_state::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_audio(self.audio);
         b.set_video(self.video);
         b.set_screen(self.screen);
         b.set_timestamp_ms(self.timestamp_ms);
+        Ok(())
     }
 
     pub(super) fn read(r: call_media_state::Reader<'_>) -> Result<Self, CodecError> {
@@ -152,10 +157,11 @@ pub struct CallReaction {
 }
 
 impl CallReaction {
-    pub(super) fn write(&self, mut b: call_reaction::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_reaction::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_emoji(&self.emoji);
         b.set_timestamp_ms(self.timestamp_ms);
+        Ok(())
     }
 
     pub(super) fn read(r: call_reaction::Reader<'_>) -> Result<Self, CodecError> {
@@ -183,18 +189,19 @@ pub struct GroupCallOffer {
 }
 
 impl GroupCallOffer {
-    pub(super) fn write(&self, mut b: group_call_offer::Builder<'_>) {
+    pub(super) fn write(&self, mut b: group_call_offer::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_offer_kind(self.offer_kind);
         b.set_initiator_pubkey(&self.initiator_pubkey);
         b.set_initiator_x25519_pub(&self.initiator_x25519_pub);
         set_text_list(
-            b.reborrow().init_participants(list_len(&self.participants)),
+            b.reborrow().init_participants(list_len(&self.participants)?),
             &self.participants,
         );
         b.set_wrapped_call_key(&self.wrapped_call_key);
         b.set_expires_at_ms(self.expires_at_ms);
         b.set_group_id(self.group_id.as_deref().unwrap_or_default());
+        Ok(())
     }
 
     pub(super) fn read(r: group_call_offer::Reader<'_>) -> Result<Self, CodecError> {
@@ -220,9 +227,10 @@ pub struct GroupCallMember {
 }
 
 impl GroupCallMember {
-    pub(super) fn write(&self, mut b: group_call_member::Builder<'_>) {
+    pub(super) fn write(&self, mut b: group_call_member::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_pubkey(&self.pubkey);
+        Ok(())
     }
 
     pub(super) fn read(r: group_call_member::Reader<'_>) -> Result<Self, CodecError> {
@@ -242,10 +250,11 @@ pub struct GroupCallParticipantLeft {
 }
 
 impl GroupCallParticipantLeft {
-    pub(super) fn write(&self, mut b: group_call_participant_left::Builder<'_>) {
+    pub(super) fn write(&self, mut b: group_call_participant_left::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_participant_pubkey(&self.participant_pubkey);
         b.set_reason(&self.reason);
+        Ok(())
     }
 
     pub(super) fn read(r: group_call_participant_left::Reader<'_>) -> Result<Self, CodecError> {
@@ -272,7 +281,7 @@ pub struct DmVideoFragment {
 }
 
 impl DmVideoFragment {
-    pub(super) fn write(&self, mut b: dm_video_fragment::Builder<'_>) {
+    pub(super) fn write(&self, mut b: dm_video_fragment::Builder<'_>) -> Result<(), CodecError> {
         b.set_stream_id(&self.stream_id);
         b.set_frame_seq(self.frame_seq);
         b.set_fragment_index(self.fragment_index);
@@ -281,6 +290,7 @@ impl DmVideoFragment {
         b.set_codec(&self.codec);
         b.set_timestamp(self.timestamp);
         b.set_chunk(&self.chunk);
+        Ok(())
     }
 
     pub(super) fn read(r: dm_video_fragment::Reader<'_>) -> Result<Self, CodecError> {

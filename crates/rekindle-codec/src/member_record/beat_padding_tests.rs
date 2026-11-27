@@ -4,7 +4,7 @@ use rekindle_utils::random::OsRandom;
 fn pack_list(bytes: &[u8]) -> usize {
     let mut builder = capnp::message::Builder::new_default();
     builder.set_root::<capnp::data::Owned>(bytes).unwrap();
-    crate::capnp_codec::pack(&builder).len()
+    crate::capnp_codec::pack(&builder).unwrap().len()
 }
 
 /// The padding's packed cost, measured against a list of the same

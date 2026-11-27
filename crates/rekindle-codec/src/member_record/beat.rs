@@ -97,7 +97,7 @@ fn encode_extras(extras: &SessionExtras) -> Result<Vec<u8>, CodecError> {
             b.set_activity(activity.as_str());
         }
     }
-    Ok(pack(&builder))
+    pack(&builder)
 }
 
 fn decode_extras(data: &[u8]) -> Result<SessionExtras, CodecError> {
@@ -200,30 +200,30 @@ pub fn beat_number_at(now_ms: u64) -> u64 {
 }
 
 impl PresenceBeat {
-    fn signing_bytes(&self, at: RecordScope<'_>, padding: &[u8]) -> Vec<u8> {
-        let mut out = at.signing_prefix(domains::PRESENCE_BEAT);
+    fn signing_bytes(&self, at: RecordScope<'_>, padding: &[u8]) -> Result<Vec<u8>, CodecError> {
+        let mut out = at.signing_prefix(domains::PRESENCE_BEAT)?;
         out.extend_from_slice(&self.seq.to_be_bytes());
         out.push(self.state.wire() as u8);
         put_lp(
             &mut out,
             self.voice_channel.as_deref().unwrap_or("").as_bytes(),
-        );
+        )?;
         out.extend_from_slice(&self.beat_number.to_be_bytes());
         match &self.extras {
             None => out.push(0),
             Some(extras) => {
                 out.push(1);
                 out.extend_from_slice(&extras.mek_generation.to_be_bytes());
-                put_lp(&mut out, &extras.sealed);
+                put_lp(&mut out, &extras.sealed)?;
             }
         }
-        put_lp(&mut out, padding);
-        out
+        put_lp(&mut out, padding)?;
+        Ok(out)
     }
 
     /// The signed, packed beat with `padding`, at whatever size it packs to.
-    fn pack_with(&self, at: RecordScope<'_>, pseudonym: &SigningKey, padding: &[u8]) -> Vec<u8> {
-        let sig = sign(pseudonym, &self.signing_bytes(at, padding));
+    fn pack_with(&self, at: RecordScope<'_>, pseudonym: &SigningKey, padding: &[u8]) -> Result<Vec<u8>, CodecError> {
+        let sig = sign(pseudonym, &self.signing_bytes(at, padding)?);
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut b = builder.init_root::<presence_beat::Builder<'_>>();
@@ -277,7 +277,7 @@ impl PresenceBeat {
         }
         let mut cost = beat_padding::MIN_COST;
         for _ in 0..beat_padding::MAX_ATTEMPTS {
-            let out = self.pack_with(at, pseudonym, &beat_padding::padding(cost, &OsRandom));
+            let out = self.pack_with(at, pseudonym, &beat_padding::padding(cost, &OsRandom))?;
             if out.len() == PRESENCE_BEAT_BYTES {
                 return Ok(out);
             }
@@ -337,7 +337,7 @@ pub fn decode_presence_beat(
     let padding = b.get_padding().map_err(|e| capnp_err(&e))?;
     verify(
         pseudonym,
-        &beat.signing_bytes(at, padding),
+        &beat.signing_bytes(at, padding)?,
         b.get_sig().map_err(|e| capnp_err(&e))?,
         "presence beat",
     )?;

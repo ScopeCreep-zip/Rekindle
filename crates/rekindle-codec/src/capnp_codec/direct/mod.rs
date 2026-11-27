@@ -55,9 +55,11 @@ use super::{capnp_err, pack, unpack_bounded, CodecError};
 pub type ClientId = [u8; 16];
 
 /// Packed bytes of a root struct built by `write`.
-fn encode_root<O: capnp::traits::Owned>(write: impl FnOnce(O::Builder<'_>)) -> Vec<u8> {
+fn encode_root<O: capnp::traits::Owned>(
+    write: impl FnOnce(O::Builder<'_>) -> Result<(), CodecError>,
+) -> Result<Vec<u8>, CodecError> {
     let mut message = capnp::message::Builder::new_default();
-    write(message.init_root::<O::Builder<'_>>());
+    write(message.init_root::<O::Builder<'_>>())?;
     pack(&message)
 }
 
@@ -190,6 +192,6 @@ fn set_text_list(mut list: capnp::text_list::Builder<'_>, items: &[String]) {
 }
 
 /// The length of a list field for `items`.
-pub(super) fn list_len<T>(items: &[T]) -> u32 {
+pub(super) fn list_len<T>(items: &[T]) -> Result<u32, CodecError> {
     super::wire_len(items.len())
 }

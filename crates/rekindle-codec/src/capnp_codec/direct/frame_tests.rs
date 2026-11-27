@@ -56,7 +56,7 @@ fn every_body_shape_round_trips() {
         frame(DmTypeId::PreKeyInit, FrameBody::PreKeyInit(last_resort)),
         frame(DmTypeId::FriendRequest, FrameBody::Sealed(sealed())),
     ] {
-        assert_eq!(DmFrame::decode(&f.encode()).unwrap(), f);
+        assert_eq!(DmFrame::decode(&f.encode().unwrap()).unwrap(), f);
     }
 }
 
@@ -81,7 +81,7 @@ fn a_body_the_carrier_does_not_name_is_refused() {
     ] {
         assert!(
             matches!(
-                DmFrame::decode(&f.encode()),
+                DmFrame::decode(&f.encode().unwrap()),
                 Err(CodecError::Deserialization(_))
             ),
             "{f:?}"
@@ -97,7 +97,7 @@ fn an_unallocated_type_id_or_a_short_key_is_refused() {
         write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
     });
     assert!(matches!(
-        DmFrame::decode(&bytes),
+        DmFrame::decode(&bytes.unwrap()),
         Err(CodecError::UnknownVariant(_))
     ));
     let bytes = encode_root::<dm_frame::Owned>(|mut root| {
@@ -105,7 +105,7 @@ fn an_unallocated_type_id_or_a_short_key_is_refused() {
         root.set_sender(&[1; 31]);
         write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
     });
-    assert!(DmFrame::decode(&bytes).is_err());
+    assert!(DmFrame::decode(&bytes.unwrap()).is_err());
 }
 
 /// G6: a frame over the message cap is refused unread, and a packed
@@ -138,12 +138,12 @@ fn the_plaintexts_round_trip() {
             sent_at_ms: u64::MAX,
             payload: vec![1, 2, 3],
         };
-        assert_eq!(DmContent::decode(&content.encode()).unwrap(), content);
+        assert_eq!(DmContent::decode(&content.encode().unwrap()).unwrap(), content);
     }
     let sealed = SealedContent {
         nonce: [9; 16],
         sent_at_ms: 1_700_000_000_000,
         payload: vec![4, 5],
     };
-    assert_eq!(SealedContent::decode(&sealed.encode()).unwrap(), sealed);
+    assert_eq!(SealedContent::decode(&sealed.encode().unwrap()).unwrap(), sealed);
 }

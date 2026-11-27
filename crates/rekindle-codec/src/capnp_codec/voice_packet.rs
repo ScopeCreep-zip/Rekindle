@@ -48,8 +48,7 @@ impl VoicePacket {
     }
 
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut root = builder.init_root::<voice_packet::Builder<'_>>();

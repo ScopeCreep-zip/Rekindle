@@ -47,18 +47,17 @@ impl TransportFeedback {
     }
 
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut root = builder.init_root::<transport_feedback::Builder<'_>>();
             root.set_reporter_key(&self.reporter_key);
             root.set_begin_seq(self.begin_seq);
             root.set_report_time_ms(self.report_time_ms);
-            let len = u32::try_from(self.arrivals.len()).unwrap_or(u32::MAX);
+            let len = crate::capnp_codec::wire_len(self.arrivals.len())?;
             let mut list = root.reborrow().init_arrivals(len);
-            for (i, a) in self.arrivals.iter().enumerate().take(len as usize) {
-                list.set(u32::try_from(i).unwrap_or(u32::MAX), *a);
+            for (i, a) in (0..len).zip(&self.arrivals) {
+                list.set(i, *a);
             }
             root.set_sig(&self.sig);
         }
