@@ -15,9 +15,9 @@ use rekindle_types::presence::{
 use super::{open_extras, seal_extras};
 use crate::deps::{SessionPresence, VoicePresenceRow};
 
-const COMMUNITY: &str = "community";
-const AT: RecordScope<'static> = RecordScope {
-    community_id: COMMUNITY,
+/// The member record our sealed extras are bound to.
+const EXTRAS_SCOPE: RecordScope<'static> = RecordScope {
+    community_id: "community",
     member_record: "VLD0:member-record",
 };
 
@@ -66,7 +66,13 @@ fn the_default_policy_seals_no_extras() {
     };
     let key = MediaEncryptionKey::from_bytes([3; 32], 1);
     assert_eq!(
-        seal_extras(&session, COMMUNITY, Some(&key), AT, &Seeded::new(1)),
+        seal_extras(
+            &session,
+            EXTRAS_SCOPE.community_id,
+            Some(&key),
+            EXTRAS_SCOPE,
+            &Seeded::new(1)
+        ),
         None
     );
 }
@@ -82,10 +88,17 @@ fn the_extras_carry_only_what_the_policy_shares() {
         },
     };
     let key = MediaEncryptionKey::from_bytes([3; 32], 1);
-    let sealed = seal_extras(&session, COMMUNITY, Some(&key), AT, &Seeded::new(1)).unwrap();
+    let sealed = seal_extras(
+        &session,
+        EXTRAS_SCOPE.community_id,
+        Some(&key),
+        EXTRAS_SCOPE,
+        &Seeded::new(1),
+    )
+    .unwrap();
     assert_eq!(sealed.mek_generation, 1);
     assert_eq!(
-        open_extras(&sealed, Some(&key), AT, &sharing_all()),
+        open_extras(&sealed, Some(&key), EXTRAS_SCOPE, &sharing_all()),
         Some(SessionExtras {
             location: None,
             activity: Some("a".repeat(MAX_ACTIVITY)),
@@ -93,7 +106,13 @@ fn the_extras_carry_only_what_the_policy_shares() {
     );
     // Without a key nothing is sealed: extras are never written in the clear.
     assert_eq!(
-        seal_extras(&session, COMMUNITY, None, AT, &Seeded::new(1)),
+        seal_extras(
+            &session,
+            EXTRAS_SCOPE.community_id,
+            None,
+            EXTRAS_SCOPE,
+            &Seeded::new(1)
+        ),
         None
     );
 }
@@ -107,16 +126,31 @@ fn the_extras_do_not_open_after_a_rotation() {
         policy: sharing_all(),
     };
     let old = MediaEncryptionKey::from_bytes([3; 32], 1);
-    let sealed = seal_extras(&session, COMMUNITY, Some(&old), AT, &Seeded::new(1)).unwrap();
-    assert!(open_extras(&sealed, Some(&old), AT, &sharing_all()).is_some());
+    let sealed = seal_extras(
+        &session,
+        EXTRAS_SCOPE.community_id,
+        Some(&old),
+        EXTRAS_SCOPE,
+        &Seeded::new(1),
+    )
+    .unwrap();
+    assert!(open_extras(&sealed, Some(&old), EXTRAS_SCOPE, &sharing_all()).is_some());
     let rotated = MediaEncryptionKey::from_bytes([4; 32], 2);
     assert_eq!(
-        open_extras(&sealed, Some(&rotated), AT, &sharing_all()),
+        open_extras(&sealed, Some(&rotated), EXTRAS_SCOPE, &sharing_all()),
         None
     );
-    assert_eq!(open_extras(&sealed, None, AT, &sharing_all()), None);
     assert_eq!(
-        open_extras(&sealed, Some(&old), AT, &PresenceSharingPolicy::default()),
+        open_extras(&sealed, None, EXTRAS_SCOPE, &sharing_all()),
+        None
+    );
+    assert_eq!(
+        open_extras(
+            &sealed,
+            Some(&old),
+            EXTRAS_SCOPE,
+            &PresenceSharingPolicy::default()
+        ),
         None
     );
 }
@@ -129,15 +163,23 @@ fn the_beat_stays_512_bytes_with_the_longest_voice_channel_and_full_extras() {
         policy: sharing_all(),
     };
     let key = MediaEncryptionKey::from_bytes([3; 32], u64::MAX);
-    let extras = seal_extras(&session, COMMUNITY, Some(&key), AT, &Seeded::new(1));
+    let extras = seal_extras(
+        &session,
+        EXTRAS_SCOPE.community_id,
+        Some(&key),
+        EXTRAS_SCOPE,
+        &Seeded::new(1),
+    );
     assert!(extras.is_some());
     let beat = PresenceBeat {
         seq: u64::MAX,
         state: BeatState::Busy,
-        voice_channel: session.active_voice_channel(COMMUNITY),
+        voice_channel: session.active_voice_channel(EXTRAS_SCOPE.community_id),
         beat_number: u64::MAX,
         extras,
     };
-    let bytes = beat.encode(AT, &SigningKey::from_bytes(&[1; 32])).unwrap();
+    let bytes = beat
+        .encode(EXTRAS_SCOPE, &SigningKey::from_bytes(&[1; 32]))
+        .unwrap();
     assert_eq!(bytes.len(), PRESENCE_BEAT_BYTES);
 }
