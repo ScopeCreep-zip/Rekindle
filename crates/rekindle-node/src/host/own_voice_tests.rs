@@ -21,7 +21,7 @@ fn session(community: &str) -> VoiceSession {
 }
 
 #[test]
-fn a_join_puts_its_channel_in_that_communitys_beat_only() {
+fn a_join_puts_its_channel_in_that_community_beat_only() {
     let voice = OwnVoice::default();
     assert!(voice.join(session(A)).is_none());
     assert_eq!(voice.active_voice_channel(A).as_deref(), Some(JOINED));
