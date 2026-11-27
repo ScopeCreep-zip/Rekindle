@@ -1,13 +1,19 @@
+import { Component, createEffect, createSignal, Show, untrack } from "solid-js";
+import { handleUpdateCommunityProfile } from "../../actions/community.actions";
+import { commands } from "../../ipc/commands";
 import { asImageKind } from "../../ipc/commands/system";
-import { Component, Show, createEffect, createSignal, untrack } from "solid-js";
+import { communityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 import { colorIntToHex, parseColorHex } from "../../utils/color";
+import {
+  colourField,
+  editedField,
+  listField,
+  refField,
+  textField,
+} from "../../utils/profile_field";
 import LoadingButton from "../common/LoadingButton";
 import Modal from "../common/Modal";
-import { communityState } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
-import { handleUpdateCommunityProfile } from "../../actions/community.actions";
-import { addToast } from "../../stores/toast.store";
-import { colourField, editedField, listField, refField, textField } from "../../utils/profile_field";
 
 interface CommunityProfileEditorProps {
   communityId: string;
@@ -182,12 +188,20 @@ const CommunityProfileEditor: Component<CommunityProfileEditorProps> = (props) =
     try {
       const ok = await handleUpdateCommunityProfile(props.communityId, {
         bio: editedField(bioDraft(), initialBio(), () => textField(bio, baseline.bio)),
-        pronouns: editedField(pronounsDraft(), initialPronouns(), () => textField(pronouns, baseline.pronouns)),
-        themeColor: editedField(themeColorDraft(), initialThemeColorHex(), () => colourField(themeColor, baseline.themeColor)),
-        badges: editedField(badgesDraft(), initialBadges(), () => listField(badges, baseline.badges)),
+        pronouns: editedField(pronounsDraft(), initialPronouns(), () =>
+          textField(pronouns, baseline.pronouns)
+        ),
+        themeColor: editedField(themeColorDraft(), initialThemeColorHex(), () =>
+          colourField(themeColor, baseline.themeColor)
+        ),
+        badges: editedField(badgesDraft(), initialBadges(), () =>
+          listField(badges, baseline.badges)
+        ),
         avatarRef: refField(avatarRefDraft(), baseline.avatarRef),
         bannerRef: refField(bannerRefDraft(), baseline.bannerRef),
-        customStatus: editedField(customStatusDraft(), initialCustomStatus(), () => textField(customStatusDraft().trim(), baseline.customStatus)),
+        customStatus: editedField(customStatusDraft(), initialCustomStatus(), () =>
+          textField(customStatusDraft().trim(), baseline.customStatus)
+        ),
         displayName: { op: "unchanged" },
       });
       if (ok) props.onClose();
@@ -202,7 +216,10 @@ const CommunityProfileEditor: Component<CommunityProfileEditorProps> = (props) =
         <label class="profile-editor-label">
           <span>Avatar</span>
           <div class="profile-editor-image-row">
-            <Show when={avatarDataUrl()} fallback={<div class="profile-editor-image-placeholder">No avatar</div>}>
+            <Show
+              when={avatarDataUrl()}
+              fallback={<div class="profile-editor-image-placeholder">No avatar</div>}
+            >
               <img class="profile-editor-avatar" src={avatarDataUrl()!} alt="Avatar preview" />
             </Show>
             <button
@@ -229,7 +246,10 @@ const CommunityProfileEditor: Component<CommunityProfileEditorProps> = (props) =
         <label class="profile-editor-label">
           <span>Banner</span>
           <div class="profile-editor-image-row">
-            <Show when={bannerDataUrl()} fallback={<div class="profile-editor-image-placeholder">No banner</div>}>
+            <Show
+              when={bannerDataUrl()}
+              fallback={<div class="profile-editor-image-placeholder">No banner</div>}
+            >
               <img class="profile-editor-banner" src={bannerDataUrl()!} alt="Banner preview" />
             </Show>
             <button
@@ -305,7 +325,12 @@ const CommunityProfileEditor: Component<CommunityProfileEditorProps> = (props) =
           />
         </label>
         <div class="profile-editor-actions">
-          <LoadingButton type="submit" loading={saving()} loadingLabel="Saving" class="profile-editor-btn">
+          <LoadingButton
+            type="submit"
+            loading={saving()}
+            loadingLabel="Saving"
+            class="profile-editor-btn"
+          >
             Save
           </LoadingButton>
           <button

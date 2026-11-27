@@ -1,32 +1,29 @@
-import { Channel } from "@tauri-apps/api/core";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import type { ShellOp } from "../commands/dto_skin_run";
-import { invoke } from "../invoke";
-import type { TransferEvent } from "../commands/dto_transfer";
+import type {
+  IntentReview,
+  LifecycleState,
+  SkinApplied,
+  SkinApplyFailure,
+  SkinTrial,
+} from "../commands/dto";
+import type { InfoviewView } from "../commands/dto_infoview";
 import type { ServersView } from "../commands/dto_servers";
+import type { ShellOp, SkinSignalSet } from "../commands/dto_skin_run";
+import type { TransferEvent } from "../commands/dto_transfer";
+import type { SettingsTab } from "../commands/types";
+import { Channel, invoke } from "../invoke";
 import type { ChatEvent, GroupDmEvent } from "./chat_events";
-import type {
-  PresenceEvent,
-  PresenceSubscriptionEvent,
-} from "./presence_events";
-import type {
-  VoiceEvent,
-  VoiceSubscriptionEvent,
-} from "./voice_events";
 import type { AnyCommunityEvent } from "./community_subscription_events";
 import type {
   NetworkStatusEvent,
   NetworkSubscriptionEvent,
+  NotificationEvent,
+  NotificationSubscriptionEvent,
   OwnRecordsPhase,
   OwnRouteClass,
   RoutePauseCause,
-  NotificationEvent,
-  NotificationSubscriptionEvent,
 } from "./notification_events";
-import type { IntentReview, LifecycleState, SkinApplied, SkinApplyFailure, SkinTrial } from "../commands/dto";
-import type { SettingsTab } from "../commands/types";
-import type { InfoviewView } from "../commands/dto_infoview";
-import type { SkinSignalSet } from "../commands/dto_skin_run";
+import type { PresenceEvent, PresenceSubscriptionEvent } from "./presence_events";
+import type { VoiceEvent, VoiceSubscriptionEvent } from "./voice_events";
 
 /// Where this window is in the host's event stream
 /// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
@@ -50,6 +47,7 @@ interface OutboundEnvelope {
 const STREAM_CHANNEL = "event-stream";
 
 type Handler = (payload: never) => void;
+export type UnlistenFn = () => void;
 
 /// Handlers by logical channel. Every `subscribe*` function registers
 /// here; the window's one backend stream feeds it.
@@ -96,7 +94,8 @@ function readCursor(): Cursor | null {
     if (raw === null) return null;
     const parsed: unknown = JSON.parse(raw);
     if (
-      typeof parsed === "object" && parsed !== null &&
+      typeof parsed === "object" &&
+      parsed !== null &&
       Number.isSafeInteger((parsed as Cursor).epoch) &&
       Number.isSafeInteger((parsed as Cursor).seq)
     ) {
@@ -179,9 +178,7 @@ export function startEventStream(reload?: () => void): Promise<void> {
   return stream;
 }
 
-export function subscribeChatEvents(
-  onEvent: (event: ChatEvent) => void,
-): Promise<UnlistenFn> {
+export function subscribeChatEvents(onEvent: (event: ChatEvent) => void): Promise<UnlistenFn> {
   return on<ChatEvent>("chat-event", (payload) => {
     onEvent(payload);
   });
@@ -193,7 +190,7 @@ export function subscribeChatEvents(
  * just the group event.
  */
 export function subscribeGroupDmEvents(
-  onEvent: (event: GroupDmEvent) => void,
+  onEvent: (event: GroupDmEvent) => void
 ): Promise<UnlistenFn> {
   return on<ChatEvent>("chat-event", (payload) => {
     if ("groupDm" in payload) onEvent(payload.groupDm);
@@ -209,16 +206,14 @@ export function subscribeGroupDmEvents(
  * Unwrapped here so callers see just the presence event.
  */
 export function subscribePresenceEvents(
-  onEvent: (event: PresenceEvent) => void,
+  onEvent: (event: PresenceEvent) => void
 ): Promise<UnlistenFn> {
   return on<PresenceSubscriptionEvent>("presence-event", (payload) => {
     onEvent(payload.presence);
   });
 }
 
-export function subscribeVoiceEvents(
-  onEvent: (event: VoiceEvent) => void,
-): Promise<UnlistenFn> {
+export function subscribeVoiceEvents(onEvent: (event: VoiceEvent) => void): Promise<UnlistenFn> {
   return on<VoiceSubscriptionEvent>("voice-event", (payload) => {
     onEvent(payload.voice);
   });
@@ -231,7 +226,7 @@ export function subscribeVoiceEvents(
  * the daemon vocabulary; `isLegacyCommunityEvent` discriminates them.
  */
 export function subscribeCommunityEvents(
-  onEvent: (event: AnyCommunityEvent) => void,
+  onEvent: (event: AnyCommunityEvent) => void
 ): Promise<UnlistenFn> {
   return on<AnyCommunityEvent>("community-event", (payload) => {
     onEvent(payload);
@@ -254,8 +249,9 @@ export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promis
  * pressed in a popup this window launched), on `skin-shell-event`.
  */
 export function subscribeSkinShell(onOp: (op: ShellOp) => void): Promise<UnlistenFn> {
-  return on<{ system: { skinShell: { window: string; op: ShellOp } } }>("skin-shell-event", (payload) =>
-    onOp(payload.system.skinShell.op),
+  return on<{ system: { skinShell: { window: string; op: ShellOp } } }>(
+    "skin-shell-event",
+    (payload) => onOp(payload.system.skinShell.op)
   );
 }
 
@@ -267,7 +263,7 @@ export function subscribeSkinShell(onOp: (op: ShellOp) => void): Promise<Unliste
 export function subscribeSkinSignals(onSignals: (set: SkinSignalSet) => void): Promise<UnlistenFn> {
   return on<{ system: { skinSignals: { window: string; set: SkinSignalSet } } }>(
     "skin-signals-event",
-    (payload) => onSignals(payload.system.skinSignals.set),
+    (payload) => onSignals(payload.system.skinSignals.set)
   );
 }
 
@@ -283,12 +279,16 @@ export function subscribeSkinSignals(onSignals: (set: SkinSignalSet) => void): P
  */
 export function subscribeServersView(onView: (view: ServersView) => void): Promise<UnlistenFn> {
   return on<{ system: { serversViewChanged: { view: ServersView } } }>("servers-event", (payload) =>
-    onView(payload.system.serversViewChanged.view),
+    onView(payload.system.serversViewChanged.view)
   );
 }
 
-export function subscribeTransfers(onTransfer: (event: TransferEvent) => void): Promise<UnlistenFn> {
-  return on<{ transfer: TransferEvent }>("transfer-event", (payload) => onTransfer(payload.transfer));
+export function subscribeTransfers(
+  onTransfer: (event: TransferEvent) => void
+): Promise<UnlistenFn> {
+  return on<{ transfer: TransferEvent }>("transfer-event", (payload) =>
+    onTransfer(payload.transfer)
+  );
 }
 
 /**
@@ -297,11 +297,11 @@ export function subscribeTransfers(onTransfer: (event: TransferEvent) => void): 
  * once it is kept, reverted or replaced, on `skin-trial-event`.
  */
 export function subscribeSkinTrial(
-  onTrial: (trial: SkinTrial | null) => void,
+  onTrial: (trial: SkinTrial | null) => void
 ): Promise<UnlistenFn> {
   return on<{ system: { skinTrialChanged: { trial: SkinTrial | null } } }>(
     "skin-trial-event",
-    (payload) => onTrial(payload.system.skinTrialChanged.trial),
+    (payload) => onTrial(payload.system.skinTrialChanged.trial)
   );
 }
 
@@ -320,11 +320,10 @@ export interface SkinApplyFailed {
  * `skin-apply-event`, after the Host logged it and reverted a skin on trial.
  */
 export function subscribeSkinApplyFailed(
-  onFailed: (failed: SkinApplyFailed) => void,
+  onFailed: (failed: SkinApplyFailed) => void
 ): Promise<UnlistenFn> {
-  return on<{ system: { skinApplyFailed: SkinApplyFailed } }>(
-    "skin-apply-event",
-    (payload) => onFailed(payload.system.skinApplyFailed),
+  return on<{ system: { skinApplyFailed: SkinApplyFailed } }>("skin-apply-event", (payload) =>
+    onFailed(payload.system.skinApplyFailed)
   );
 }
 
@@ -334,12 +333,10 @@ export function subscribeSkinApplyFailed(
  * Subscribe to this window's Infoview pushes (`SystemEvent::Infoview`,
  * plan E7.15 IV4): `infoview-event`, delivered to the asking window only.
  */
-export function subscribeInfoview(
-  onUpdated: (view: InfoviewView) => void,
-): Promise<UnlistenFn> {
+export function subscribeInfoview(onUpdated: (view: InfoviewView) => void): Promise<UnlistenFn> {
   return on<{ system: { infoview: { updated: { window: string; view: InfoviewView } } } }>(
     "infoview-event",
-    (payload) => onUpdated(payload.system.infoview.updated.view),
+    (payload) => onUpdated(payload.system.infoview.updated.view)
   );
 }
 
@@ -355,15 +352,15 @@ export interface QuickWipeChange {
  * same event.
  */
 export function subscribeQuickWipe(
-  onChange: (change: QuickWipeChange) => void,
+  onChange: (change: QuickWipeChange) => void
 ): Promise<UnlistenFn> {
   return on<{ system: { quickWipeChanged: QuickWipeChange } }>("quick-wipe-event", (payload) =>
-    onChange(payload.system.quickWipeChanged),
+    onChange(payload.system.quickWipeChanged)
   );
 }
 
 export function subscribeNotificationEvents(
-  onEvent: (event: NotificationEvent) => void,
+  onEvent: (event: NotificationEvent) => void
 ): Promise<UnlistenFn> {
   return on<NotificationSubscriptionEvent>("notification-event", (payload) => {
     onEvent(payload.notification);
@@ -379,7 +376,7 @@ export function subscribeNotificationEvents(
  * every caller.
  */
 export function subscribeNetworkStatus(
-  onEvent: (event: NetworkStatusEvent) => void,
+  onEvent: (event: NetworkStatusEvent) => void
 ): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
@@ -407,7 +404,9 @@ export function subscribeNetworkStrength(onBars: (bars: number) => void): Promis
  * RV1c): the new-route budget is spent or unreadable, so the route stays down
  * until the Host's `RouteResumed` (the callback's null). Never a silent redraw.
  */
-export function subscribeRoutePaused(onPause: (cause: RoutePauseCause | null) => void): Promise<UnlistenFn> {
+export function subscribeRoutePaused(
+  onPause: (cause: RoutePauseCause | null) => void
+): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
     if ("routePaused" in inner) onPause(inner.routePaused.cause);
@@ -417,18 +416,28 @@ export function subscribeRoutePaused(onPause: (cause: RoutePauseCause | null) =>
 
 /** Our own route of a class went down (with since and Veilid's reason) or came back up (null), plan F9-A. */
 export function subscribeOwnRouteDown(
-  onChange: (cls: OwnRouteClass, down: { sinceMs: number; reason: string } | null) => void,
+  onChange: (cls: OwnRouteClass, down: { sinceMs: number; reason: string } | null) => void
 ): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
-    if ("ownRouteDown" in inner) onChange(inner.ownRouteDown.class, { sinceMs: inner.ownRouteDown.sinceMs, reason: inner.ownRouteDown.reason });
+    if ("ownRouteDown" in inner)
+      onChange(inner.ownRouteDown.class, {
+        sinceMs: inner.ownRouteDown.sinceMs,
+        reason: inner.ownRouteDown.reason,
+      });
     else if ("ownRouteUp" in inner) onChange(inner.ownRouteUp.class, null);
   });
 }
 
 /** Own-route deaths above their baseline (`NetworkEvent::RouteDeathsAboveBaseline`, plan RV1): a warning. */
 export function subscribeRouteDeaths(
-  onDeaths: (d: { class: OwnRouteClass; deaths: number; young: number; windowSecs: number; baseline: number }) => void,
+  onDeaths: (d: {
+    class: OwnRouteClass;
+    deaths: number;
+    young: number;
+    windowSecs: number;
+    baseline: number;
+  }) => void
 ): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
@@ -442,7 +451,7 @@ export function subscribeRouteDeaths(
  * failed.
  */
 export function subscribeOwnRecords(
-  onStage: (phase: OwnRecordsPhase, error: string | null) => void,
+  onStage: (phase: OwnRecordsPhase, error: string | null) => void
 ): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
@@ -458,21 +467,16 @@ export function subscribeOwnRecords(
  * no event stream; the store is seeded via `lifecycleCurrent()` instead.
  */
 export function subscribeLifecycleEvents(
-  onState: (state: LifecycleState) => void,
+  onState: (state: LifecycleState) => void
 ): Promise<UnlistenFn> {
-  return on<{ state: LifecycleState; at_ms: number }>(
-    "lifecycle-event",
-    (payload) => {
-      onState(payload.state);
-    },
-  );
+  return on<{ state: LifecycleState; at_ms: number }>("lifecycle-event", (payload) => {
+    onState(payload.state);
+  });
 }
 
 /// Our own profile (name, avatar) changed: the Host's
 /// `PresenceEvent::SelfProfileChanged` on the presence channel.
-export function subscribeProfileUpdates(
-  onUpdate: () => void,
-): Promise<UnlistenFn> {
+export function subscribeProfileUpdates(onUpdate: () => void): Promise<UnlistenFn> {
   return on<PresenceSubscriptionEvent>("presence-event", (payload) => {
     if ("selfProfileChanged" in payload.presence) onUpdate();
   });
@@ -480,7 +484,7 @@ export function subscribeProfileUpdates(
 
 /// A review of an action the backend began (`SubscriptionEvent::IntentPending`).
 export function subscribeIntentEvents(
-  onReview: (review: IntentReview) => void,
+  onReview: (review: IntentReview) => void
 ): Promise<UnlistenFn> {
   return on<{ intentPending: IntentReview }>("intent-event", (payload) => {
     onReview(payload.intentPending);
@@ -497,7 +501,9 @@ export function subscribePairingLinkRefused(onRefused: () => void): Promise<Unli
 
 /// The open community window was asked to show a channel (plan E7.2 A: the
 /// skin's Show Voice on a community voice session), as settings switches tab.
-export function subscribeCommunityFocusChannel(onChannel: (channel: string) => void): Promise<UnlistenFn> {
+export function subscribeCommunityFocusChannel(
+  onChannel: (channel: string) => void
+): Promise<UnlistenFn> {
   return on<string>("community-focus-channel", onChannel);
 }
 

@@ -45,6 +45,7 @@
  * `@layer xfire-defaults` and `@layer sec` (`cargo xtask
  * check-theme-literals`). The `@layer a11y` overrides below read tokens. */
 @import "./theme/00-primitives.css";
+@import "./theme/00-focus.css";
 @import "./theme/00-rules.css";
 @import "./theme/01-form-primitives.css";
 @import "./theme/02-form-primitives.css";

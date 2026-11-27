@@ -18,7 +18,7 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
          (plan E7.7.3 item 4; rekindle-skin::import::pidgin; source.format {PIDGIN_FORMAT}).\n\n\
          Provenance\n  theme tree BLAKE3: {source}\n\n\
          Licence\n  The theme's palette, icons and sounds are third-party work.\n  \
-         Rekindle's MIT LICENSE does not cover this pack.\n"
+         Rekindle's MIT OR Apache-2.0 licence does not cover this pack.\n"
     );
     let _ = writeln!(s, "Themes ({} read)", read.themes.len());
     for (kind, name) in &read.themes {

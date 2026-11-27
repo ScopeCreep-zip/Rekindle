@@ -1,7 +1,7 @@
-import { Component, For, Show, createEffect, createSignal, onMount } from "solid-js";
+import { type Component, createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { sendSkinSelection } from "../../actions/skin.actions";
-import type { TransferRow, TransferState } from "../../ipc/commands/dto_transfer";
 import { loadTransfers } from "../../actions/transfer.actions";
+import type { TransferRow, TransferState } from "../../ipc/commands/dto_transfer";
 import { transfersState } from "../../stores/transfers.store";
 import { formatSize } from "../../utils/formatting";
 
@@ -27,7 +27,10 @@ function statusText(row: TransferRow): string {
 /// `onExecute`: Execute for the selected row (a skin tree runs its pack's
 /// OpenDownload; the app's own layout calls the Host's `transfer_open`).
 /// `onSelect`: the row the user selected, or null once it is gone.
-const FilesView: Component<{ onExecute: (row: TransferRow) => void; onSelect?: (row: TransferRow | null) => void }> = (props) => {
+const FilesView: Component<{
+  onExecute: (row: TransferRow) => void;
+  onSelect?: (row: TransferRow | null) => void;
+}> = (props) => {
   const [selected, setSelected] = createSignal<string | null>(null);
 
   onMount(() => {
@@ -48,7 +51,10 @@ const FilesView: Component<{ onExecute: (row: TransferRow) => void; onSelect?: (
   const select = (row: TransferRow): Promise<void> => {
     setSelected(row.attachmentId);
     props.onSelect?.(row);
-    return sendSkinSelection({ kind: "transfer", arg: { attachmentId: row.attachmentId, target: row.target } });
+    return sendSkinSelection({
+      kind: "transfer",
+      arg: { attachmentId: row.attachmentId, target: row.target },
+    });
   };
 
   return (
@@ -71,7 +77,7 @@ const FilesView: Component<{ onExecute: (row: TransferRow) => void; onSelect?: (
                   <div
                     class="files-view-row"
                     role="option"
-                    tabindex="0"
+                    tabIndex={0}
                     aria-selected={selected() === id}
                     data-state={r().state}
                     onClick={() => void select(r())}

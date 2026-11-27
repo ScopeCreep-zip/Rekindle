@@ -1,8 +1,7 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { produce } from "solid-js/store";
-import { subscribeTransfers } from "../ipc/channels";
-import type { TransferEvent } from "../ipc/commands/dto_transfer";
 import { loadTransfers } from "../actions/transfer.actions";
+import { subscribeTransfers, type UnlistenFn } from "../ipc/channels";
+import type { TransferEvent } from "../ipc/commands/dto_transfer";
 import { setTransfersState, transfersState } from "../stores/transfers.store";
 
 // File transfers (plan E7.2 G12): the Host's list, kept by its events. An
@@ -14,16 +13,20 @@ function applyTransferEvent(event: TransferEvent): void {
   if ("removed" in event) {
     const id = event.removed.attachmentId;
     setTransfersState("order", (order) => order.filter((o) => o !== id));
-    setTransfersState("rows", produce((rows) => {
-      delete rows[id];
-    }));
+    setTransfersState(
+      "rows",
+      produce((rows) => {
+        delete rows[id];
+      })
+    );
     return;
   }
-  const id = "stateChanged" in event
-    ? event.stateChanged.attachmentId
-    : "progress" in event
-      ? event.progress.attachmentId
-      : event.downloadComplete.attachmentId;
+  const id =
+    "stateChanged" in event
+      ? event.stateChanged.attachmentId
+      : "progress" in event
+        ? event.progress.attachmentId
+        : event.downloadComplete.attachmentId;
   if (!transfersState.rows[id]) {
     void loadTransfers();
     return;

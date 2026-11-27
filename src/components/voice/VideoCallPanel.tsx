@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import { useVideoCallPanel, type VideoCallPanelProps } from "./video_call/useVideoCallPanel";
 
 // Architecture §10.6 — interim video pipeline. The browser captures via
@@ -27,7 +27,9 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
   return (
     <div class="video-call-panel" classList={{ "video-call-panel-hidden": !props.visible }}>
       <Show when={vm.error()}>
-        <div class="search-panel-error" role="alert">{vm.error()}</div>
+        <div class="search-panel-error" role="alert">
+          {vm.error()}
+        </div>
       </Show>
       <div class="video-call-pip-toolbar">
         <button

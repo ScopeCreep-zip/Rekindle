@@ -14,7 +14,7 @@ Licence
   The skin art and palette are Xfire, Inc.'s own work (Info.xml's original
   author). Xfire is defunct; the Rekindle owner ruled on 2026-10-15 that
   Xfire's own assets may be used, and replaces them with the same command.
-  Rekindle's MIT LICENSE does not cover this pack.
+  Rekindle's MIT OR Apache-2.0 licence does not cover this pack.
 
 Colours (63 defined)
   ChatEditBGCG RGBA(20,20,20,0) -> token bg.input

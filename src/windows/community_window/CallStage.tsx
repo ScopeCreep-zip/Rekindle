@@ -1,11 +1,11 @@
-import { Component, For, Show } from "solid-js";
-import SkinGlyph from "../../components/common/SkinGlyph";
-import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
-import CallControlBar from "../../components/voice/call_stage/CallControlBar";
-import { useCallStage } from "../../components/voice/call_stage/useCallStage";
-import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
-import ChannelChat from "./ChannelChat";
+import { type Component, For, Show } from "solid-js";
 import { handleJoinVoice } from "../../actions/voice.actions";
+import SkinGlyph from "../../components/common/SkinGlyph";
+import CallControlBar from "../../components/voice/call_stage/CallControlBar";
+import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
+import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
+import { useCallStage } from "../../components/voice/call_stage/useCallStage";
+import ChannelChat from "./ChannelChat";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Main-pane conferencing surface for a community voice channel. When the
@@ -30,6 +30,7 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
               Voice channel — join to talk, turn on your camera, or share your screen.
             </div>
             <button
+              type="button"
               class="call-stage-join-btn"
               onClick={() => void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())}
             >
@@ -46,7 +47,10 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
                 <div class="call-stage-gallery">
                   <For each={stage.tiles()}>
                     {(tile) => (
-                      <ParticipantTile tile={tile} onSpotlight={() => stage.toggleSpotlight(tile.key)} />
+                      <ParticipantTile
+                        tile={tile}
+                        onSpotlight={() => stage.toggleSpotlight(tile.key)}
+                      />
                     )}
                   </For>
                 </div>
@@ -62,7 +66,10 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
                   <div class="call-stage-filmstrip">
                     <For each={stage.filmstrip()}>
                       {(tile) => (
-                        <ParticipantTile tile={tile} onSpotlight={() => stage.toggleSpotlight(tile.key)} />
+                        <ParticipantTile
+                          tile={tile}
+                          onSpotlight={() => stage.toggleSpotlight(tile.key)}
+                        />
                       )}
                     </For>
                   </div>

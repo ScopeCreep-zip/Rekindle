@@ -5,8 +5,9 @@
 use rekindle_channel::error::ChannelError;
 use rekindle_governance::overwrite::OverwriteTarget;
 use rekindle_governance::state::{GovernanceState, OverwriteState};
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
-use rekindle_types::permissions::{READ_HISTORY, VIEW_CHANNELS};
+use rekindle_types::permissions::{MANAGE_CHANNELS, MANAGE_ROLES, READ_HISTORY, VIEW_CHANNELS};
 use rekindle_types::subscription_events::ChannelMessageEvent;
 
 use super::channel_change_tests::{channel_events, reader, reload, EDIT_CHANNEL};
@@ -116,9 +117,42 @@ async fn history_of_a_channel_closed_to_us_is_refused() {
     let got = HostChannel::new(&host.ctx)
         .history("c1", EDIT_CHANNEL, None, 10)
         .await;
-    assert!(
-        matches!(got, Err(ChannelError::PermissionDenied(_))),
-        "{got:?}"
+    let Err(ChannelError::PermissionDenied(reason)) = got else {
+        panic!("expected a permission refusal, got {got:?}");
+    };
+    assert_eq!(
+        reason,
+        "Read Message History is turned off for you in this channel."
+    );
+}
+
+#[tokio::test]
+async fn community_permission_check_names_every_missing_bit() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _owner) = reader(&dir).await;
+    set_me(&host, &PseudonymKey([0x42; 32]));
+    let required = VIEW_CHANNELS | MANAGE_CHANNELS | MANAGE_ROLES;
+    let gov = host.governance();
+    host.ctx
+        .communities
+        .map()
+        .write()
+        .get_mut("c1")
+        .unwrap()
+        .governance_state = None;
+    assert_eq!(
+        gov.require_permission("c1", required)
+            .unwrap_err()
+            .to_string(),
+        "This community's rules have not loaded yet."
+    );
+
+    host.ctx.communities.set_governance_state("c1", closed());
+    assert_eq!(
+        gov.require_permission("c1", required)
+            .unwrap_err()
+            .to_string(),
+        "You need the Manage Channels permission. You need the Manage Roles permission."
     );
 }
 

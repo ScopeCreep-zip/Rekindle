@@ -1,16 +1,16 @@
-import { Component, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { MessageAttachment } from "../../stores/chat.store";
+import { type Component, createMemo, createSignal, Show } from "solid-js";
 import {
   handleDownloadAttachment,
   handlePinAttachment,
   handleRevealAttachment,
 } from "../../actions/community.actions";
 import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
+import type { MessageAttachment } from "../../stores/chat.store";
 import { communityState } from "../../stores/community.store";
-import { servedPermissions } from "../../utils/permissions";
 import { formatSize } from "../../utils/formatting";
+import { servedPermissions } from "../../utils/permissions";
 import type { GlyphName } from "../common/glyph_art";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface AttachmentDisplayProps {
   communityId: string;
@@ -34,7 +34,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
 
   // Pinning is a community-wide setting: the backend's base flags.
   const myPerms = createMemo((): bigint =>
-    servedPermissions(communityState.communities[props.communityId]),
+    servedPermissions(communityState.communities[props.communityId])
   );
   const canPin = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
 
@@ -45,7 +45,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
       await handleDownloadAttachment(
         props.communityId,
         props.channelId,
-        props.attachment.attachmentId,
+        props.attachment.attachmentId
       );
     } finally {
       setDownloading(false);
@@ -53,11 +53,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
   }
 
   async function handleRevealClick(): Promise<void> {
-    await handleRevealAttachment(
-      props.communityId,
-      props.channelId,
-      props.attachment.attachmentId,
-    );
+    await handleRevealAttachment(props.communityId, props.channelId, props.attachment.attachmentId);
   }
 
   async function handlePinClick(): Promise<void> {
@@ -80,6 +76,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         when={downloaded()}
         fallback={
           <button
+            type="button"
             class="attachment-card-btn"
             onClick={() => void handleDownloadClick()}
             disabled={downloading()}
@@ -91,6 +88,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         }
       >
         <button
+          type="button"
           class="attachment-card-btn"
           onClick={() => void handleRevealClick()}
           title="Show in folder"
@@ -101,6 +99,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
       </Show>
       <Show when={canPin()}>
         <button
+          type="button"
           class={`attachment-card-pin-btn ${pinned() ? "attachment-card-pin-btn-active" : ""}`}
           onClick={() => void handlePinClick()}
           title={pinned() ? "Unpin attachment" : "Pin attachment"}
