@@ -69,6 +69,7 @@ fn fact_name(f: &Fact) -> &'static str {
         Fact::SafetyNumberChanged { .. } => "safetyNumberChanged",
         Fact::KeyChanged { .. } => "keyChanged",
         Fact::MembersAffected { .. } => "membersAffected",
+        Fact::DeviceReEnrolment { .. } => "deviceReEnrolment",
         Fact::MessagesDeleted { .. } => "messagesDeleted",
         Fact::PresenceVisible => "presenceVisible",
         Fact::IpAddressLeaves { .. } => "ipAddressLeaves",
@@ -211,6 +212,7 @@ fn facts() -> Vec<Fact> {
             new_fingerprint: "4567 89ef".into(),
         },
         Fact::MembersAffected { count: 41 },
+        Fact::device_re_enrolment(7),
         Fact::MessagesDeleted { count: 1204 },
         Fact::PresenceVisible,
         Fact::IpAddressLeaves {

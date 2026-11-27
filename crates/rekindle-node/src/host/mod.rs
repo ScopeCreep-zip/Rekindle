@@ -12,6 +12,7 @@ pub mod adapters;
 pub mod api;
 pub mod audit;
 pub(crate) mod audit_alert;
+pub(crate) mod backend_hold;
 #[cfg(test)]
 mod bio_tests;
 pub mod bus_key;

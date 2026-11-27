@@ -32,6 +32,29 @@ pub(crate) async fn handle_device_enrol(
     }
 }
 
+/// Re-enrol this device (plan E3.2 S7d-keys.10): one `DeviceReEnrol` in
+/// every community this data root holds; answers each community's write.
+pub(crate) async fn handle_device_re_enrol(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let written = Box::pin(adapter(ctx).re_enrol_everywhere()).await;
+    if written.is_empty() {
+        return IpcResponse::error(409, "no community holds this device's key");
+    }
+    let rows: Vec<_> = (written.into_iter())
+        .map(|(community, written)| match written {
+            Ok(outcome) => serde_json::json!({
+                "community": community,
+                "pending": outcome == OpOutcome::Pending,
+                "heldOpId": outcome.held_op_id(),
+            }),
+            Err(e) => serde_json::json!({ "community": community, "error": e.to_string() }),
+        })
+        .collect();
+    IpcResponse::ok(&serde_json::json!({ "reEnrolled": rows }))
+}
+
 /// Retire our device key `device_key` (hex) in `anchor`.
 pub(crate) async fn handle_device_retire(
     ctx: &DaemonContext,

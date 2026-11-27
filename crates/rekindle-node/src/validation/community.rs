@@ -53,7 +53,8 @@ pub(super) fn check_lifecycle(request: &LifecycleRequest) -> Checked {
     match request {
 LifecycleRequest::CommunityList
         | LifecycleRequest::CoCreationSnapshot
-        | LifecycleRequest::CommunityViews => Ok(()),
+        | LifecycleRequest::CommunityViews
+        | LifecycleRequest::CommunityDeviceReEnrol {} => Ok(()),
 LifecycleRequest::CommunityCreate {
             name: community_name,
             description,
@@ -124,7 +125,7 @@ LifecycleRequest::CommunityPublishSuccessor { anchor, continuing } => {
             }
             keys.iter().try_for_each(|k| pseudonym(k, "continuing member"))
         }
-LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
+        LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
             community(anchor)?;
             public_key(device_key, "device key")
         }

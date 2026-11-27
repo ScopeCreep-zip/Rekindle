@@ -75,6 +75,11 @@ impl HostGovernance {
             ));
             return;
         }
+        // Our key retired by another copy (S7d-keys.9): the alert below and
+        // the re-enrolment review (S7d-keys.10).
+        if let GovernanceRuntimeEvent::OwnKeyRetired { community_id, .. } = event {
+            self.spawn_re_enrol_review(community_id);
+        }
         let Some(mapped) = self.map_event(event) else {
             tracing::debug!(?event, "governance event: no frontend counterpart");
             return;

@@ -113,6 +113,7 @@ impl HostGovernance {
                         last_seq = fact.last_seq,
                         "unlock barrier: this device's key signed past this copy (a restore)"
                     );
+                    self.raise_re_enrol(community).await;
                     return;
                 }
             }

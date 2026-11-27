@@ -252,7 +252,13 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     // neither a malformed entry nor an unendorsed device's op is ever held.
     let (ready, enrols) = match &entry {
         WriteEntry::Ready(ready) => (Some(&**ready), false),
-        WriteEntry::Built(_, kind) => (None, *kind == PendingGovKind::DeviceKey),
+        WriteEntry::Built(_, kind) => (
+            None,
+            matches!(
+                kind,
+                PendingGovKind::DeviceKey | PendingGovKind::DeviceReEnrol
+            ),
+        ),
     };
     refuse_now(deps, community_id, ready, enrols, landing, not_admitted).await?;
     // The unlock barrier (plan E3.2 S7d-keys.8): nothing is signed before
@@ -510,7 +516,8 @@ fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntime
 /// the `DeviceKey` that enrols it) carries its endorsement and is resolved
 /// where it is signed. Permission is judged in the state the op is signed
 /// on, past the barrier. `ready` is the entry when it is known now, and
-/// `enrols` marks a built `DeviceKey` (our enrolment).
+/// `enrols` marks a built `DeviceKey` or `DeviceReEnrol` (our enrolment
+/// or re-enrolment, whose new key the set does not endorse yet).
 async fn refuse_now<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,

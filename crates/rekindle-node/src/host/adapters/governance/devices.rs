@@ -42,6 +42,11 @@ impl HostGovernance {
             Ok(OwnDevice::Endorsed) => {}
             Err(error) => tracing::debug!(community, %error, "device check skipped"),
         }
+        // Re-raised at every unlock until committed (plan E3.2
+        // S7d-keys.10): the caught-up set still retires our key.
+        if self.needs_re_enrol(community) {
+            self.spawn_re_enrol_review(community);
+        }
     }
 
     /// Enrol this device in `anchor` with a fresh device key and its own

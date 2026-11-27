@@ -93,9 +93,42 @@ pub async fn enrol<D: GovernanceRuntimeDeps>(
             "this device's key is already endorsed",
         ));
     }
+    let (secret, record, owner_keypair) = mint_device(deps).await?;
+    deps.store_device_op_key(community, &secret)?;
+    let anchor = community.to_owned();
+    // The key is ours from here (the enrol answers it), but its `M(p,d)`
+    // binding is stored only once the endorsement is built, after the
+    // unlock barrier passed (plan E3.2 S7d-keys.8): the unlock's device
+    // check (`catch_up_own_device`, which stores an unendorsed key again
+    // alone) has run by then, so it never strips the binding of our own
+    // held endorsement, and the op record is always written with its own
+    // owner `K_M(p,d)` (ADR 0022 rule 3), never `K_M(p)`.
+    let build: apply::Build<D> = Box::new(move |deps: &D, on: &BuiltOn<'_>| {
+        let bound = record.record.clone();
+        let entry = new_endorsement(deps, &anchor, on, record, &secret)?;
+        deps.store_device_record(&anchor, &bound, &owner_keypair)?;
+        Ok(GovernanceEntry::DeviceKey(entry))
+    });
+    apply::write_built(
+        deps,
+        community,
+        build,
+        rekindle_types::display_catch_up::PendingGovKind::DeviceKey,
+    )
+    .await
+}
+
+/// A fresh device key and its own new `M(p,d)` record with a random owner
+/// `K_M(p,d)` (ADR 0022 rules 1-3): the enrolment's and the re-enrolment's
+/// (S7d-keys.10). Nothing is stored yet.
+///
+/// # Errors
+/// The record's creation, or an owner keypair it lacks.
+pub(crate) async fn mint_device<D: GovernanceRuntimeDeps>(
+    deps: &D,
+) -> Result<(Zeroizing<[u8; 32]>, DeviceRecord, Zeroizing<String>), GovernanceRuntimeError> {
     let mut secret = Zeroizing::new([0u8; 32]);
     deps.rng().fill(secret.as_mut_slice());
-    deps.store_device_op_key(community, &secret)?;
     let info = deps.create_record(&schema::member_record()).await?;
     deps.release_record(info.lease).await;
     let owner_keypair = Zeroizing::new(info.owner_keypair.ok_or_else(|| {
@@ -107,27 +140,7 @@ pub async fn enrol<D: GovernanceRuntimeDeps>(
         record: info.record_key,
         owner: keypair_text::public_key_text(&public),
     };
-    let anchor = community.to_owned();
-    // The key is ours from here (the enrol answers it), but its `M(p,d)`
-    // binding is stored only once the endorsement is built, after the
-    // unlock barrier passed (plan E3.2 S7d-keys.8): the unlock's device
-    // check (`catch_up_own_device`, which stores an unendorsed key again
-    // alone) has run by then, so it never strips the binding of our own
-    // held endorsement, and the op record is always written with its own
-    // owner `K_M(p,d)` (ADR 0022 rule 3), never `K_M(p)`.
-    let build: apply::Build<D> = Box::new(move |deps: &D, on: &BuiltOn<'_>| {
-        let bound = record.record.clone();
-        let entry = endorsement(deps, &anchor, on, record, &secret)?;
-        deps.store_device_record(&anchor, &bound, &owner_keypair)?;
-        Ok(entry)
-    });
-    apply::write_built(
-        deps,
-        community,
-        build,
-        rekindle_types::display_catch_up::PendingGovKind::DeviceKey,
-    )
-    .await
+    Ok((secret, record, owner_keypair))
 }
 
 /// `p`'s endorsement of this device's new key `held` for `record`, extending the
@@ -136,13 +149,13 @@ pub async fn enrol<D: GovernanceRuntimeDeps>(
 /// writer refuses what readers refuse: a key the set already endorses and
 /// a record another endorsement (or the member record) binds (rule 3's
 /// `RecordTaken`).
-fn endorsement<D: GovernanceRuntimeDeps>(
+pub(crate) fn new_endorsement<D: GovernanceRuntimeDeps>(
     deps: &D,
     community: &str,
     on: &BuiltOn<'_>,
     record: DeviceRecord,
     held: &[u8; 32],
-) -> Result<GovernanceEntry, GovernanceRuntimeError> {
+) -> Result<rekindle_types::governance::DeviceEndorsement, GovernanceRuntimeError> {
     let key = SigningKey::from_bytes(held).verifying_key().to_bytes();
     let me = crate::op_log::own_member(deps, community, on.state)?;
     let member = (me.record).ok_or(GovernanceRuntimeError::MemberRecordMissing(me.hex))?;
@@ -154,9 +167,8 @@ fn endorsement<D: GovernanceRuntimeDeps>(
     );
     let p = derive::derive_community_pseudonym(&identity, community);
     let fork = answered_fork(on, &member);
-    let e = device_writer::endorse(&p, community, &member, set, key, record, fork)
-        .map_err(|_| GovernanceRuntimeError::DeviceActRefused("the device set is full"))?;
-    Ok(GovernanceEntry::DeviceKey(e))
+    device_writer::endorse(&p, community, &member, set, key, record, fork)
+        .map_err(|_| GovernanceRuntimeError::DeviceActRefused("the device set is full"))
 }
 
 /// The fork evidence a new endorsement of our key names when built on `on`
@@ -212,18 +224,34 @@ fn retirement<D: GovernanceRuntimeDeps>(
             ));
         }
     }
+    let retired = p_retirement(deps, community, on, device_key, last_seq_of(on, device_key))?;
+    Ok(GovernanceEntry::DeviceRetired(retired))
+}
+
+/// `p`'s `DeviceRetired` of our key `device_key` above `last_seq`, at the
+/// incarnation the set `on` holds endorsed it at (rules 4, 5, 10): the
+/// retirement's and the re-enrolment's (S7d-keys.10).
+///
+/// # Errors
+/// [`GovernanceRuntimeError::DeviceActRefused`] for a key the set does not
+/// endorse under us, or no identity secret.
+pub(crate) fn p_retirement<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    on: &BuiltOn<'_>,
+    device_key: [u8; 32],
+    last_seq: u64,
+) -> Result<rekindle_types::governance::DeviceRetired, GovernanceRuntimeError> {
     let held = member_set(on, on.author)?;
     let record = (held.member_record.as_deref())
         .ok_or_else(|| GovernanceRuntimeError::MemberRecordMissing(on.author.to_hex()))?;
-    let last_seq = last_seq_of(on, device_key);
     let identity = Zeroizing::new(
         deps.identity_secret()
             .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?,
     );
     let p = derive::derive_community_pseudonym(&identity, community);
-    let retired = device_writer::retire(&p, community, record, held, device_key, last_seq)
-        .map_err(|_| GovernanceRuntimeError::DeviceActRefused("the key is not ours"))?;
-    Ok(GovernanceEntry::DeviceRetired(retired))
+    device_writer::retire(&p, community, record, held, device_key, last_seq)
+        .map_err(|_| GovernanceRuntimeError::DeviceActRefused("the key is not ours"))
 }
 
 fn readmission(

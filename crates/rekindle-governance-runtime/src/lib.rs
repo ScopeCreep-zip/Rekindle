@@ -37,6 +37,7 @@ pub mod checkpoint_state;
 pub mod checkpointing;
 pub mod deps;
 pub mod device_ops;
+pub mod device_re_enrol;
 pub mod device_signer;
 pub mod dht_hydration;
 pub mod error;
