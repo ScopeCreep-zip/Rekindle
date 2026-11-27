@@ -26,8 +26,8 @@ import { switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { decodePng } from "../../png.ts";
-import { shot } from "../../shots.ts";
+import { decodePng, type Rgba } from "../../png.ts";
+import { saveImage, shot } from "../../shots.ts";
 import { disagreements, silhouette } from "../../silhouette.ts";
 
 /**
@@ -73,6 +73,81 @@ async function settledSize(): Promise<[number, number]> {
     "the window never held its size"
   );
   return size;
+}
+
+/**
+ * The boxes the Host serves the Rekindle mark in (the brand pass replaces each
+ * Xfire logo node's art with the mark, `skin_tree/brand.rs`), and every
+ * displayed frame tile drawn inside one: no Xfire brand anywhere the user can
+ * see it, so nothing of the pack's own may sit under the mark where its glyph
+ * is transparent. A tile inside a mark's box exists only to paint that box (a
+ * full-window ground merely passes under it and is not inside), so any is a
+ * fault.
+ */
+async function frameUnderBrand(): Promise<{
+  marks: { node: string; box: number[] }[];
+  under: string[];
+}> {
+  return (await browser.execute(() => {
+    const shown = (el: Element) => {
+      const st = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return st.display !== "none" && st.visibility !== "hidden" && r.width > 0 && r.height > 0;
+    };
+    const marks = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]"))
+      .filter(
+        (el) =>
+          shown(el) &&
+          el.querySelector(":scope > svg.skin-node-glyph-brand, svg.skin-node-glyph-brand")
+      )
+      .map((el) => ({
+        node: el.getAttribute("data-skin-node") ?? "",
+        r: el.getBoundingClientRect(),
+      }));
+    const under: string[] = [];
+    Array.from(document.querySelectorAll<HTMLElement>(".skin-frame > i")).forEach((tile, slot) => {
+      if (!shown(tile) || getComputedStyle(tile).backgroundImage === "none") return;
+      const t = tile.getBoundingClientRect();
+      for (const m of marks) {
+        const inside =
+          t.left >= m.r.left - 1 &&
+          t.right <= m.r.right + 1 &&
+          t.top >= m.r.top - 1 &&
+          t.bottom <= m.r.bottom + 1;
+        if (inside) {
+          under.push(
+            `frame slot ${slot + 1} (${Math.round(t.width)}x${Math.round(t.height)}) under the mark of ${m.node}`
+          );
+          return;
+        }
+      }
+    });
+    return {
+      marks: marks.map((m) => ({
+        node: m.node,
+        box: [
+          Math.round(m.r.left),
+          Math.round(m.r.top),
+          Math.round(m.r.width),
+          Math.round(m.r.height),
+        ],
+      })),
+      under,
+    };
+  })) as { marks: { node: string; box: number[] }[]; under: string[] };
+}
+
+/** `img` cut to the CSS box `[x, y, w, h]` at device `scale`, for a reviewed shot. */
+function cropBox(img: Rgba, box: number[], scale: number): Rgba {
+  const [x, y, w, h] = box.map((v) => Math.round(v * scale));
+  const cw = Math.max(1, Math.min(w, img.width - x));
+  const ch = Math.max(1, Math.min(h, img.height - y));
+  const data = new Uint8Array(cw * ch * 4);
+  for (let row = 0; row < ch; row++) {
+    const from = ((y + row) * img.width + x) * 4;
+    data.set(img.data.subarray(from, from + cw * 4), row * cw * 4);
+  }
+  return { width: cw, height: ch, data };
 }
 
 /**
@@ -173,6 +248,55 @@ async function doubledArt(): Promise<string[]> {
   })) as string[];
 }
 
+/**
+ * One pack at its current size: its edges against the shaper's silhouette, art
+ * painted twice, frame tiles repeating tree art, and frame art under the
+ * Rekindle mark (each mark's box saved as a shot); the faults found.
+ */
+async function checkSize(pack: { name: string; file: string }, label: string): Promise<string[]> {
+  const [w, h] = await settledSize();
+  const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const scale = img.width / w;
+  const cut = silhouette(pack.file, "main", w, h, Math.round(scale * 1000));
+  const edge = Math.round(16 * scale);
+  const off = disagreements(
+    img,
+    cut,
+    [
+      [0, edge],
+      [img.width - edge, img.width],
+    ],
+    12,
+    [
+      [0, edge],
+      [img.height - edge, img.height],
+    ]
+  );
+  const doubled = await doubledArt();
+  const twice = await frameRepeatsTreeArt();
+  const brand = await frameUnderBrand();
+  for (const m of brand.marks)
+    saveImage(`${pack.file}-${label}-mark-${m.node}`, cropBox(img, m.box, scale));
+  console.log(
+    `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating tree art ${JSON.stringify(twice)}`
+  );
+  console.log(
+    `[resize-tiles] ${pack.name} ${label}: marks ${JSON.stringify(brand.marks.map((m) => m.node))}; frame under the mark ${JSON.stringify(brand.under)}`
+  );
+  await shot(`${pack.file}-${label}`);
+  const faults: string[] = [];
+  if (off.outsideDrawn + off.insideClear > 0)
+    faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
+  if (doubled.length > 0) faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
+  if (twice.length > 0)
+    faults.push(`${pack.name} ${label}: frame tiles repeat tree art: ${twice.join(", ")}`);
+  if (brand.under.length > 0)
+    faults.push(
+      `${pack.name} ${label}: frame art under the Rekindle mark: ${brand.under.join(", ")}`
+    );
+  return faults;
+}
+
 describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", function () {
   this.timeout(2_700_000);
   const ada: User = { ...newUser("resize-tiles"), displayName: "Ada" };
@@ -209,36 +333,7 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
         ];
         for (const [label, resize] of sizes) {
           await resize();
-          const [w, h] = await settledSize();
-          const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
-          const scale = img.width / w;
-          const cut = silhouette(pack.file, "main", w, h, Math.round(scale * 1000));
-          const edge = Math.round(16 * scale);
-          const off = disagreements(
-            img,
-            cut,
-            [
-              [0, edge],
-              [img.width - edge, img.width],
-            ],
-            12,
-            [
-              [0, edge],
-              [img.height - edge, img.height],
-            ]
-          );
-          const doubled = await doubledArt();
-          const twice = await frameRepeatsTreeArt();
-          console.log(
-            `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating tree art ${JSON.stringify(twice)}`
-          );
-          await shot(`${pack.file}-${label}`);
-          if (off.outsideDrawn + off.insideClear > 0)
-            faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
-          if (doubled.length > 0)
-            faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
-          if (twice.length > 0)
-            faults.push(`${pack.name} ${label}: frame tiles repeat tree art: ${twice.join(", ")}`);
+          faults.push(...(await checkSize(pack, label)));
         }
         walked.push(pack.file);
       } catch (e) {
