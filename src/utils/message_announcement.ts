@@ -17,12 +17,17 @@ export function messageAnnouncement(
     minute: "2-digit",
   });
   const sender = senderName || (message.isOwn ? "You" : "Unknown");
+  const admission = message.admission;
   const body = message.removedBy
     ? `Removed by ${removedByName()}`
-    : message.undecryptable
-      ? message.undecryptable.reasonText
-      : message.decryptionFailed
-        ? "Unable to decrypt — waiting for encryption keys"
-        : message.body;
+    : admission
+      ? admission.status === "pending"
+        ? admission.text
+        : admission.reasonText
+      : message.undecryptable
+        ? message.undecryptable.reasonText
+        : message.decryptionFailed
+          ? "Unable to decrypt — waiting for encryption keys"
+          : message.body;
   return `${sender} at ${ts}: ${body}`;
 }

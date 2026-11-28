@@ -96,6 +96,11 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
         "CommunitySetDisplayName",
         Some(IntentKind::SetCommunityDisplayName),
     ),
+    ("CommunityGetPresencePolicy", None),
+    (
+        "CommunitySetPresencePolicyField",
+        Some(IntentKind::SetPresencePolicy),
+    ),
     (
         "CommunitySetPresencePolicy",
         Some(IntentKind::SetPresencePolicy),
@@ -145,6 +150,15 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("CategoryReorder", Some(IntentKind::ReorderCategories)),
     ("ChannelSend", Some(IntentKind::SendChannelMessage)),
     ("ChannelMessageSend", Some(IntentKind::SendChannelMessage)),
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    (
+        "WebdriverPostSkippingLocalPermission",
+        Some(IntentKind::SendChannelMessage),
+    ),
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    ("WebdriverHoldGovernanceOps", None),
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    ("WebdriverReleaseGovernanceOps", None),
     ("ChannelMessages", None),
     ("ChannelMessagesBefore", None),
     ("ChannelMessageEdit", Some(IntentKind::EditChannelMessage)),
@@ -279,6 +293,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("AuditVerify", None),
     ("AuditExport", Some(IntentKind::AuditExport)),
     ("LinkOpen", Some(IntentKind::OpenExternalUrl)),
+    ("PermissionCatalogue", None),
     ("RoleList", None),
     ("RoleCreate", Some(IntentKind::CreateRole)),
     ("RoleUpdate", Some(IntentKind::EditRole)),

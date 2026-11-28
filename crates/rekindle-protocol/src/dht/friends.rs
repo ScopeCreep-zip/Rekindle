@@ -22,7 +22,7 @@ pub struct FriendList {
 /// The record could not be created, or the write failed outright.
 pub async fn create_friend_list(
     pool: &dyn RecordPort,
-) -> Result<(LeaseId, String, String, SetOutcome), ProtocolError> {
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>, SetOutcome), ProtocolError> {
     let (lease, key, keypair) = pool
         .create(&rekindle_records::schema::single(), None)
         .await?;

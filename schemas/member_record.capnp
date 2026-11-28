@@ -1,5 +1,7 @@
 @0x856a8fa1b28e4564;
 
+using Gov = import "governance_op.capnp";
+
 # A member's own DFLT(8) MemberRecord `M` (ADR 0011, plan E3.2, D15
 # subkey map): the formats of subkey 0 (card), 1 (beat) and 5 (history
 # ad). E3.3 and E3.4 extend this file; a retired field keeps its ordinal
@@ -146,7 +148,8 @@ struct HeadAdvanced {
 # the dedup key. `sealed` is the kind's entry (a JSON `ChannelRecordEntry`)
 # whose body is sealed at `rekindle-channel-body-aad-v1 ‖ anchor ‖
 # channel_id ‖ author ‖ stream_seq_le64`. `sig` is the author pseudonym's
-# over `rekindle-outbox-entry-v1 ‖ anchor ‖ chain seq ‖` every field above.
+# over `rekindle-outbox-entry-v1 ‖ anchor ‖ chain seq ‖` the entry fields
+# including its governance cut.
 struct OutboxEntry {
   prev @0 :Data;
   channelTag @1 :Data;         # 16 bytes
@@ -156,6 +159,7 @@ struct OutboxEntry {
   kind @5 :OutboxEntryKind;
   sealed @6 :Data;
   sig @7 :Data;
+  governanceCut @8 :List(Gov.OpRef); # ordered by op hash; signed
 }
 
 enum OutboxEntryKind {

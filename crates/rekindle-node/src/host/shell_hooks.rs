@@ -106,11 +106,6 @@ pub trait ShellHooks: Send + Sync {
     /// E3.5. It never mints a key (FX3).
     fn spawn_community_mek_recovery(&self, community_id: &str, requester_pseudonym: &str);
 
-    /// One presence poll of the community right after a slot grant: the
-    /// shell runs its own presence polls until they move with presence at
-    /// E3.4.
-    fn spawn_presence_poll_tick(&self, community_id: &str);
-
     /// A watched registry of the community changed: the Host decided on a
     /// refresh (read and merge the rows, never write ours, plan E3.4 S5,
     /// finding IB1c); the shell runs it over its own presence adapter until
@@ -138,6 +133,13 @@ pub trait ShellHooks: Send + Sync {
     /// it (a joiner's bootstrap bundle, a rotation's prior key) until the MEK
     /// adapters move at E3.5.
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
+
+    /// The shell's voice state (plan E3.4 S8-pre, the `channel_keys()`
+    /// pattern): its voice session's channel, which our beat carries, and
+    /// its voice roster, which the members' beats feed; nothing else (our
+    /// session and consent are the Host's). E4.1 deletes it when voice
+    /// becomes the Host's.
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence>;
 
     /// The governance runtime handed over a community's session leases:
     /// the shell holds them, watches the records and starts the community's

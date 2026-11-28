@@ -75,10 +75,12 @@ async fn race(seed: u64) -> (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, Vec<u8>)
         .await
         .unwrap();
     a.set(&record.key, 0, b"v0".to_vec(), None).await.unwrap();
-    let owner = WriterKey {
-        keypair: sim.owner_keypair(&record.key).unwrap(),
-        public: String::new(),
-    };
+    let owner = WriterKey::new(
+        String::new(),
+        rekindle_secrets::record_writer::RecordWriterSecret::from_text(
+            &sim.owner_keypair(&record.key).unwrap(),
+        ),
+    );
     b.open(
         &record.key,
         Some(&owner),

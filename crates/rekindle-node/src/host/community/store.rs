@@ -8,6 +8,9 @@
 //! overflow chain, the observed roster and the per-member roles, all on the
 //! one [`CommunityState`].
 
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+use crate::host::webdriver::GovernanceIngestHolds;
+
 use rekindle_channel::held::HeldChanges;
 use rekindle_governance_runtime::CardText;
 
@@ -49,6 +52,8 @@ pub fn new_map() -> CommunityMap {
 #[derive(Debug, Clone)]
 pub struct CommunityStore {
     map: CommunityMap,
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    pub(crate) governance_ingest_holds: GovernanceIngestHolds,
     /// The display names on members' verified cards (`M`/0), by community
     /// and pseudonym (plan E3.2).
     member_cards: Arc<RwLock<BTreeMap<(String, [u8; 32]), CardText>>>,
@@ -98,6 +103,8 @@ impl CommunityStore {
     pub fn new(map: CommunityMap) -> Self {
         Self {
             map,
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            governance_ingest_holds: GovernanceIngestHolds::default(),
             member_cards: Arc::new(RwLock::new(BTreeMap::new())),
             ring_moves: Arc::default(),
             rebuilds: Arc::default(),
@@ -395,7 +402,11 @@ impl CommunityStore {
 
     /// Set a joined community's registry owner keypair; a community not in
     /// the store is left absent.
-    pub fn set_registry_owner_keypair(&self, community_id: &str, keypair: String) {
+    pub fn set_registry_owner_keypair(
+        &self,
+        community_id: &str,
+        keypair: zeroize::Zeroizing<String>,
+    ) {
         if let Some(c) = self.map.write().get_mut(community_id) {
             c.registry_owner_keypair = Some(keypair);
         }
@@ -474,7 +485,7 @@ impl CommunityStore {
             c.slot_seed = membership.slot_seed.as_ref().map(hex::encode);
             c.mek_generation = membership.mek_generation;
             if let Some(keypair) = registry_owner_keypair {
-                c.registry_owner_keypair = Some(keypair.to_string());
+                c.registry_owner_keypair = Some(zeroize::Zeroizing::new(keypair.to_owned()));
             }
         });
     }

@@ -1,9 +1,8 @@
 //! `CommunityPresenceDeps` impl — delegation plus the recorded gaps.
 //!
 //! Methods that return empty do so for a checked reason, named at each
-//! one — not as a placeholder. One that looks like it should be empty is
-//! not: `active_voice_channel` is blocked by missing local state rather
-//! than a missing subsystem.
+//! one — not as a placeholder. Our voice channel is the Host's own record
+//! (`host::own_voice`, read through `adapters::presence::session_presence`).
 
 use rekindle_records::port::OpenIntent;
 use std::collections::{HashMap, HashSet};
@@ -12,19 +11,33 @@ use async_trait::async_trait;
 use rekindle_presence::community::MemberProfileSnapshot;
 use rekindle_presence::deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, PresenceCredentials, PresenceError,
-    SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
+    SegmentDescriptor, SelfPresenceSnapshot,
 };
 use rekindle_types::presence::{
-    EncryptedHistoryRanges, EncryptedSessionExtras, HistoryRange, MemberSession,
-    PresenceSharingPolicy, SessionExtras,
+    EncryptedHistoryRanges, EncryptedSessionExtras, HistoryRange, SessionExtras,
 };
 
 use super::DaemonPresenceAdapter;
 
 #[async_trait]
 impl CommunityPresenceDeps for DaemonPresenceAdapter {
+    fn session_presence(&self) -> std::sync::Arc<dyn rekindle_presence::SessionPresence> {
+        crate::host::adapters::presence::session_presence(&self.ctx)
+    }
+
     fn now_secs(&self) -> u64 {
         self.ctx.clock.now_secs()
+    }
+
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
+        crate::host::adapters::presence::own_session(&self.ctx, community_id)
+    }
+
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        crate::host::adapters::presence::presence_policy(&self.ctx, community_id)
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
@@ -170,22 +183,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         Self::self_presence_snapshot_impl()
     }
 
-    fn self_session(&self, _community_id: &str) -> MemberSession {
-        // Our status, from the host's own presence (plan E1.1); location
-        // and activity stay unshared (the default policy below).
-        MemberSession {
-            status: self.ctx.own_presence.status(),
-            ..MemberSession::default()
-        }
-    }
-
-    fn presence_policy(&self, _community_id: &str) -> PresenceSharingPolicy {
-        // The daemon shares liveness and nothing else. Location and
-        // activity are user-consented signals and there is no user at a
-        // keyboard here to consent.
-        PresenceSharingPolicy::default()
-    }
-
     fn sign_presence_row(&self, community_id: &str, signing_bytes: &[u8]) -> Option<Vec<u8>> {
         self.sign_presence_impl(community_id, signing_bytes)
     }
@@ -205,8 +202,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         _community_id: &str,
         _extras: &SessionExtras,
     ) -> Option<EncryptedSessionExtras> {
-        // Nothing to encrypt: `presence_policy` shares neither location
-        // nor activity.
+        // The daemon publishes policy-filtered extras in the member beat.
         None
     }
 
@@ -215,10 +211,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         _community_id: &str,
         _encrypted: &EncryptedSessionExtras,
     ) -> Option<SessionExtras> {
-        // Peers' extras are readable in principle, but the daemon has no
-        // consumer for a location or activity signal — no roster UI, no
-        // notifications. Decrypting to discard it would be spending a
-        // MEK operation for nothing.
+        // Peer locations are opened and served from verified beats.
         None
     }
 
@@ -251,20 +244,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         _emit_refreshed: bool,
     ) {
     }
-
-    fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
-        // The daemon *does* have voice IPC (`VoiceJoin` / `VoiceLeave`),
-        // so this is not "no voice engine" — it is that nothing records
-        // the session. `dispatch::presence::handle_voice_join` calls
-        // `operations::voice::join_voice`, returns the session in its
-        // IPC reply, and stores none of it; `handle_voice_leave` takes
-        // `_ctx` and tears nothing down. Until that state exists there
-        // is no honest answer here, and inventing one would put a
-        // member in a voice channel the daemon cannot leave.
-        None
-    }
-
-    fn reconcile_voice_roster(&self, _community_id: &str, _rows: Vec<VoicePresenceRow>) {}
 
     // ---------- Poll lifecycle ----------
 

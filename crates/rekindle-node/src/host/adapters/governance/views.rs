@@ -4,12 +4,13 @@
 
 use std::collections::HashMap;
 
+use rekindle_governance_runtime::origin::{OWNER_ROLE_ID, OWNER_ROLE_POSITION};
 use rekindle_types::dto::community::{
     CommunityCategoryView, CommunityChannelView, CommunityMemberView, CommunityRoleView,
     CommunityView, MemberGroup, MemberModeration,
 };
 use rekindle_types::dto::member_groups::{group_members, GroupRole};
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::presence::SessionLocation;
 
 use rekindle_skin::role_tag::SkinGrounds;
@@ -19,6 +20,14 @@ use super::HostGovernance;
 use crate::host::adapters::presence::view as beat_view;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
 
+pub(super) fn role_position_label(id: RoleId, position: u32) -> String {
+    if id == OWNER_ROLE_ID && position == OWNER_ROLE_POSITION {
+        "Always first".into()
+    } else {
+        position.to_string()
+    }
+}
+
 fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRoleView {
     CommunityRoleView {
         id: role.id.to_hex(),
@@ -27,6 +36,7 @@ fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRol
         tag_colours: rekindle_skin::role_tag::colours(role.color, shown),
         permissions: role.permissions.to_string(),
         position: role.position,
+        position_label: role_position_label(role.id, role.position),
         hoist: role.hoist,
         mentionable: role.mentionable,
         self_assignable: role.self_assignable,
@@ -247,24 +257,21 @@ pub(crate) fn removal_display(
 struct RosterOverlay {
     me: Option<String>,
     roles: Vec<RoleDefinition>,
-    /// Location and last-active per pseudonym the gossip mesh announced
-    /// online: what a beat does not carry yet. A member's status is never
-    /// read here but from the beat view (plan E3.4 premise check); E3.4
-    /// removes this once the beat view carries location and last-active.
-    gossip: HashMap<String, (Option<SessionLocation>, u64)>,
+    /// Last-active per pseudonym from the legacy gossip mesh.
+    last_active: HashMap<String, u64>,
     /// Peers' profiles, ours from our own fields.
     profiles: HashMap<String, CommunityMemberView>,
     my_location: Option<SessionLocation>,
 }
 
 fn overlay(c: &CommunityState) -> RosterOverlay {
-    let gossip = c
+    let last_active = c
         .gossip
         .as_ref()
         .map(|g| {
             g.online_members
                 .iter()
-                .map(|(pk, m)| (pk.clone(), (m.location.clone(), m.last_active)))
+                .map(|(pk, m)| (pk.clone(), m.last_active))
                 .collect()
         })
         .unwrap_or_default();
@@ -301,7 +308,7 @@ fn overlay(c: &CommunityState) -> RosterOverlay {
     RosterOverlay {
         me: c.my_pseudonym_key.clone(),
         roles: c.roles.clone(),
-        gossip,
+        last_active,
         profiles,
         my_location: c.my_session_location.clone(),
     }
@@ -435,7 +442,7 @@ impl HostGovernance {
     /// `community`'s members by display name: the stored roster, each
     /// other member's status as its beats show it (plan E3.4 S3; a founder
     /// never announces a join, so the gossip mesh never knew her online),
-    /// with the gossip overlay's location and last-active; ours from our
+    /// with its verified beat location and gossip last-active; ours from our
     /// own presence, by the rule the online count uses
     /// (`beat_view::own_shown`).
     ///
@@ -497,15 +504,23 @@ impl HostGovernance {
                 let (status, location, last_active) = if is_me {
                     (my_status.clone(), overlay.my_location.clone(), now)
                 } else {
-                    let shown = beat_view::shown(&self.ctx, community, &row.pseudonym_key);
-                    let (location, last_active) = overlay
-                        .gossip
+                    let (shown, location) = beat_view::shown_location(
+                        &self.ctx,
+                        community,
+                        &row.pseudonym_key,
+                        governance
+                            .members
+                            .get(&PseudonymKey::from_hex_lossy(&row.pseudonym_key))
+                            .map(|member| member.member_record.as_str()),
+                    );
+                    let last_active = overlay
+                        .last_active
                         .get(&row.pseudonym_key)
-                        .cloned()
+                        .copied()
                         .unwrap_or_default();
                     (
                         beat_view::shown_status(shown).to_owned(),
-                        location.filter(|_| shown.is_present()),
+                        location,
                         last_active,
                     )
                 };

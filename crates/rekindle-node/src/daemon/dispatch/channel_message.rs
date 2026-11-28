@@ -29,13 +29,51 @@ pub(crate) async fn handle_send(
     let Some((_, channel_id)) = resolve_channel(ctx, &membership.anchor, channel) else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    post(ctx, &membership.anchor, &channel_id, body, reply_to).await
+    post(
+        ctx,
+        HostChannel::new(ctx),
+        &membership.anchor,
+        &channel_id,
+        body,
+        reply_to,
+    )
+    .await
 }
 
 /// Post `body` to `channel` (a channel id; plan E3.1 E2b).
 pub(crate) async fn handle_post(
     ctx: &DaemonContext,
     state: DaemonState,
+    channel: &str,
+    body: &str,
+    reply_to: Option<String>,
+) -> IpcResponse {
+    post_to_channel(ctx, state, HostChannel::new(ctx), channel, body, reply_to).await
+}
+
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+pub(crate) async fn handle_post_skipping_local_permission(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    channel: &str,
+    body: &str,
+    reply_to: Option<String>,
+) -> IpcResponse {
+    post_to_channel(
+        ctx,
+        state,
+        HostChannel::for_post_skipping_local_permission(ctx),
+        channel,
+        body,
+        reply_to,
+    )
+    .await
+}
+
+async fn post_to_channel(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    adapter: HostChannel,
     channel: &str,
     body: &str,
     reply_to: Option<String>,
@@ -48,19 +86,19 @@ pub(crate) async fn handle_post(
     else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    post(ctx, &community_id, channel, body, reply_to).await
+    post(ctx, adapter, &community_id, channel, body, reply_to).await
 }
 
 /// The Host's channel send, on both modes, as a reply to the message at
 /// id `reply_to` when given: the post's state and id.
 async fn post(
     ctx: &DaemonContext,
+    channel: HostChannel,
     community_id: &str,
     channel_id: &str,
     body: &str,
     reply_to: Option<String>,
 ) -> IpcResponse {
-    let channel = crate::host::adapters::channel::HostChannel::new(ctx);
     match channel.send(community_id, channel_id, body, reply_to).await {
         Ok(sent) => {
             ctx.communities

@@ -1,22 +1,12 @@
 import { createMemo, createSignal } from "solid-js";
 import { typingUsers } from "../../actions/community.actions";
 import type { EditMode } from "../../components/chat/message_input/types";
-import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
-import {
-  BYPASS_SLOWMODE,
-  hasPermission,
-  MANAGE_CHANNELS,
-  MANAGE_COMMUNITY,
-  MANAGE_MESSAGES,
-  REQUEST_TO_SPEAK,
-  SEND_MESSAGES,
-  servedPermissions,
-} from "../../ipc/permissions";
+import type { ChannelCapability, CommunityCapability } from "../../ipc/commands/dto_capabilities";
 import type { Message } from "../../stores/chat.store";
 import type { ScheduledEvent, Thread } from "../../stores/community.store";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import { deniedFor } from "../../utils/denied";
+import { channelDeniedFor, deniedFor } from "../../utils/denied";
 import { formatEventCountdown as formatTimeUntilEvent } from "../../utils/time";
 
 export type RightPanel = "members" | "pins" | "threadList" | "thread" | null;
@@ -162,22 +152,27 @@ export function createCommunityWindowState() {
     return memberNames()[pseudonymKey] ?? "Member";
   }
 
-  /// What we may do here, as the backend computed it from the merged
-  /// governance (plan E3.2 S9): the active channel's effective
-  /// permissions (base plus its overwrites), else the base.
-  const myPerms = createMemo((): bigint =>
-    servedPermissions(activeCommunity(), activeChannel()?.id)
-  );
+  /// Why we may not do `cap` in the active channel (judged with its
+  /// overwrites), in the Host's words, or null (CAPR, contract PN1): the
+  /// shell checks no permission bit of its own.
+  const channelDenied = (cap: ChannelCapability): string | null =>
+    channelDeniedFor(activeCommunity(), activeChannel()?.id, cap);
 
-  const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));
-  const canManageMessages = createMemo(() => hasPermission(myPerms(), MANAGE_MESSAGES));
-  // Architecture §10.7 — stage hand-raise. The audience-side button
-  // disappears for members lacking REQUEST_TO_SPEAK; backend
-  // re-validates on the SpeakRequest envelope.
-  const canRequestToSpeak = createMemo(() => hasPermission(myPerms(), REQUEST_TO_SPEAK));
-  const canManageCommunity = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
-  const canSendMessages = createMemo(() => hasPermission(myPerms(), SEND_MESSAGES));
-  const canBypassSlowmode = createMemo(() => hasPermission(myPerms(), BYPASS_SLOWMODE));
+  const canManageChannels = createMemo(
+    () => deniedFor(activeCommunity(), "manageChannels") === null
+  );
+  const canManageMessages = createMemo(() => channelDenied("manageMessages") === null);
+  // Architecture §10.7 — stage hand-raise: always shown to the audience,
+  // disabled with the Host's reason when we may not request (never-hide);
+  // the backend re-validates on the SpeakRequest envelope.
+  const requestToSpeakDenied = createMemo(() => channelDenied("requestToSpeak"));
+  const canManageCommunity = createMemo(
+    () => deniedFor(activeCommunity(), "manageCommunity") === null
+  );
+  /// Why we may not post in the active channel, in the Host's words, or null.
+  const sendDenied = createMemo(() => channelDenied("sendMessages"));
+  const canSendMessages = createMemo(() => sendDenied() === null);
+  const canBypassSlowmode = createMemo(() => channelDenied("bypassSlowmode") === null);
 
   const gameServers = createMemo(() => {
     const id = selectedCommunityId();
@@ -332,10 +327,10 @@ export function createCommunityWindowState() {
     threadMessages,
     memberNames,
     memberName,
-    myPerms,
     canManageChannels,
     canManageMessages,
-    canRequestToSpeak,
+    requestToSpeakDenied,
+    sendDenied,
     canManageCommunity,
     canSendMessages,
     canBypassSlowmode,

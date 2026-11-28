@@ -132,6 +132,11 @@ fn unlocked_memberships(
 /// per-community runtime (its lease ids name the pool that is ending), the
 /// broadcast mesh and the bus's event source.
 pub(crate) async fn daemon_teardown(ctx: &DaemonContext) {
+    // Our voice session ends with the unlock (the quit's `Offline` beat
+    // says no channel); the next unlock starts in none.
+    if let Some(session) = ctx.own_voice.leave() {
+        tracing::info!(community = %session.community_id, "voice session ended at the lock");
+    }
     let subscriptions = ctx.subscriptions.write().take();
     if let Some(subscriptions) = subscriptions {
         subscriptions.shutdown().await;
@@ -219,12 +224,15 @@ async fn attach_client(
             return IpcResponse::error(500, format!("client not registered: {e}"));
         }
     }
-    let view = ctx.require_session(|session| rekindle_types::dto::identity::IdentityView {
-        public_key: session.identity.public_key_hex.clone(),
-        display_name: session.identity.display_name.clone(),
+    let view = ctx.require_session(|session| {
+        crate::host::identity::view(
+            session.identity.public_key_hex.clone(),
+            session.identity.display_name.clone(),
+        )
     });
     match view {
-        Ok(view) => IpcResponse::ok(&view),
+        Ok(Ok(view)) => IpcResponse::ok(&view),
+        Ok(Err(e)) => super::identity::identity_error(&e),
         Err(e) => e,
     }
 }

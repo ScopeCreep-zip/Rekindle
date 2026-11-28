@@ -1,6 +1,7 @@
 //! Voice commands: join, leave, status.
 
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_utils::text::sanitize_for_display;
 
 use crate::cli::VoiceCmd;
 use crate::helpers;
@@ -68,6 +69,7 @@ async fn watch_voice(
         .ok_or_else(|| anyhow::anyhow!("the daemon's join answer names no channel"))?
         .to_owned();
     let filter = SubscriptionFilter::categories(vec![EventCategory::Voice]);
+    let mut names = std::collections::HashMap::new();
     crate::watch::stream(client, vec![filter], mode, |event| {
         let SubscriptionEvent::Voice(voice) = event else {
             return None;
@@ -76,17 +78,39 @@ async fn watch_voice(
             Some(VoiceScope::Community { channel, .. }) if *channel == channel_id => {}
             _ => return None,
         }
-        let who = |pseudonym: &str| rekindle_client::fmt::abbreviate_key(pseudonym);
+        if mode.is_structured() {
+            return Some(String::new());
+        }
         Some(match voice {
-            VoiceEvent::Joined { pseudonym, .. } => format!("{} joined", who(pseudonym)),
-            VoiceEvent::Left { pseudonym, .. } => format!("{} left", who(pseudonym)),
+            VoiceEvent::Joined {
+                pseudonym,
+                display_name: name,
+                ..
+            } => {
+                let name = sanitize_for_display(name);
+                let line = format!("{name} joined");
+                names.insert(pseudonym.clone(), name);
+                line
+            }
+            VoiceEvent::RosterUpdated { participants, .. } => {
+                let mut roster = Vec::new();
+                for participant in participants {
+                    let name = sanitize_for_display(&participant.display_name);
+                    names.insert(participant.pseudonym_key.clone(), name.clone());
+                    roster.push(name);
+                }
+                format!("Voice roster: {}", roster.join(", "))
+            }
+            VoiceEvent::Left { pseudonym, .. } => {
+                format!("{} left", names.remove(pseudonym)?)
+            }
             VoiceEvent::MuteChanged {
                 target_pseudonym,
                 muted,
                 ..
             } => format!(
                 "{} {}",
-                who(target_pseudonym),
+                names.get(target_pseudonym)?,
                 if *muted { "muted" } else { "unmuted" }
             ),
             other => serde_json::to_string(other).unwrap_or_default(),

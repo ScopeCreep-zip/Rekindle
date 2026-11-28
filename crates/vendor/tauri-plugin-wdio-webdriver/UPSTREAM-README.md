@@ -26,7 +26,7 @@ It is **not needed** if you use the `'official'` or `'crabnebula'` driver provid
 ### Supported Platforms
 
 | Platform | Status | Backend |
-|----------|--------|---------|
+| ---------- | -------- | --------- |
 | macOS | Full support | WKWebView native APIs |
 | Windows | Full support | WebView2 native APIs |
 | Linux | Full support | WebKitGTK native APIs |
@@ -162,7 +162,7 @@ Port resolution order:
 ### Session Management
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | GET | `/status` | Server status |
 | POST | `/session` | Create session |
 | DELETE | `/session/{id}` | Delete session |
@@ -170,14 +170,14 @@ Port resolution order:
 ### Timeouts
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | GET | `/session/{id}/timeouts` | Get timeouts |
 | POST | `/session/{id}/timeouts` | Set timeouts |
 
 ### Navigation
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | GET | `/session/{id}/url` | Get current URL |
 | POST | `/session/{id}/url` | Navigate to URL |
 | GET | `/session/{id}/title` | Get page title |
@@ -188,7 +188,7 @@ Port resolution order:
 ### Elements
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | POST | `/session/{id}/element` | Find element |
 | POST | `/session/{id}/elements` | Find elements |
 | GET | `/session/{id}/element/active` | Get active element |
@@ -213,7 +213,7 @@ Port resolution order:
 ### Shadow DOM
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | GET | `/session/{id}/element/{eid}/shadow` | Get shadow root |
 | POST | `/session/{id}/shadow/{sid}/element` | Find in shadow |
 | POST | `/session/{id}/shadow/{sid}/elements` | Find all in shadow |
@@ -221,7 +221,7 @@ Port resolution order:
 ### Windows
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | GET | `/session/{id}/window` | Get window handle |
 | POST | `/session/{id}/window` | Switch to window |
 | DELETE | `/session/{id}/window` | Close window |
@@ -242,21 +242,21 @@ before a requested size is applied, including moves between displays.
 ### Frames
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | POST | `/session/{id}/frame` | Switch to frame |
 | POST | `/session/{id}/frame/parent` | Switch to parent |
 
 ### Scripts
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | POST | `/session/{id}/execute/sync` | Execute sync script |
 | POST | `/session/{id}/execute/async` | Execute async script |
 
 ### Cookies
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | GET | `/session/{id}/cookie` | Get all cookies |
 | POST | `/session/{id}/cookie` | Add cookie |
 | DELETE | `/session/{id}/cookie` | Delete all cookies |
@@ -266,7 +266,7 @@ before a requested size is applied, including moves between displays.
 ### Alerts
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | POST | `/session/{id}/alert/dismiss` | Dismiss alert |
 | POST | `/session/{id}/alert/accept` | Accept alert |
 | GET | `/session/{id}/alert/text` | Get alert text |
@@ -275,14 +275,14 @@ before a requested size is applied, including moves between displays.
 ### Actions
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | POST | `/session/{id}/actions` | Perform actions |
 | DELETE | `/session/{id}/actions` | Release actions |
 
 ### Document
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | GET | `/session/{id}/source` | Get page source |
 | GET | `/session/{id}/screenshot` | Take screenshot |
 | POST | `/session/{id}/print` | Print to PDF |
@@ -290,7 +290,7 @@ before a requested size is applied, including moves between displays.
 ## Locator Strategies
 
 | Strategy | Example |
-|----------|---------|
+| ---------- | --------- |
 | `css selector` | `#id`, `.class`, `div > p` |
 | `xpath` | `//div[@id='test']` |
 | `tag name` | `button`, `input` |

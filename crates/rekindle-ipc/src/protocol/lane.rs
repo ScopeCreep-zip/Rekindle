@@ -103,7 +103,20 @@ impl IpcRequest {
                 ("IdentityRotationDecline", Write, Authenticated)
             }
 
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            Self::WebdriverPostSkippingLocalPermission { .. } => {
+                ("WebdriverPostSkippingLocalPermission", Write, Authenticated)
+            }
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            Self::WebdriverHoldGovernanceOps { .. } => {
+                ("WebdriverHoldGovernanceOps", Write, Authenticated)
+            }
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            Self::WebdriverReleaseGovernanceOps { .. } => {
+                ("WebdriverReleaseGovernanceOps", Write, Authenticated)
+            }
             Self::Community(request) => request.class(),
+            Self::PermissionCatalogue => ("PermissionCatalogue", Query, Open),
             Self::Transfer(request) => request.class(),
             Self::LocalSearch { .. } => ("LocalSearch", Query, Authenticated),
             Self::Servers(request) => request.class(),

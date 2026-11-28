@@ -46,8 +46,16 @@
         "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
         "kind": "audio",
         "participants": [
-          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          {
+            "displayName": "aaaa aaaa",
+            "isSelf": true,
+            "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "displayName": "Bob",
+            "isSelf": false,
+            "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
         ]
       }
     }
@@ -63,8 +71,16 @@
         "isGroup": true,
         "kind": "video",
         "participants": [
-          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          {
+            "displayName": "Bob",
+            "isSelf": false,
+            "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "displayName": "cccc cccc",
+            "isSelf": true,
+            "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
         ]
       }
     }
@@ -347,6 +363,33 @@
           "reason": "damaged",
           "reasonText": "This message could not be read: it is damaged and does not open under the key it names."
         }
+      }
+    }
+  },
+  "channelMessage.postAdmissionChanged": {
+    "channelMessage": {
+      "postAdmissionChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "pending": true,
+        "row": {
+          "admission": {
+            "status": "pending",
+            "text": "Waiting to verify that this post was allowed."
+          },
+          "automodBlurred": false,
+          "body": "",
+          "decryptionFailed": false,
+          "flags": 0,
+          "id": 0,
+          "isOwn": false,
+          "sendState": "delivered",
+          "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "serverMessageId": "msg_11111111111111111111111111111111",
+          "timestamp": 1700000000000
+        },
+        "streamId": "ch_cccccccccccccccccccccccccccccccc",
+        "thread": false
       }
     }
   },
@@ -808,6 +851,7 @@
             "name": "Moderator",
             "permissions": 2251799813685247,
             "position": 1,
+            "positionLabel": "1",
             "selfAssignable": false,
             "tagColours": {
               "dark": 65280,
@@ -2630,7 +2674,7 @@
             "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
           }
         },
-        "state": "offerSent"
+        "state": "seen"
       }
     }
   },
@@ -2689,6 +2733,11 @@
   "voice.localJoined.community": {
     "voice": {
       "localJoined": {
+        "joinHandshake": "connected",
+        "mediaReady": {
+          "ready": true,
+          "reason": "ready"
+        },
         "scope": {
           "community": {
             "channel": "vc_cccccccccccccccccccccccccccccccc",
@@ -2701,6 +2750,11 @@
   "voice.localJoined.dm": {
     "voice": {
       "localJoined": {
+        "joinHandshake": "announced",
+        "mediaReady": {
+          "ready": false,
+          "reason": "handshake-announced"
+        },
         "scope": {
           "dm": {
             "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -2785,6 +2839,10 @@
           {
             "displayName": "Eve",
             "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          {
+            "displayName": "aaaa aaaa",
+            "pseudonymKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           }
         ],
         "scope": {

@@ -12,6 +12,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::display as dt;
 use rekindle_types::dto::channel_message::ChannelMessageView;
 use rekindle_types::dto::community::CommunityMemberView;
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
 
 use super::super::action::{Action, CommandResult, ToastLevel};
 use super::App;
@@ -201,6 +202,8 @@ impl App {
 
     pub(crate) fn load_community_info(&self, community: &str) {
         self.load_community_members(community);
+        self.load_community_presence_policy(community);
+        self.load_permission_catalogue();
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         let community = community.to_string();
@@ -225,6 +228,60 @@ impl App {
                     }
                 },
                 Err(e) => report_failure(&tx, "community info", e),
+            }
+        });
+    }
+
+    fn load_community_presence_policy(&self, community: &str) {
+        use rekindle_ipc::protocol::SettingsRequest;
+
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        let community = community.to_owned();
+        tokio::spawn(async move {
+            let request = IpcRequest::Community(CommunityRequest::Settings(
+                SettingsRequest::CommunityGetPresencePolicy {
+                    community: community.clone(),
+                },
+            ));
+            match client.request_ok(request).await {
+                Ok(value) => match serde_json::from_value(value) {
+                    Ok(policy) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::CommunityPresencePolicyLoaded { community, policy },
+                        )));
+                    }
+                    Err(error) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "community presence policy parse".into(),
+                            error: error.to_string(),
+                        });
+                    }
+                },
+                Err(error) => report_failure(&tx, "community presence policy", error),
+            }
+        });
+    }
+
+    fn load_permission_catalogue(&self) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.request_ok(IpcRequest::PermissionCatalogue).await {
+                Ok(value) => match serde_json::from_value::<PermissionCatalogue>(value) {
+                    Ok(catalogue) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::PermissionCatalogueLoaded(catalogue),
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "permission catalogue parse".into(),
+                            error: e.to_string(),
+                        });
+                    }
+                },
+                Err(e) => report_failure(&tx, "permission catalogue", e),
             }
         });
     }

@@ -42,6 +42,7 @@ export async function hydrateState(): Promise<void> {
       setAuthState({
         isLoggedIn: true,
         publicKey: identity.publicKey,
+        fingerprint: identity.fingerprint,
         displayName: identity.displayName,
         avatarUrl,
         status: presence.status as UserStatus,

@@ -1,11 +1,35 @@
 //! The Host's shell hooks: the stages a shell hears, the requests it refuses and
 //! the gossip the Host routes through it (split from `runtime_tests.rs`).
 
-use super::*;
+use std::sync::Arc;
+
+use rekindle_ipc::message::SecurityLevel;
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::{Caller, ConnId, HostApi as _};
+
+use super::{create_ann, offline_host, offline_host_with, seed_registry_community, status_of};
+use crate::daemon::DaemonState;
+use crate::host::{shell_hooks, Host};
 
 /// The hooks a test shell records, in order.
 #[derive(Default)]
 struct Recorder(parking_lot::Mutex<Vec<String>>);
+
+/// The test shells hold no voice session.
+struct NoVoice;
+
+impl rekindle_presence::SessionPresence for NoVoice {
+    fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
+        None
+    }
+
+    fn reconcile_voice_roster(
+        &self,
+        _community_id: &str,
+        _rows: Vec<rekindle_presence::VoicePresenceRow>,
+    ) {
+    }
+}
 
 /// A key reader over an empty cache: the test shells hold no keys.
 fn empty_channel_keys() -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
@@ -43,7 +67,6 @@ impl shell_hooks::ShellHooks for Recorder {
     fn spawn_departure_rotation(&self, _community_id: &str, departed: &str) {
         self.0.lock().push(format!("rotation {departed}"));
     }
-    fn spawn_presence_poll_tick(&self, _community_id: &str) {}
     async fn presence_refresh(&self, _community_id: &str) {}
 
     fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
@@ -61,6 +84,10 @@ impl shell_hooks::ShellHooks for Recorder {
 
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
         empty_channel_keys()
+    }
+
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::new(NoVoice)
     }
 
     async fn community_records_ready(
@@ -220,7 +247,6 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn own_gossip_signed(&self, _community_id: &str, _sender: &str, _dedup_key: &str) {}
         fn community_left(&self, _community_id: &str) {}
         fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
-        fn spawn_presence_poll_tick(&self, _community_id: &str) {}
         async fn presence_refresh(&self, _community_id: &str) {}
 
         fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
@@ -238,6 +264,10 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
 
         fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
             empty_channel_keys()
+        }
+
+        fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+            Arc::new(NoVoice)
         }
 
         async fn community_records_ready(

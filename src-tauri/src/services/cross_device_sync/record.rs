@@ -14,16 +14,27 @@ use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
 use rekindle_vault::typed::owner_keys::{OwnerEntry, OwnerKey};
+use zeroize::Zeroizing;
 
 /// Lightweight handle used by the rest of `cross_device_sync` to read
 /// and write the personal record. Cloned freely.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PersonalSyncRecordHandle {
     /// The identity whose record this is; remote changes apply to its rows.
     pub owner_key: String,
     pub record_key: String,
-    pub owner_keypair_hex: String,
+    pub(super) owner_keypair_hex: Zeroizing<String>,
     pub device_id: String,
+}
+
+impl std::fmt::Debug for PersonalSyncRecordHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PersonalSyncRecordHandle")
+            .field("owner_key", &self.owner_key)
+            .field("record_key", &self.record_key)
+            .field("device_id", &self.device_id)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Idempotent: returns the existing handle if one is already on disk,
@@ -93,7 +104,9 @@ pub async fn open_personal_sync_record(
     let device_id = match row {
         Ok(Some((record_key, device_id))) if record_key == entry.record_key => device_id,
         Ok(_) => {
-            tracing::warn!("personal sync: the vault names another record than the identity row; the row follows the vault");
+            tracing::warn!(
+                "personal sync: the vault names another record than the identity row; the row follows the vault"
+            );
             let (ok, key) = (owner_key.clone(), entry.record_key.clone());
             let minted = generate_device_id();
             match db_call(pool, move |conn| {
@@ -130,7 +143,7 @@ async fn persist_to_identity(
     pool: &Db,
     owner_key: &str,
     record_key: &str,
-    owner_keypair_hex: &str,
+    owner_keypair_hex: &Zeroizing<String>,
     minted_device_id: &str,
 ) -> Result<String, String> {
     state_helpers::persist_owner(
@@ -138,7 +151,7 @@ async fn persist_to_identity(
         OwnerKey::PersonalSync,
         &OwnerEntry {
             record_key: record_key.to_string(),
-            keypair: owner_keypair_hex.to_string(),
+            keypair: owner_keypair_hex.clone(),
         },
     )?;
     let owner_owned = owner_key.to_string();

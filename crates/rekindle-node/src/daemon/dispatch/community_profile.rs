@@ -56,11 +56,11 @@ pub(crate) async fn handle_set_display_name(
 }
 
 /// Make `policy` our presence sharing consent in the community.
-fn handle_set_presence_policy(
+async fn handle_set_presence_policy(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    policy: rekindle_types::presence::PresenceSharingPolicy,
+    update: impl FnOnce(&mut rekindle_types::presence::PresenceSharingPolicy) + Send + 'static,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -69,9 +69,12 @@ fn handle_set_presence_policy(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).set_presence_policy(&membership.anchor, policy) {
+    match adapter(ctx)
+        .edit_presence_policy(&membership.anchor, update)
+        .await
+    {
         Ok(()) => IpcResponse::ok(&()),
-        Err(e) => IpcResponse::error(400, format!("presence policy: {e}")),
+        Err(e) => IpcResponse::error(500, format!("presence policy: {e}")),
     }
 }
 
@@ -181,7 +184,25 @@ pub(crate) async fn route(
             display_name,
         } => handle_set_display_name(ctx, state, &community, display_name).await,
         SettingsRequest::CommunitySetPresencePolicy { community, policy } => {
-            handle_set_presence_policy(ctx, state, &community, policy)
+            handle_set_presence_policy(ctx, state, &community, move |current| *current = policy)
+                .await
+        }
+        SettingsRequest::CommunitySetPresencePolicyField { community, field } => {
+            handle_set_presence_policy(ctx, state, &community, move |policy| field.apply(policy))
+                .await
+        }
+        SettingsRequest::CommunityGetPresencePolicy { community } => {
+            if !state.can_query() {
+                return state_error(state, "query");
+            }
+            let membership = match ctx.resolve_community(&community) {
+                Ok(membership) => membership,
+                Err(error) => return error,
+            };
+            crate::host::adapters::presence::stored_policy(ctx, &membership.anchor).map_or_else(
+                || IpcResponse::error(404, "community presence policy not found"),
+                |policy| IpcResponse::ok(&policy),
+            )
         }
         SettingsRequest::CommunitySetAvatar {
             community,

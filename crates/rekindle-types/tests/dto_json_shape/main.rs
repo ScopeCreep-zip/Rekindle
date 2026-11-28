@@ -11,6 +11,7 @@ mod json;
 mod lobby;
 mod local_search;
 mod onboarding;
+mod presence;
 mod servers;
 mod skin;
 mod thread;
@@ -18,8 +19,10 @@ mod thread;
 use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
+use rekindle_types::dto::channel_message::{PostAdmission, PostRefusal};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+    CommunityRoleView, RoleTagColours,
 };
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -27,6 +30,7 @@ use rekindle_types::dto::friends::{
 };
 use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
 use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, NotJoinableReason};
@@ -83,9 +87,21 @@ fn samples() -> Map<String, Value> {
     let mut add = |id: &str, value: Value| {
         assert!(out.insert(id.to_owned(), value).is_none(), "duplicate {id}");
     };
+    presence::samples(&mut add);
+    add(
+        "channel.admission.pending",
+        to(PostAdmission::Pending {
+            text: "Waiting to verify that this post was allowed.".into(),
+        }),
+    );
+    add(
+        "channel.admission.refused",
+        to(PostAdmission::from(PostRefusal::MissingPermission)),
+    );
     add(
         "channel.message",
         to(rekindle_types::dto::channel_message::ChannelMessageView {
+            admission: None,
             id: 7,
             sender_id: pk('b'),
             body: "hello channel".into(),
@@ -147,6 +163,7 @@ fn samples() -> Map<String, Value> {
         "identity.summary",
         to(IdentitySummary {
             public_key: pk('a'),
+            fingerprint: "aaaa aaaa".into(),
             display_name: "Ann".into(),
             created_at: 1_700_000_000_000,
         }),
@@ -155,6 +172,7 @@ fn samples() -> Map<String, Value> {
         "identity.view",
         to(IdentityView {
             public_key: pk('a'),
+            fingerprint: "aaaa aaaa".into(),
             display_name: "Ann".into(),
         }),
     );
@@ -162,6 +180,7 @@ fn samples() -> Map<String, Value> {
         "identity.shown",
         to(Some(IdentityShown {
             public_key: pk('a'),
+            fingerprint: "aaaa aaaa".into(),
             display_name: "Ann".into(),
             profile_dht_key: Some(format!("VLD0:{}", "p".repeat(43))),
             mailbox_dht_key: Some(format!("VLD0:{}", "m".repeat(43))),
@@ -260,6 +279,7 @@ fn samples() -> Map<String, Value> {
             ..Preferences::default()
         }),
     );
+    add("permissionCatalogue", to(PermissionCatalogue::current()));
     friend_samples(&mut add);
     onboarding::samples(&mut add);
     skin::samples(&mut add);
@@ -427,6 +447,25 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add(
+        "community.roleView",
+        to(CommunityRoleView {
+            id: "ff".repeat(16),
+            name: "Owner".into(),
+            color: 0xc1_7c_17,
+            tag_colours: RoleTagColours {
+                dark: 0xc1_7c_17,
+                light: 0x99_61_12,
+            },
+            permissions: rekindle_types::permissions::ADMINISTRATOR.to_string(),
+            position: u32::MAX,
+            position_label: "Always first".into(),
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+        }),
+    );
+    add(
         "community.banView",
         to(CommunityBanView {
             pseudonym_key: pk('b'),
@@ -503,4 +542,27 @@ fn dtos_round_trip() {
         verified,
         AuditVerified::Broken { at: Some(7), .. }
     ));
+}
+
+#[test]
+fn post_admission_round_trips() {
+    let samples = samples();
+    for id in ["channel.admission.pending", "channel.admission.refused"] {
+        let wire = &samples[id];
+        let decoded: PostAdmission = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(&to(decoded), wire);
+    }
+}
+
+#[test]
+fn every_post_refusal_has_text() {
+    for reason in [
+        PostRefusal::MissingCut,
+        PostRefusal::NotMember,
+        PostRefusal::TimedOut,
+        PostRefusal::UnknownStream,
+        PostRefusal::MissingPermission,
+    ] {
+        assert!(!reason.text().trim().is_empty(), "{reason:?}");
+    }
 }

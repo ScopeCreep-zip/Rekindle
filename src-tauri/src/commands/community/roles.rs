@@ -6,6 +6,7 @@
 use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::display::RoleDisplay;
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::governance::ExclusionGroupEdit;
 use tauri::State;
@@ -15,6 +16,14 @@ use crate::state::SharedState;
 
 /// What a role action answers when it ran.
 type Ran = Done<serde_json::Value>;
+
+/// The Host's static role-editor permission catalogue.
+#[tauri::command]
+pub async fn get_permission_catalogue(
+    state: State<'_, SharedState>,
+) -> Result<Done<PermissionCatalogue>, CommandError> {
+    host_call::call(&state, IpcRequest::PermissionCatalogue).await
+}
 
 /// The community's live roles (`IpcRequest::Community(CommunityRequest::RoleList)`).
 #[tauri::command]
@@ -43,7 +52,7 @@ pub async fn create_role(
     self_assignable: bool,
     exclusion_group: Option<String>,
     state: State<'_, SharedState>,
-) -> Result<Done<u32>, CommandError> {
+) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleCreate {

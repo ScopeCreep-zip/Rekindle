@@ -57,6 +57,7 @@ pub use routes::{
     call_route_blob, friend_host, import_route_blob, message_route_blob, on_dead_remote_routes,
     peer_label, peer_route, route_imports, route_send_failed,
 };
+pub(crate) use voice::voice_session_state_for;
 pub use voice::{
     current_voice_scope, media_live_peers, media_roster_for, note_media_live,
     set_voice_engine_deafened, set_voice_engine_muted, voice_engine_present, voice_media,

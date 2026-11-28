@@ -77,6 +77,7 @@ pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;
 mod own_records;
+pub(crate) mod own_voice;
 mod owned_record;
 pub mod policy;
 #[cfg(test)]
@@ -104,7 +105,7 @@ pub mod undo;
 pub(crate) mod unlock;
 pub(crate) mod unlocked;
 #[cfg(all(feature = "webdriver-test", debug_assertions))]
-mod webdriver;
+pub(crate) mod webdriver;
 
 #[cfg(test)]
 pub(crate) mod fixture;

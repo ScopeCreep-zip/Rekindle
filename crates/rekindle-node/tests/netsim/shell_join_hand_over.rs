@@ -36,7 +36,6 @@ impl ShellHooks for Shell {
     fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
     fn on_governance_projected(&self, _community_id: &str, _projected: &GovernanceProjected) {}
     fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
-    fn spawn_presence_poll_tick(&self, _community_id: &str) {}
     async fn presence_refresh(&self, _community_id: &str) {}
     fn push_onboarding_complete_to_sync(&self, _community_id: &str) {}
     fn on_mek_installed(
@@ -54,6 +53,9 @@ impl ShellHooks for Shell {
             )),
             rekindle_vault::new_handle(),
         )
+    }
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::new(crate::sim_session_presence::SimSessionPresence::default())
     }
     async fn community_records_ready(
         &self,

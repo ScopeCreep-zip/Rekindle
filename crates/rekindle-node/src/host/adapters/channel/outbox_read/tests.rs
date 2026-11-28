@@ -19,7 +19,34 @@ use super::{outbox_stream, Before, OutboxRead, OutboxSink, Standing};
 use crate::host::adapters::channel::HostChannel;
 use crate::host::runtime::tests::channel_change_tests::{EDIT_CHANNEL, TEXT_KEY};
 use crate::host::runtime::tests::channel_gap_tests::with_channel;
-use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_community};
+use crate::host::runtime::tests::{
+    create_ann, offline_host, seed_governance, seed_registry_community, signed_chain,
+    CREATOR_RECORD,
+};
+use rekindle_types::governance::{GovernanceEntry, OpRef};
+use rekindle_types::id::ChannelId;
+
+fn post_governance(signing: &SigningKey) -> Vec<rekindle_governance_runtime::op_log::HeldOp> {
+    signed_chain(
+        "c1",
+        signing,
+        CREATOR_RECORD,
+        vec![GovernanceEntry::ChannelCreated {
+            channel_id: ChannelId::from_hex(EDIT_CHANNEL).unwrap(),
+            name: "general".into(),
+            channel_type: "text".into(),
+            category_id: None,
+            position: 0,
+            parent_voice_channel_id: None,
+        }],
+    )
+}
+
+async fn pin_post_governance(host: &crate::host::Host, owner: &str) {
+    let signing = SigningKey::from_bytes(&[6; 32]);
+    let cert = seed_governance(host, owner, "c1", &signing, &post_governance(&signing)).await;
+    host.ctx.communities.set_genesis_cert("c1", cert);
+}
 
 /// The author's first outbox entry: its post "hello" in `EDIT_CHANNEL`,
 /// sealed under generation 1 of the community key and signed at chain
@@ -51,6 +78,16 @@ fn split_entry(
         stream_seq: 1,
     };
     let entry = OutboxEntry {
+        governance_cut: post_governance(signing)
+            .into_iter()
+            .map(|op| OpRef {
+                op_hash: op.hash,
+                author: op.author,
+                author_record: op.author_record,
+                author_seq: op.seq,
+                device_key: op.device_key,
+            })
+            .collect(),
         prev: None,
         channel_tag: channel_tag(&TEXT_KEY, EDIT_CHANNEL),
         stream_seq: 1,
@@ -88,6 +125,7 @@ async fn an_entry_before_the_first_key_is_held_and_a_re_read_applies_it() {
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
+    pin_post_governance(&host, &owner).await;
     (host.ctx.communities).set_governance_state("c1", with_channel());
     // The chain's first entry links to nothing, so the port is not read.
     let (sim, mut nodes) = rekindle_netsim::Netsim::nodes(1, 89);
@@ -150,6 +188,7 @@ async fn a_post_whose_leave_merged_during_its_judgement_is_held_not_passed() {
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
+    pin_post_governance(&host, &owner).await;
     let signing = SigningKey::from_bytes(&[6; 32]);
     let author = signing.verifying_key().to_bytes();
     // Departed: its member record known, its membership gone, no departure
@@ -213,6 +252,7 @@ async fn keyed_reader(
     let host = offline_host(dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
+    pin_post_governance(&host, &owner).await;
     let mut state = with_channel();
     state.mek_generation = converged;
     (host.ctx.communities).set_governance_state("c1", state);
@@ -395,6 +435,7 @@ async fn a_post_read_before_its_channel_merged_is_shown_once_the_channel_merges(
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
+    pin_post_governance(&host, &owner).await;
     let mut before = with_channel();
     before.channels.clear();
     (host.ctx.communities).set_governance_state("c1", before);

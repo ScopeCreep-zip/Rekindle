@@ -54,7 +54,7 @@ windows are created at runtime by `src-tauri/src/windows/`. Plugins
 are registered in this order:
 
 | Order | Plugin | Rationale |
-|-------|--------|-----------|
+| ------- | -------- | ----------- |
 | 1 | `single-instance` | Must be first — prevents duplicate processes; deep links re-route to existing instance |
 | 2 | `opener` | Opens confirmed https links (`open_external_url`) and reveals downloads, from Rust; its JS link interception is off |
 | 3 | `dialog` | Native file and confirmation dialogs, from Rust |
@@ -84,14 +84,14 @@ Notable absences:
 Registered in `setup()` so the handler closes over `SharedState`.
 
 | Combo | Action |
-|-------|--------|
+| --- | --- |
 | `Ctrl+Shift+X` (`Cmd+Shift+X` on macOS) | Toggle buddy list visibility |
 | `Ctrl+Shift+M` (`Cmd+Shift+M` on macOS) | Toggle voice mute |
 
 ## IPC Patterns
 
 | Pattern | Direction | Mechanism |
-|---------|-----------|-----------|
+| --- | --- | --- |
 | Commands | Frontend → Rust | `invoke()` / `#[tauri::command]` |
 | Events | Rust → Frontend | `event_dispatch::emit_*()` → `listen()` |
 
@@ -108,7 +108,7 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 `src-tauri/src/commands/`:
 
 | Module | Approx commands | Highlights |
-|--------|---------|-----------|
+| -------- | --------- | ----------- |
 | `auth.rs` | 6 | `create_identity`, `login`, `logout`, `list_identities`, `delete_identity`, `get_identity` |
 | `chat.rs` | 5 | `send_message`, `resend_message`, `send_typing`, `get_message_history`, `mark_read` |
 | `friends.rs` | 23 | Add / remove / accept / reject, groups, invites, block / unblock |
@@ -182,7 +182,7 @@ domain service spawned after login. The directory uses a deliberate
 high-level layout:
 
 | Surface | Path | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | Veilid | `services/veilid/{lifecycle,app_message,network,dht_watch,control_*}` | Node lifecycle, dispatch loop, route refresh, status |
 | Messaging | `services/message_service/`, `messaging_runtime.rs`, `chat_runtime.rs` | Inbound friend `AppMessage` ingest, outbound envelope sign / dispatch |
 | Friends | `services/friend_runtime/`, `friendship.rs` | Friend list, inbox-scan coordinator wiring |
@@ -226,7 +226,7 @@ delegates:
 Windows are created via helper functions in `src-tauri/src/windows.rs`:
 
 | Function | Window | Behavior |
-|----------|--------|----------|
+| ---------- | -------- | ---------- |
 | `open_login()` | Login | Destroys existing, supports `?account=` preselect |
 | `open_buddy_list()` | Buddy list | Destroys existing, narrow vertical (320 × 650) |
 | `open_chat_window()` | Chat | Show existing or create new: a `ChatTarget::Peer` labels `chat-{key prefix}`, a `ChatTarget::Group` `chat-{record key prefix}` |

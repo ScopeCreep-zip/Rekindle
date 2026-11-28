@@ -1,6 +1,7 @@
-//! Journal replay and standing events for windows as they subscribe.
+//! Journal replay and standing snapshots for subscribing windows.
 
-use super::{OutboundEnvelope, WebviewEvent};
+use crate::event_dispatch::WebviewEvent;
+use crate::event_router::OutboundEnvelope;
 
 /// A reloading window's replay from `from` (plan D3.2): the journaled
 /// events after it that were addressed to `label`, then `Resumed`; or

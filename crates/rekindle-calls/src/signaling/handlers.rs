@@ -11,15 +11,9 @@
 
 use rekindle_codec::capnp_codec::direct::{CallClosed, CallRinging, DirectBody};
 
-use crate::signaling::deps::CallSignalingDeps;
+use crate::signaling::deps::{peer_shown_name, CallSignalingDeps};
 use crate::signaling::event::CallSignalEvent;
 use crate::state::{CallKind, CallState, CallStatus};
-
-/// Truncate a hex pubkey for display when no friend display name is
-/// known. One implementation, shared with the src-tauri adapter's
-/// `emit_event` mappings — the crate root's doc comment already said it
-/// was public for exactly that reason.
-use crate::short_pubkey_helper as short_pubkey;
 
 /// Decoded `CallInvite` wire fields for [`handle_incoming_invite`].
 /// Borrows the envelope-owned strings/bytes so dispatch passes them
@@ -31,9 +25,6 @@ pub struct IncomingInvite<'a> {
     pub call_id: &'a str,
     /// Wire offer kind: `0` = audio, `1` = video.
     pub offer_kind: u8,
-    /// Initiator's Ed25519 identity pubkey (hex), used for display
-    /// fallback.
-    pub initiator_pubkey: &'a str,
     /// Initiator's X25519 ECDH public key (must be 32 bytes).
     pub initiator_x25519_pub: &'a [u8],
     /// Invite expiry, ms since epoch.
@@ -63,16 +54,14 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
         sender_hex,
         call_id,
         offer_kind,
-        initiator_pubkey,
         initiator_x25519_pub,
         expires_at_ms,
         video_decode_codecs,
     } = invite;
     let kind = CallKind::from_u8(offer_kind).unwrap_or(CallKind::Audio);
-    let display_name = if deps.friend_display_name(sender_hex).is_empty() {
-        short_pubkey(initiator_pubkey)
-    } else {
-        deps.friend_display_name(sender_hex)
+    let Ok(display_name) = peer_shown_name(deps, sender_hex) else {
+        tracing::warn!(call = %call_id, "CallInvite with malformed sender key");
+        return;
     };
 
     if initiator_x25519_pub.len() != 32 {
@@ -193,6 +182,11 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         (secret, call.peer_pubkey.clone(), call.kind)
     };
 
+    let Ok(display_name) = peer_shown_name(deps, &peer_pubkey) else {
+        tracing::warn!(call = %call_id, "CallAccept with malformed sender key");
+        return;
+    };
+
     // Plan CE3: the answer settles our invite's outbox row.
     deps.settle_call_invite(call_id, true).await;
 
@@ -261,17 +255,10 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     deps.emit_event(CallSignalEvent::CallConnected {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.clone(),
+        peer_display_name: display_name.clone(),
         kind,
     });
     deps.present_active_call(call_id);
-    let display_name = {
-        let name = deps.friend_display_name(&peer_pubkey);
-        if name.is_empty() {
-            crate::short_pubkey_helper(&peer_pubkey)
-        } else {
-            name
-        }
-    };
     deps.emit_event(CallSignalEvent::ConversationFocusRequested {
         peer_public_key: peer_pubkey,
         peer_display_name: display_name,

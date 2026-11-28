@@ -7,6 +7,10 @@
 //! empty. The test below keeps the tables true to `invoke.rs` and the
 //! command table.
 
+mod shell_local;
+
+pub use shell_local::SHELL_LOCAL;
+
 /// How a Host-call command reaches the Host. E4.1 adds `MediaUp`, the
 /// client→Host encoded-media lane (`HostApi::media_up`), with its first
 /// command.
@@ -92,6 +96,18 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     (
         "set_share_game_totals",
         HostCall::Request("SetShareGameTotals"),
+    ),
+    (
+        "get_presence_policy",
+        HostCall::Request("CommunityGetPresencePolicy"),
+    ),
+    (
+        "set_presence_policy",
+        HostCall::Request("CommunitySetPresencePolicy"),
+    ),
+    (
+        "set_presence_policy_field",
+        HostCall::Request("CommunitySetPresencePolicyField"),
     ),
     ("set_game_detection", HostCall::Request("SetGameDetection")),
     ("set_auto_away", HostCall::Request("SetAutoAway")),
@@ -327,6 +343,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("list_event_attendees", HostCall::Request("EventAttendees")),
     ("get_events", HostCall::Request("EventList")),
     ("get_pending_requests", HostCall::Request("FriendRequests")),
+    (
+        "get_permission_catalogue",
+        HostCall::Request("PermissionCatalogue"),
+    ),
     ("get_roles", HostCall::Request("RoleList")),
     ("create_role", HostCall::Request("RoleCreate")),
     ("edit_role", HostCall::Request("RoleUpdate")),
@@ -453,31 +473,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("list_expressions", HostCall::Request("Expressions")),
 ];
 
-/// The shell's own commands.
-pub const SHELL_LOCAL: &[&str] = &[
-    "wait_skin_open",
-    "start_skin_apply",
-    "finish_skin_apply",
-    "subscribe_events",
-    "show_buddy_list",
-    "quit_app",
-    "open_chat_window",
-    "open_community_window",
-    "open_settings_window",
-    "open_skin_editor_window",
-    "open_skin_popup",
-    "open_profile_window",
-    "open_call_window",
-    "get_game_name",
-];
-
 /// `(Tauri command, the step that ports it)`.
 pub const PENDING_PORT: &[(&str, &str)] = &[
     // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
     // by the group DM requests.
     // E3.1 — communities.
-    ("get_presence_policy", "E3.4"),
-    ("set_presence_policy", "E3.4"),
     ("rotate_mek", "E3.5"),
     // Search reads both histories: it moves with the last of them.
     // E3.2 — plate gates.

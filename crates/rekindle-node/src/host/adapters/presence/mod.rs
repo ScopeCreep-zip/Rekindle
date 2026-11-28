@@ -18,6 +18,7 @@
 
 pub(crate) mod card_game;
 pub(crate) mod mesh;
+mod own_session;
 pub(crate) mod view;
 
 use std::sync::{Arc, Weak};
@@ -26,10 +27,14 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 use rekindle_codec::member_record::BeatState;
 use rekindle_presence::community::{BeatEngine, BeatSink};
+use rekindle_presence::SessionPresence;
 use rekindle_types::presence::SessionStatus;
 
 use super::governance::HostGovernance;
 use crate::daemon::dispatch::DaemonContext;
+pub(crate) use own_session::{
+    own_session, own_session_with_policy, presence_policy, stored_policy,
+};
 
 /// The unlock's beat engine, while one runs or until the teardown's quit.
 pub(crate) type BeatSlot = Arc<RwLock<Option<Arc<BeatEngine>>>>;
@@ -69,6 +74,14 @@ impl BeatSink for HostBeats {
     async fn write_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
         let host = self.host().ok_or("the host is gone")?;
         host.write_own_beat(community, state).await.map(drop)
+    }
+
+    async fn write_refreshed_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
+        let host = self.host().ok_or("the host is gone")?;
+        let seq = host.write_own_beat(community, state).await?;
+        let hint = host.own_beat_hint(community, seq)?;
+        host.send_to_mesh_impl(community, &hint);
+        Ok(())
     }
 
     async fn write_quit_beat(&self, community: &str) -> Result<(), String> {
@@ -122,6 +135,46 @@ async fn run_on_screen(ctx: Weak<DaemonContext>, stop: tokio_util::sync::Cancell
         };
         HostGovernance::new(ctx).inspect_on_screen().await;
     }
+}
+
+/// Our voice state (plan E3.4 S8-pre ruling: only the voice channel and
+/// roster): the shell's voice session until E4.1, and on `rekindled` the
+/// Host's own record ([`crate::host::own_voice`]). Our session and consent
+/// are the Host's ([`own_session`]).
+pub(crate) fn session_presence(ctx: &DaemonContext) -> Arc<dyn SessionPresence> {
+    match &ctx.shell {
+        Some(shell) => shell.session_presence(),
+        None => Arc::new(ctx.own_voice.clone()),
+    }
+}
+
+/// We joined or left a voice channel in `community` (plan E3.4 "Constant
+/// rate": an explicit action writes at once): our beat says it now, and
+/// the voice roster is handed what the members' beats show, so the members
+/// already in the channel are found without waiting on their next beat.
+///
+/// The beat's write is a DHT set (seconds on the live network), so it runs
+/// on the unlock's scope and the caller never waits on it: a join or leave
+/// answers once the session is recorded. The engine holds its schedule
+/// across every write and each write reads the session as it is then, so
+/// a join and a quick leave cannot leave the join's beat last.
+pub(crate) fn voice_changed(ctx: &DaemonContext, community: &str) {
+    view::reconcile_voice(ctx, community);
+    refresh_beat(ctx, community);
+}
+
+/// Publish a changed session or policy on the unlock scope.
+pub(crate) fn refresh_beat(ctx: &DaemonContext, community: &str) {
+    let Some(engine) = ctx.own_presence.beats.read().clone() else {
+        return;
+    };
+    let community = community.to_owned();
+    ctx.unlock_scope_or_closed()
+        .spawn_or_drop("refresh presence beat", async move {
+            if let Err(error) = engine.refresh_community(&community).await {
+                tracing::warn!(%error, "presence beat not written");
+            }
+        });
 }
 
 /// Write our `Departed` beat in `community`, which we are leaving.

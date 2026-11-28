@@ -55,7 +55,7 @@ impl StoredRecord {
     }
 
     /// The owner keypair, when the vault's entry names the row's record.
-    pub(super) fn matching_keypair(&self) -> Option<&str> {
+    pub(super) fn matching_keypair(&self) -> Option<&zeroize::Zeroizing<String>> {
         match (&self.db_key, &self.entry) {
             (Some(key), Some(entry)) if *key == entry.record_key => Some(&entry.keypair),
             _ => None,
@@ -90,7 +90,7 @@ pub(super) fn plan(stored: &StoredRecord) -> Plan<'_> {
 /// An owned record held writable for the session.
 pub(super) struct Held {
     pub(super) key: String,
-    pub(super) keypair: String,
+    pub(super) keypair: zeroize::Zeroizing<String>,
     pub(super) lease: LeaseId,
     /// Created now (nothing was there to reopen).
     pub(super) created: bool,
@@ -131,7 +131,7 @@ impl Owner<'_> {
             let previous = load_owner(vault, owner_key(record)).map_err(|e| e.to_string())?;
             let entry = OwnerEntry {
                 record_key: key.to_string(),
-                keypair: keypair.to_string(),
+                keypair: zeroize::Zeroizing::new(keypair.to_owned()),
             };
             persist_owner(vault, owner_key(record), &entry)
                 .map_err(|e| format!("owner keypair not saved: {e}"))?;
@@ -175,10 +175,10 @@ impl Owner<'_> {
         create: C,
     ) -> Option<Held>
     where
-        O: FnOnce(String, String) -> OF,
+        O: FnOnce(String, zeroize::Zeroizing<String>) -> OF,
         OF: Future<Output = Result<LeaseId, ProtocolError>>,
         C: FnOnce() -> CF,
-        CF: Future<Output = Result<(LeaseId, String, String), ProtocolError>>,
+        CF: Future<Output = Result<(LeaseId, String, zeroize::Zeroizing<String>), ProtocolError>>,
     {
         let entry = match plan(stored) {
             Plan::Reopen(entry) => Some(entry),

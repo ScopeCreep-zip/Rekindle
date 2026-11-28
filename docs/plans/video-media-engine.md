@@ -20,7 +20,7 @@ This plan fixes the structure, not the vocabulary.
 ## What is actually true today (verified, not assumed)
 
 | claim | evidence |
-|---|---|
+| --- | --- |
 | `rekindle-video` has **no codec** | `lib.rs` exports `fragment`, `reassembler`, `pacer`, `policy`, `budget`, `send`/`receive`. Its own header says "Pure logic — no codec FFI". |
 | The `VideoCodec` trait **does not exist** | Only a doc comment at `rekindle-video/src/lib.rs:3` mentions it. No `trait VideoCodec` anywhere in the workspace. |
 | Encode is split by platform | macOS/Windows: `new VideoEncoder(...)` in `src/components/voice/video_call/video_sender.ts:151` (WebCodecs). Linux: `rekindle-video-capture`, GStreamer `vp9enc`, `pipeline/start.rs:75`. |
@@ -185,7 +185,7 @@ pub trait VideoEncoder: Send {
 Implementations:
 
 | impl | where | status |
-|---|---|---|
+| --- | --- | --- |
 | GStreamer | `rekindle-video-capture` | **exists** — camera → `vp9enc` → appsink. Refactor to satisfy the trait. |
 | libvpx | new, all platforms | VP8 + VP9, the RFC 7742 floor. The cross-platform path. |
 | WebCodecs | webview | **demoted to a fallback**, not the primary. |
@@ -291,7 +291,7 @@ produce a wrong plan.
 ### Where we actually are
 
 | | ours | Discord |
-|---|---|---|
+| --- | --- | --- |
 | voice codec | Opus 48 kHz **mono, 32 kbps** (`voice/src/codec.rs:61`) | Opus 48 kHz, **64 kbps default**, 96/128/256/384 with boost, adapts to 8 kbps under congestion |
 | video | **854×480 @ 15 fps**, VP9 (`MediaCapabilities::interim_default`) | 720p30 standard, higher with Nitro |
 | video bitrate | 350 kbps start, 600 kbps ceiling (`budget.rs`) | ~2.5 Mbps class |

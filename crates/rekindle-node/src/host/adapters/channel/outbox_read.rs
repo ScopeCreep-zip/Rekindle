@@ -9,10 +9,9 @@
 //! post goes through the one ingest path (D26), its body opened at
 //! `{anchor, channel, author, streamSeq}`. An entry we cannot verify or
 //! link, or whose body no key we hold opens, still advances the cursor:
-//! the chain covers ciphertext. The one exception is a joiner before its
-//! first community key: no entry's tag maps yet, so the entry is held
-//! ([`Held::Pending`], not an error) and the cursor stays; the key's
-//! install catches every outbox up again, and when that catch-up lands
+//! the chain covers ciphertext. An entry that awaits its key or signed
+//! governance cut is held ([`Held::Pending`]) and the cursor stays. Key
+//! installation and governance projection retry the hold. When a trigger lands
 //! while this read still runs, the engine reads again instead of
 //! dropping it (finding CB1: a failed pass drops a trigger that landed
 //! during it).
@@ -133,7 +132,7 @@ impl HostChannel {
                 (OUTBOX, known_head),
             )
             .await;
-        // An entry waiting for its key leaves the read short of the head.
+        // A held entry leaves the read short of the head.
         let waiting = diffed.as_ref().is_ok_and(|d| d.pending.is_some());
         let applied = diffed.as_ref().map_or(0, |d| d.applied);
         match diffed {
@@ -156,7 +155,7 @@ impl HostChannel {
             }
         }
         if waiting {
-            tracing::debug!(community_id, author = %writer, "channel outbox entry waits for its key");
+            tracing::debug!(community_id, author = %writer, "channel outbox entry is held");
             return applied;
         }
         if known_head > 0 {
@@ -253,6 +252,20 @@ impl HostChannel {
         Standing::Departed(None)
     }
 
+    /// The last chain position a departed author's history can include.
+    pub(super) async fn departed_lookup_through(
+        &self,
+        port: &dyn rekindle_records::port::RecordPort,
+        community: &str,
+        author: &PseudonymKey,
+        record: &str,
+    ) -> Option<u64> {
+        match self.standing(port, community, author, record).await {
+            Standing::Departed(Some(head)) => Some(u64::from(head.seq)),
+            Standing::Member | Standing::Departed(None) => None,
+        }
+    }
+
     /// The channel of `community_id` whose tag under `generation` is
     /// `tag` ([`stream_of_tag`] over every channel of the merged state).
     pub(crate) fn channel_of_tag(
@@ -294,22 +307,23 @@ impl HostChannel {
         };
         self.check_link(read, entry.seq, &decoded);
         let tag = (decoded.generation, &decoded.channel_tag);
-        let channel_id = match self.channel_of_tag(community_id, tag.0, tag.1) {
-            Some(channel_id) => channel_id,
+        let stream = || self.post_stream_of_tag(community_id, tag.0, tag.1);
+        let (channel_id, parent) = match stream() {
+            Some(stream) => stream,
             // A joiner before its first `MekTransfer` (D11, D16), or a
             // reader owed a converged generation's key it does not hold
             // yet: the cursor stays on this entry and the catch-up the key's
             // install starts reads it again (`outbox_hold.rs`).
             None if self.entry_waits_for_key(community_id, tag.0) => return Ok(Held::Pending),
             // Otherwise the entry is of a channel we do not read, from
-            // before our keys, a thread's, or of a channel whose creation
+            // before our keys, or of a stream whose creation
             // has not merged here yet: it passes, and its writer is diffed
             // again when a merge creates a channel (`outbox_unmapped.rs`).
             // Noted before the second look, so a creation merging between
             // the two is either seen here or re-reads the writer.
             None => {
                 self.note_unmapped(community_id, author, read.member_record);
-                let Some(channel_id) = self.channel_of_tag(community_id, tag.0, tag.1) else {
+                let Some(stream) = stream() else {
                     tracing::info!(
                         community_id,
                         seq = entry.seq,
@@ -317,9 +331,12 @@ impl HostChannel {
                     );
                     return Ok(Held::Stored);
                 };
-                channel_id
+                stream
             }
         };
+        if parent.is_some() && !matches!(&decoded.entry, ChannelRecordEntry::Message(_)) {
+            return Ok(Held::Stored);
+        }
         let author_hex = hex::encode(author);
         let (message, forwarded_from_author) = match decoded.entry {
             ChannelRecordEntry::Message(m) => (m, None),
@@ -388,7 +405,42 @@ impl HostChannel {
             message,
             forwarded_from_author,
         };
-        match self.ingest_as(post.clone(), read.backfill).await? {
+        let author = PseudonymKey(*author);
+        let Some(state) = self.governance_state(community_id) else {
+            return Ok(Held::Stored);
+        };
+        let viewed_channel = parent.as_deref().unwrap_or(&channel_id);
+        if state.bans.contains(&author)
+            || (read.departed && read.departure_head.is_none())
+            || !self.we_may_view(&state, community_id, viewed_channel)
+        {
+            self.discard_post_admission(&post, read.member_record)
+                .await?;
+            return Ok(Held::Stored);
+        }
+        let status = self
+            .record_post_admission(
+                &post,
+                &author,
+                &decoded.governance_cut,
+                read.member_record,
+                parent.as_deref(),
+            )
+            .await?;
+        if let Some(held) = status {
+            return Ok(held);
+        }
+        if let Some(parent) = parent {
+            if self
+                .set_post_admission(&post, &author, read.member_record, None, Some(&parent))
+                .await?
+            {
+                self.publish_admitted_reply(&post, &parent).await;
+            }
+            return Ok(Held::Stored);
+        }
+        let ingested = self.ingest_authorized(post.clone(), read.backfill).await?;
+        match ingested {
             // The gate judged the author departed while this read took it
             // as a member: its departure merged after the standing was
             // taken, so the entry was judged without the departure head
@@ -417,7 +469,7 @@ impl HostChannel {
                 return Ok(Held::Pending);
             }
             Ingested::Undecryptable => {
-                if !self.store_undecryptable(post).await? {
+                if !self.store_undecryptable(post.clone()).await? {
                     tracing::debug!(
                         community_id,
                         channel_id,
@@ -430,6 +482,8 @@ impl HostChannel {
             // (`governance/view_gain.rs`).
             _ => {}
         }
+        self.set_post_admission(&post, &author, read.member_record, None, None)
+            .await?;
         Ok(Held::Stored)
     }
 

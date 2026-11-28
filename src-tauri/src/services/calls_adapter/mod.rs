@@ -39,27 +39,6 @@ pub struct CallsAdapter {
 }
 
 impl CallsAdapter {
-    /// Internal helper for emit_event: friend's display name, or a
-    /// truncated short_pubkey if missing. Matches the pre-Phase-14
-    /// `state_helpers::friend_display_name(...).unwrap_or_else(|| short_pubkey(...))`
-    /// pattern for outbound UI events. The `friend_display_name` trait
-    /// method (called by the crate handlers) returns the raw value so
-    /// the crate's "if empty then short_pubkey(initiator_pubkey)"
-    /// fallback path still works correctly for incoming-invite display.
-    pub(super) fn display_name_with_fallback(&self, peer_pubkey_hex: &str) -> String {
-        let raw = crate::state_helpers::friend_display_name(&self.state, peer_pubkey_hex)
-            .unwrap_or_default();
-        if raw.is_empty() {
-            if peer_pubkey_hex.len() > 16 {
-                format!("{}…", rekindle_utils::text::prefix(peer_pubkey_hex, 16))
-            } else {
-                peer_pubkey_hex.to_string()
-            }
-        } else {
-            raw
-        }
-    }
-
     #[must_use]
     pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         // Phase 14.q — active_calls is already an `Arc<dyn CallRegistry>`

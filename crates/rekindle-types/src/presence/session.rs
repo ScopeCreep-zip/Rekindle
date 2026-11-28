@@ -177,6 +177,28 @@ pub struct PresenceSharingPolicy {
     pub last_seen: LastSeenPrecision,
 }
 
+/// One change to a community's presence sharing consent.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PresencePolicyField {
+    ShareOnline(bool),
+    ShareLocation(ShareScope),
+    ShareActivity(ShareScope),
+    LastSeen(LastSeenPrecision),
+}
+
+impl PresencePolicyField {
+    /// Apply only this field to the current policy.
+    pub fn apply(self, policy: &mut PresenceSharingPolicy) {
+        match self {
+            Self::ShareOnline(value) => policy.share_online = value,
+            Self::ShareLocation(value) => policy.share_location = value,
+            Self::ShareActivity(value) => policy.share_activity = value,
+            Self::LastSeen(value) => policy.last_seen = value,
+        }
+    }
+}
+
 /// Audience for an opt-in presence signal. `Members` = everyone in this
 /// community; future scopes (friends-only, per-recipient) extend here.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

@@ -285,7 +285,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
                 lease,
                 local_subkey,
                 presence_bytes,
-                Some(slot_kp_str.clone()),
+                Some(zeroize::Zeroizing::new(slot_kp_str.clone())),
             )
             .await?;
         if write_outcome.is_some() {

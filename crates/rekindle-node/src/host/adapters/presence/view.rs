@@ -6,18 +6,26 @@
 //! shows is published as `PresenceEvent::CommunityMemberChanged`, the
 //! event the member list already renders, so a member whose beats stop
 //! turns offline on every reader without a new write.
+//!
+//! Each change of what the beats show, and each expiry, hands the shell's
+//! voice roster every member's voice claim ([`reconcile_voice`], plan E3.4
+//! S8-pre); a beat's sealed extras are opened with our current community
+//! key ([`take_extras`]).
 
 use std::sync::Weak;
 use std::time::Duration;
 
-use rekindle_codec::member_record::{BeatState, PresenceBeat};
+use rekindle_codec::member_record::{BeatState, PresenceBeat, RecordScope};
 use rekindle_presence::community::Observed;
+use rekindle_secrets::keys::MediaEncryptionKey;
+use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::presence::SessionStatus;
+use rekindle_types::presence::{SessionLocation, SessionStatus, ShareScope};
 use rekindle_types::subscription_events::{PresenceEvent, PresenceSnapshot, SubscriptionEvent};
 use tokio_util::sync::CancellationToken;
 
 use crate::daemon::dispatch::DaemonContext;
+use crate::host::community::state::CommunityState;
 
 /// The longest the expiry waits between looks: a member first seen while
 /// it sleeps expires at most this late (well inside the beat period).
@@ -32,14 +40,16 @@ pub(crate) const EXPIRY_CHECK: Duration = Duration::from_secs(30);
 /// own row from that lagging copy (finding PR1).
 pub(crate) fn observe(
     ctx: &DaemonContext,
-    community: &str,
+    at: RecordScope<'_>,
     author: &PseudonymKey,
     beat: &PresenceBeat,
     arrived_at_ms: Option<u64>,
 ) -> Observed {
+    let community = at.community_id;
     let member = author.to_hex();
+    let key = community_key(ctx, community);
     let now = ctx.clock.now_ms();
-    let observed = {
+    let (observed, shown) = {
         let mut map = ctx.communities.map().write();
         let Some(state) = map.get_mut(community) else {
             return Observed::default();
@@ -47,12 +57,47 @@ pub(crate) fn observe(
         if state.my_pseudonym_key.as_deref() == Some(member.as_str()) {
             return Observed::default();
         }
-        state.beat_view.observe(&member, beat, arrived_at_ms, now)
+        let before = location(state, &member, at, key.as_ref());
+        let observed = state.beat_view.observe(&member, beat, arrived_at_ms, now);
+        let moved = before != location(state, &member, at, key.as_ref());
+        let shown = observed
+            .shown
+            .or_else(|| moved.then(|| state.beat_view.shown(&member)));
+        (observed, shown)
     };
-    if let Some(shown) = observed.shown {
+    if let Some(shown) = shown {
         publish(ctx, community, member, shown);
     }
+    if observed.shown.is_some() || observed.voice_changed {
+        reconcile_voice(ctx, community);
+    }
     observed
+}
+
+/// Refresh the community roster when our own reciprocity changes.
+pub(crate) fn location_policy_changed(ctx: &DaemonContext, community: &str) {
+    let me = ctx
+        .communities
+        .map()
+        .read()
+        .get(community)
+        .and_then(|state| state.my_pseudonym_key.clone());
+    if let Some(me) = me {
+        publish(ctx, community, me, own_shown(ctx).into());
+    }
+}
+
+/// Hand our voice roster every member's voice claim in `community` as its
+/// beats show it now (plan E3.4 S8-pre: the beat ring's `voiceChannel`
+/// view feeds the reconcile).
+pub(crate) fn reconcile_voice(ctx: &DaemonContext, community: &str) {
+    let session = super::session_presence(ctx);
+    let rows = (ctx.communities.map().read())
+        .get(community)
+        .map(|c| c.beat_view.voice_rows());
+    if let Some(rows) = rows {
+        session.reconcile_voice_roster(community, rows);
+    }
 }
 
 /// What `member` (pseudonym hex) shows in `community`'s beat view now.
@@ -62,6 +107,49 @@ pub(crate) fn shown(ctx: &DaemonContext, community: &str, member: &str) -> BeatS
         .read()
         .get(community)
         .map_or(BeatState::Offline, |c| c.beat_view.shown(member))
+}
+
+/// Read the peer's status and reciprocated location from the same beat.
+pub(crate) fn shown_location(
+    ctx: &DaemonContext,
+    community: &str,
+    member: &str,
+    record: Option<&str>,
+) -> (BeatState, Option<SessionLocation>) {
+    let key = community_key(ctx, community);
+    let map = ctx.communities.map().read();
+    let Some(state) = map.get(community) else {
+        return (BeatState::Offline, None);
+    };
+    let shown = state.beat_view.shown(member);
+    let location = record.and_then(|member_record| {
+        let at = RecordScope {
+            community_id: community,
+            member_record,
+        };
+        location(state, member, at, key.as_ref())
+    });
+    (shown, location)
+}
+
+fn community_key(ctx: &DaemonContext, community: &str) -> Option<MediaEncryptionKey> {
+    ctx.mek_cache
+        .read()
+        .current(community, KeyScope::Community)
+        .cloned()
+}
+
+fn location(
+    state: &CommunityState,
+    member: &str,
+    at: RecordScope<'_>,
+    key: Option<&MediaEncryptionKey>,
+) -> Option<SessionLocation> {
+    if state.presence_policy.share_location != ShareScope::Members {
+        return None;
+    }
+    let sealed = state.beat_view.sealed_extras(member)?;
+    rekindle_presence::community::open_extras(sealed, key, at, &state.presence_policy)?.location
 }
 
 /// The status our own row shows (finding PR1, plan E3.4 S3): our own
@@ -120,8 +208,13 @@ fn expire_all(ctx: &DaemonContext) -> Option<u64> {
             }
         }
     }
+    let mut communities = std::collections::BTreeSet::new();
     for (community, member) in turned {
         publish(ctx, &community, member, BeatState::Offline);
+        communities.insert(community);
+    }
+    for community in communities {
+        reconcile_voice(ctx, &community);
     }
     next
 }

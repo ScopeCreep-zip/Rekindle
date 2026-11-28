@@ -209,11 +209,15 @@ fn a_channel_capability_names_the_overwrite_the_permission_or_the_timeout() {
     use rekindle_types::dto::community_capability::ChannelCapability as Ch;
     use rekindle_types::governance::GovernanceEntry;
     use rekindle_types::id::ChannelId;
-    use rekindle_types::permissions::{MANAGE_MESSAGES, USE_SOUNDBOARD};
+    use rekindle_types::permissions::{
+        BYPASS_SLOWMODE, MANAGE_MESSAGES, MENTION_EVERYONE, REQUEST_TO_SPEAK, USE_SOUNDBOARD,
+    };
 
     use super::denied_in_channel;
     let room = ChannelId([9; 16]);
     let mut s = state();
+    s.roles.get_mut(&RoleId::EVERYONE).unwrap().permissions |=
+        BYPASS_SLOWMODE | REQUEST_TO_SPEAK | MENTION_EVERYONE;
     s.roles.insert(
         RoleId([6; 16]),
         role("Mods", MANAGE_MESSAGES | USE_SOUNDBOARD, 2),

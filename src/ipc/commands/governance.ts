@@ -6,15 +6,21 @@ import type {
   InviteDto,
   ThreadReplyOutcome,
 } from "./dto";
+import type { PermissionCatalogue } from "./dto_capabilities";
 import type {
   CreateEventRequest,
   EventInfo,
   ExclusionGroupEdit,
   Message,
+  PresencePolicyField,
   PresenceSharingPolicy,
 } from "./types";
 
 export const governanceCommands = {
+  /** The Host's permission catalogue (contract PN1): every defined bit,
+   *  grouped and labelled, for the role and overwrite editors. */
+  getPermissionCatalogue: () => hostInvoke<PermissionCatalogue>("get_permission_catalogue"),
+
   // Reactions
   addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
     hostInvoke<unknown>("add_reaction", { communityId, channelId, messageId, emoji }).then(
@@ -51,8 +57,8 @@ export const governanceCommands = {
   // Presence sharing consent (default-deny). Local-only; never published.
   getPresencePolicy: (communityId: string) =>
     invoke<PresenceSharingPolicy>("get_presence_policy", { communityId }),
-  setPresencePolicy: (communityId: string, policy: PresenceSharingPolicy) =>
-    hostInvoke<void>("set_presence_policy", { communityId, policy }),
+  setPresencePolicyField: (communityId: string, field: PresencePolicyField) =>
+    hostInvoke<void>("set_presence_policy_field", { communityId, field }),
 
   // Audit log
   getAuditLog: (communityId: string, beforeTimestamp?: number, limit: number = 50) =>
@@ -98,6 +104,8 @@ export const governanceCommands = {
         tagColours: { dark: number; light: number };
         permissions: number;
         position: number;
+        /** The position as the Host presents it (contract PN1). */
+        positionLabel: string;
         hoist: boolean;
         mentionable: boolean;
         selfAssignable: boolean;

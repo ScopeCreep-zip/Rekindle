@@ -91,7 +91,7 @@ export function foldFriendSnapshot(
 
 /** Backend Message DTO → store Message: our own message's `status` comes
  *  from its stored `sendState`; optimistic sends set it themselves. */
-function transformMessage(m: IpcMessage): Message {
+export function transformMessage(m: IpcMessage): Message {
   const decryptionFailed = m.decryptionFailed ?? m.body === "(decryption failed)";
   return {
     id: m.id,
@@ -102,6 +102,7 @@ function transformMessage(m: IpcMessage): Message {
     serverMessageId: m.serverMessageId,
     decryptionFailed,
     undecryptable: m.undecryptable ?? null,
+    admission: m.admission ?? null,
     automodBlurred: m.automodBlurred ?? false,
     reactions: m.reactions,
     pinned: m.pinned,
@@ -285,6 +286,9 @@ export function transformCommunityDetail(c: {
     tagColours: { dark: number; light: number };
     permissions: string;
     position: number;
+    /** The position as the Host presents it (contract PN1: the owner role reads
+     *  "Always first", never the raw sentinel). */
+    positionLabel: string;
     hoist: boolean;
     mentionable: boolean;
     selfAssignable?: boolean;

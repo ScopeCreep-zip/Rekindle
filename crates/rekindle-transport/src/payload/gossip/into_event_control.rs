@@ -124,12 +124,10 @@ pub fn control_into_event(
         | ControlPayload::EventRsvpChanged { .. }
         | ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }
-        | ControlPayload::VoiceJoin { .. }
         | ControlPayload::VoiceLeave { .. }
         | ControlPayload::VoiceModeSwitch { .. }
         | ControlPayload::VoiceMute { .. }
         | ControlPayload::VoiceDeafen { .. }
-        | ControlPayload::VoiceRoster { .. }
         | ControlPayload::BootstrapRequest { .. }
         | ControlPayload::BootstrapResponseV2 { .. }
         // Stage signalling. These are gossiped decisions every member
@@ -179,6 +177,9 @@ pub fn control_into_event(
         | ControlPayload::ThreadMessageReceived { .. }
         | ControlPayload::MekTransferAck(_)
         | ControlPayload::RequestSegmentExpansion { .. }
+        // Named voice events are built by the Host from verified cards.
+        | ControlPayload::VoiceJoin { .. }
+        | ControlPayload::VoiceRoster { .. }
         | ControlPayload::VoiceJoinAck { .. }
         | ControlPayload::VoiceJoinConfirmed { .. }
         | ControlPayload::VoiceMediaKey { .. }

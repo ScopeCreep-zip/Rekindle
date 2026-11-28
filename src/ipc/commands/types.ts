@@ -18,6 +18,15 @@ export interface Undecryptable {
   reasonText: string;
 }
 
+/** Why a post's causal permission check refused it (contract CP1). */
+type PostRefusal = "missingCut" | "notMember" | "timedOut" | "unknownStream" | "missingPermission";
+
+/** A post the Host holds without its body (contract CP1): its governance cut
+ *  is unresolved, or the rebuilt state refused it; each in the Host's words. */
+type PostAdmission =
+  | { status: "pending"; text: string }
+  | { status: "refused"; reason: PostRefusal; reasonText: string };
+
 export type SendState = "awaiting_key" | "queued" | "sent" | "delivered" | "read" | "failed";
 
 export interface Message {
@@ -28,6 +37,10 @@ export interface Message {
   /** Stored without its body, and why (KP: the Host's reason and its words,
    *  shown in place of the body); absent or null for a readable message. */
   undecryptable?: Undecryptable | null;
+  /** Held without its body by the causal permission check, and why (CP1):
+   *  shown in the Host's words in place of the body; absent or null for an
+   *  admitted post. */
+  admission?: PostAdmission | null;
   automodBlurred?: boolean;
   timestamp: number;
   isOwn: boolean;
@@ -338,6 +351,13 @@ export interface PresenceSharingPolicy {
   /** Last-seen granularity exposed to peers. */
   lastSeen: LastSeenPrecision;
 }
+
+/** One Host-owned presence policy edit. */
+export type PresencePolicyField =
+  | { shareOnline: boolean }
+  | { shareLocation: ShareScope }
+  | { shareActivity: ShareScope }
+  | { lastSeen: LastSeenPrecision };
 
 export interface NetworkStatus {
   attachmentState: string;

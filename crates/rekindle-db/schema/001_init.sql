@@ -1849,3 +1849,20 @@ AFTER UPDATE ON thread_messages BEGIN
     );
     INSERT INTO thread_messages_fts (rowid, body) VALUES (new.id, new.body);
 END;
+
+-- E3.3 CP1: visible causal admission placeholders. They are separate from
+-- messages so they cannot count as unread, quoted content or slowmode history.
+CREATE TABLE IF NOT EXISTS channel_post_admission (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    stream_id TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    member_record TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (json_type(status) = 'object'),
+    PRIMARY KEY (owner_key, community_id, stream_id, sender, message_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
+);

@@ -207,14 +207,16 @@ pub use polls::{
 pub use presence::{
     __cmd__get_community_members, __cmd__get_presence_policy, __cmd__send_channel_typing,
     __cmd__set_active_channel, __cmd__set_community_display_name, __cmd__set_presence_policy,
-    __cmd__update_community_profile, __tauri_command_name_get_community_members,
-    __tauri_command_name_get_presence_policy, __tauri_command_name_send_channel_typing,
-    __tauri_command_name_set_active_channel, __tauri_command_name_set_community_display_name,
-    __tauri_command_name_set_presence_policy, __tauri_command_name_update_community_profile,
+    __cmd__set_presence_policy_field, __cmd__update_community_profile,
+    __tauri_command_name_get_community_members, __tauri_command_name_get_presence_policy,
+    __tauri_command_name_send_channel_typing, __tauri_command_name_set_active_channel,
+    __tauri_command_name_set_community_display_name, __tauri_command_name_set_presence_policy,
+    __tauri_command_name_set_presence_policy_field, __tauri_command_name_update_community_profile,
 };
 pub use presence::{
     get_community_members, get_presence_policy, send_channel_typing, set_active_channel,
-    set_community_display_name, set_presence_policy, update_community_profile,
+    set_community_display_name, set_presence_policy, set_presence_policy_field,
+    update_community_profile,
 };
 pub use profile_blobs::{
     __cmd__get_community_avatar_data_url, __cmd__set_community_avatar, __cmd__set_community_banner,
@@ -232,16 +234,17 @@ pub use reactions_pins::{
     add_reaction, get_channel_pins, pin_message, remove_reaction, unpin_message,
 };
 pub use roles::{
-    __cmd__assign_role, __cmd__create_role, __cmd__delete_role, __cmd__edit_role, __cmd__get_roles,
-    __cmd__self_assign_role, __cmd__self_unassign_role, __cmd__unassign_role,
-    __tauri_command_name_assign_role, __tauri_command_name_create_role,
-    __tauri_command_name_delete_role, __tauri_command_name_edit_role,
+    __cmd__assign_role, __cmd__create_role, __cmd__delete_role, __cmd__edit_role,
+    __cmd__get_permission_catalogue, __cmd__get_roles, __cmd__self_assign_role,
+    __cmd__self_unassign_role, __cmd__unassign_role, __tauri_command_name_assign_role,
+    __tauri_command_name_create_role, __tauri_command_name_delete_role,
+    __tauri_command_name_edit_role, __tauri_command_name_get_permission_catalogue,
     __tauri_command_name_get_roles, __tauri_command_name_self_assign_role,
     __tauri_command_name_self_unassign_role, __tauri_command_name_unassign_role,
 };
 pub use roles::{
-    assign_role, create_role, delete_role, edit_role, get_roles, self_assign_role,
-    self_unassign_role, unassign_role,
+    assign_role, create_role, delete_role, edit_role, get_permission_catalogue, get_roles,
+    self_assign_role, self_unassign_role, unassign_role,
 };
 pub use segments::{
     __cmd__expand_community_segment, __tauri_command_name_expand_community_segment,

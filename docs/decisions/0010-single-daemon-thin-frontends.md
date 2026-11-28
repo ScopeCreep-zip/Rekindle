@@ -143,7 +143,7 @@ The plan steps are C1–C3, D3, E1–E6 and F1–F3 in
 ## Packaging
 
 | Variant | Debian / RPM | macOS | Windows | Nix |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Daemon | `rekindle-daemon` (`rekindled` + systemd user unit, `Type=notify`) | formula `rekindle-daemon` | inside every installer | `rekindled` |
 | CLI | `rekindle-cli`, Depends `rekindle-daemon (= ver)` | formula, `depends_on "rekindle-daemon"` | dist msi/zip with `rekindled` | `rekindle-cli` |
 | TUI | `rekindle-tui`, Depends `rekindle-daemon (= ver)` | formula | dist msi/zip | `rekindle-tui` |

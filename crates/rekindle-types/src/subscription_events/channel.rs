@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::dto::channel_message::ChannelMessageView;
+
 /// The DM or group DM an event is about (plan E7.1's `context`), shaped
 /// as `TypingContext`'s two conversation arms. A community channel's
 /// timer is its `ChannelUpdated` governance op, not this.
@@ -84,6 +86,15 @@ pub enum ChannelMessageEvent {
         /// `None`): never "waiting for its key", which a held post is.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         undecryptable: Option<crate::dto::channel_message::Undecryptable>,
+    },
+    /// The history row of a post whose causal admission changed.
+    PostAdmissionChanged {
+        community: String,
+        stream_id: String,
+        thread: bool,
+        message_id: String,
+        pending: bool,
+        row: Box<ChannelMessageView>,
     },
     /// A message was edited.
     /// Triggered by: an edit entry in its author's record (plan E3.3).

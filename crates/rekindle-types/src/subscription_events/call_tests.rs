@@ -85,7 +85,14 @@ fn sample_events() -> Vec<CallEvent> {
             from: "pk".into(),
             display_name: "Ada".into(),
             kind: "video".into(),
-            participants: vec!["a".into(), "b".into()],
+            participants: ["a", "b"]
+                .into_iter()
+                .map(|key| CallParticipant {
+                    public_key: key.into(),
+                    display_name: format!("Name of {key}"),
+                    is_self: key == "me",
+                })
+                .collect(),
             is_group: true,
             expires_at_ms: 1,
             group_id: None,
@@ -103,7 +110,14 @@ fn sample_events() -> Vec<CallEvent> {
         CallEvent::GroupStarted {
             call_id: "c".into(),
             kind: "audio".into(),
-            participants: vec!["me".into(), "b".into()],
+            participants: ["me", "b"]
+                .into_iter()
+                .map(|key| CallParticipant {
+                    public_key: key.into(),
+                    display_name: format!("Name of {key}"),
+                    is_self: key == "me",
+                })
+                .collect(),
             group_id: Some("g".into()),
             expires_at_ms: 1,
         },

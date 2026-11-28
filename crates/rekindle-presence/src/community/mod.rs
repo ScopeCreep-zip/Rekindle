@@ -16,6 +16,7 @@
 
 pub mod beat;
 pub mod beat_view;
+pub mod extras;
 pub mod on_screen;
 pub mod policy;
 pub mod poll;
@@ -30,8 +31,9 @@ pub(crate) mod test_fixture;
 
 pub use beat::{beat_delay, scheduled_state, BeatEngine, BeatSink, BEAT_DELAY_MAX, BEAT_DELAY_MIN};
 pub use beat_view::{beat_is_live, live_until, BeatView, Observed, BEAT_LIVENESS_MS};
+pub use extras::{open_extras, seal_extras};
 pub use on_screen::{OnScreen, MEMBERS_ON_SCREEN_MAX, ON_SCREEN_INSPECT_MS};
-pub use policy::{apply_sharing_policy, coarsen_to_bucket, filter_incoming};
+pub use policy::{apply_sharing_policy, coarsen_to_bucket, filter_incoming, shared_session};
 pub use poll::{
     gossip_degree, presence_poll_tick, presence_poll_tick_public, presence_refresh,
     steady_poll_duration, STALE_HEARTBEAT_SECS,

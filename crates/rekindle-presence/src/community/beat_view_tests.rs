@@ -31,7 +31,8 @@ fn a_member_whose_beats_stop_turns_offline_locally() {
         seen,
         Observed {
             state_changed: true,
-            shown: Some(BeatState::Online)
+            shown: Some(BeatState::Online),
+            voice_changed: false,
         }
     );
     assert_eq!(view.next_expiry(), Some(PERIOD_START + BEAT_LIVENESS_MS));
@@ -162,4 +163,74 @@ fn may_be_present_keeps_the_unknown_and_drops_the_gone() {
         );
         assert!(!view.may_be_present(MEMBER), "{state:?}");
     }
+}
+
+fn voice_beat(seq: u64, state: BeatState, at_ms: u64, voice: Option<&str>) -> PresenceBeat {
+    PresenceBeat {
+        voice_channel: voice.map(str::to_owned),
+        ..beat(seq, state, at_ms)
+    }
+}
+
+fn claims(view: &BeatView) -> Vec<(String, Option<String>, bool)> {
+    (view.voice_rows().into_iter())
+        .map(|r| (r.pseudonym_hex, r.voice_channel_id, r.fresh))
+        .collect()
+}
+
+/// A member's beat naming a voice channel puts it in that channel for the
+/// voice roster (plan E3.4 S8-pre); its expiry takes it out with no new
+/// write, so a ghost is expired.
+#[test]
+fn a_voice_beat_claims_its_channel_until_it_expires() {
+    let mut view = BeatView::default();
+    let seen = view.observe(
+        MEMBER,
+        &voice_beat(1, BeatState::Online, PERIOD_START, Some("voice")),
+        Some(PERIOD_START),
+        PERIOD_START,
+    );
+    assert!(seen.voice_changed);
+    assert_eq!(
+        claims(&view),
+        vec![(MEMBER.to_owned(), Some("voice".to_owned()), true)]
+    );
+    assert_eq!(view.expire(PERIOD_START + BEAT_LIVENESS_MS), vec![MEMBER]);
+    assert_eq!(claims(&view), vec![(MEMBER.to_owned(), None, false)]);
+}
+
+/// A leave beat (no channel) takes the member out of the channel at once;
+/// a beat that repeats the same channel changes no claim.
+#[test]
+fn a_leave_beat_ends_the_voice_claim() {
+    let mut view = BeatView::default();
+    view.observe(
+        MEMBER,
+        &voice_beat(1, BeatState::Online, PERIOD_START, Some("voice")),
+        Some(PERIOD_START),
+        PERIOD_START,
+    );
+    let same = view.observe(
+        MEMBER,
+        &voice_beat(2, BeatState::Online, PERIOD_START, Some("voice")),
+        Some(PERIOD_START),
+        PERIOD_START + 1,
+    );
+    assert!(!same.voice_changed);
+    let left = view.observe(
+        MEMBER,
+        &voice_beat(3, BeatState::Online, PERIOD_START, None),
+        Some(PERIOD_START),
+        PERIOD_START + 2,
+    );
+    assert!(left.voice_changed);
+    assert_eq!(claims(&view), vec![(MEMBER.to_owned(), None, true)]);
+    // A quit's offline beat that still names the channel claims nothing.
+    view.observe(
+        MEMBER,
+        &voice_beat(4, BeatState::Offline, PERIOD_START, Some("voice")),
+        Some(PERIOD_START),
+        PERIOD_START + 3,
+    );
+    assert_eq!(claims(&view), vec![(MEMBER.to_owned(), None, false)]);
 }

@@ -5,6 +5,7 @@ use rekindle_types::id::PseudonymKey;
 
 fn reaction(author: u8, seq: u64, target: &str, emoji: &str, added: bool) -> OutboxItem {
     OutboxItem {
+        admission: None,
         author: PseudonymKey([author; 32]),
         stream_seq: seq,
         committed_at: seq * 1_000,

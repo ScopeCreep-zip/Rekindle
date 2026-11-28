@@ -88,7 +88,7 @@ OS threads. The crate bridges these threads to the Tokio runtime via
 `mpsc` channels.
 
 | Thread | Owner | Direction |
-|--------|-------|-----------|
+| -------- | ------- | ----------- |
 | Capture thread | `AudioCapture` | Microphone PCM → `mpsc::Sender<Vec<f32>>` |
 | Playback thread | `AudioPlayback` | `mpsc::Receiver<Vec<f32>>` → speaker |
 | Tokio task: send loop | `rekindle-voice/src/send_loop/` | Drains capture, runs `AudioProcessor`, encodes, transports |
@@ -104,7 +104,7 @@ delivery semantics over completeness.
 ## Audio parameters
 
 | Setting | Value | Rationale |
-|---------|-------|-----------|
+| --------- | ------- | ----------- |
 | Sample rate | 48 000 Hz | Opus's native operating rate; avoids resampling. |
 | Channels | 1 (mono) | Reduces bandwidth; voice is the dominant signal. |
 | Frame size | 960 samples (20 ms) | Industry-standard VoIP frame; balances latency and overhead. |
@@ -194,7 +194,7 @@ to every listener becomes O(N²) bandwidth. Rekindle uses a deterministic
 SFU (Selective Forwarding Unit) without a dedicated server:
 
 | Participants | Topology | Outbound packets per speaker |
-|--------------|----------|------------------------------|
+| --- | --- | --- |
 | ≤ 4 | Full mesh | N − 1 |
 | > 4 | Mutual-aid SFU | 1 (to the elected SFU) |
 
@@ -400,7 +400,7 @@ participant; E4.2 moves them onto the sender-owned keyring and deletes
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | `VoiceEngine` orchestration | `crates/rekindle-voice/src/lib.rs` |
 | Capture (cpal input thread) | `crates/rekindle-voice/src/capture.rs` |
 | Playback (cpal output thread) | `crates/rekindle-voice/src/playback.rs` |

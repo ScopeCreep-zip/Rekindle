@@ -149,6 +149,9 @@
 '.chat-message-timestamp' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-input' = { on = ["--color-xfire-bg-input"] }
 '.message-input::placeholder' = { on = ["--color-xfire-bg-input"] }
+'.message-input:disabled' = { on = ["--color-xfire-bg-input"] }
+'.message-input:disabled::placeholder' = { on = ["--color-xfire-bg-input"] }
+'.message-input-emoji-btn:disabled' = { on = ["--color-xfire-bg-input"] }
 '.status-bar' = { on = ["--color-xfire-bg-status"] }
 '.context-menu-item' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 30% over --color-xfire-bg-panel"] }
 '.context-menu-item-danger' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-busy 12% over --color-xfire-bg-panel"] }
@@ -490,6 +493,7 @@
 '.edit-mode-cancel:hover' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
 '.messages-loading-spinner' = { on = ["--color-xfire-bg-panel"] }
 '.dm-history-gap' = { on = ["--color-xfire-bg-panel"] }
+'.stage-panel-request-btn:disabled' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-tertiary"] }
 '.channel-topic' = { on = ["--color-xfire-bg-dark"] }
 '.channel-topic-denied' = { on = ["--color-xfire-bg-dark"] }
 '.announcement-icon' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
@@ -534,6 +538,8 @@
 '.message-link-preview-title' = { on = ["--color-xfire-bg-secondary"] }
 '.message-link-preview-description' = { on = ["--color-xfire-bg-secondary"] }
 '.mention-popover-row' = { on = ["--color-xfire-bg-secondary"] }
+'.mention-popover-row-denied' = { on = ["--color-xfire-bg-secondary", "--color-xfire-accent 25% over --color-xfire-bg-secondary"] }
+'.mention-popover-reason' = { on = ["--color-xfire-bg-secondary", "--color-xfire-accent 25% over --color-xfire-bg-secondary"] }
 '.mention-popover-tag-special' = { on = ["--color-xfire-mention-everyone 25% over --color-xfire-bg-secondary"] }
 '.mention-popover-tag-role' = { on = ["--color-xfire-accent 13% over --color-xfire-bg-secondary"] }
 '.channel-notif-label' = { on = ["--color-xfire-bg-panel"] }
@@ -564,6 +570,8 @@
 '.message-input-mic-btn' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-attach-btn:hover' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-attach-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-mic-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-btn-active' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-timer' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-send-btn' = { on = ["--color-xfire-bg-dark"] }
@@ -627,6 +635,8 @@
 '.message-decrypt-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-decrypt-failed-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-damaged' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-held' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-held[data-admission="refused"]' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-damaged-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"], graphic = true }
 '.key-pending-notice' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }
 '.key-pending-since' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }

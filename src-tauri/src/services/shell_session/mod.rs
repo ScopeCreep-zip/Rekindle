@@ -87,10 +87,6 @@ impl ShellHooks for ShellSession {
         );
     }
 
-    fn spawn_presence_poll_tick(&self, community_id: &str) {
-        governance::spawn_presence_poll_tick(&self.state, community_id);
-    }
-
     async fn presence_refresh(&self, community_id: &str) {
         if let Err(error) =
             crate::services::community::presence::presence_refresh(&self.state, community_id).await
@@ -115,6 +111,12 @@ impl ShellHooks for ShellSession {
 
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
         crate::state_helpers::key_provider(&self.state)
+    }
+
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::new(
+            crate::services::presence_adapter::DesktopSessionPresence::new(Arc::clone(&self.state)),
+        )
     }
 
     async fn community_records_ready(

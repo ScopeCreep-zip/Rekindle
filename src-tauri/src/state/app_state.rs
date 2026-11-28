@@ -192,11 +192,6 @@ pub struct AppState {
     /// composition changes or a peer reports new caps. Backend owns the
     /// negotiation; the frontend just reads the resulting event.
     pub video_sessions: crate::services::community::video_session::VideoSessionStateMap,
-    /// Media-ready session gate (WebRTC "transport before RTP" analog):
-    /// per-(community, channel) bring-up inputs → derived ready state.
-    /// `media_ready_runtime` owns transitions + the
-    /// `CommunityEvent::VoiceMediaReady` emission.
-    pub media_ready: Mutex<rekindle_voice::media_ready::MediaReadyTracker>,
     /// Video frames rejected by the media-ready gate (observability).
     pub video_pre_ready_drops: std::sync::atomic::AtomicU64,
     /// Inbound `'D'` and `'G'` datagram queue — the app_message callback
@@ -304,7 +299,6 @@ impl Default for AppState {
             group_calls: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
             video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
-            media_ready: Mutex::new(rekindle_voice::media_ready::MediaReadyTracker::new()),
             gossip_ingress: Arc::new(
                 crate::services::veilid::ingress_queue::GossipIngressQueue::new(),
             ),

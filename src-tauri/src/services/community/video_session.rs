@@ -24,6 +24,7 @@ use parking_lot::RwLock;
 use rekindle_video::{negotiate_session_config, MediaCapabilities, SessionVideoConfig};
 
 use crate::channels::CommunityEvent;
+use crate::services::video_adapter::incompatible_event;
 use crate::state::AppState;
 
 /// Stable key the local peer is registered under in `peer_caps`. Using
@@ -234,17 +235,12 @@ fn apply_outcome(
             );
         }
         RecomputeOutcome::EmitIncompatible { peers } => {
-            let event = CommunityEvent::VideoCodecIncompatible(
-                crate::channels::VideoCodecIncompatibleEvent {
-                    community_id: community_id.to_string(),
-                    channel_id: channel_id.to_string(),
-                    peers,
-                },
-            );
-            crate::event_dispatch::emit_from_state(
-                state,
-                crate::event_dispatch::WebviewEvent::Community(event),
-            );
+            if let Some(event) = incompatible_event(state, community_id, channel_id, peers) {
+                crate::event_dispatch::emit_from_state(
+                    state,
+                    crate::event_dispatch::WebviewEvent::Community(event),
+                );
+            }
         }
     }
 }

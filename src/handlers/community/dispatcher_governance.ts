@@ -115,8 +115,10 @@ function applyGovernance(g: GovernanceEvent): void {
   // FX3: the community key we hold, current or waiting on a key holder.
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;
-    if (communityState.communities[community])
+    if (communityState.communities[community]) {
       setCommunityState("communities", community, "keyStatus", status);
+      refreshCommunityMembers(community);
+    }
     return;
   }
   // The ban list changed (plan E3.2 S9): a shown ban list reads it again
@@ -131,8 +133,8 @@ function applyGovernance(g: GovernanceEvent): void {
   if ("rolesChanged" in g) {
     const { community, roles } = g.rolesChanged;
     if (communityState.communities[community]) {
-      // The store keeps `permissions` as a string and
-      // `utils/permissions.ts` parses it with `BigInt(...)`. Tier 1
+      // The store keeps `permissions` as a string and the role editor
+      // parses it with `BigInt(...)`. Tier 1
       // sends a JSON number, which is exact today but is the shape
       // that loses low bits once permission bits pass 2^53 — so the
       // string form is preserved here rather than widening every

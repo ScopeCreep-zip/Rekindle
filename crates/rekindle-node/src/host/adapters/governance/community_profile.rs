@@ -20,6 +20,7 @@ use rekindle_types::dht_layout::member_record::CARD;
 use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::permissions;
 use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
@@ -68,33 +69,30 @@ impl HostGovernance {
         )
     }
 
-    /// Make `policy` our presence sharing consent in `community` (local
-    /// only, never published; architecture §10 / §16.3), kept on the
-    /// community and its row, and wake the card's game writer: the game our
-    /// card shares follows the consent, so hiding it reaches the card within
-    /// [`CARD_GAME_SETTLE`](crate::host::adapters::presence::card_game::CARD_GAME_SETTLE)
-    /// with no presence change (plan E3.4 S6).
+    /// Store the local consent and wake the beat and card writers after the
+    /// edit commits.
     ///
     /// # Errors
-    /// The community is not joined, or the policy does not serialize.
-    pub fn set_presence_policy(
+    /// The identity is locked, the community is missing or the write failed.
+    pub(crate) async fn edit_presence_policy(
         &self,
         community: &str,
-        policy: PresenceSharingPolicy,
+        update: impl FnOnce(&mut PresenceSharingPolicy) + Send + 'static,
     ) -> Result<(), String> {
-        let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
-        {
-            let mut map = self.ctx.communities.map().write();
-            let state = map.get_mut(community).ok_or("unknown community")?;
-            state.presence_policy = policy;
+        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
+        let changed = crate::host::session::record_presence_policy(
+            &db,
+            owner,
+            self.ctx.communities.clone(),
+            community.to_owned(),
+            update,
+        )
+        .await?;
+        if changed {
+            crate::host::adapters::presence::view::location_policy_changed(&self.ctx, community);
+            self.ctx.own_presence.card_game.notify_one();
+            crate::host::adapters::presence::refresh_beat(&self.ctx, community);
         }
-        crate::host::session::record_presence_policy(
-            &self.ctx.session,
-            &self.ctx.db,
-            community,
-            policy_json,
-        );
-        self.ctx.own_presence.card_game.notify_one();
         Ok(())
     }
 
@@ -254,9 +252,21 @@ impl HostGovernance {
     }
 }
 
+impl HostGovernance {
+    /// How the member list names this member from the Host's verified card view.
+    ///
+    /// # Panics
+    /// The caller must pass a validated community pseudonym.
+    #[must_use]
+    pub fn member_shown_name(&self, community_id: &str, member_hex: &str) -> String {
+        member_shown_name(&self.ctx.communities, community_id, member_hex)
+    }
+}
+
 /// The name a community renders for `pseudonym`: its card's, else its
 /// short pseudonym fingerprint; never empty (plan E3.4 S6).
-pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
+#[must_use]
+pub fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
     card_name
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&pseudonym.0))
@@ -271,7 +281,11 @@ pub(crate) fn member_shown_name(
     community_id: &str,
     member_hex: &str,
 ) -> String {
-    let pseudonym = PseudonymKey::from_hex_lossy(member_hex);
+    let pseudonym = PseudonymKey(
+        pseudonym_hex(member_hex)
+            .expect("validated pseudonym")
+            .to_bytes(),
+    );
     shown_name(
         communities.member_card_name(community_id, &pseudonym),
         &pseudonym,
