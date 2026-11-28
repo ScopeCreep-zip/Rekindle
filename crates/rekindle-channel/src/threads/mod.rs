@@ -17,7 +17,7 @@ pub use lifecycle::{archive_thread, create_thread, unarchive_thread};
 pub use listing::{list_active_threads, list_threads};
 pub use messages::{
     is_thread_reply_id, load_thread_messages, send_prepared_reply, send_thread_message,
-    ThreadReplySent,
+    verified_reply_view, ThreadReplySent,
 };
 pub use policy::{
     default_auto_archive_seconds, is_thread_archived, validate_auto_archive_seconds,

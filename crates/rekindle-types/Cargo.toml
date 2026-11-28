@@ -23,6 +23,8 @@ zeroize = { version = "1", features = [ "serde" ] }
 [features]
 # `presence::fixture`: test builders for other crates' tests.
 fixture = [  ]
+# The WebDriver test aids' request types (only `rekindle-desktop`'s `webdriver-test` build).
+webdriver-test = [  ]
 
 [dev-dependencies]
 postcard = { version = "1", default-features = false, features = [ "use-std" ] }

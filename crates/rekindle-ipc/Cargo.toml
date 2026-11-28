@@ -9,6 +9,9 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+webdriver-test = [ "rekindle-types/webdriver-test" ]
+
 [dependencies]
 async-trait = "0.1"
 blake3 = "1"

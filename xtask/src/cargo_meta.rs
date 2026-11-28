@@ -14,6 +14,7 @@ pub(crate) struct Metadata {
     pub(crate) packages: Vec<Package>,
     pub(crate) workspace_members: Vec<String>,
     pub(crate) resolve: Resolve,
+    pub(crate) target_directory: PathBuf,
 }
 
 #[derive(Deserialize)]

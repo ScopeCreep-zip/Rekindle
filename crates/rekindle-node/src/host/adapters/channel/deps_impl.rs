@@ -345,6 +345,12 @@ impl ChannelMessagingDeps for HostChannel {
                     .ok_or_else(|| ChannelError::InvalidId("Invalid channel.".into()))
             })
             .transpose()?;
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        if self.skip_local_post_permission
+            && perm_bits == rekindle_types::permissions::SEND_MESSAGES
+        {
+            return Ok(());
+        }
         self.gov
             .require_own_permissions(community_id, channel.as_ref(), perm_bits)
             .map_err(ChannelError::PermissionDenied)

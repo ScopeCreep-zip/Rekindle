@@ -98,6 +98,7 @@ pub async fn queue_awaiting_key<D: ChannelMessagingDeps>(
     deps.persist_slowmode_state(community_id, channel_id, timestamp_ms)
         .await?;
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_string(),
         channel: channel_id.to_string(),
         message: message_id.clone(),

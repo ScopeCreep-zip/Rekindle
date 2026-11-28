@@ -85,6 +85,7 @@ pub async fn persist_reaction<D: ChannelMessagingDeps>(
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.to_string()))?;
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_owned(),
         channel: channel_id.to_owned(),
         message: format!(

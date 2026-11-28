@@ -283,7 +283,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 165 (plan decision 67 item 3): `group_dm_rendezvous`, each member's place in its group's
 /// rendezvous record.
 /// 167 (SEC5): `thread_messages` scopes each reply id to its verified author.
-pub const SCHEMA_VERSION: i64 = 167;
+/// 168 (CP1): channel post admission placeholders.
+pub const SCHEMA_VERSION: i64 = 168;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

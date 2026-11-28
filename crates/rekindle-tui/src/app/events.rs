@@ -222,6 +222,7 @@ impl App {
                 | ChannelMessageEvent::DisappearingTimerChanged { .. }
                 | ChannelMessageEvent::MessagesExpired { .. }
                 // A channel outbox gap opened or closed (plan E3.3, D23).
+                | ChannelMessageEvent::PostAdmissionChanged { .. }
                 | ChannelMessageEvent::ChannelHistoryGap { .. }
                 | ChannelMessageEvent::ChannelHistoryGapClosed { .. },
             )

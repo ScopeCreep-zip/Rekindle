@@ -6,11 +6,12 @@ use rekindle_channel::error::ChannelError;
 use rekindle_channel::history;
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_db::repo::messages::channel::{self as rows, StoredChannelMessage};
+use rekindle_db::repo::messages::channel_admission::{self, Placeholder};
 use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
 
-use super::HostChannel;
+use super::{admission::admission_view, HostChannel};
 
 fn stored(e: impl std::fmt::Display) -> ChannelError {
     ChannelError::Adapter(format!("store: {e}"))
@@ -35,45 +36,118 @@ impl HostChannel {
         self.require_channel_permission(community_id, Some(channel_id), permissions::READ_HISTORY)?;
         let (owner, db) = self.owner_and_db()?;
         let me = self.my_pseudonym_impl(community_id).unwrap_or_default();
-        let removed = self.ctx().communities.own_removal(community_id).is_some();
-        // A community we were removed from is read-only history (plan E3.2
-        // S9): our rows as they were when we opened them, with nothing read
-        // from the authors' outboxes again.
-        let attached = if removed {
-            history::ChannelAttachments::default()
-        } else {
-            history::read_attachments(self, community_id, channel_id).await
-        };
+        let attached = self.channel_attachments(community_id, channel_id).await;
         let (key, channel) = (owner.clone(), channel_id.to_string());
         let before_row = before.map(|b| i64::try_from(b).unwrap_or(i64::MAX));
-        let rows = db
-            .call(move |conn| rows::page(conn, &key, &channel, before_row, limit))
+        let community = community_id.to_owned();
+        let (rows, placeholders) = db
+            .call(move |conn| {
+                Ok((
+                    rows::page(conn, &key, &channel, before_row, limit)?,
+                    channel_admission::page(conn, &key, &community, &channel, before_row, limit)?,
+                ))
+            })
             .await
             .map_err(stored)?;
         let mut messages: Vec<ChannelMessageView> = rows
             .into_iter()
             .map(|row| stored_view(row, &owner, &me))
             .collect();
-        // Each post's reactions and polls ride their authors' outboxes
-        // (plan E3.3); a poll shows only on its creator's own message.
-        let history::ChannelAttachments { reactions, polls } = attached;
         for view in &mut messages {
-            // The forward's author as a sender header names them (plan
-            // E3.3), resolved now, as the live `New` was.
-            view.forwarded_from_name =
-                self.forward_name(community_id, view.forwarded_from_author.as_deref());
-            let Some(id) = view.server_message_id.as_deref() else {
-                continue;
-            };
-            if view.reactions.is_none() {
-                view.reactions = reactions.get(id).cloned();
-            }
-            if view.poll.is_none() {
-                view.poll = (polls.get(&(id.to_owned(), view.sender_id.clone()))).cloned();
-            }
+            self.attach_history(community_id, &attached, view);
         }
-        messages.sort_by_key(|message| message.timestamp);
-        Ok(messages)
+        Ok(with_placeholders(messages, placeholders, false, limit))
+    }
+
+    pub(super) async fn channel_attachments(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> history::ChannelAttachments {
+        // For a removed community the read serves only the rows we already hold.
+        if self.ctx().communities.own_removal(community_id).is_some() {
+            history::ChannelAttachments::default()
+        } else {
+            history::read_attachments(self, community_id, channel_id).await
+        }
+    }
+
+    pub(super) fn attach_history(
+        &self,
+        community_id: &str,
+        attached: &history::ChannelAttachments,
+        view: &mut ChannelMessageView,
+    ) {
+        view.forwarded_from_name =
+            self.forward_name(community_id, view.forwarded_from_author.as_deref());
+        let Some(id) = view.server_message_id.as_deref() else {
+            return;
+        };
+        if view.reactions.is_none() {
+            view.reactions = attached.reactions.get(id).cloned();
+        }
+        if view.poll.is_none() {
+            view.poll = attached
+                .polls
+                .get(&(id.to_owned(), view.sender_id.clone()))
+                .cloned();
+        }
+    }
+}
+
+pub(super) fn with_placeholders(
+    mut messages: Vec<ChannelMessageView>,
+    placeholders: Vec<Placeholder>,
+    thread: bool,
+    limit: u32,
+) -> Vec<ChannelMessageView> {
+    if !placeholders.is_empty() {
+        let held: std::collections::HashSet<_> = messages
+            .iter()
+            .filter_map(|view| Some((view.sender_id.clone(), view.server_message_id.clone()?)))
+            .collect();
+        messages.extend(placeholders.into_iter().filter_map(|mut placeholder| {
+            if thread {
+                placeholder.message_id = rekindle_types::thread::thread_reply_key(
+                    &placeholder.sender,
+                    &placeholder.message_id,
+                );
+            }
+            let key = (placeholder.sender.clone(), placeholder.message_id.clone());
+            (!held.contains(&key)).then(|| placeholder_view(placeholder))
+        }));
+    }
+    messages.sort_by_key(|message| message.timestamp);
+    if messages.len() > limit as usize {
+        messages.drain(..messages.len() - limit as usize);
+    }
+    messages
+}
+
+pub(super) fn placeholder_view(placeholder: Placeholder) -> ChannelMessageView {
+    ChannelMessageView {
+        id: 0,
+        sender_id: placeholder.sender,
+        body: String::new(),
+        admission: Some(admission_view(placeholder.status)),
+        decryption_failed: false,
+        undecryptable: None,
+        automod_blurred: false,
+        timestamp: placeholder.timestamp,
+        is_own: false,
+        server_message_id: Some(placeholder.message_id),
+        reactions: None,
+        pinned: None,
+        poll: None,
+        forwarded_from_author: None,
+        forwarded_from_name: None,
+        attachment: None,
+        flags: 0,
+        send_state: SendState::Delivered,
+        failure_reason: None,
+        edited_at: None,
+        removed_by: None,
+        history_gap_through: None,
     }
 }
 
@@ -96,6 +170,7 @@ pub(crate) fn stored_view(
             chunk_count: record.chunk_count,
         });
     ChannelMessageView {
+        admission: None,
         id: row.id,
         sender_id: row.sender_key,
         body: row.body,

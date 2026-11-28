@@ -19,6 +19,7 @@ mod thread;
 use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
+use rekindle_types::dto::channel_message::{PostAdmission, PostRefusal};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
     CommunityRoleView, RoleTagColours,
@@ -88,8 +89,19 @@ fn samples() -> Map<String, Value> {
     };
     presence::samples(&mut add);
     add(
+        "channel.admission.pending",
+        to(PostAdmission::Pending {
+            text: "Waiting to verify that this post was allowed.".into(),
+        }),
+    );
+    add(
+        "channel.admission.refused",
+        to(PostAdmission::from(PostRefusal::MissingPermission)),
+    );
+    add(
         "channel.message",
         to(rekindle_types::dto::channel_message::ChannelMessageView {
+            admission: None,
             id: 7,
             sender_id: pk('b'),
             body: "hello channel".into(),
@@ -527,4 +539,27 @@ fn dtos_round_trip() {
         verified,
         AuditVerified::Broken { at: Some(7), .. }
     ));
+}
+
+#[test]
+fn post_admission_round_trips() {
+    let samples = samples();
+    for id in ["channel.admission.pending", "channel.admission.refused"] {
+        let wire = &samples[id];
+        let decoded: PostAdmission = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(&to(decoded), wire);
+    }
+}
+
+#[test]
+fn every_post_refusal_has_text() {
+    for reason in [
+        PostRefusal::MissingCut,
+        PostRefusal::NotMember,
+        PostRefusal::TimedOut,
+        PostRefusal::UnknownStream,
+        PostRefusal::MissingPermission,
+    ] {
+        assert!(!reason.text().trim().is_empty(), "{reason:?}");
+    }
 }

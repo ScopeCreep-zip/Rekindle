@@ -7,7 +7,8 @@ use crate::host::fixture::temp_root;
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
-use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
+use governance_seed::meta;
+pub(in crate::host) use governance_seed::{seed_governance, signed_chain, CREATOR_RECORD};
 
 #[path = "attachment_limit_tests.rs"]
 mod attachment_limit;

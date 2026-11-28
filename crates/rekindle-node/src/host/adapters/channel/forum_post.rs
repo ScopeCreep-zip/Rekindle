@@ -2,6 +2,7 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::{ChannelMessagingDeps as _, ForumPost};
+use rekindle_governance_runtime::post_cut::capture_post_cut;
 use rekindle_governance_runtime::{apply::write_forum_thread, GovernanceRuntimeError};
 use rekindle_types::dto::community_capability::ChannelCapability;
 use rekindle_types::thread::{thread_reply_key, ForumPostCreated};
@@ -34,7 +35,7 @@ impl HostChannel {
             .governance_ops()
             .ok_or_else(|| ChannelError::Adapter("no unlocked outbox".into()))?;
         let body = post.body;
-        let (thread, starter, prepared) =
+        let (thread, mut starter, prepared) =
             rekindle_channel::prepare_forum_post(self, community_id, post)?;
         let thread_id = thread.row.id.clone();
         let metadata = super::rich::thread_info(thread.row);
@@ -58,6 +59,8 @@ impl HostChannel {
                         }
                         other => GovernanceRuntimeError::Adapter(other.to_string()),
                     })?;
+                starter.governance_cut =
+                    capture_post_cut(&channel.gov, &starter.community, Some(&op)).await?;
                 ops.queue_forum_thread(op, starter, metadata)
                     .await
                     .map_err(GovernanceRuntimeError::Adapter)

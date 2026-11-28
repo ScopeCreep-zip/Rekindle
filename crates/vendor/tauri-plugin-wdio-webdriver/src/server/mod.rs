@@ -57,7 +57,7 @@ impl<R: Runtime + 'static> AppState<R> {
 /// Start the `WebDriver` HTTP server on the specified port, every route
 /// behind [`auth::RequestGuard`]. Without a valid run token in
 /// [`auth::TOKEN_ENV_VAR`] the server does not start.
-pub fn start<R: Runtime + 'static>(app: AppHandle<R>, port: u16) {
+pub fn start<R: Runtime + 'static>(app: AppHandle<R>, port: u16, routes: axum::Router) {
     let Some(guard) = auth::RequestGuard::from_env(port) else {
         tracing::error!(
             "WebDriver server not started: {} is unset or not a minted token",
@@ -77,7 +77,7 @@ pub fn start<R: Runtime + 'static>(app: AppHandle<R>, port: u16) {
 
         rt.block_on(async {
             let state = Arc::new(AppState::new(app));
-            let router = auth::guarded(router::create_router(state), guard)
+            let router = auth::guarded(router::create_router(state).merge(routes), guard)
                 .layer(axum::middleware::from_fn(trace::log_request));
 
             let addr = SocketAddr::from(([127, 0, 0, 1], port));

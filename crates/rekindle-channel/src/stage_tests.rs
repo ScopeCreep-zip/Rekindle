@@ -5,6 +5,7 @@ use rekindle_types::id::PseudonymKey;
 
 fn hand(author: u8, seq: u64, raised: bool) -> OutboxItem {
     OutboxItem {
+        admission: None,
         author: PseudonymKey([author; 32]),
         stream_seq: seq,
         committed_at: 0,
