@@ -25,8 +25,9 @@ pub async fn own_record_changed<D: GovernanceRuntimeDeps>(
     community_id: &str,
     record: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    let device = device_op_key(deps, community_id, false)?;
-    let key = device.verifying_key().to_bytes();
+    let key = device_op_key(deps, community_id, false)?
+        .verifying_key()
+        .to_bytes();
     let head = deps.op_store().signed_here_head(community_id, &key).await?;
     let port = deps.record_port()?;
     let (read, pointer) =
@@ -49,5 +50,7 @@ pub async fn own_record_changed<D: GovernanceRuntimeDeps>(
     }
     let state = deps.governance_state(community_id).unwrap_or_default();
     let me = crate::op_log::own_member(deps, community_id, &state)?;
+    // A local cutover may have installed a new key during the network read.
+    let device = device_op_key(deps, community_id, false)?;
     OpSigner::checked(community_id, &state, me.pseudonym, &device).map(|_| ())
 }

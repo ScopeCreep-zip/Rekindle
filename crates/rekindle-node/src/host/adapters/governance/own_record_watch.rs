@@ -103,11 +103,18 @@ impl HostGovernance {
     /// A re-enrolment may arrive through a peer's record, without any
     /// changes on the retired device's now read-only record.
     pub(super) fn note_retirement_after_rebuild(&self, community: &str) {
+        // Resolve the writer before the current-key check. A concurrent
+        // cutover must never redirect this cancellation to its new record.
+        let record = self
+            .own_op_record_writer(community)
+            .ok()
+            .map(|(record, _)| record);
         if let Ok(Some(retired_from)) =
             rekindle_governance_runtime::device_re_enrol::retired_from(self, community)
         {
             self.report_own_retirement(
                 community,
+                record.as_deref(),
                 &GovernanceRuntimeError::OwnKeyRetired {
                     community: community.to_owned(),
                     retired_from,
@@ -116,9 +123,14 @@ impl HostGovernance {
         }
     }
 
-    fn report_own_retirement(&self, community: &str, error: &GovernanceRuntimeError) {
-        if let Ok((record, _)) = self.own_op_record_writer(community) {
-            self.stop_member_record_republishes(&record);
+    fn report_own_retirement(
+        &self,
+        community: &str,
+        record: Option<&str>,
+        error: &GovernanceRuntimeError,
+    ) {
+        if let Some(record) = record {
+            self.stop_member_record_republishes(record);
         }
         let first = self
             .ctx
@@ -162,8 +174,8 @@ impl HostGovernance {
         .await
         {
             Ok(()) => {}
-            Err(error @ GovernanceRuntimeError::OwnKeyRetired { .. }) => {
-                self.report_own_retirement(community_id, &error);
+            Err(GovernanceRuntimeError::OwnKeyRetired { .. }) => {
+                self.note_retirement_after_rebuild(community_id);
             }
             Err(error) => {
                 tracing::debug!(community_id, record, %error, "own record change not read");

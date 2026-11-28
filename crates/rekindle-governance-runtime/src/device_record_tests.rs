@@ -361,3 +361,93 @@ fn a_device_key_op_routes_to_the_record_it_binds() {
     let routed = op_record_of(&deps, HELD_IN, &before, &carrier).unwrap();
     assert_eq!(routed, MEMBER_RECORD);
 }
+
+#[tokio::test]
+async fn own_watch_checks_the_installed_device_after_the_read() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use rekindle_record_pool::test_support::{pool_on, MemDht};
+    use rekindle_records::port::RecordPort;
+
+    let (cert, mut state) = two_device_state();
+    let author = cert.creator_pseudonym.clone();
+    let old = SigningKey::from_bytes(&FIRST_DEVICE)
+        .verifying_key()
+        .to_bytes();
+    let p = derive::derive_community_pseudonym(&SECRET, HELD_IN);
+    let retired = rekindle_governance::device_writer::retire(
+        &p,
+        HELD_IN,
+        MEMBER_RECORD,
+        state.devices.member(&author).unwrap(),
+        old,
+        4,
+    )
+    .unwrap();
+    state.devices.absorb(
+        HELD_IN,
+        &GovernanceOp {
+            author: author.clone(),
+            seq: 0,
+            prev: None,
+            deps: Vec::new(),
+            issued_at: 0,
+            body: GovernanceEntry::DeviceRetired(retired),
+            sig: [0; 64],
+            device_key: SigningKey::from_bytes(&SECOND_DEVICE)
+                .verifying_key()
+                .to_bytes(),
+        },
+    );
+    let mut deps = MockGovernanceRuntimeDeps::new();
+    deps.expect_governance_state()
+        .returning(move |_| Some(state.clone()));
+    deps.expect_genesis_cert()
+        .returning(move |_| Some(cert.clone()));
+    deps.expect_community_membership().returning(move |_| {
+        Some(CommunityMembership {
+            my_pseudonym_hex: Some(author.to_hex()),
+            anchor: Some(HELD_IN.into()),
+            member_registry_key: None,
+            my_subkey_index: None,
+            my_segment_index: None,
+            slot_keypair: None,
+            slot_seed_hex: None,
+            channel_ids: Vec::new(),
+            mek_generation: 0,
+        })
+    });
+    let mut store = crate::deps::MockGovernanceOpStore::new();
+    store
+        .expect_signed_here_head()
+        .withf(move |_, key| *key == old)
+        .returning(|_, _| Ok(None));
+    let store: Arc<dyn crate::deps::GovernanceOpStore> = Arc::new(store);
+    deps.expect_op_store().returning(move || Arc::clone(&store));
+    let installed = Arc::new(AtomicBool::new(false));
+    let current = Arc::clone(&installed);
+    deps.expect_device_op_key().returning(move |_| {
+        let secret = if current.load(Ordering::SeqCst) {
+            SECOND_DEVICE
+        } else {
+            FIRST_DEVICE
+        };
+        Ok(Some(Zeroizing::new(secret)))
+    });
+    let dht = Arc::new(MemDht::default());
+    let port: Arc<dyn RecordPort> = pool_on(Arc::clone(&dht));
+    deps.expect_record_port()
+        .returning(move || Ok(Arc::clone(&port)));
+
+    assert!(matches!(
+        crate::own_record_watch::own_record_changed(&deps, HELD_IN, MEMBER_RECORD).await,
+        Err(GovernanceRuntimeError::OwnKeyRetired {
+            retired_from: 5,
+            ..
+        })
+    ));
+    dht.on_get(move || installed.store(true, Ordering::SeqCst));
+    crate::own_record_watch::own_record_changed(&deps, HELD_IN, MEMBER_RECORD)
+        .await
+        .expect("the successor installed during the read is effective");
+}
