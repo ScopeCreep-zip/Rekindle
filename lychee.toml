@@ -11,7 +11,11 @@ verbose = "info"
 timeout = 20
 
 # Retries on transient errors.
-max_retries = 2
+max_retries = 4
+
+# Wait before the first retry; lychee doubles it each retry (2, 4, 8, 16 s),
+# long enough to outlast github.com throttling the runner (503 on blob pages).
+retry_wait_time = 2
 
 # Maximum number of concurrent requests.
 max_concurrency = 14
@@ -71,3 +75,23 @@ include_fragments = "none"
 
 # Run only over markdown — code comments are out of scope for now.
 extensions = ["md"]
+
+# github.com file pages (blob) are throttled for CI runners (503 from Actions while the same URLs
+# answer 200 elsewhere) and fail to render for very large repositories (ryanoasis/nerd-fonts at
+# v3.3.0: 503 everywhere). raw.githubusercontent.com serves the same file at the same ref from
+# GitHub's content CDN, so every blob link is checked there: a missing file or a wrong ref still
+# fails, no status code is newly accepted, and tree (directory) links are checked as before.
+# nerd-fonts' "blob/-/" (default branch) maps to HEAD first. (lychee v0.24.2 remap: regex replace_all.)
+remap = [
+  "^https://github\\.com/ryanoasis/nerd-fonts/blob/-/(.+)$ https://raw.githubusercontent.com/ryanoasis/nerd-fonts/HEAD/$1",
+  "^https://github\\.com/([^/]+)/([^/]+)/blob/(.+)$ https://raw.githubusercontent.com/$1/$2/$3",
+]
+
+# github.com throttles automated page fetches from CI runners and answers 503
+# (lychee fetches a blob URL's HTML; the token only backs a repo-metadata
+# fallback). Pace requests to it instead of accepting 503 or excluding it, so a
+# broken GitHub link still fails. lychee's rate-limit guidance:
+# https://lychee.cli.rs/troubleshooting/rate-limits/ (per-host settings, v0.24.2).
+[hosts."github.com"]
+concurrency = 2
+request_interval = "500ms"
