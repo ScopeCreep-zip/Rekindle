@@ -76,6 +76,22 @@ async function openInbox(pack: string, how: "tab" | "menu"): Promise<boolean> {
   if (how === "tab") await pressSkinControl(browser, "notifications");
   else await menu(browser, "Rekindle", "Notifications");
   await shown(browser, ".notification-panel", NET_WAIT_MS);
+  // A dialog takes focus when it opens (WAI-ARIA), from the tab and the menu alike.
+  let focus = "";
+  await waitUntil(
+    async () => {
+      focus = (await browser.execute(() => {
+        const el = document.activeElement;
+        const inPanel = !!el && !!el.closest(".notification-panel");
+        return `${inPanel ? "in panel" : "outside"}: ${el ? `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80) : "none"}`;
+      })) as string;
+      return focus.startsWith("in panel");
+    },
+    2_000,
+    ""
+  ).catch(() => undefined);
+  console.log(`[reenrol] ${pack} inbox (${how}) focus: ${focus}`);
+  if (!focus.startsWith("in panel")) throw new Error(`the ${pack} inbox (${how}) did not take focus: ${focus}`);
   const paint = await painted(browser, ".notification-panel");
   console.log(`[reenrol] ${pack} inbox (${how}) painted: ${JSON.stringify(paint)}`);
   return paint.total > 0 && paint.changed >= paint.total / 2;
@@ -302,14 +318,18 @@ describe("a restored copy re-enrols the device: the original is told and offered
     })) as string;
     console.log(`[reenrol] focus before Escape: ${focused}`);
     // Escape belongs to the topmost layer: a review raised over the open
-    // inbox (Logout's, an ordinary review) takes the first press and only it
-    // closes; the inbox stays, and the next press closes the inbox.
-    await browser.execute(() => {
-      const { invoke } = (
-        window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string): Promise<unknown> } }
-      ).__TAURI_INTERNALS__;
-      void invoke("logout").catch(() => undefined);
-    });
+    // inbox takes the first press and only it closes; the inbox stays, and
+    // the next press closes the inbox. The review is Report Bug's
+    // (Symbiosis's Help menu: dto/skin_menu.rs:105-106 → host/skin/actions.rs:426
+    // ShellOp::ReportBug → app_menu.actions.ts:25 openExternalUrl, a
+    // TrustChanging intent, always reviewed: gate.rs:4-12), chosen by keyboard
+    // so no press lands outside the inbox; Escape cancels it, so nothing opens.
+    const help = await shown(browser, '[data-skin-action="menu:help"]', NET_WAIT_MS);
+    await browser.execute((node: HTMLElement) => node.focus(), help as unknown as HTMLElement);
+    await browser.keys("Enter");
+    const report = await byText(browser, ".menu-dropdown-item", "Report Bug", NET_WAIT_MS);
+    await browser.execute((node: HTMLElement) => node.focus(), report as unknown as HTMLElement);
+    await browser.keys("Enter");
     await shown(browser, ".intent-dialog", NET_WAIT_MS);
     expect(await (await browser.$(".notification-panel")).isDisplayed()).toBe(true);
     await shot("review-over-inbox");
