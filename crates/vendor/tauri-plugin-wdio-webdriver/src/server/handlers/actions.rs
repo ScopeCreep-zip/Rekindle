@@ -236,7 +236,7 @@ async fn perform_actions<R: Runtime + 'static>(
                             KeyAction::KeyDown { value } => {
                                 held_modifiers.press(value);
                                 executor
-                                    .dispatch_key_event(value, true, &held_modifiers.state())
+                                    .dispatch_action_key(value, true, &held_modifiers.state())
                                     .await?;
                                 // Track pressed key
                                 let mut sessions = state.sessions.write().await;
@@ -247,7 +247,7 @@ async fn perform_actions<R: Runtime + 'static>(
                             KeyAction::KeyUp { value } => {
                                 held_modifiers.release(value);
                                 executor
-                                    .dispatch_key_event(value, false, &held_modifiers.state())
+                                    .dispatch_action_key(value, false, &held_modifiers.state())
                                     .await?;
                                 // Remove from tracked keys
                                 let mut sessions = state.sessions.write().await;
@@ -437,7 +437,7 @@ pub async fn release<R: Runtime + 'static>(
     for key in &pressed_keys {
         held_modifiers.release(key);
         if let Err(error) = executor
-            .dispatch_key_event(key, false, &held_modifiers.state())
+            .dispatch_action_key(key, false, &held_modifiers.state())
             .await
         {
             first_error.get_or_insert(error);

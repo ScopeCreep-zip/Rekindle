@@ -8,8 +8,8 @@ import path from "node:path";
 import { browser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { keepDir } from "./keep.ts";
-import { machineState } from "./machine.ts";
 import { RekindleAppLauncher } from "./launcher.ts";
+import { machineState, refuseLockedSession } from "./machine.ts";
 import { shotAllWindows, shotsFor } from "./shots.ts";
 import { timingAfter, timingBefore, timingTest } from "./timing.ts";
 
@@ -69,14 +69,18 @@ export const base = {
     // Whether the screen is locked, for every run (machine.ts): a locked
     // session hides every window, so timing and visibility cannot hold.
     console.log(`[machine] at session start: ${machineState()}`);
+    refuseLockedSession("session start");
     for (const [name, b] of sessions()) {
       await b.setTimeout({ script: SCRIPT_TIMEOUT_MS });
       const { script } = await b.getTimeouts();
-      if (script !== SCRIPT_TIMEOUT_MS) throw new Error(`${name}: the driver kept a script timeout of ${script} ms`);
+      if (script !== SCRIPT_TIMEOUT_MS)
+        throw new Error(`${name}: the driver kept a script timeout of ${script} ms`);
     }
   },
   // Each command's duration, printed when slow or timed out (timing.ts).
   beforeTest(test: { title: string; parent: string; file: string }) {
+    // A session can lock mid-run: each test is refused once it does.
+    refuseLockedSession(`before "${test.title}"`);
     timingTest(test.title);
     shotsFor(test.file, test.parent, test.title);
   },
@@ -90,7 +94,13 @@ export const base = {
   // pass as on a failure (shots.ts: a green assertion alone validates nothing).
   async afterTest(test: { title: string }, _context: unknown, result: { passed: boolean }) {
     await shotAllWindows();
-    if (!result.passed) await recordFailure(test.title);
+    if (!result.passed) {
+      // The machine as the test failed: a session that locked after the
+      // start and beforeTest checks shows here, beside the shots, instead of
+      // passing for a product fault (best effort: machineState never throws).
+      console.log(`[machine] at failure of "${test.title}": ${machineState()}`);
+      await recordFailure(test.title);
+    }
   },
   // A failed before/after hook leaves evidence too: every window each user
   // has open, as a shot under the hook's own name, and the failure record
@@ -98,12 +108,13 @@ export const base = {
   async afterHook(
     test: { title?: string; parent?: string; file?: string } | undefined,
     _context: unknown,
-    result: { passed?: boolean; error?: unknown },
+    result: { passed?: boolean; error?: unknown }
   ) {
     if (result.passed !== false && !result.error) return;
     const title = test?.title ?? "hook";
     shotsFor(test?.file ?? "hook", test?.parent ?? "hook", title);
     await shotAllWindows();
+    console.log(`[machine] at failure of "${title}": ${machineState()}`);
     await recordFailure(title);
   },
 } satisfies Partial<WebdriverIO.Config>;

@@ -145,6 +145,24 @@ export async function skinShown(b: Browser, href: string): Promise<void> {
   });
 }
 
+/**
+ * Wait until the window `b` is in shows the skin the Host serves it now
+ * (`get_skin`, the same call useSkin makes): a readiness check, not a skin
+ * choice. A window draws its own layout until its skin's art decodes and its
+ * sheet links, so a step or shot before then proves the plain layout. Fails
+ * "the window never showed the applied skin" when the skin really is
+ * missing (plan E7.14 (b), lead 2026-11-27).
+ */
+export async function servedSkinShown(b: Browser): Promise<void> {
+  const href = (await b.execute(async () => {
+    const w = window as unknown as {
+      __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<{ value: { tokensHref: string } }> };
+    };
+    return (await w.__TAURI_INTERNALS__.invoke("get_skin", { id: null })).value.tokensHref;
+  })) as string;
+  await skinShown(b, href);
+}
+
 /** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
 export async function setLoginSkin(b: Browser, user: User, name: string): Promise<void> {
   for (const row of await b.$$(".skin-row")) {

@@ -34,5 +34,5 @@ fn epochs_end() {
 #[test]
 fn debug_redacts() {
     let key = GroupSenderKey::new(1, [0xAB; SENDER_KEY_LEN]);
-    assert!(!format!("{key:?}").contains("171"));
+    assert_eq!(format!("{key:?}"), "GroupSenderKey(<redacted>)");
 }
