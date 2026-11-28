@@ -261,6 +261,24 @@ impl GovernanceOps {
         self.enqueue(entry, community, &client_id).await
     }
 
+    /// Recover a vault-staged carrier. Its row may already have been
+    /// written by the previous process.
+    pub(crate) async fn resume_carrier(
+        &self,
+        community: &str,
+        record: &str,
+        op: Vec<u8>,
+    ) -> Result<(), String> {
+        let (entry, _) = row(community, record, &op)?;
+        self.outbox
+            .deps()
+            .insert_once(self.outbox.new_row(entry))
+            .await
+            .map_err(|error| error.to_string())?;
+        self.outbox.wake();
+        Ok(())
+    }
+
     /// Queue `op` as [`publish_answer`](Self::publish_answer) does, and wait until it
     /// landed on `M`/2 with our `Frontier` on `M`/3, through the outbox's
     /// retries, for at most `within` (plan E3.2 S6 (4)).
@@ -498,6 +516,17 @@ struct GovernanceOpSender {
     waiters: Arc<OpWaiters>,
 }
 
+impl GovernanceOpSender {
+    async fn send_op(&self, community: &str, record: &str, op: &[u8]) -> Result<(), String> {
+        self.governance
+            .append_own_op(community, record, op.to_vec())
+            .await?;
+        self.governance
+            .publish_retirement_pointer(community, op)
+            .await
+    }
+}
+
 #[async_trait]
 impl StreamSender for GovernanceOpSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
@@ -506,11 +535,7 @@ impl StreamSender for GovernanceOpSender {
                 community,
                 record,
                 op,
-            }) => match self
-                .governance
-                .append_own_op(community, record, op.to_vec())
-                .await
-            {
+            }) => match self.send_op(community, record, op).await {
                 Ok(()) => {
                     self.waiters.landed(community, &row.client_id);
                     AttemptOutcome::Sent

@@ -66,7 +66,7 @@ pub(super) fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         | SubscriptionEvent::Friend(_)
         | SubscriptionEvent::GroupDm(_) => "chat-event",
         SubscriptionEvent::Notification(_) => "notification-event",
-        SubscriptionEvent::IntentPending(_) => "intent-event",
+        SubscriptionEvent::IntentPending { .. } | SubscriptionEvent::HeldReviews(_) => "intent-event",
         SubscriptionEvent::Network(_) => "network-status",
         SubscriptionEvent::Transfer(_) => "transfer-event",
     }

@@ -109,6 +109,15 @@ pub struct CommunityState {
     /// its key drop (`M`/7), with its record key.
     #[serde(skip)]
     pub key_drop: Option<(String, rekindle_records::lease::LeaseId)>,
+    /// Our own op record's watch (ADR 0022 rule 4, plan E3.2 S7d-keys.9):
+    /// our `M(p,d)`, held read-only and watched on its op-log head (`M`/2),
+    /// with its record key.
+    #[serde(skip)]
+    pub own_record_watch: Option<(String, rekindle_records::lease::LeaseId)>,
+    /// The own-record watch told the user our key was retired (once a
+    /// session: a retired key stays retired).
+    #[serde(skip)]
+    pub own_key_retired_shown: bool,
     /// One writer of our own key drop at a time (plan RV2d): each write
     /// reads the unsettled rows and replaces the whole subkey, so two
     /// interleaved writes could publish the older row set last.
@@ -129,6 +138,12 @@ pub struct CommunityState {
     /// member route source on both modes.
     #[serde(skip)]
     pub member_routes: rekindle_presence::community::MemberRouteCache,
+    /// Fresh initialization owns M/6 until it finishes the record.
+    pub(crate) initializing_member_routes: bool,
+    /// The device record and blob last published in this session.
+    pub(crate) written_member_route: Option<(String, Vec<u8>)>,
+    /// An independently written M/6 halted publication for this record.
+    pub(crate) conflicted_member_route: Option<String>,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

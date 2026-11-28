@@ -16,7 +16,7 @@ use std::rc::Rc;
 use rekindle_types::governance::{DeviceEndorsement, GenesisCert, GovernanceEntry};
 use rekindle_types::id::PseudonymKey;
 
-use super::prefork::{after_fork, endorsers, fork_events};
+use super::prefork::{after_fork, endorsers, exempt_replacement, fork_events};
 use super::resolve::Ancestry;
 use super::resume::{reaches, Reach};
 use crate::device_judge::{
@@ -31,7 +31,8 @@ pub(super) fn carrier_of(op: &VerifiedOp) -> Option<&PseudonymKey> {
     match op.body() {
         GovernanceEntry::MemberJoined { .. }
         | GovernanceEntry::DeviceKey(_)
-        | GovernanceEntry::DeviceRetired(_) => Some(op.author()),
+        | GovernanceEntry::DeviceRetired(_)
+        | GovernanceEntry::DeviceReEnrol(_) => Some(op.author()),
         GovernanceEntry::DeviceReadmit(r) => Some(&r.member),
         _ => None,
     }
@@ -138,6 +139,12 @@ impl<'c> Judge<'c> {
             return verdict;
         }
         let at = (e.incarnation, e.device_key);
+        // ADR 0022 rule 7's exempt replacement (K4b.4 R3): the key a
+        // re-enrolment with no fork event in its strict past carries, the
+        // lowest `(lamport, op_hash)` of such at the op's deps.
+        if exempt_replacement(kept, &held, past, &events, &md, at) {
+            return verdict;
+        }
         let carriers = endorsers(kept, kept.len(), &held, &md, |c| {
             (c.incarnation, c.device_key) == at
         });

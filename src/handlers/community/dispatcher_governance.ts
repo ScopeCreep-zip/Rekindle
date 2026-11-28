@@ -106,12 +106,20 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
   if ("keyStatus" in g) return g.keyStatus.community;
+  if ("catchUp" in g) return g.catchUp.community;
   if ("bansChanged" in g) return g.bansChanged.community;
   return null;
 }
 
 /** One governance event; a row-writing one only against a row the window holds. */
 function applyGovernance(g: GovernanceEvent): void {
+  // S7d-keys.10: the writes the unlock barrier holds, as the Host labels them.
+  if ("catchUp" in g) {
+    const { community, catchingUp, pending } = g.catchUp;
+    if (communityState.communities[community])
+      setCommunityState("communities", community, "catchUp", { catchingUp, pending });
+    return;
+  }
   // FX3: the community key we hold, current or waiting on a key holder.
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;

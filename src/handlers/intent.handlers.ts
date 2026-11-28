@@ -1,5 +1,5 @@
 import { subscribeIntentEvents, type UnlistenFn } from "../ipc/channels";
-import { presentReview } from "../stores/intent.store";
+import { applyHeldReviews, presentHeldReview, presentReview } from "../stores/intent.store";
 
 /**
  * Reviews of actions the backend began (`SubscriptionEvent::IntentPending`,
@@ -10,7 +10,18 @@ import { presentReview } from "../stores/intent.store";
  * friend invite link, plan E2.1); this handler only renders it.
  */
 export function subscribeBackendIntents(): Promise<UnlistenFn> {
-  return subscribeIntentEvents((review) => {
+  return subscribeIntentEvents((event) => {
+    // The Host's complete held set (plan S7d-keys.10 part 2b): a reload or
+    // re-subscribe is sent it, and the held reviews become exactly that set.
+    if ("heldReviews" in event) {
+      applyHeldReviews(event.heldReviews);
+      return;
+    }
+    const { review, holdId } = event.intentPending;
+    if (holdId !== null) {
+      presentHeldReview({ review, holdId });
+      return;
+    }
     presentReview(review).catch(() => {
       // Cancelled or expired: the Host dropped the action.
     });

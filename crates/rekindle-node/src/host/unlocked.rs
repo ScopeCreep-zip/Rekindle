@@ -82,7 +82,7 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
 /// install, before any frontend has connected, and holds for the session,
 /// so each frontend that connects later is shown it (plan E7.1).
 fn raise_memory_notice(ctx: &DaemonContext, locked: &[bool]) {
-    if let Some(notice) = memory_notice(locked) {
+    if let Some(notice) = memory_notice(locked, ctx.alert_id()) {
         ctx.publish_standing(notice);
     }
 }
@@ -109,6 +109,7 @@ fn held_secrets_locked(ctx: &DaemonContext) -> [bool; 2] {
 /// reach swap, and raising the lock limit (`ulimit -l`) fixes it.
 pub(crate) fn memory_notice(
     locked: &[bool],
+    id: String,
 ) -> Option<rekindle_types::subscription_events::SubscriptionEvent> {
     use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
     let refused = locked.iter().filter(|l| !**l).count();
@@ -118,6 +119,7 @@ pub(crate) fn memory_notice(
             "the unlocked identity's keys are not in locked memory"
         );
         SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+            id,
             title: "Keys not in locked memory".into(),
             subject: None,
             body: "The system refused to lock this identity's keys in memory, so they may be \

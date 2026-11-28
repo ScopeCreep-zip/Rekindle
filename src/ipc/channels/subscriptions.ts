@@ -41,6 +41,10 @@ interface OutboundEnvelope {
   /// `event-stream` for the stream's own frames.
   channel: string;
   payload: unknown;
+  /// One of the Host's standing envelopes (its current held reviews and
+  /// standing alerts), sent on a first subscribe and again after a resume's
+  /// replay (plan S7d-keys.10 part 2b). It carries no place in the stream.
+  standing?: boolean;
 }
 
 /// The stream's own frames (`event_router::STREAM_CHANNEL`).
@@ -159,6 +163,14 @@ export function startEventStream(reload?: () => void): Promise<void> {
         last = envelope.cursor;
         writeCursor(last);
       }
+      return;
+    }
+    // A standing envelope restates what holds now: it is applied whatever
+    // the window's cursor (a reload resumes past the event that first
+    // announced it) and never moves the cursor. Applying it twice changes
+    // nothing: reviews are kept one per hold, alerts one per id.
+    if (envelope.standing === true) {
+      dispatch(envelope.channel, envelope.payload);
       return;
     }
     const cursor = envelope.cursor;
@@ -482,13 +494,16 @@ export function subscribeProfileUpdates(onUpdate: () => void): Promise<UnlistenF
   });
 }
 
-/// A review of an action the backend began (`SubscriptionEvent::IntentPending`).
-export function subscribeIntentEvents(
-  onReview: (review: IntentReview) => void
-): Promise<UnlistenFn> {
-  return on<{ intentPending: IntentReview }>("intent-event", (payload) => {
-    onReview(payload.intentPending);
-  });
+/// The Host's reviews (plan S7d-keys.10 part 2b): a live review of an
+/// action the backend began (`intentPending`, `holdId` the backend's hold,
+/// stable across refreshes, or null), or the complete set of held reviews
+/// (`heldReviews`, a standing snapshot, empty included).
+export type IntentEvent =
+  | { intentPending: { review: IntentReview; holdId: string | null } }
+  | { heldReviews: { review: IntentReview; holdId: string }[] };
+
+export function subscribeIntentEvents(onEvent: (event: IntentEvent) => void): Promise<UnlistenFn> {
+  return on<IntentEvent>("intent-event", onEvent);
 }
 
 /// A pairing link arrived from the OS and was refused

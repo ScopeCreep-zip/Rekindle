@@ -241,6 +241,21 @@ pub(crate) async fn run(
     {
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
+    let governance = crate::daemon::dispatch::adapter(ctx);
+    if let Err(e) = governance.resume_retirement_carriers().await {
+        return fail(
+            ctx,
+            IpcResponse::error(500, format!("retirement carriers: {e}")),
+        )
+        .await;
+    }
+    if let Err(e) = governance.resume_held_re_enrol() {
+        return fail(
+            ctx,
+            IpcResponse::error(500, format!("held device re-enrolment: {e}")),
+        )
+        .await;
+    }
     // 3e'. The stored MEKs of those communities and their channels (plan
     // E3.1 C2c), so a post or a read after a restart has its key.
     crate::daemon::dispatch::adapter(ctx)
@@ -489,6 +504,7 @@ async fn save_unsent(ctx: &DaemonContext, unsent: Vec<rekindle_records::port::Un
         tracing::info!(saved, "unsent DHT writes kept for the next unlock");
         ctx.publish_event(SubscriptionEvent::Notification(
             NotificationEvent::SystemAlert {
+                id: ctx.alert_id(),
                 title: "Changes still to publish".into(),
                 subject: None,
                 body: format!(

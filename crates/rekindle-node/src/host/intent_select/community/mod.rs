@@ -34,6 +34,9 @@ pub(super) async fn selection(
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     match request {
+        CommunityRequest::Lifecycle(LifecycleRequest::CommunityDeviceReEnrol {}) => {
+            re_enrol_selection(ctx, s).await
+        }
         CommunityRequest::Lifecycle(request) => lifecycle::selection(ctx, request, s),
         CommunityRequest::Channels(request) => channels::selection(ctx, request, s).await,
         CommunityRequest::Messages(request) => messages::selection(ctx, request, s),
@@ -295,4 +298,21 @@ pub(super) fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKe
         .ok()
         .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
         .map(rekindle_types::id::PseudonymKey)
+}
+
+/// The `ReEnrolDevice` review (ADR 0022 rules 4 and 9, plan E3.2
+/// S7d-keys.10): it states the restore or copy the Host found and the seq
+/// the old key is retired at (the lowest over the communities that found
+/// it); nothing undoes it.
+async fn re_enrol_selection(ctx: &DaemonContext, s: &mut Selection) -> Result<(), IpcResponse> {
+    let last_seq = crate::daemon::dispatch::adapter(ctx)
+        .re_enrol_last_seq()
+        .await
+        .ok_or_else(|| IpcResponse::error(409, "this device's key needs no re-enrolment"))?;
+    s.subject = Subject::Named {
+        name: "this device's key in every community".into(),
+    };
+    s.facts.push(Fact::device_re_enrolment(last_seq));
+    s.reversibility = Reversibility::Never;
+    Ok(())
 }

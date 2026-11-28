@@ -251,6 +251,7 @@ type PendingGovKind =
   | "deviceKey"
   | "deviceRetired"
   | "deviceReadmit"
+  | "deviceReEnrol"
   | "successorLinkRequest"
   | "successorLink";
 

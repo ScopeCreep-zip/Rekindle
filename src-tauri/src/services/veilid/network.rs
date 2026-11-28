@@ -350,6 +350,7 @@ pub fn handle_attachment(
         "disconnected"
     };
     let notification = rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+        id: uuid::Uuid::new_v4().to_string(),
         title: "Network".to_string(),
         subject: None,
         body: format!("Veilid network {status}"),

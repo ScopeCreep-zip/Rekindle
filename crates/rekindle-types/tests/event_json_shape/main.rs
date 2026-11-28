@@ -93,6 +93,7 @@ const UNREAD_NESTED: &[&str] = &[
 ];
 
 const INTENT_PENDING_NAMES: &[&str] = &["intentPending"];
+const HELD_REVIEWS_NAMES: &[&str] = &["heldReviews"];
 
 const FAMILIES: &[Family] = &[
     Family {
@@ -180,6 +181,11 @@ const FAMILIES: &[Family] = &[
         names: INTENT_PENDING_NAMES,
         nested: &[],
     },
+    Family {
+        tag: "heldReviews",
+        names: HELD_REVIEWS_NAMES,
+        nested: &[],
+    },
 ];
 
 /// What one sample exercises: its family tag, its variant name and the
@@ -244,7 +250,8 @@ fn classify(event: &SubscriptionEvent) -> Classified {
             "unreadChanged",
             vec![unread_context_name(context)],
         ),
-        SubscriptionEvent::IntentPending(_) => ("intentPending", "intentPending", vec![]),
+        SubscriptionEvent::IntentPending { .. } => ("intentPending", "intentPending", vec![]),
+        SubscriptionEvent::HeldReviews(_) => ("heldReviews", "heldReviews", vec![]),
     };
     Classified {
         tag,
@@ -294,7 +301,17 @@ fn all_samples() -> Vec<Sample> {
     all.extend(unread_samples());
     all.push((
         "intentPending.intentPending".to_owned(),
-        SubscriptionEvent::IntentPending(intent::review()),
+        SubscriptionEvent::IntentPending {
+            review: intent::review(),
+            hold_id: Some(intent::id()),
+        },
+    ));
+    all.push((
+        "heldReviews.heldReviews".to_owned(),
+        SubscriptionEvent::HeldReviews(vec![rekindle_types::intent::HeldReview {
+            review: intent::review(),
+            hold_id: intent::id(),
+        }]),
     ));
     all
 }
@@ -448,7 +465,7 @@ fn variant_names_match_the_serde_tags() {
             .get(c.tag)
             .unwrap_or_else(|| panic!("{id}: outer tag is not `{}`", c.tag));
         // Single-variant families: their payload is the struct itself.
-        if c.tag == "unreadChanged" || c.tag == "intentPending" {
+        if c.tag == "unreadChanged" || c.tag == "intentPending" || c.tag == "heldReviews" {
             continue;
         }
         let inner = inner.as_object().expect("struct variant object");
@@ -552,4 +569,9 @@ fn unread_changed_is_covered() {
 #[test]
 fn intent_pending_is_covered() {
     check_family("intentPending");
+}
+
+#[test]
+fn held_reviews_is_covered() {
+    check_family("heldReviews");
 }

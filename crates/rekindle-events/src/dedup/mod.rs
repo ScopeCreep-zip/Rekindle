@@ -192,8 +192,15 @@ fn hash_event(event: &SubscriptionEvent, now_ms: u64) -> [u8; 32] {
             hasher.update(b"transfer");
         }
         // Each review has its own id: two are never the same action.
-        SubscriptionEvent::IntentPending(review) => {
+        SubscriptionEvent::IntentPending { review, .. } => {
             hasher.update(review.intent_id.to_string().as_bytes());
+        }
+        // A snapshot of the held set: each held review's current id.
+        SubscriptionEvent::HeldReviews(held) => {
+            hasher.update(b"held");
+            for held in held {
+                hasher.update(held.review.intent_id.to_string().as_bytes());
+            }
         }
     }
 
@@ -218,7 +225,8 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(_) => "sy",
         SubscriptionEvent::Transfer(_) => "tf",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
-        SubscriptionEvent::IntentPending(_) => "ip",
+        SubscriptionEvent::IntentPending { .. } => "ip",
+        SubscriptionEvent::HeldReviews(_) => "ih",
     }
 }
 

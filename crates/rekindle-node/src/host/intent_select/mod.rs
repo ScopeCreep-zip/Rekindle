@@ -335,6 +335,7 @@ pub(crate) async fn select(
         | IpcRequest::DmTyping { .. }
         | IpcRequest::DmInbox { .. }
         | IpcRequest::IntentCommit { .. }
+        | IpcRequest::IntentListHeld
         | IpcRequest::IntentCancel { .. }
         | IpcRequest::Undo { .. }
         | IpcRequest::Subscribe { .. }

@@ -103,6 +103,7 @@ pub enum PendingGovKind {
     DeviceKey,
     DeviceRetired,
     DeviceReadmit,
+    DeviceReEnrol,
     SuccessorLinkRequest,
     SuccessorLink,
 }
@@ -159,6 +160,7 @@ impl PendingGovKind {
             E::DeviceKey { .. } => Self::DeviceKey,
             E::DeviceRetired { .. } => Self::DeviceRetired,
             E::DeviceReadmit { .. } => Self::DeviceReadmit,
+            E::DeviceReEnrol { .. } => Self::DeviceReEnrol,
             E::SuccessorLinkRequest { .. } => Self::SuccessorLinkRequest,
             E::SuccessorLink { .. } => Self::SuccessorLink,
         }
@@ -226,7 +228,7 @@ impl PendingGovOp {
     /// A held write of `kind` naming `target`.
     #[must_use]
     pub fn held_as(op_id: String, kind: PendingGovKind, target: PendingGovTarget) -> Self {
-        let mut label = kind_words(kind);
+        let mut label = kind_words(kind).to_owned();
         let named = [&target.member, &target.channel, &target.role];
         if let Some(id) = named.into_iter().flatten().next() {
             label.push(' ');
@@ -250,18 +252,60 @@ impl PendingGovOp {
     }
 }
 
-/// `kind` in words: "Kick", "Role edited".
-fn kind_words(kind: PendingGovKind) -> String {
-    let mut words = String::new();
-    for (i, c) in format!("{kind:?}").chars().enumerate() {
-        if i > 0 && c.is_ascii_uppercase() {
-            words.push(' ');
-            words.push(c.to_ascii_lowercase());
-        } else {
-            words.push(c);
-        }
+/// `kind` in words: "Kick", "Role edited"; a held re-enrolment reads
+/// "Re-enrolling this device" (plan E3.2 S7d-keys.10).
+fn kind_words(kind: PendingGovKind) -> &'static str {
+    match kind {
+        PendingGovKind::ChannelCreated => "Channel created",
+        PendingGovKind::ChannelEdited => "Channel edited",
+        PendingGovKind::ChannelDeleted => "Channel deleted",
+        PendingGovKind::RoleEdited => "Role edited",
+        PendingGovKind::RolesChanged => "Roles changed",
+        PendingGovKind::RoleDeleted => "Role deleted",
+        PendingGovKind::Ban => "Ban",
+        PendingGovKind::Unban => "Unban",
+        PendingGovKind::Join => "Join",
+        PendingGovKind::MemberRecordMoved => "Member record moved",
+        PendingGovKind::Leave => "Leave",
+        PendingGovKind::Kick => "Kick",
+        PendingGovKind::ApproveMember => "Approve member",
+        PendingGovKind::RejectMember => "Reject member",
+        PendingGovKind::Timeout => "Timeout",
+        PendingGovKind::RemoveTimeout => "Remove timeout",
+        PendingGovKind::CommunityEdited => "Community edited",
+        PendingGovKind::NotificationDefault => "Notification default",
+        PendingGovKind::KeyRotation => "Key rotation",
+        PendingGovKind::CategoryCreated => "Category created",
+        PendingGovKind::CategoryEdited => "Category edited",
+        PendingGovKind::CategoryDeleted => "Category deleted",
+        PendingGovKind::PermissionsChanged => "Permissions changed",
+        PendingGovKind::ThreadCreated => "Thread created",
+        PendingGovKind::ThreadArchived => "Thread archived",
+        PendingGovKind::ThreadUnarchived => "Thread unarchived",
+        PendingGovKind::EventCreated => "Event created",
+        PendingGovKind::EventArchived => "Event archived",
+        PendingGovKind::EventRsvp => "Event rsvp",
+        PendingGovKind::ExpressionAdded => "Expression added",
+        PendingGovKind::ExpressionRemoved => "Expression removed",
+        PendingGovKind::ModReport => "Mod report",
+        PendingGovKind::OnboardingConfig => "Onboarding config",
+        PendingGovKind::WelcomeScreen => "Welcome screen",
+        PendingGovKind::AdminDelete => "Admin delete",
+        PendingGovKind::SegmentAdded => "Segment added",
+        PendingGovKind::AutoModRule => "Auto mod rule",
+        PendingGovKind::InviteCreated => "Invite created",
+        PendingGovKind::InviteRevoked => "Invite revoked",
+        PendingGovKind::AttachmentPinned => "Attachment pinned",
+        PendingGovKind::CommunityPolicy => "Community policy",
+        PendingGovKind::Checkpoint => "Checkpoint",
+        PendingGovKind::Successor => "Successor",
+        PendingGovKind::DeviceKey => "Device key",
+        PendingGovKind::DeviceRetired => "Device retired",
+        PendingGovKind::DeviceReadmit => "Device readmit",
+        PendingGovKind::DeviceReEnrol => "Re-enrolling this device",
+        PendingGovKind::SuccessorLinkRequest => "Successor link request",
+        PendingGovKind::SuccessorLink => "Successor link",
     }
-    words
 }
 
 #[cfg(test)]

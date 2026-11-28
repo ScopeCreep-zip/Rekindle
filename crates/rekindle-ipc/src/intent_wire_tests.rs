@@ -73,13 +73,21 @@ fn a_pending_review_crosses_the_bus() {
     };
     let decoded = round_trip(BusPayload::Event(StreamFrame::Event(Box::new(Sequenced {
         cursor: Cursor { epoch: 1, seq: 2 },
-        event: SubscriptionEvent::IntentPending(review.clone()),
+        event: SubscriptionEvent::IntentPending {
+            review: review.clone(),
+            hold_id: Some(review.intent_id),
+        },
     }))));
     let BusPayload::Event(StreamFrame::Event(sequenced)) = decoded else {
         panic!("not a pending review");
     };
-    let SubscriptionEvent::IntentPending(got) = sequenced.event else {
+    let SubscriptionEvent::IntentPending {
+        review: got,
+        hold_id,
+    } = sequenced.event
+    else {
         panic!("not a pending review");
     };
     assert_eq!(got, review);
+    assert_eq!(hold_id, Some(review.intent_id));
 }

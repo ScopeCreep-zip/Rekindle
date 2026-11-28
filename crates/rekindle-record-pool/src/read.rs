@@ -200,6 +200,29 @@ impl RecordPool {
         }
     }
 
+    /// Retry a hinted read using D8's existing unconfirmed-claim cap.
+    pub(crate) async fn refetch_hinted(
+        &self,
+        id: LeaseId,
+        subkey: u32,
+        claimed: u64,
+    ) -> Result<Option<RecordValue>, PortError> {
+        let Ok(claimed) = u32::try_from(claimed) else {
+            return Ok(None);
+        };
+        let key = self.key_of(id).ok_or(PortError::LeaseNotHeld(id.0))?;
+        if !self
+            .unconfirmed
+            .lock()
+            .may_fetch(&key, subkey, claimed, tokio::time::Instant::now())
+        {
+            return Ok(None);
+        }
+        let result = self.get_publishing(id, subkey, true, false).await;
+        self.settle_claim(id, subkey, Some(claimed), &result);
+        result.map(|value| value.filter(|value| value.seq >= claimed))
+    }
+
     /// [`read_changed`](Self::read_changed)'s hinted mode: every subkey a
     /// value change named, read from the network so its report mark clears
     /// (see the module notes). A subkey whose read fails or finds no value

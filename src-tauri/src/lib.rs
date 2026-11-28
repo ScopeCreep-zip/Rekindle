@@ -10,6 +10,7 @@ pub mod db_helpers;
 mod deep_links;
 pub mod event_dispatch;
 pub mod event_router;
+pub mod event_snapshot;
 pub mod host_call;
 mod invoke;
 pub mod keystore;

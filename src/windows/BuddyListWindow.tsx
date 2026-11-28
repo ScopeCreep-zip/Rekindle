@@ -33,6 +33,7 @@ import GroupDmList from "../components/buddy-list/GroupDmList";
 import MenuBar from "../components/buddy-list/MenuBar";
 import NewChatModal from "../components/buddy-list/NewChatModal";
 import NewGroupModal from "../components/buddy-list/NewGroupModal";
+import NotificationPanel from "../components/buddy-list/NotificationPanel";
 import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
 import PendingRequests from "../components/buddy-list/PendingRequests";
 import RouteStatus from "../components/buddy-list/RouteStatus";
@@ -350,6 +351,8 @@ const BuddyListWindow: Component = () => {
         onClose={() => setBuddyListUI("showJoinCommunity", false)}
       />
       <CallController />
+      {/* The notification inbox, in the stock layout and under every pack. */}
+      <NotificationPanel />
       <NewGroupModal />
       <InviteToRoomModal
         groupId={buddyListUI.inviteToRoom}

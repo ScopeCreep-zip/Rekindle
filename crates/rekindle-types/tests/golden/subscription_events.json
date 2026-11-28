@@ -1060,6 +1060,48 @@
       }
     }
   },
+  "heldReviews.heldReviews": {
+    "heldReviews": [
+      {
+        "holdId": "01900000-0000-7000-8000-000000000001",
+        "review": {
+          "acknowledgement": null,
+          "cancelSends": true,
+          "class": "destructive",
+          "escalations": [
+            {
+              "containerNotEmpty": {
+                "members": 57,
+                "messages": 1204
+              }
+            }
+          ],
+          "expiresAtMs": 1700000300000,
+          "facts": [
+            {
+              "messagesDeleted": {
+                "count": 1204
+              }
+            }
+          ],
+          "intentId": "01900000-0000-7000-8000-000000000001",
+          "kind": "deleteChannel",
+          "notifies": {
+            "members": 57
+          },
+          "proof": "typeSubject",
+          "reversibility": "never",
+          "subject": {
+            "channel": {
+              "communityName": "Raiders",
+              "id": "ch_cccccccccccccccccccccccccccccccc",
+              "name": "general"
+            }
+          }
+        }
+      }
+    ]
+  },
   "intent.escalation.attachment": {
     "attachment": {
       "fileName": "photo.jpg",
@@ -1107,6 +1149,12 @@
       "creators": [
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       ]
+    }
+  },
+  "intent.fact.deviceReEnrolment": {
+    "deviceReEnrolment": {
+      "lastSeq": 7,
+      "statement": "an older backup or another copy of this data wrote under this device's key; this device's key is retired at seq 7 and a new one is minted; your DM sessions are re-established and contacts are prompted"
     }
   },
   "intent.fact.fingerprint": {
@@ -1310,37 +1358,40 @@
   },
   "intentPending.intentPending": {
     "intentPending": {
-      "acknowledgement": null,
-      "cancelSends": true,
-      "class": "destructive",
-      "escalations": [
-        {
-          "containerNotEmpty": {
-            "members": 57,
-            "messages": 1204
+      "holdId": "01900000-0000-7000-8000-000000000001",
+      "review": {
+        "acknowledgement": null,
+        "cancelSends": true,
+        "class": "destructive",
+        "escalations": [
+          {
+            "containerNotEmpty": {
+              "members": 57,
+              "messages": 1204
+            }
           }
-        }
-      ],
-      "expiresAtMs": 1700000300000,
-      "facts": [
-        {
-          "messagesDeleted": {
-            "count": 1204
+        ],
+        "expiresAtMs": 1700000300000,
+        "facts": [
+          {
+            "messagesDeleted": {
+              "count": 1204
+            }
           }
-        }
-      ],
-      "intentId": "01900000-0000-7000-8000-000000000001",
-      "kind": "deleteChannel",
-      "notifies": {
-        "members": 57
-      },
-      "proof": "typeSubject",
-      "reversibility": "never",
-      "subject": {
-        "channel": {
-          "communityName": "Raiders",
-          "id": "ch_cccccccccccccccccccccccccccccccc",
-          "name": "general"
+        ],
+        "intentId": "01900000-0000-7000-8000-000000000001",
+        "kind": "deleteChannel",
+        "notifies": {
+          "members": 57
+        },
+        "proof": "typeSubject",
+        "reversibility": "never",
+        "subject": {
+          "channel": {
+            "communityName": "Raiders",
+            "id": "ch_cccccccccccccccccccccccccccccccc",
+            "name": "general"
+          }
         }
       }
     }
@@ -1754,6 +1805,7 @@
     "notification": {
       "systemAlert": {
         "body": "Reconnected",
+        "id": "01900000-0000-7000-8000-0000000000a1",
         "subject": null,
         "title": "Network"
       }

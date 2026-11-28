@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rekindle_types::subscription_events::{
-    Cursor, Sequenced, StopReason, StreamFrame, SubscriptionEvent,
+    Cursor, NotificationEvent, Sequenced, StopReason, StreamFrame, SubscriptionEvent,
 };
 use rekindle_utils::RandomSource;
 use tokio::sync::broadcast;
@@ -44,6 +44,7 @@ struct Ring {
     events: VecDeque<Sequenced>,
     /// This session's standing events, oldest first, with their cursors.
     standing: Vec<Standing>,
+    unread_alert: bool,
 }
 
 /// One standing event. A keyed one is a piece of the session's current
@@ -109,6 +110,7 @@ impl SessionJournal {
                 next: 1,
                 events: VecDeque::with_capacity(capacity.min(1024)),
                 standing: Vec::new(),
+                unread_alert: false,
             }),
             live: broadcast::channel(live_capacity).0,
             capacity,
@@ -134,6 +136,7 @@ impl SessionJournal {
     pub fn begin(&self) {
         let mut ring = self.ring.write();
         ring.standing.clear();
+        ring.unread_alert = false;
         Self::new_epoch_in(&mut ring, self.rng.as_ref());
         // No subscriber is not an error.
         let _ = self.live.send(StreamFrame::InvalidSession);
@@ -167,7 +170,7 @@ impl SessionJournal {
     /// Journal `event` and send it to the live subscribers.
     pub fn publish(&self, event: SubscriptionEvent) -> Cursor {
         let mut ring = self.ring.write();
-        let sequenced = ring.append(event, self.capacity);
+        let sequenced = self.append_live(&mut ring, event);
         let cursor = sequenced.cursor;
         let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
         cursor
@@ -179,7 +182,7 @@ impl SessionJournal {
     /// [`Self::standing`]).
     pub fn publish_standing(&self, event: SubscriptionEvent) -> Cursor {
         let mut ring = self.ring.write();
-        let sequenced = ring.append(event, self.capacity);
+        let sequenced = self.append_live(&mut ring, event);
         let cursor = sequenced.cursor;
         ring.standing.push(Standing {
             key: None,
@@ -197,7 +200,7 @@ impl SessionJournal {
     pub fn publish_state(&self, key: &str, event: SubscriptionEvent) -> Cursor {
         let mut ring = self.ring.write();
         ring.standing.retain(|s| s.key.as_deref() != Some(key));
-        let sequenced = ring.append(event, self.capacity);
+        let sequenced = self.append_live(&mut ring, event);
         let cursor = sequenced.cursor;
         ring.standing.push(Standing {
             key: Some(key.to_owned()),
@@ -205,6 +208,29 @@ impl SessionJournal {
         });
         let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
         cursor
+    }
+
+    /// Track newly published alerts under the same lock as acknowledgement.
+    /// Resync resequences standing events without publishing them again.
+    fn append_live(&self, ring: &mut Ring, event: SubscriptionEvent) -> Sequenced {
+        if matches!(
+            event,
+            SubscriptionEvent::Notification(NotificationEvent::SystemAlert { .. })
+        ) {
+            ring.unread_alert = true;
+        }
+        ring.append(event, self.capacity)
+    }
+
+    /// Whether this session has an alert published since the inbox was opened.
+    #[must_use]
+    pub fn has_unread_alert(&self) -> bool {
+        self.ring.read().unread_alert
+    }
+
+    /// Acknowledge alerts already published in this session.
+    pub fn acknowledge_alerts(&self) {
+        self.ring.write().unread_alert = false;
     }
 
     /// The state `key` ended (the call was left): later subscribers are not

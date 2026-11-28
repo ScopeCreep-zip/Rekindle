@@ -9,7 +9,7 @@ use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::judge::Judge;
-use crate::device_judge::{DeviceView, KeyJudgement, KeyRefusal};
+use crate::device_judge::{retirement_of, DeviceView, KeyJudgement, KeyRefusal};
 use crate::op::VerifiedOp;
 
 /// The op set `merge` resolves: complete (every dep present), in stamp
@@ -315,12 +315,10 @@ pub(super) fn is_readmit(op: &VerifiedOp) -> bool {
     matches!(op.body(), GovernanceEntry::DeviceReadmit(_))
 }
 
-/// The key `op` retires, when it carries a `DeviceRetired`.
+/// The key `op` retires, when it carries a `DeviceRetired` (its own arm
+/// or a `DeviceReEnrol`'s, [`retirement_of`]).
 fn retired_key(op: &VerifiedOp) -> Option<[u8; 32]> {
-    match op.body() {
-        GovernanceEntry::DeviceRetired(r) => Some(r.device_key),
-        _ => None,
-    }
+    retirement_of(op.op()).map(|r| r.device_key)
 }
 
 /// ADR 0022 rule 5 on the converged set (lead decision K4b Q2, Reading A):

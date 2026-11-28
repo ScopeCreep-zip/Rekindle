@@ -147,6 +147,8 @@ impl HostGovernance {
         for lease in surplus {
             dht_writes::release(&node, lease).await;
         }
+        // Our own op record, watched with the ring (plan E3.2 S7d-keys.9).
+        self.arm_own_record_watch_locked(community_id, &node).await;
         self.spawn_cold_beat_reads(community_id, wanted.difference(&current).cloned().collect());
         tracing::debug!(community_id, members, watched = ?wanted, "watch ring re-armed");
     }
@@ -175,12 +177,28 @@ impl HostGovernance {
                     // E3.4 S4): a ring member's later changes arrive by
                     // the watch.
                     host.read_member_routes(&community, &record, lease).await;
+                    // A further device may have published its card before
+                    // we learned and watched its record.
+                    if host
+                        .author_of_record(&community, &record)
+                        .is_some_and(|author| {
+                            host.governance_state_impl(&community).is_some_and(|state| {
+                                state
+                                    .members
+                                    .get(&author)
+                                    .is_some_and(|member| member.member_record != record)
+                            })
+                        })
+                    {
+                        host.ring_card_moved(&community, &record).await;
+                    }
                 }
             }
         });
     }
 
-    /// Release `community_id`'s ring watches (leave).
+    /// Release `community_id`'s ring watches and its own record watch
+    /// (leave).
     pub(crate) async fn release_watch_ring(&self, community_id: &str) {
         let lock = self.ctx.communities.ring_move_lock(community_id);
         let _move = lock.lock().await;
@@ -190,7 +208,11 @@ impl HostGovernance {
             .map()
             .write()
             .get_mut(community_id)
-            .map(|c| std::mem::take(&mut c.watch_ring).into_values().collect())
+            .map(|c| {
+                (std::mem::take(&mut c.watch_ring).into_values())
+                    .chain(c.own_record_watch.take().map(|(_, lease)| lease))
+                    .collect()
+            })
             .unwrap_or_default();
         if let Ok(node) = self.transport() {
             for lease in leases {

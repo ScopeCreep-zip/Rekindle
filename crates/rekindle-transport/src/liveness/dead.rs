@@ -45,6 +45,11 @@ impl Liveness {
         self.dead.lock().is_dead(blob, Instant::now())
     }
 
+    /// Claim a delayed profile re-read at the dead blob's first probe gap.
+    pub(crate) fn schedule_route_probe(&self, blob: &[u8]) -> Option<Instant> {
+        self.dead.lock().schedule_probe(blob, Instant::now())
+    }
+
     /// A call into `blob` was answered: it delivers, so it is not dead.
     pub fn route_proven(&self, blob: &[u8]) {
         if self.dead.lock().proven(blob) {
@@ -56,7 +61,15 @@ impl Liveness {
     /// it means for a dead blob, a probe due included (plan RH1r-c S2/S3,
     /// [`DeadRouteVerdict::Probe`]).
     pub fn route_read_at(&self, blob: &[u8], seq: u64) -> DeadRouteVerdict {
-        let seen = self.dead.lock().observe(blob, seq, Instant::now());
+        self.route_read_on("", blob, seq)
+    }
+
+    /// Observe a sequence on the record that published this route.
+    pub fn route_read_on(&self, record: &str, blob: &[u8], seq: u64) -> DeadRouteVerdict {
+        let seen = self
+            .dead
+            .lock()
+            .observe_at(record, blob, seq, Instant::now());
         match seen {
             DeadRouteVerdict::Cleared => tracing::info!(
                 blob = %route_trace::blob_tag(blob),

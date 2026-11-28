@@ -2,21 +2,12 @@
 //! transport sees it: a friend request, accept or reject, a removal and
 //! its ack, a session reset, a presence key or a rotation notice to one
 //! peer is framed once, committed as a row of `friend_handshake:<peer>`,
-//! and sent by the outbox until it settles. These are control frames no
-//! `DmAck` answers: a row settles `sent` when its frame leaves, a request,
-//! a first contact (the PreKeyInit carrying our `FriendAccept` or
-//! `SessionResetAccept`) and a presence key to a peer not yet accepted
-//! (`FriendsKey`, live A/B finding 36; an accepted friend's rides the DM
-//! chain, plan RV2c) and the ack of a removal (`UnfriendedAck`: a lost one left the
-//! remover re-sending `Unfriended` into a session we had deleted, and its
-//! removal never ended, live A/B finding 62) only on its `app_call` receipt
-//! (`delivered`: an
-//! app message has no delivery guarantee, and a request or an accept lost
-//! on the way would leave the row settled and the peer never asked, or
-//! pending for ever; live A/B finding 27), and the `Unfriended` row waits
-//! for the peer's `UnfriendedAck` (or fails at its deadline), which ends
-//! the removal. An invite's redemption is a request row too, whose send
-//! is the write into the invite's inbox ([`enqueue_inbox`]).
+//! and sent by the outbox until it settles. Rows needing confirmation
+//! settle `delivered` on an `app_call` receipt ([`receipted`]) or wait for
+//! a separate answer ([`awaits_answer`]). A one-way route send can settle
+//! `sent` as soon as the frame leaves, even if the route loses it (live
+//! A/B finding 27). An invite redemption is a request row whose send is
+//! the write into the invite's inbox ([`enqueue_inbox`]).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmFrame, DmTypeId};
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
@@ -332,10 +323,10 @@ async fn commit(
 }
 
 /// Whether a handshake row of `kind` goes by `app_call` and settles only
-/// on its receipt: a request, a first contact, a presence key, and the
-/// ack of a removal (the receiver answers once the frame's ratchet step and
-/// its unprocessed row are committed, `direct::receive_call`, and a
-/// duplicate with the same empty receipt). The remover keeps the session
+/// on its receipt. The receiver answers a sealed reset once its handler
+/// succeeds. For ratchet frames, the receiver answers once the ratchet
+/// step and the unprocessed row are committed (`direct::receive_call`).
+/// A duplicate gets the same empty receipt. The remover keeps the session
 /// while its removal waits (`removing`), so it opens our ack, settles its
 /// `Unfriended` row (`acknowledge_unfriended`, a no-op for a duplicate
 /// whose row already settled) and answers the receipt (finding 62). Every PreKeyInit on
@@ -343,12 +334,14 @@ async fn commit(
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
 /// A group member's key (`GroupDmAccept`) and the creator's
-/// `GroupDmInvite` are receipted too (plan E2.6; Linux run 2: one lost
-/// left a member without the key and chain or the signed roster). A
+/// `GroupDmInvite` and `GroupDmRosterGrow` are receipted too (plan E2.6).
+/// A lost frame can leave a member without a key, chain or signed roster. A
 /// `FriendsKey` and these group kinds come here only to a peer not yet an
 /// accepted friend: to an accepted friend they are entries of our DM
 /// chain, settled by the friend's `DmAck` (plan RV2c, D22,
 /// [`super::friend_control`]), so a stalled call no longer holds them.
+/// Co-creator answers, withdrawals and join links are receipted (plan E3.2
+/// S7s.3). They apply only to a held creation or invite for that anchor.
 /// A call's `CallEnd` is receipted (plan CE4, lead decision 22): sent as
 /// an `app_message` it settled on leaving and was lost unseen by a frozen
 /// peer (Veilid 0.5.8 `rpc_app_message.rs:24`: a statement no one
@@ -361,11 +354,18 @@ pub fn receipted(kind: DmTypeId) -> bool {
         kind,
         DmTypeId::FriendRequest
             | DmTypeId::FriendAccept
+            | DmTypeId::SessionResetRequest
             | DmTypeId::SessionResetAccept
+            | DmTypeId::SessionResetDecline
             | DmTypeId::FriendsKey
             | DmTypeId::UnfriendedAck
             | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
+            | DmTypeId::GroupDmRosterGrow
+            | DmTypeId::CreatorAccept
+            | DmTypeId::CreatorDecline
+            | DmTypeId::CreatorWithdrawn
+            | DmTypeId::CreatorJoin
             | DmTypeId::CallEnd
     )
 }

@@ -1,9 +1,13 @@
 //! The unlock barrier (plan E3.2 S7d-keys.8): at every unlock, before the
 //! first governance write per community, the DHT read of our `M(p,d)`/2
 //! (`dht_layout::member_record::GOV_HEAD`) and a frontier request to every
-//! known ring peer ([`crate::frontier_exchange::request_frontier`]). A
+//! known ring peer through the member-call function passed to
+//! [`crate::frontier_exchange::request_frontier`]. A
 //! round takes the highest seq of our device key `d` over the DHT head and
-//! every peer that answered within one app-call timeout ([`judge_round`]).
+//! each peer that answered ([`judge_round`]). The round awaits each bounded
+//! member call. Each effective device record has room for a full first
+//! timeout, a pinned M/6 read and a full retry. The device-set cap bounds
+//! how many records are tried for one logical peer.
 //! The barrier has two exits: a round in which at least one known ring
 //! peer answered, or an empty ring (a sole creator, which completes on the
 //! DHT head alone). A round with no answer is retried on every ring
@@ -267,6 +271,21 @@ impl UnlockBarrier {
         });
     }
 
+    /// The re-enrolment's re-key (ADR 0022 rule 4, plan E3.2 S7d-keys.10):
+    /// this device's old key is retired and the fresh key just stored was
+    /// never held by any other copy of this data root, so nothing was
+    /// signed under it elsewhere and the barrier passes for it, a restore
+    /// included. Called only once the new key is stored.
+    pub fn re_keyed(&self) {
+        self.phase.send_if_modified(|phase| {
+            if matches!(phase, BarrierPhase::Restored(_)) {
+                *phase = BarrierPhase::Passed;
+                return true;
+            }
+            false
+        });
+    }
+
     /// `invite_id`'s revoke is held: it is no longer listed or handed out
     /// here, though its `InviteRevoked` waits for our earlier ops to land.
     pub fn withdraw_invite(&self, invite_id: [u8; 16]) {
@@ -337,6 +356,16 @@ impl UnlockBarrier {
             catching_up,
             pending,
         })
+    }
+
+    /// Wait for a completed round. A restore is a verdict that permits
+    /// re-enrolment with a fresh key.
+    pub async fn wait_for_verdict(&self) {
+        let mut rx = self.phase.subscribe();
+        // The sender lives in self for the duration of this wait.
+        let _verdict = rx
+            .wait_for(|phase| *phase != BarrierPhase::CatchingUp)
+            .await;
     }
 
     /// Wait until the barrier passed: `Ok` to sign, `Err` with the restore

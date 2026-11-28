@@ -9,13 +9,14 @@
 //!
 //! Each change of what the beats show, and each expiry, hands the shell's
 //! voice roster every member's voice claim ([`reconcile_voice`], plan E3.4
-//! S8-pre); a beat's sealed extras are opened with our current community
-//! key ([`take_extras`]).
+//! S8-pre). Location is opened from the selected live record under the
+//! current community key and sharing policy.
 
 use std::sync::Weak;
 use std::time::Duration;
 
 use rekindle_codec::member_record::{BeatState, PresenceBeat, RecordScope};
+use rekindle_governance_runtime::member_card::member_device_records;
 use rekindle_presence::community::Observed;
 use rekindle_secrets::keys::MediaEncryptionKey;
 use rekindle_types::channel_keys::KeyScope;
@@ -57,9 +58,12 @@ pub(crate) fn observe(
         if state.my_pseudonym_key.as_deref() == Some(member.as_str()) {
             return Observed::default();
         }
-        let before = location(state, &member, at, key.as_ref());
-        let observed = state.beat_view.observe(&member, beat, arrived_at_ms, now);
-        let moved = before != location(state, &member, at, key.as_ref());
+        let before = location(state, &member, community, key.as_ref());
+        let observed =
+            state
+                .beat_view
+                .observe_record(&member, at.member_record, beat, arrived_at_ms, now);
+        let moved = before != location(state, &member, community, key.as_ref());
         let shown = observed
             .shown
             .or_else(|| moved.then(|| state.beat_view.shown(&member)));
@@ -72,6 +76,31 @@ pub(crate) fn observe(
         reconcile_voice(ctx, community);
     }
     observed
+}
+
+/// Expire retired or otherwise ineffective device beats at the merge.
+pub(crate) fn retain_effective_beats(ctx: &DaemonContext, community: &str) {
+    let changed = {
+        let mut map = ctx.communities.map().write();
+        let Some(c) = map.get_mut(community) else {
+            return;
+        };
+        let Some(state) = c.governance_state.as_ref() else {
+            return;
+        };
+        c.beat_view.retain_records(|member, record| {
+            let author = PseudonymKey::from_hex_lossy(member);
+            member_device_records(state, community, &author)
+                .iter()
+                .any(|at| at.record == record)
+        })
+    };
+    if !changed.is_empty() {
+        for (member, shown) in changed {
+            publish(ctx, community, member, shown);
+        }
+        reconcile_voice(ctx, community);
+    }
 }
 
 /// Refresh the community roster when our own reciprocity changes.
@@ -114,7 +143,6 @@ pub(crate) fn shown_location(
     ctx: &DaemonContext,
     community: &str,
     member: &str,
-    record: Option<&str>,
 ) -> (BeatState, Option<SessionLocation>) {
     let key = community_key(ctx, community);
     let map = ctx.communities.map().read();
@@ -122,14 +150,7 @@ pub(crate) fn shown_location(
         return (BeatState::Offline, None);
     };
     let shown = state.beat_view.shown(member);
-    let location = record.and_then(|member_record| {
-        let at = RecordScope {
-            community_id: community,
-            member_record,
-        };
-        location(state, member, at, key.as_ref())
-    });
-    (shown, location)
+    (shown, location(state, member, community, key.as_ref()))
 }
 
 fn community_key(ctx: &DaemonContext, community: &str) -> Option<MediaEncryptionKey> {
@@ -142,13 +163,17 @@ fn community_key(ctx: &DaemonContext, community: &str) -> Option<MediaEncryption
 fn location(
     state: &CommunityState,
     member: &str,
-    at: RecordScope<'_>,
+    community: &str,
     key: Option<&MediaEncryptionKey>,
 ) -> Option<SessionLocation> {
     if state.presence_policy.share_location != ShareScope::Members {
         return None;
     }
-    let sealed = state.beat_view.sealed_extras(member)?;
+    let (member_record, sealed) = state.beat_view.sealed_extras(member)?;
+    let at = RecordScope {
+        community_id: community,
+        member_record,
+    };
     rekindle_presence::community::open_extras(sealed, key, at, &state.presence_policy)?.location
 }
 
@@ -201,7 +226,8 @@ fn expire_all(ctx: &DaemonContext) -> Option<u64> {
         let mut map = ctx.communities.map().write();
         for (community, state) in map.iter_mut() {
             for member in state.beat_view.expire(now) {
-                turned.push((community.clone(), member));
+                let shown = state.beat_view.shown(&member);
+                turned.push((community.clone(), member, shown));
             }
             if let Some(at) = state.beat_view.next_expiry() {
                 next = Some(next.map_or(at, |n| n.min(at)));
@@ -209,8 +235,8 @@ fn expire_all(ctx: &DaemonContext) -> Option<u64> {
         }
     }
     let mut communities = std::collections::BTreeSet::new();
-    for (community, member) in turned {
-        publish(ctx, &community, member, BeatState::Offline);
+    for (community, member, shown) in turned {
+        publish(ctx, &community, member, shown);
         communities.insert(community);
     }
     for community in communities {

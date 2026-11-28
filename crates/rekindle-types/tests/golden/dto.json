@@ -1693,6 +1693,12 @@
             }
           },
           {
+            "label": "Notifications",
+            "run": {
+              "kind": "openNotifications"
+            }
+          },
+          {
             "apart": true,
             "label": "Create Community…",
             "run": {
@@ -2027,6 +2033,12 @@
               "label": "New Group…",
               "run": {
                 "kind": "newGroup"
+              }
+            },
+            {
+              "label": "Notifications",
+              "run": {
+                "kind": "openNotifications"
               }
             },
             {

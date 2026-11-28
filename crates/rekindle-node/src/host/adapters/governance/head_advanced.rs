@@ -18,6 +18,7 @@ use rekindle_presence::community::Observed;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
 use rekindle_types::id::PseudonymKey;
+use rekindle_utils::log_scrub::tag;
 
 use super::moderation::pseudonym;
 use super::HostGovernance;
@@ -31,12 +32,23 @@ impl HostGovernance {
         community_id: &str,
         record: &str,
     ) -> Option<PseudonymKey> {
-        let state = self.ctx.communities.governance_state(community_id)?;
+        let map = self.ctx.communities.map().read();
+        let state = map.get(community_id)?.governance_state.as_ref()?;
         state
             .members
             .iter()
-            .find(|(_, m)| m.member_record == record)
-            .map(|(p, _)| p.clone())
+            .find(|(_, member)| member.member_record == record)
+            .or_else(|| {
+                state.members.iter().find(|(p, _)| {
+                    state.devices.member(p).is_some_and(|devices| {
+                        devices
+                            .endorsements
+                            .values()
+                            .any(|endorsement| endorsement.device_record == record)
+                    })
+                })
+            })
+            .map(|(author, _)| author.clone())
     }
 
     /// Relay a hint for each relayed subkey our watch saw `record` change:
@@ -112,13 +124,19 @@ impl HostGovernance {
         lease: rekindle_records::lease::LeaseId,
         arrived_at: Option<u64>,
     ) -> Option<(u64, Observed)> {
-        let author = self.author_of_record(community_id, record)?;
+        let (author, binding) = self.binding_of_record(community_id, record)?;
+        if self.record_port().ok()?.owner_of(lease).ok()? != binding.owner {
+            return None;
+        }
         let (seq, bytes) = self.read_hinted_value(lease, BEAT).await.ok().flatten()?;
         let at = RecordScope {
             community_id,
             member_record: record,
         };
         let beat = decode_presence_beat(&bytes, at, &author.0).ok()?;
+        if self.binding_of_record(community_id, record)?.1 != binding {
+            return None;
+        }
         let observed = view::observe(&self.ctx, at, &author, &beat, arrived_at);
         if observed.state_changed {
             self.mesh_member_moved(community_id, &author).await;
@@ -211,6 +229,14 @@ impl HostGovernance {
                 c.head_hints
                     .worth_reading(&hint.member_record, hint.subkey, hint.seq)
             });
+        if hint.subkey == FRONTIER {
+            tracing::debug!(
+                record_tag = %tag(&hint.member_record),
+                seq = hint.seq,
+                decision = if worth { "dispatch to claim" } else { "already read or community absent" },
+                "frontier hint checked against the last read"
+            );
+        }
         if worth {
             let host = self.clone();
             let community = community_id.to_owned();
@@ -236,7 +262,7 @@ impl HostGovernance {
         if hint.subkey == FRONTIER {
             // The frontier is opened and read once, forced, by the
             // catch-up itself, and only by the trigger that claims it.
-            self.refresh_member_record(community_id, record, hint.seq, false)
+            self.refresh_member_record(community_id, record, Some(hint.seq), false)
                 .await;
             return;
         }

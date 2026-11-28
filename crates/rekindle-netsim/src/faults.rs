@@ -1,10 +1,12 @@
 //! The faults a scenario puts in force (plan C9.3) and how the sim
 //! applies them; split from `lib.rs` along its seam.
 
+use std::num::NonZeroUsize;
+
 use rekindle_records::port::{RecordSchema, RouteClass};
 
 use super::{pair, toggle, Netsim, PortEvent};
-use crate::network::{Faults, NetRecord};
+use crate::network::{Faults, LaggingGets, NetRecord};
 use crate::records::GET_COUNT;
 
 /// A fault to put in force (plan C9.3).
@@ -19,6 +21,12 @@ pub enum Fault {
     /// can; the writer hears `Ok(None)`, as [`Fault::WritePartial`]), until
     /// [`Fault::Heal`]; its other writes are unaffected.
     WriteFails { node: usize, of: Writes },
+    /// Add latency before the selected writes reach their replicas.
+    WriteStalls {
+        node: usize,
+        of: Writes,
+        stall: std::time::Duration,
+    },
     /// Every set by the node that `of` selects reaches only the
     /// `accepting` replicas closest to the record, which store it, until
     /// [`Fault::Heal`]. `0 < accepting < get_value_count`: Veilid counts a
@@ -99,6 +107,21 @@ pub enum Fault {
         node: usize,
         key: String,
         min_seqnum: Option<u32>,
+    },
+    /// The next `count` network gets reach only replicas at the currently stored
+    /// value, even if the writer reaches other replicas before those gets.
+    GetsFromLaggingReplica {
+        node: usize,
+        key: String,
+        subkey: u32,
+        count: NonZeroUsize,
+    },
+    /// Drop value changes for one watcher and record, independently of app
+    /// calls and of DHT reads and writes.
+    DropValueChanges {
+        node: usize,
+        key: String,
+        drop: bool,
     },
     /// The node's watch on `key` dies: Veilid sends a last change with
     /// empty subkeys, `count == 0` and no value (0.5.8 `watch_value.rs:782-789`).
@@ -355,6 +378,14 @@ impl Netsim {
                     .write_limits
                     .insert((node, of), 0);
             }
+            Fault::WriteStalls { node, of, stall } => {
+                self.net
+                    .inner
+                    .lock()
+                    .faults
+                    .write_stalls
+                    .insert((node, of), stall);
+            }
             Fault::WritePartial {
                 node,
                 of,
@@ -432,6 +463,31 @@ impl Netsim {
                     Some(seq) => min_seqnums.insert((node, key), seq),
                     None => min_seqnums.remove(&(node, key)),
                 };
+            }
+            Fault::GetsFromLaggingReplica {
+                node,
+                key,
+                subkey,
+                count,
+            } => {
+                let value = self
+                    .network_get(&key, subkey)
+                    .expect("establish the replica's value before arming the fault");
+                self.net.inner.lock().faults.lagging_gets.insert(
+                    (node, key, subkey),
+                    LaggingGets {
+                        value,
+                        remaining: count,
+                    },
+                );
+            }
+            Fault::DropValueChanges { node, key, drop } => {
+                let changes = &mut self.net.inner.lock().faults.drop_value_changes;
+                if drop {
+                    changes.insert((node, key));
+                } else {
+                    changes.remove(&(node, key));
+                }
             }
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),

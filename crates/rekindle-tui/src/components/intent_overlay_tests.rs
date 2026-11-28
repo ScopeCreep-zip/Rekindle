@@ -100,3 +100,30 @@ fn centered_rect_centers_and_clamps() {
     let popup = centered_rect(Rect::new(0, 0, 20, 8), 50, 20);
     assert_eq!((popup.width, popup.height), (20, 8));
 }
+
+#[test]
+fn backend_reviews_resume_keep_input_and_clear_at_resolution() {
+    use rekindle_types::intent::HeldReview;
+    let mut overlay = IntentOverlay::default();
+    let review = review(ProofRequired::Acknowledge);
+    let id = review.intent_id;
+    let held = HeldReview {
+        hold_id: id,
+        review,
+    };
+    overlay.replace_held(vec![held.clone()]);
+    overlay.handle_key(key(KeyCode::Tab));
+    overlay.handle_key(key(KeyCode::Char(' ')));
+    overlay.replace_held(vec![held.clone()]);
+    assert!(matches!(
+        overlay.handle_key(key(KeyCode::Enter)),
+        Some(Action::CommitIntent {
+            proof: IntentProof::Acknowledged,
+            ..
+        })
+    ));
+    overlay.replace_held(vec![held]);
+    assert!(overlay.visible());
+    overlay.replace_held(Vec::new());
+    assert!(!overlay.visible());
+}

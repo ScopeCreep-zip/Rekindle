@@ -95,6 +95,8 @@ pub struct CommunityStore {
     /// Every community's unlock barrier and the governance writes it holds
     /// (plan E3.2 S7d-keys.8).
     barriers: Arc<rekindle_governance_runtime::unlock_barrier::UnlockBarriers>,
+    pub(crate) member_routes_changed: Arc<tokio::sync::Notify>,
+    pub(crate) member_history_changed: Arc<tokio::sync::Notify>,
 }
 
 impl CommunityStore {
@@ -118,6 +120,8 @@ impl CommunityStore {
             card_refreshes: Arc::default(),
             held_changes: Arc::default(),
             barriers: Arc::default(),
+            member_routes_changed: Arc::default(),
+            member_history_changed: Arc::default(),
         }
     }
 
@@ -289,7 +293,8 @@ impl CommunityStore {
 
     /// Take the community's leases, for release (leave): its own, its
     /// watch ring's, its removal watch's (plan RM2) and its key drop
-    /// watch's (plan RV2d), so a ring move that finished after the leave's
+    /// watch's (plan RV2d) and its own record watch's (plan E3.2
+    /// S7d-keys.9), so a ring move that finished after the leave's
     /// `release_watch_ring` leaks no lease.
     pub fn take_leases(&self, community_id: &str) -> (CommunityLeases, Vec<LeaseId>) {
         self.map
@@ -302,6 +307,7 @@ impl CommunityStore {
                         .into_values()
                         .chain(std::mem::take(&mut c.removal_watch).into_values())
                         .chain(c.key_drop.take().map(|(_, lease)| lease))
+                        .chain(c.own_record_watch.take().map(|(_, lease)| lease))
                         .collect(),
                 )
             })

@@ -330,6 +330,10 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
             },
             creator_sig: vec![34; 64],
         }),
+        E::DeviceReEnrol(rekindle_types::governance::DeviceReEnrol {
+            retired: super::device_tests::retired(35),
+            endorsement: super::device_tests::endorsement(36),
+        }),
     ]
 }
 
@@ -387,6 +391,7 @@ fn arm_index(entry: &GovernanceEntry) -> usize {
         E::DeviceReadmit(_) => 46,
         E::SuccessorLinkRequest(_) => 47,
         E::SuccessorLink(_) => 48,
+        E::DeviceReEnrol(_) => 49,
     }
 }
 
@@ -419,7 +424,7 @@ fn every_body_arm_round_trips() {
     let bodies = every_body();
     let arms: std::collections::BTreeSet<usize> = bodies.iter().map(arm_index).collect();
     assert_eq!(arms.len(), bodies.len(), "one value per arm");
-    assert_eq!(arms.len(), 49, "every live arm");
+    assert_eq!(arms.len(), 50, "every live arm");
     for body in bodies {
         let original = op(body, vec![op_ref(1), op_ref(2)]);
         let decoded = decode_op(&encode_op(&original).unwrap()).unwrap();

@@ -201,6 +201,8 @@ export function createCommunityWindowState() {
     activeChannel()?.locked ? (activeChannel()?.lockedReason ?? "") : null
   );
   /// FX3: waiting for the community's current key from a member.
+  /** The Host's labels for the governance writes it holds (S7d-keys.10). */
+  const catchUpPending = createMemo(() => activeCommunity()?.catchUp?.pending ?? []);
   const keyPending = createMemo(() =>
     activeCommunity()?.keyStatus?.state === "pending" ? activeCommunity()!.keyStatus! : null
   );
@@ -345,6 +347,7 @@ export function createCommunityWindowState() {
     joinWithdrawn,
     channelLocked,
     keyPending,
+    catchUpPending,
     canPostInChannel,
     activeVoiceChannelState,
     isConnectedToActiveStage,

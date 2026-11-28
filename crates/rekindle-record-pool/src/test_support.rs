@@ -84,6 +84,7 @@ pub struct MemDht {
     sets: Mutex<u32>,
     /// Every change the pool over this backend published (its sink).
     published: Mutex<Vec<ValueChange>>,
+    on_get: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 fn writer_key(text: &str) -> WriterKey {
@@ -101,6 +102,11 @@ fn error(kind: DhtErrorKind, message: &str) -> DhtCallError {
 }
 
 impl MemDht {
+    /// Run a test action as the next get returns.
+    pub fn on_get(&self, action: impl FnOnce() + Send + 'static) {
+        *self.on_get.lock() = Some(Box::new(action));
+    }
+
     /// How many sets the backend was asked for.
     pub fn sets(&self) -> u32 {
         *self.sets.lock()
@@ -292,6 +298,10 @@ impl DhtBackend for MemDht {
             }
         }
         drop(guard);
+        let action = self.on_get.lock().take();
+        if let Some(action) = action {
+            action();
+        }
         Ok(self.value(key, subkey))
     }
 

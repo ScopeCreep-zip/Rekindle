@@ -12,6 +12,7 @@ pub mod adapters;
 pub mod api;
 pub mod audit;
 pub(crate) mod audit_alert;
+pub(crate) mod backend_hold;
 #[cfg(test)]
 mod bio_tests;
 pub mod bus_key;
@@ -57,6 +58,8 @@ mod group_rendezvous_tests;
 #[cfg(test)]
 mod group_reply_tests;
 pub mod hardening;
+#[cfg(test)]
+mod held_reviews_tests;
 #[cfg(test)]
 mod history_order_tests;
 #[cfg(test)]
@@ -172,4 +175,27 @@ impl ConfigFault {
     /// sysexits(3) EX_CONFIG: "Something was found in an unconfigured or
     /// misconfigured state."
     pub const EXIT_CODE: u8 = 78;
+}
+
+/// The unlocked identity's backend-held reviews, shared by desktop
+/// snapshots and the authenticated terminal query.
+pub(crate) fn held_reviews_of(
+    ctx: &crate::daemon::dispatch::DaemonContext,
+) -> Vec<rekindle_types::intent::HeldReview> {
+    use gate::IntentOwner;
+    use rekindle_types::intent::HeldReview;
+    ctx.require_owner().map_or_else(
+        |_| Vec::new(),
+        |identity| {
+            let owner = IntentOwner {
+                conn: None,
+                identity,
+            };
+            ctx.intents
+                .held_reviews(&owner, ctx.clock.now_ms())
+                .into_iter()
+                .map(|(hold_id, review)| HeldReview { review, hold_id })
+                .collect()
+        },
+    )
 }

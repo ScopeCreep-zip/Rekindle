@@ -32,7 +32,7 @@ async fn on_chain(node: &crate::harness::SimNode, peer: &str, body: &str) -> boo
 }
 
 /// Whether `node`'s own message `body` to `peer` is in a state `ok` takes.
-async fn own_state(
+pub(crate) async fn own_state(
     node: &crate::harness::SimNode,
     peer: &str,
     body: &str,

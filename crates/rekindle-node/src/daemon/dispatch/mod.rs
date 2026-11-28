@@ -170,6 +170,8 @@ pub struct DaemonContext {
     /// The host's one intent gate (plan D3.3), counting wrong passphrase
     /// proofs on `identity_attempts`.
     pub intents: std::sync::Arc<crate::host::gate::HostGate>,
+    /// Orders backend hold mutations and their live events.
+    pub(crate) backend_hold_publication: parking_lot::Mutex<()>,
     /// The undo offers of actions that ran (plan E1.1).
     pub undo: crate::host::undo::UndoCache,
     /// The host's one event journal (plan D3.2): every event a frontend
@@ -295,6 +297,7 @@ pub struct DaemonContext {
     /// compares the record with our rows, so one running beside a rotation
     /// would put the old set back over the new one (E2.B finding F9).
     pub(crate) own_prekey_writes: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) device_re_enrol: tokio::sync::Mutex<()>,
     /// The game stage, running only while detection is on (plan E7.2).
     pub(crate) game: crate::host::game_stage::GameControl,
     /// The network indicator's smoothed bars (plan E7.2), shared with the
@@ -375,6 +378,14 @@ impl DaemonContext {
     /// the identity locks.
     pub fn publish_standing(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
         self.journal.publish_standing(event);
+    }
+
+    /// A fresh `SystemAlert` id from the Host's clock and RNG (C9.2).
+    #[must_use]
+    pub fn alert_id(&self) -> String {
+        let mut random = [0u8; 10];
+        self.rng.fill(&mut random);
+        rekindle_types::subscription_events::alert_id(self.clock.now_ms(), random)
     }
 }
 

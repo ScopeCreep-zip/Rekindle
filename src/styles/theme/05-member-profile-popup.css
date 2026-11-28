@@ -201,20 +201,23 @@
     pointer-events: none;
   }
 
+  /* The inbox: one card centred in the buddy list, in the stock layout and
+   * under every pack (whose chrome is taller than the stock titlebar), so
+   * it never sits over a window's controls (NotificationPanel.tsx). */
   .notification-panel {
-    position: absolute;
-    top: 100%;
-    right: 0;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: var(--z-popover);
-    width: 260px;
-    max-height: 320px;
+    width: min(300px, calc(100% - 32px));
+    max-height: min(320px, calc(100% - 32px));
     background: var(--color-xfire-bg-panel);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 6px;
     box-shadow: 0 10px 25px -5px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
     display: flex;
     flex-direction: column;
-    margin-top: 4px;
   }
 
   .notification-panel-header {

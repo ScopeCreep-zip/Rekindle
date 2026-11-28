@@ -78,9 +78,9 @@ impl BeatSink for HostBeats {
 
     async fn write_refreshed_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
         let host = self.host().ok_or("the host is gone")?;
-        let seq = host.write_own_beat(community, state).await?;
-        let hint = host.own_beat_hint(community, seq)?;
-        host.send_to_mesh_impl(community, &hint);
+        if let Some(hint) = host.write_beat_hint(community, state).await? {
+            host.send_to_mesh_impl(community, &hint);
+        }
         Ok(())
     }
 

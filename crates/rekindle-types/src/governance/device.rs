@@ -10,10 +10,12 @@ use serde::{Deserialize, Serialize};
 use crate::id::PseudonymKey;
 
 /// At most this many element ids travel with one endorsement: exactly what
-/// fits one `DeviceKey` op in the subkey it is published to, every other
-/// field at its largest (plan E3.2 S7d-keys, lead decision (40)). ADR 0022
-/// caps *live* keys at six (rule 6), but the extended set also holds every
-/// retired element, which accumulate, so the cap is the carrier's.
+/// fits its largest carrier, one `DeviceReEnrol` op, in the subkey it is
+/// published to, every other field at its largest (plan E3.2 S7d-keys,
+/// lead decision (40); recomputed for the `deviceReEnrol` arm at
+/// S7d-keys.10). ADR 0022 caps *live* keys at six (rule 6), but the
+/// extended set also holds every retired element, which accumulate, so the
+/// cap is the carrier's.
 ///
 /// - The carrier: an op is one member-record subkey,
 ///   `GOVERNANCE_OP_MAX_BYTES` = `member_record::MAX_SUBKEY_VALUE_LEN` =
@@ -22,19 +24,22 @@ use crate::id::PseudonymKey;
 ///   `veilid_api/types/dht/derivation.rs:144-147`).
 /// - What is measured against it: the codec seals an op by reading its
 ///   canonical unsigned segment of `W` words in literal packed framing,
-///   `10 + 8W + 2⌈W/256⌉` bytes (`rekindle-codec` `governance_op::seal_op`).
-/// - The rest of the op at its largest is 1,928 words: 64 deps
+///   `10 + 8W + 2⌈W/256⌉` bytes (`rekindle-codec` `governance_op::seal_op`),
+///   so `W` ≤ 4,090 (32,762 bytes; 4,091 gives 32,770).
+/// - The rest of a `DeviceKey` op at its largest is 1,928 words: 64 deps
 ///   (`GOVERNANCE_OP_MAX_DEPS`) naming full-length record keys and their
 ///   ops' 32-byte device keys, the op's own device key, full-length
-///   device record and owner texts, every fixed field set.
+///   device record and owner texts, every fixed field set. A
+///   `DeviceReEnrol` adds 18: its 2-word struct of two pointers and the
+///   `DeviceRetiredEntry` (2 data words, 2 pointers, the 32-byte key's 4
+///   words and the 64-byte signature's 8), 1,946 in all.
 /// - One element is 7 words: its 3-word struct (the kind's word, the
 ///   incarnation, the key's pointer) and the 32-byte key's 4 words.
 ///
-/// `W = 1,928 + 7n`; n = 308 gives `W` = 4,084 and 32,714 bytes, n = 309
-/// gives 32,770 > 32,768 (S7d-keys K4a: the device keys on `GovernanceOp`
-/// and `OpRef` took 326 words from 355). `rekindle-codec`'s `device_bound_tests` hold both
-/// terms and both sides of the bound.
-pub const MAX_DEVICE_SET_ELEMENTS: usize = 308;
+/// `W = 1,946 + 7n`; n = 306 gives `W` = 4,088 and 32,746 bytes, n = 307
+/// gives `W` = 4,095 and 32,802 > 32,768. `rekindle-codec`'s
+/// `device_bound_tests` hold the terms and both sides of the bound.
+pub const MAX_DEVICE_SET_ELEMENTS: usize = 306;
 
 /// What an element of a member's endorsement set is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -130,6 +135,35 @@ impl DeviceRetired {
     #[must_use]
     pub fn well_formed(&self) -> bool {
         self.retirement_sig.len() == 64
+    }
+}
+
+/// `DeviceReEnrol{retired, endorsement}` (ADR 0022 rules 4 and 7, K4b.4
+/// R3; plan E3.2 S7d-keys.10): `p` retires this device's copied key and
+/// endorses its new one, carried as one op signed by the new key at its
+/// seq 0 (a device never signs the retirement of the key that signs the
+/// carrier).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceReEnrol {
+    pub retired: DeviceRetired,
+    pub endorsement: DeviceEndorsement,
+}
+
+impl DeviceReEnrol {
+    /// Whether the body is well formed on its own: both halves are, and
+    /// the new key is not the one retired.
+    #[must_use]
+    pub fn well_formed(&self) -> bool {
+        self.retired.well_formed()
+            && self.endorsement.well_formed()
+            && self.retired.device_key != self.endorsement.device_key
+    }
+
+    /// Whether `op_key` at `seq` is the op this body must ride: the new
+    /// key's seq 0 (ADR 0022 rule 4, K4b.4 R3).
+    #[must_use]
+    pub fn carried_by(&self, op_key: &[u8; 32], seq: u64) -> bool {
+        seq == 0 && self.endorsement.device_key == *op_key
     }
 }
 

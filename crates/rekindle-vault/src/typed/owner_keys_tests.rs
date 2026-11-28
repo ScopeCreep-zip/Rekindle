@@ -48,3 +48,29 @@ fn a_bare_keypair_is_not_an_entry() {
 fn the_debug_form_hides_the_keypair() {
     assert!(!format!("{:?}", entry("k", "secret-kp")).contains("secret-kp"));
 }
+
+#[test]
+fn the_database_decides_whether_a_staged_prekey_owner_committed() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let (vault, _) = VaultStore::create(
+        &dir.path().join("prekeys.vault"),
+        rekindle_test_fixtures::PASSPHRASE,
+    )
+    .unwrap();
+    let old = entry("old", "kp1");
+    let replacement = entry("new", "kp2");
+    persist_owner(&vault, OwnerKey::Prekeys, &old).unwrap();
+
+    stage_prekey_owner(&vault, &replacement).unwrap();
+    finish_prekey_owner(&vault, Some("old")).unwrap();
+    assert_eq!(load_owner(&vault, OwnerKey::Prekeys).unwrap(), Some(old));
+    assert!(vault.get(&VaultKey::PendingPrekeyOwner).unwrap().is_none());
+
+    stage_prekey_owner(&vault, &replacement).unwrap();
+    finish_prekey_owner(&vault, Some("new")).unwrap();
+    assert_eq!(
+        load_owner(&vault, OwnerKey::Prekeys).unwrap(),
+        Some(replacement)
+    );
+    assert!(vault.get(&VaultKey::PendingPrekeyOwner).unwrap().is_none());
+}

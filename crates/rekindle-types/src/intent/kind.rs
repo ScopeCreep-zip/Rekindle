@@ -227,6 +227,11 @@ pub enum IntentKind {
     /// rules 1-4, lead decision 63): `p` endorses it, and every member
     /// then trusts it to sign as us.
     EnrolDevice,
+    /// Re-enrol this device after a restore or a copy of its data wrote
+    /// under its key (ADR 0022 rules 4 and 9, plan E3.2 S7d-keys.10):
+    /// backend-originated; one `DeviceReEnrol` in every community retires
+    /// the copied key and endorses a fresh one.
+    ReEnrolDevice,
     // TrustChanging: Exposure settings
     RegisterWithPushRelay,
     SetLinkPreviewsEnabled,
@@ -519,6 +524,7 @@ impl IntentKind {
             | Self::RotateMek
             | Self::RetireDevice
             | Self::EnrolDevice
+            | Self::ReEnrolDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled

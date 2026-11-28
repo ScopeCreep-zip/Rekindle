@@ -301,6 +301,17 @@ struct DeviceRetiredEntry {
     retirementSig        @3 :Data;            # 64 bytes
 }
 
+# A device's re-enrolment after a restore or a clone signal (ADR 0022 rules 4
+# and 7, amended in plan E3.2 K4b.4 R3; plan E3.2 S7d-keys.10): the pseudonym's
+# retirement of the copied key and its endorsement of the new one, as one op
+# signed by the new key at its seq 0. It is the exempt replacement of rule 7
+# iff its strict past holds no fork event of the member; of concurrent ones
+# of one member only the lowest `(lamport, op_hash)` is.
+struct DeviceReEnrolEntry {
+    retired              @0 :DeviceRetiredEntry;
+    endorsement          @1 :DeviceKeyEntry;
+}
+
 # A co-signed re-admission of a member's new device key after a fork (ADR
 # 0022 rules 7, 8 and 10); its body under `rekindle-gov-device-readmit-v1`.
 struct DeviceReadmitEntry {
@@ -773,7 +784,7 @@ struct ModReportEntry @0xe019ff96c073fa38 {
     obsoleteLamport              @5 :UInt64;
 }
 
-# Top-level governance entry union — 40 arms, append-only.
+# Top-level governance entry union, append-only.
 struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
     union {
         channelCreated                @0  :ChannelCreatedEntry;
@@ -828,5 +839,6 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         deviceReadmit                 @49 :DeviceReadmitEntry;
         successorLinkRequest          @50 :SuccessorLinkRequestEntry;
         successorLink                 @51 :SuccessorLinkEntry;
+        deviceReEnrol                 @52 :DeviceReEnrolEntry;
     }
 }

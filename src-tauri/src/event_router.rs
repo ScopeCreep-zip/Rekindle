@@ -28,6 +28,9 @@ pub struct OutboundEnvelope {
     pub cursor: Option<rekindle_types::subscription_events::Cursor>,
     pub channel: &'static str,
     pub payload: serde_json::Value,
+    /// Part of a standing snapshot (`crate::event_snapshot`), not a live
+    /// or replayed event.
+    pub standing: bool,
 }
 
 /// The channel of the stream's own frames: `{"invalidSession": null}` (the
@@ -42,6 +45,7 @@ impl OutboundEnvelope {
             cursor: None,
             channel: STREAM_CHANNEL,
             payload: serde_json::json!({ "invalidSession": null }),
+            standing: false,
         }
     }
 
@@ -52,6 +56,16 @@ impl OutboundEnvelope {
             cursor: Some(cursor),
             channel: STREAM_CHANNEL,
             payload: serde_json::json!({ "resumed": cursor }),
+            standing: false,
+        }
+    }
+
+    /// This envelope as part of a standing snapshot.
+    #[must_use]
+    pub fn into_standing(self) -> Self {
+        Self {
+            standing: true,
+            ..self
         }
     }
 }
@@ -124,10 +138,10 @@ impl WebviewRouter {
         &self,
         label: String,
         channel: Channel<OutboundEnvelope>,
-        replay: impl IntoIterator<Item = OutboundEnvelope>,
+        snapshot: impl FnOnce() -> Vec<OutboundEnvelope>,
     ) {
         let mut subs = self.subs.write();
-        for envelope in replay {
+        for envelope in snapshot() {
             if let Err(e) = channel.send(envelope) {
                 tracing::debug!(window = %label, error = %e, "event replay send failed");
             }
@@ -151,7 +165,42 @@ impl WebviewRouter {
 
     /// Send `envelope` to every registered window in `audience`.
     pub fn deliver(&self, envelope: &OutboundEnvelope, audience: &Audience) {
-        for (label, channel) in self.subs.read().iter() {
+        self.deliver_if(envelope, audience, || true);
+    }
+
+    /// Recheck a live event under the same dispatch lock that orders new
+    /// subscribers' snapshots, then deliver it to the matching windows.
+    pub fn deliver_if(
+        &self,
+        envelope: &OutboundEnvelope,
+        audience: &Audience,
+        is_current: impl FnOnce() -> bool,
+    ) {
+        let subs = self.subs.read();
+        if !is_current() {
+            return;
+        }
+        Self::send_matching(&subs, audience, envelope);
+    }
+
+    /// Read a live snapshot under the lock that orders subscriber snapshots.
+    pub fn deliver_snapshot(
+        &self,
+        audience: &Audience,
+        snapshot: impl FnOnce() -> Option<OutboundEnvelope>,
+    ) {
+        let subs = self.subs.read();
+        if let Some(envelope) = snapshot() {
+            Self::send_matching(&subs, audience, &envelope);
+        }
+    }
+
+    fn send_matching(
+        subs: &HashMap<String, Channel<OutboundEnvelope>>,
+        audience: &Audience,
+        envelope: &OutboundEnvelope,
+    ) {
+        for (label, channel) in subs {
             if audience.includes(label) {
                 if let Err(e) = channel.send(envelope.clone()) {
                     tracing::debug!(window = %label, error = %e, "event send failed");

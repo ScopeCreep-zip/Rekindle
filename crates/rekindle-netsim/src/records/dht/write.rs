@@ -18,7 +18,15 @@ impl SimDht {
         writer: Option<&WriterKey>,
         min_seq: Option<u32>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
-        self.net.inner.lock().nodes[self.node].app_sets += 1;
+        {
+            let mut inner = self.net.inner.lock();
+            let node = &mut inner.nodes[self.node];
+            node.app_sets += 1;
+            *node
+                .app_sets_at
+                .entry((key.to_owned(), subkey))
+                .or_default() += 1;
+        }
         let opened = self.opened(key)?;
         let writer = writer
             .map(|w| w.keypair().clone())
@@ -35,6 +43,21 @@ impl SimDht {
         // `set_value.rs:248-255` → `local_record_store_interface.rs:61-62`).
         if self.offline() {
             return Err(try_again());
+        }
+        let stall = {
+            let inner = self.net.inner.lock();
+            inner
+                .faults
+                .write_stalls
+                .iter()
+                .filter(|((node, of), _)| {
+                    *node == self.node && of.selects(self.node, key, subkey, inner.records.get(key))
+                })
+                .map(|(_, stall)| *stall)
+                .max()
+        };
+        if let Some(stall) = stall {
+            tokio::time::sleep(stall).await;
         }
         let _slot = self.net.latency.slot(self.node, key, &[subkey]).await;
         // An outbound error: the same handler bails `TryAgain` first

@@ -24,7 +24,7 @@ use rekindle_outbox::{
 use rekindle_types::channel_keys::KeyScope;
 
 use super::{HostOutbox, OutboxSlot, StreamSender};
-use crate::host::adapters::governance::member_route_cache::MemberCallError;
+use crate::host::adapters::governance::member_calls::MemberCallError;
 use crate::host::adapters::governance::HostGovernance;
 
 /// The reason a row whose member departed settles with.

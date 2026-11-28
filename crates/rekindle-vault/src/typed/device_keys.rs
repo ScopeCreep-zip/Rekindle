@@ -88,14 +88,44 @@ pub fn store_device_record(
 ) -> Result<(), VaultError> {
     let entry = load_entry(device, community)?
         .ok_or_else(|| VaultError::Schema("no device op key holds this record".into()))?;
+    let bytes = encode_binding(&entry.secret, record, owner)?;
+    device.put(&key(community), &bytes)
+}
+
+/// Install the successor key and record together with its signed carrier
+/// and the retired record's owner, in a single device vault transaction.
+///
+/// # Errors
+/// The binding cannot be encoded, or the vault cannot commit both entries.
+pub fn commit_re_enrolment(
+    device: &VaultStore,
+    community: &str,
+    retired: [u8; 32],
+    secret: &[u8; 32],
+    binding: &DeviceRecordKeys,
+    handoff: &[u8],
+) -> Result<(), VaultError> {
+    let bytes = encode_binding(secret, &binding.record, &binding.owner)?;
+    let pending = VaultKey::PendingRetirementOwner {
+        community: community.to_owned(),
+        device: hex::encode(retired),
+    };
+    device.put_pair((&key(community), &bytes), (&pending, handoff))
+}
+
+fn encode_binding(
+    secret: &[u8; 32],
+    record: &str,
+    owner: &str,
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
     let len = u16::try_from(record.len())
         .map_err(|_| VaultError::Schema("device record is too long".into()))?;
     let mut bytes = Zeroizing::new(Vec::with_capacity(34 + record.len() + owner.len()));
-    bytes.extend_from_slice(entry.secret.as_slice());
+    bytes.extend_from_slice(secret);
     bytes.extend_from_slice(&len.to_be_bytes());
     bytes.extend_from_slice(record.as_bytes());
     bytes.extend_from_slice(owner.as_bytes());
-    device.put(&key(community), &bytes)
+    Ok(bytes)
 }
 
 struct Entry {

@@ -413,9 +413,10 @@ impl HostGovernance {
     /// `M(p,d)` with `K_M(p,d)` for a second device, `M(p)` with `K_M(p)`
     /// for the first), the record `append_own_op` writes the same subkey on.
     pub(crate) async fn republish_own_frontier(&self, community_id: &str) {
-        let written = match self.own_op_record_writer(community_id) {
-            Ok((record, writer)) => {
-                self.write_own_frontier(community_id, &record, &writer)
+        let written = match self.own_record_keys(community_id) {
+            Ok(keys) => {
+                let own = keys.own(community_id);
+                self.write_own_frontier(community_id, own.record, own.writer)
                     .await
             }
             Err(e) => Err(e),

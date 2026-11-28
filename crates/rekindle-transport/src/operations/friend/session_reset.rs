@@ -48,8 +48,15 @@ pub fn pending_safety_number(host: &dyn FriendHost, peer: &str) -> Option<String
 /// nothing of who).
 fn alert(host: &dyn FriendHost, title: &str, display: String, named: String, unnamed: &str) {
     host.publish(SubscriptionEvent::Notification(
-        NotificationEvent::contact_alert(title, display, named, unnamed),
+        NotificationEvent::contact_alert(alert_id(host), title, display, named, unnamed),
     ));
+}
+
+/// A fresh alert id from the Host's clock and RNG (C9.2).
+fn alert_id(host: &dyn FriendHost) -> String {
+    let mut random = [0u8; 10];
+    host.rng().fill(&mut random);
+    rekindle_types::subscription_events::alert_id(host.clock().now_ms(), random)
 }
 
 /// Reset our secure session with a friend: the request names no keys, and

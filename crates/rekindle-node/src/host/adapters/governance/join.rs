@@ -95,6 +95,7 @@ impl HostGovernance {
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
+        self.begin_member_record(&id);
         self.supersede_own_removal(&id).await;
         // Joined from a hint: partial until the backfill rebuild holds the
         // cut (plan E3.2 S7c.8 (1)), marked before any op is stored so a
@@ -132,8 +133,12 @@ impl HostGovernance {
         // row, tried until a member answers, since no member learns of a
         // joiner it has not merged (`join_bootstrap`).
         let inviter_record = &outcome.invite.inviter_member_record;
+        let route = self
+            .inviter_route(&id, inviter_record)
+            .await
+            .unwrap_or_default();
         match self
-            .bootstrap_exchange(&id, &outcome.inviter_route, inviter_record, &outcome.joined)
+            .bootstrap_exchange(&id, &route, inviter_record, &outcome.joined)
             .await
         {
             super::join_bootstrap::Exchange::Merged => self.announce_standing_join(&id, &outcome),
@@ -333,6 +338,7 @@ impl HostGovernance {
             publish_ops,
         )
         .await?;
+        self.finish_member_record(community, own.record, &profile.route);
         Ok(queued.load(std::sync::atomic::Ordering::Relaxed))
     }
 

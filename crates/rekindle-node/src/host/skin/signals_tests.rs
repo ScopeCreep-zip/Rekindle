@@ -1,14 +1,17 @@
 //! The skin signals' computation (plan SK2-A4 step 3).
 
-use rekindle_types::dto::skin_action::Capability;
-use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::{Caller, HostApi};
+use rekindle_types::dto::skin_action::{Capability, SkinAction};
+use rekindle_types::dto::skin_run::{CallTarget, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
 use rekindle_types::subscription_events::{
-    CallEvent, NetworkEvent, OwnRecordsPhase, SubscriptionEvent, VoiceEvent, VoiceScope,
+    CallEvent, NetworkEvent, NotificationEvent, OwnRecordsPhase, StreamFrame, SubscriptionEvent,
+    SystemEvent, VoiceEvent, VoiceScope,
 };
 
 use super::actions::{Launchers, Selections};
-use rekindle_types::dto::skin_signals::{DisableCause, DisableSignal};
+use rekindle_types::dto::skin_signals::{DisableCause, DisableSignal, SkinSignalSet};
 use rekindle_types::subscription_events::RouteAvailability;
 
 use super::capability::{refusal, Selected, SkinWorld};
@@ -307,6 +310,92 @@ fn focus_changes_the_set() {
         )
         .focused
     );
+}
+
+const BUDDY_LIST: &str = "buddy-list";
+
+async fn buddy_signals_when(
+    events: &mut rekindle_events::EventStream,
+    ready: impl Fn(&SkinSignalSet) -> bool,
+) -> SkinSignalSet {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while let Some(frame) = events.next().await {
+            if let StreamFrame::Event(event) = frame {
+                if let SubscriptionEvent::System(SystemEvent::SkinSignals { window, set }) =
+                    event.event
+                {
+                    if window == BUDDY_LIST && ready(&set) {
+                        return set;
+                    }
+                }
+            }
+        }
+        panic!("the Host signal stream ended")
+    })
+    .await
+    .expect("the next buddy-list signal set")
+}
+
+#[tokio::test]
+async fn an_alert_stays_unread_across_focus_until_the_notifications_panel_opens() {
+    use crate::host::test_fixtures::{create_ann, offline_host};
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let mut events = host.ctx.journal.subscribe(None);
+    host.skin_window_focused(BUDDY_LIST, true);
+    let initial = buddy_signals_when(&mut events, |set| set.focused).await;
+    let alert = || {
+        SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+            id: host.ctx.alert_id(),
+            title: "Signing stopped".into(),
+            body: "Review this device".into(),
+            subject: None,
+        })
+    };
+    let open = || IpcRequest::RunSkinAction {
+        window: BUDDY_LIST.into(),
+        node: "ButtonNotificationsTab".into(),
+        action: SkinAction::OpenNotifications,
+    };
+    // Some platforms raise a standing memory notice on unlock. Clear it
+    // via the same action before publishing this test's alert.
+    if initial.new_notification {
+        assert!(matches!(
+            host.call(Caller::shell(), open()).await,
+            IpcResponse::Ok { .. }
+        ));
+        buddy_signals_when(&mut events, |set| !set.new_notification).await;
+    }
+
+    host.publish_standing(alert());
+    let unread = buddy_signals_when(&mut events, |set| set.new_notification).await;
+    assert!(unread.focused);
+    for focused in [false, true] {
+        host.skin_window_focused(BUDDY_LIST, focused);
+        let set = buddy_signals_when(&mut events, |set| set.focused == focused).await;
+        assert!(set.new_notification, "focus must preserve unread alerts");
+    }
+
+    let response = host.call(Caller::shell(), open()).await;
+    let IpcResponse::Ok { data, .. } = response else {
+        panic!("opening notifications: {response:?}");
+    };
+    assert_eq!(
+        serde_json::from_value::<SkinRun>(data).unwrap(),
+        SkinRun::Shell(ShellOp::OpenPanel(ShellPanel::Notifications))
+    );
+    buddy_signals_when(&mut events, |set| !set.new_notification).await;
+
+    host.ctx.journal.resync();
+    assert!(
+        !host.ctx.journal.has_unread_alert(),
+        "resync retains read status"
+    );
+    host.publish(alert());
+    buddy_signals_when(&mut events, |set| set.new_notification).await;
+    host.shutdown().await.unwrap();
 }
 
 fn voice(event: VoiceEvent) -> SubscriptionEvent {

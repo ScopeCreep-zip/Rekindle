@@ -1,6 +1,13 @@
 //! `dm::handshake`'s unit tests.
 
-use super::*;
+use rekindle_codec::capnp_codec::direct::DmTypeId;
+
+use super::{
+    answered, awaits_answer, receipted, refuses, unfriended_client_id, unfriended_peer, Answered,
+};
+use crate::operations::dm::send;
+use crate::operations::friend::FriendError;
+use crate::operations::prekeys::Rejection;
 
 #[test]
 fn an_inbox_write_fails_only_when_refused() {
@@ -24,6 +31,7 @@ fn requests_first_contacts_presence_keys_and_removal_acks_wait_for_their_receipt
     assert!(receipted(DmTypeId::FriendsKey));
     assert!(receipted(DmTypeId::GroupDmAccept));
     assert!(receipted(DmTypeId::GroupDmInvite));
+    assert!(receipted(DmTypeId::GroupDmRosterGrow));
     assert!(receipted(DmTypeId::UnfriendedAck));
 }
 
@@ -120,4 +128,35 @@ fn a_call_end_awaits_its_receipt() {
     assert!(receipted(DmTypeId::CallEnd));
     assert!(!receipted(DmTypeId::CallRinging));
     assert!(!receipted(DmTypeId::CallInvite));
+}
+
+#[test]
+fn reset_requests_and_declines_wait_for_their_receipt() {
+    for kind in [DmTypeId::SessionResetRequest, DmTypeId::SessionResetDecline] {
+        assert!(receipted(kind));
+        assert!(!awaits_answer(kind));
+        for (answer, expected) in [
+            (Ok(send::CallAnswer::Receipt), Answered::Receipt),
+            (Ok(send::CallAnswer::Refused), Answered::Refused),
+            (Ok(send::CallAnswer::RetryLater), Answered::Again),
+            (
+                Err(FriendError::Failed("app_call timed out".into())),
+                Answered::Again,
+            ),
+        ] {
+            assert_eq!(answered(kind, &answer, Rejection::NotOurs), expected);
+        }
+    }
+}
+
+#[test]
+fn co_creator_answers_withdrawals_and_join_links_wait_for_their_receipt() {
+    for kind in [
+        DmTypeId::CreatorAccept,
+        DmTypeId::CreatorDecline,
+        DmTypeId::CreatorWithdrawn,
+        DmTypeId::CreatorJoin,
+    ] {
+        assert!(receipted(kind));
+    }
 }

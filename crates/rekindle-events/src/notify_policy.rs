@@ -113,6 +113,7 @@ pub fn os_notification_for(
                 title,
                 body,
                 subject,
+                ..
             } => Some(match (inputs.content, subject) {
                 (NotificationContent::Nothing, Some(subject)) => {
                     OsNotification::new(title, subject.unnamed_body.clone())

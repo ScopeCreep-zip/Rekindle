@@ -546,6 +546,9 @@ pub enum IpcRequest {
     /// The static role-editor permission catalogue, available in any state.
     PermissionCatalogue,
 
+    /// This unlocked identity's current backend-held reviews (plan S7d-keys.10).
+    IntentListHeld,
+
     #[cfg(all(feature = "webdriver-test", debug_assertions))]
     WebdriverPostSkippingLocalPermission {
         channel: String,

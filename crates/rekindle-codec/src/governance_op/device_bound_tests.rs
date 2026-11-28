@@ -1,10 +1,11 @@
 //! Lead decision (40), plan E3.2 S7d-keys K3b: [`MAX_DEVICE_SET_ELEMENTS`]
-//! is exactly what fits one `DeviceKey` op in one member-record subkey,
-//! every other field at its largest encoded size.
+//! is exactly what fits its largest carrier, one `DeviceReEnrol` op
+//! (S7d-keys.10), in one member-record subkey, every other field at its
+//! largest encoded size.
 
 use rekindle_types::governance::{
-    DeviceEndorsement, DeviceSetElement, DeviceSetElementKind, GovernanceEntry, GovernanceOp,
-    OpHash, OpRef, MAX_DEVICE_SET_ELEMENTS,
+    DeviceEndorsement, DeviceReEnrol, DeviceRetired, DeviceSetElement, DeviceSetElementKind,
+    GovernanceEntry, GovernanceOp, OpHash, OpRef, MAX_DEVICE_SET_ELEMENTS,
 };
 use rekindle_types::id::PseudonymKey;
 
@@ -42,8 +43,18 @@ pub(super) fn elements(n: usize) -> Vec<DeviceSetElement> {
 /// The largest `DeviceKey` op with `n` element ids: the full deps cap,
 /// full-length texts and no zero byte anywhere it can be avoided.
 fn worst_case_device_op(n: usize) -> GovernanceOp {
+    worst_case_op(n, false)
+}
+
+/// The largest `DeviceReEnrol` op with `n` element ids: the
+/// [`worst_case_device_op`] endorsement with a retirement beside it.
+fn worst_case_re_enrol_op(n: usize) -> GovernanceOp {
+    worst_case_op(n, true)
+}
+
+fn worst_case_op(n: usize, re_enrol: bool) -> GovernanceOp {
     let extends_elements = elements(n);
-    GovernanceOp {
+    let mut op = GovernanceOp {
         device_key: noise(1),
         author: PseudonymKey(noise(1)),
         seq: u64::MAX,
@@ -69,39 +80,65 @@ fn worst_case_device_op(n: usize) -> GovernanceOp {
             endorsement_sig: noise::<64>(6).to_vec(),
         }),
         sig: noise(7),
+    };
+    if re_enrol {
+        let GovernanceEntry::DeviceKey(endorsement) = op.body.clone() else {
+            unreachable!("built as a DeviceKey above");
+        };
+        op.body = GovernanceEntry::DeviceReEnrol(DeviceReEnrol {
+            retired: DeviceRetired {
+                device_key: noise(8),
+                incarnation: u64::MAX - 1,
+                last_seq: u64::MAX,
+                retirement_sig: noise::<64>(9).to_vec(),
+            },
+            endorsement,
+        });
     }
+    op
 }
 
 fn endorsement(op: &GovernanceOp) -> &DeviceEndorsement {
     match &op.body {
         GovernanceEntry::DeviceKey(e) => e,
-        other => panic!("not a DeviceKey op: {other:?}"),
+        GovernanceEntry::DeviceReEnrol(r) => &r.endorsement,
+        other => panic!("not a device endorsement op: {other:?}"),
     }
 }
 
-/// At the bound the largest op seals within the subkey, reads back and is
-/// well formed; one element more fits neither.
+/// At the bound the largest op of either arm seals within the subkey,
+/// reads back and is well formed; one element more makes the largest
+/// carrier, the `DeviceReEnrol`, fit neither, and no endorsement well
+/// formed.
 #[test]
 fn the_extended_set_bound_is_what_fits_one_op() {
-    let at = worst_case_device_op(MAX_DEVICE_SET_ELEMENTS);
-    let bytes = encode_op(&at).unwrap();
-    assert!(bytes.len() <= GOVERNANCE_OP_MAX_BYTES);
-    assert_eq!(decode_op(&bytes).unwrap().op, at);
-    assert!(endorsement(&at).well_formed());
-    let over = worst_case_device_op(MAX_DEVICE_SET_ELEMENTS + 1);
+    for at in [
+        worst_case_device_op(MAX_DEVICE_SET_ELEMENTS),
+        worst_case_re_enrol_op(MAX_DEVICE_SET_ELEMENTS),
+    ] {
+        let bytes = encode_op(&at).unwrap();
+        assert!(bytes.len() <= GOVERNANCE_OP_MAX_BYTES);
+        assert_eq!(decode_op(&bytes).unwrap().op, at);
+        assert!(endorsement(&at).well_formed());
+    }
+    let over = worst_case_re_enrol_op(MAX_DEVICE_SET_ELEMENTS + 1);
     assert!(encode_op(&over).is_err());
     assert!(!endorsement(&over).well_formed());
+    assert!(!endorsement(&worst_case_device_op(MAX_DEVICE_SET_ELEMENTS + 1)).well_formed());
 }
 
-/// The derivation's two terms (`MAX_DEVICE_SET_ELEMENTS`' doc) are the
-/// encoding's: the rest of the op is 1,928 words, each element 7.
+/// The derivation's terms (`MAX_DEVICE_SET_ELEMENTS`' doc) are the
+/// encoding's: the rest of a `DeviceKey` op is 1,928 words, of a
+/// `DeviceReEnrol` 1,946, each element 7.
 #[test]
 fn the_bounds_derivation_matches_the_encoding() {
     let words = |n| op_unsigned_bytes(&worst_case_device_op(n)).unwrap().len() / 8;
+    let re_enrol_words = |n| op_unsigned_bytes(&worst_case_re_enrol_op(n)).unwrap().len() / 8;
     assert_eq!(words(0), 1_928);
+    assert_eq!(re_enrol_words(0), 1_946);
     assert_eq!(words(2) - words(1), 7);
     assert_eq!(
-        words(MAX_DEVICE_SET_ELEMENTS),
-        1_928 + 7 * MAX_DEVICE_SET_ELEMENTS
+        re_enrol_words(MAX_DEVICE_SET_ELEMENTS),
+        1_946 + 7 * MAX_DEVICE_SET_ELEMENTS
     );
 }

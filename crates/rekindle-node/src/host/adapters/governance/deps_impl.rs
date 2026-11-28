@@ -67,6 +67,17 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.store_device_record_impl(community_id, record, owner)
     }
 
+    fn commit_device_re_enrolment(
+        &self,
+        community: &str,
+        retired: [u8; 32],
+        secret: &[u8; 32],
+        owner: &str,
+        carrier: &rekindle_governance_runtime::op_log::HeldOp,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.commit_retirement_carrier(community, retired, secret, owner, carrier)
+    }
+
     fn identity_status(&self) -> UserStatusKind {
         self.identity_status_impl()
     }
@@ -97,6 +108,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
 
     fn insert_community(&self, community: CommunityInsert) {
         self.insert_community_impl(community);
+    }
+
+    fn member_record_published(&self, community: &str, record: &str, route: &[u8]) {
+        self.finish_member_record(community, record, route);
     }
 
     async fn next_beat_seq(&self, community_id: &str) -> Result<u64, GovernanceRuntimeError> {

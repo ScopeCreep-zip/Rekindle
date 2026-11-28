@@ -6,8 +6,10 @@
 //! rebuilds nothing; and an op whose gossip is lost reaches a ring watcher
 //! through the frontier change, well before the 60 s anti-entropy sweep.
 
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{ActivityRequest, ChannelRequest, CommunityRequest, IpcRequest};
 use rekindle_netsim::Fault;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, SUBKEY_COUNT};
@@ -16,6 +18,7 @@ use tracing::Instrument as _;
 
 use crate::events;
 use crate::harness::{eventually, Community, Events};
+use crate::ring_census::member_watchers;
 use crate::watch_ring::creator_record;
 
 /// The ring arm's rebuild line (`watch.rs` `refresh_member_record`): a
@@ -65,9 +68,8 @@ async fn a_lost_op_gossip_reaches_the_ring_watcher_through_the_frontier() {
         eventually(&community.sim, Duration::from_secs(300), || async {
             community
                 .sim
-                .watchers_of_dflt(SUBKEY_COUNT)
-                .get(&creator)
-                .is_some_and(|w| w.contains(&1))
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
         })
         .await,
         "node 1 watches the creator's member record"
@@ -184,9 +186,8 @@ async fn a_moved_frontier_naming_only_held_heads_rebuilds_nothing() {
         eventually(&community.sim, Duration::from_secs(300), || async {
             community
                 .sim
-                .watchers_of_dflt(SUBKEY_COUNT)
-                .get(&creator)
-                .is_some_and(|w| w.contains(&1))
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
         })
         .await,
         "node 1 watches the creator's member record"
@@ -244,7 +245,7 @@ async fn ring_settled(community: &Community) {
     let n = community.nodes.len();
     assert!(
         eventually(&community.sim, Duration::from_secs(300), || async {
-            let watched = community.sim.watchers_of_dflt(SUBKEY_COUNT);
+            let watched = member_watchers(community, FRONTIER);
             watched.len() >= n && watched.values().all(|w| !w.is_empty())
         })
         .await,
@@ -311,7 +312,7 @@ async fn one_op_relays_frontier_hints_only_for_the_heads_it_moved() {
     );
     tokio::time::sleep(Duration::from_secs(30)).await;
     community.sim.quiesce().await;
-    let watchers = community.sim.watchers_of_dflt(SUBKEY_COUNT);
+    let watchers = member_watchers(&community, FRONTIER);
     let bound: u64 = heads(&community)
         .iter()
         .map(|(record, seq)| {
@@ -351,4 +352,173 @@ async fn concurrent_frontier_triggers_read_the_record_once() {
     assert!(first && second, "both are ring changes");
     community.sim.quiesce().await;
     assert_eq!(reads(), before + 1, "one frontier read for both triggers");
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn ring_frontier_retries_when_the_claiming_read_lags() {
+    let community = Community::of(2, 4117).await;
+    let creator = creator_record(&community);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(300), || async {
+            community
+                .sim
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
+        })
+        .await
+    );
+    community.sim.quiesce().await;
+    let previous = community.sim.network_get(&creator, FRONTIER).unwrap().seq;
+
+    // Deliver one watch trigger explicitly, so another replica's push
+    // or an app hint cannot rescue the first lagging fanout.
+    community.sim.fault(Fault::DropValueChanges {
+        node: 1,
+        key: creator.clone(),
+        drop: true,
+    });
+    community.sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
+    community.sim.fault(Fault::GetsFromLaggingReplica {
+        node: 1,
+        key: creator.clone(),
+        subkey: FRONTIER,
+        count: NonZeroUsize::MIN,
+    });
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelCreate {
+                community: community.anchor.clone(),
+                name: "lagging-frontier".into(),
+                kind: "text".into(),
+                category: None,
+                topic: None,
+                slowmode_seconds: 0,
+                parent_voice_channel: None,
+            },
+        )))
+        .await;
+    let current = community.sim.network_get(&creator, FRONTIER).unwrap().seq;
+    assert_eq!(current, previous + 1);
+    assert!(!lists_channel(&community, 1, "lagging-frontier").await);
+
+    let before = community.sim.app_gets_at(1, &creator, FRONTIER);
+    assert!(
+        community.nodes[1]
+            .host
+            .governance()
+            .on_watched_change(&creator, &[FRONTIER])
+            .await
+    );
+    assert!(lists_channel(&community, 1, "lagging-frontier").await);
+    let port = community.nodes[1].host.governance().record_port().unwrap();
+    let caught_up = port
+        .read_once(&creator, FRONTIER, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(caught_up.seq, current, "node 1 holds the written frontier");
+    assert_eq!(community.sim.app_gets_at(1, &creator, FRONTIER) - before, 2);
+}
+
+/// An inspected seq 4 arrives while the seq-3 read is finishing, then
+/// another watch report names 4 after that catch-up. The inspect sees
+/// the write ahead of the replicas reached by the forced gets.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn ring_frontier_catches_up_an_overlapping_and_late_trigger() {
+    let community = Community::of(2, 4117).await;
+    let creator = creator_record(&community);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(300), || async {
+            community
+                .sim
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
+        })
+        .await
+    );
+    community.sim.quiesce().await;
+    community.sim.fault(Fault::DropValueChanges {
+        node: 1,
+        key: creator.clone(),
+        drop: true,
+    });
+    community.sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
+    let writer = &community.nodes[0];
+    let watcher = community.nodes[1].host.governance();
+    let seq = || community.sim.network_get(&creator, FRONTIER).unwrap().seq;
+    let gets = || community.sim.app_gets_at(1, &creator, FRONTIER);
+    let anchor = community.anchor.as_str();
+    let write_channel = |name: &'static str| async move {
+        writer
+            .ok(IpcRequest::Community(CommunityRequest::Channels(
+                ChannelRequest::ChannelCreate {
+                    community: anchor.to_owned(),
+                    name: name.into(),
+                    kind: "text".into(),
+                    category: None,
+                    topic: None,
+                    slowmode_seconds: 0,
+                    parent_voice_channel: None,
+                },
+            )))
+            .await;
+    };
+    // The join writes seq 2. Deliver it before the two later writes.
+    assert_eq!(seq(), 2);
+    assert!(watcher.on_watched_change(&creator, &[FRONTIER]).await);
+    write_channel("copy").await;
+    assert_eq!(seq(), 3);
+    assert!(watcher.on_watched_change(&creator, &[FRONTIER]).await);
+    assert!(lists_channel(&community, 1, "copy").await);
+
+    // Pause completion of a seq-3 report in the equal-heads convergence
+    // check. It holds a frontier flight while seq 4 is written and reported.
+    let lock = watcher.rebuild_lock(&community.anchor);
+    let installing = lock.lock().await;
+    let before = gets();
+    // The claiming get and the next two fanouts reach replicas at 3.
+    community.sim.fault(Fault::GetsFromLaggingReplica {
+        node: 1,
+        key: creator.clone(),
+        subkey: FRONTIER,
+        count: NonZeroUsize::new(3).unwrap(),
+    });
+    let in_flight = watcher.on_watched_change(&creator, &[FRONTIER]);
+    let newer = async {
+        assert!(
+            eventually(&community.sim, Duration::from_secs(5), || async {
+                gets() > before
+            })
+            .await,
+            "the claiming get started"
+        );
+        write_channel("after-the-copy").await;
+        assert_eq!(seq(), 4);
+        assert!(watcher.on_watched_change(&creator, &[FRONTIER]).await);
+        assert_eq!(gets(), before + 1, "seq 4 joined the existing flight");
+        drop(installing);
+    };
+    let (handled, ()) = tokio::join!(in_flight, newer);
+    assert!(handled);
+    let overlapping_gets = gets() - before;
+    assert!(watcher.on_watched_change(&creator, &[FRONTIER]).await);
+    assert!(
+        lists_channel(&community, 1, "after-the-copy").await,
+        "the watcher has the op named by frontier seq 4 after both reports"
+    );
+    assert_eq!(
+        overlapping_gets, 3,
+        "seq 4 had a forced get and a capped refetch"
+    );
+    assert_eq!(
+        gets() - before,
+        4,
+        "the late trigger clears the remaining lag"
+    );
 }

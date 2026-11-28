@@ -4,7 +4,7 @@ use super::memory_notice;
 
 #[test]
 fn every_secret_locked_raises_no_notice() {
-    assert!(memory_notice(&[true, true]).is_none());
+    assert!(memory_notice(&[true, true], "a".into()).is_none());
 }
 
 #[test]
@@ -13,14 +13,15 @@ fn a_refused_lock_raises_one_system_alert() {
         title,
         body,
         subject,
-    })) = memory_notice(&[true, false])
+        ..
+    })) = memory_notice(&[true, false], "a".into())
     else {
         panic!("a refused lock is shown to the user");
     };
     assert_eq!(title, "Keys not in locked memory");
     assert!(body.contains("ulimit -l"), "{body}");
     assert!(subject.is_none());
-    assert!(memory_notice(&[false, false]).is_some());
+    assert!(memory_notice(&[false, false], "a".into()).is_some());
 }
 
 fn is_memory_notice(event: &SubscriptionEvent) -> bool {

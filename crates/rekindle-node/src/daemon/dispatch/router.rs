@@ -87,6 +87,7 @@ async fn route(
         } => quick_wipe::handle_arm(ctx, state, &duress_passphrase, shortcut).await,
         IpcRequest::QuickWipeDisarm => quick_wipe::handle_disarm(ctx, state).await,
         IpcRequest::QuickWipeTrigger => quick_wipe::handle_trigger(ctx, state).await,
+        IpcRequest::IntentListHeld => IpcResponse::ok(&crate::host::held_reviews_of(ctx)),
         // The gate answers these in `HostApi::call`; they never route.
         IpcRequest::IntentCommit { .. }
         | IpcRequest::IntentCancel { .. }

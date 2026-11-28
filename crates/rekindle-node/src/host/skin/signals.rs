@@ -1,9 +1,9 @@
 //! A skin window's state signals (plan SK2-A4 step 3, design §2.5): the
 //! Host folds its own event stream (typing, calls, voice activity, the
-//! network, notifications) and the shell's window focus into per-window
-//! inputs, computes each window's [`SkinSignalSet`] from them, the
-//! window's selection ([`super::actions::Selections`]) and the selected
-//! friend's state in the session, and publishes
+//! network) and the shell's window focus into per-window inputs. It
+//! computes each window's [`SkinSignalSet`] from those inputs, the
+//! journal's unread alert state, the window's selection
+//! ([`super::actions::Selections`]) and the selected friend's state, and publishes
 //! `SystemEvent::SkinSignals` as the session state `skin-signals:<label>`
 //! whenever a window's set changes. Windows are keyed by label (lead
 //! decision 48): two chat windows have two selections and two sets.
@@ -21,8 +21,8 @@ use rekindle_types::dto::skin_signals::{
 };
 use rekindle_types::friend::FriendState;
 use rekindle_types::subscription_events::{
-    CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
-    TypingEvent, VoiceEvent, VoiceScope,
+    CallEvent, NetworkEvent, NotificationEvent, StreamFrame, SubscriptionEvent, SystemEvent,
+    TypingContext, TypingEvent, VoiceEvent, VoiceScope,
 };
 
 use super::capability::{refusal, Selected, SkinWorld};
@@ -56,7 +56,6 @@ pub(crate) struct Inputs {
     /// cleared when no call is left.
     self_muted: bool,
     disconnected: bool,
-    unseen_notification: BTreeSet<String>,
     /// Our voice session, from `VoiceEvent::LocalJoined`; cleared by the
     /// `VoiceEvent::Left` that names us (`own`), as our own leave does
     /// (`rekindle_voice::session::leave_voice`).
@@ -66,13 +65,11 @@ pub(crate) struct Inputs {
 }
 
 impl Inputs {
-    /// The shell's window focus. A window that gains focus has seen its
-    /// notifications.
+    /// The shell's window focus, independent of unread alerts.
     pub(crate) fn set_focus(&mut self, window: &str, focused: bool) {
         self.windows.insert(window.to_owned());
         if focused {
             self.focused.insert(window.to_owned());
-            self.unseen_notification.remove(window);
         } else {
             self.focused.remove(window);
         }
@@ -87,7 +84,6 @@ impl Inputs {
     pub(crate) fn close(&mut self, window: &str) {
         self.windows.remove(window);
         self.focused.remove(window);
-        self.unseen_notification.remove(window);
     }
 
     pub(crate) fn in_call(&self) -> bool {
@@ -141,19 +137,11 @@ impl Inputs {
                 self.disconnected = !is_attached;
                 true
             }
-            SubscriptionEvent::Notification(_) => {
-                self.unseen_notification = self
-                    .windows
-                    .iter()
-                    .filter(|w| !self.focused.contains(*w))
-                    .cloned()
-                    .collect();
-                true
-            }
-            // A transfer's state is read from `transfers`, and the
-            // own-records stage from `FriendStores::own_records`
-            // (`load_world`).
-            SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. })
+            // The signal pass reads alert state from the journal, a
+            // transfer's state from `transfers`, and the own-records
+            // stage from `FriendStores::own_records`.
+            SubscriptionEvent::Notification(NotificationEvent::SystemAlert { .. })
+            | SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. })
             | SubscriptionEvent::Presence(_)
             | SubscriptionEvent::Friend(_)
             | SubscriptionEvent::Transfer(_) => true,
@@ -330,7 +318,7 @@ pub(crate) fn compute(
     let mut set = SkinSignalSet {
         focused: inputs.focused.contains(window),
         disconnected: inputs.disconnected,
-        new_notification: inputs.unseen_notification.contains(window),
+        new_notification: world.unread_alert,
         ..SkinSignalSet::default()
     };
     for capability in EVERY_CAPABILITY {
@@ -481,8 +469,10 @@ pub(crate) fn changed(ctx: &DaemonContext, world: &SkinWorld) -> Vec<(String, Sk
 }
 
 /// Publish every changed set.
-pub(crate) fn publish_changes(ctx: &DaemonContext, world: &SkinWorld) {
-    for (window, set) in changed(ctx, world) {
+async fn publish_changes(ctx: &DaemonContext) {
+    let mut world = load_world(ctx).await;
+    world.unread_alert = ctx.journal.has_unread_alert();
+    for (window, set) in changed(ctx, &world) {
         ctx.journal.publish_state(
             &format!("skin-signals:{window}"),
             SubscriptionEvent::System(SystemEvent::SkinSignals { window, set }),
@@ -493,7 +483,7 @@ pub(crate) fn publish_changes(ctx: &DaemonContext, world: &SkinWorld) {
 /// The worker: fold the Host's stream and the pokes until shutdown.
 pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     let mut stream = ctx.journal.subscribe(None);
-    publish_changes(&ctx, &load_world(&ctx).await);
+    publish_changes(&ctx).await;
     loop {
         tokio::select! {
             () = ctx.shutdown.requested() => return,
@@ -511,7 +501,7 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
             },
             () = ctx.skin.signals.poke.notified() => {}
         }
-        publish_changes(&ctx, &load_world(&ctx).await);
+        publish_changes(&ctx).await;
     }
 }
 

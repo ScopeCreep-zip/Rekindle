@@ -33,19 +33,13 @@ pub async fn dispatch(
             ..
         } => {
             let validated_name = helpers::validate_name(name, "Community")?;
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Lifecycle(
-                    LifecycleRequest::CommunityCreate {
-                        name: validated_name,
-                        description: description.clone().unwrap_or_default(),
-                        approval_required: *approval_required,
-                        co_creators: co_creators.clone(),
-                    },
-                )),
-            )
-            .await?;
-            format::print_structured(&value, mode)
+            let request = LifecycleRequest::CommunityCreate {
+                name: validated_name,
+                description: description.clone().unwrap_or_default(),
+                approval_required: *approval_required,
+                co_creators: co_creators.clone(),
+            };
+            lifecycle(client, mode, request).await
         }
         CommunityCmd::CreatorRemove { anchor, identity } => {
             let (anchor, identity) = (anchor.clone(), identity.clone());
@@ -277,6 +271,7 @@ pub async fn dispatch(
         | CommunityCmd::AcceptTransfer { .. }
         | CommunityCmd::AnswerLink { .. } => transfer(cmd, client, mode).await,
         CommunityCmd::RetireDevice { .. }
+        | CommunityCmd::ReEnrolDevice
         | CommunityCmd::ReadmitDevice { .. }
         | CommunityCmd::EnrolDevice { .. } => device(cmd, client, mode).await,
         CommunityCmd::Invite(sub) => governance::dispatch_invite(sub, client, mode).await,
@@ -491,10 +486,15 @@ async fn transfer(
 /// The device-key commands (ADR 0022, plan E3.2 S7d-keys K5): retire one
 /// of our device keys, or co-sign a member's fork-answering key back in.
 async fn device(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    let request = match cmd {
+    lifecycle(client, mode, device_request(cmd)?).await
+}
+
+fn device_request(cmd: &CommunityCmd) -> anyhow::Result<LifecycleRequest> {
+    Ok(match cmd {
         CommunityCmd::EnrolDevice { community } => LifecycleRequest::CommunityDeviceEnrol {
             anchor: community.clone(),
         },
+        CommunityCmd::ReEnrolDevice => LifecycleRequest::CommunityDeviceReEnrol {},
         CommunityCmd::RetireDevice {
             community,
             device_key,
@@ -512,8 +512,7 @@ async fn device(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMode) -> 
             device_key: device_key.clone(),
         },
         _ => anyhow::bail!("not a device command"),
-    };
-    lifecycle(client, mode, request).await
+    })
 }
 
 /// Send a lifecycle `request` and print its answer (the creator-set
@@ -534,3 +533,7 @@ async fn lifecycle(
 #[cfg(test)]
 #[path = "community_removal_tests.rs"]
 mod removal_tests;
+
+#[cfg(test)]
+#[path = "community_device_tests.rs"]
+mod device_tests;

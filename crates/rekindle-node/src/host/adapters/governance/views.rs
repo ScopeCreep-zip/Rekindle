@@ -504,15 +504,8 @@ impl HostGovernance {
                 let (status, location, last_active) = if is_me {
                     (my_status.clone(), overlay.my_location.clone(), now)
                 } else {
-                    let (shown, location) = beat_view::shown_location(
-                        &self.ctx,
-                        community,
-                        &row.pseudonym_key,
-                        governance
-                            .members
-                            .get(&PseudonymKey::from_hex_lossy(&row.pseudonym_key))
-                            .map(|member| member.member_record.as_str()),
-                    );
+                    let (shown, location) =
+                        beat_view::shown_location(&self.ctx, community, &row.pseudonym_key);
                     let last_active = overlay
                         .last_active
                         .get(&row.pseudonym_key)

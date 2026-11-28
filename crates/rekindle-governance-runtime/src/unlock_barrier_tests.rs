@@ -251,3 +251,34 @@ async fn held_writes_queue_in_arrival_order_behind_the_barrier() {
     barrier.release("held-1");
     assert!(barrier.try_turn_now().is_some(), "passed, nothing held");
 }
+
+/// The re-enrolment's re-key (plan E3.2 S7d-keys.10): a restore is final
+/// for every round of this unlock, and only the re-key of a freshly stored
+/// key passes the barrier, so the `DeviceReEnrol` signs under the new key.
+#[test]
+fn a_restored_barrier_passes_only_once_re_keyed() {
+    let barrier = UnlockBarrier::default();
+    barrier.re_keyed();
+    assert_eq!(
+        barrier.phase(),
+        BarrierPhase::CatchingUp,
+        "re-keying cannot substitute for a completed round"
+    );
+    let fact = RestoreDetected {
+        last_seq: 4,
+        local_head: Some(2),
+    };
+    barrier.complete(Some(BarrierPhase::Restored(fact)));
+    barrier.complete(Some(BarrierPhase::Passed));
+    assert_eq!(
+        barrier.phase(),
+        BarrierPhase::Restored(fact),
+        "a round never lifts a restore"
+    );
+    barrier.re_keyed();
+    assert_eq!(barrier.phase(), BarrierPhase::Passed);
+    assert!(
+        barrier.try_turn_now().is_some(),
+        "the re-enrolment signs now"
+    );
+}

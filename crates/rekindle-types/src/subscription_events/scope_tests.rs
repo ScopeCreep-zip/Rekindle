@@ -66,6 +66,7 @@ fn joins_calls_voice_and_notifications() {
     });
     assert_eq!(dm_voice.scope(), EventScope::Peer("pk".into()));
     let alert = SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+        id: "a".into(),
         title: "t".into(),
         subject: None,
         body: "b".into(),

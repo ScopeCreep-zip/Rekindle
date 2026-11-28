@@ -3,7 +3,9 @@
 //! is used. Nothing remote is trusted: a page that does not fit its pointer
 //! or the page before it is [`ChainError::Malformed`].
 
-use rekindle_codec::capnp_codec::chain::{self as wire, ChainHead, ChainPage, PagePointer};
+use rekindle_codec::capnp_codec::chain::{
+    self as wire, ChainHead, ChainPage, DeviceRetirementPointer, PagePointer,
+};
 use rekindle_types::dht_layout::dm_participant;
 
 use super::ChainError;
@@ -75,9 +77,16 @@ pub(super) fn runs(entries: &[Vec<u8>]) -> Result<Vec<&[Vec<u8>]>, ChainError> {
 
 /// The `HEAD` value: the newest page and the retire mark.
 pub(super) fn encode_head(head: &ChainHead) -> Result<Vec<u8>, ChainError> {
+    encode_head_value(Some(head), None)
+}
+
+pub(super) fn encode_head_value(
+    head: Option<&ChainHead>,
+    retirement: Option<&DeviceRetirementPointer>,
+) -> Result<Vec<u8>, ChainError> {
     fits(
         "chain head",
-        wire::encode_chain_head(head)?,
+        wire::encode_head_value(head, retirement)?,
         PARTICIPANT_CAP,
     )
 }
@@ -111,6 +120,11 @@ pub(super) fn decode_head(bytes: &[u8]) -> Result<Option<ChainHead>, ChainError>
     else {
         return Ok(None);
     };
+    check_head(&head)?;
+    Ok(Some(head))
+}
+
+pub(super) fn check_head(head: &ChainHead) -> Result<(), ChainError> {
     check_pointer("chain head", &head.newest)?;
     if head.retired_through > head.newest.last_seq {
         return Err(malformed(
@@ -121,7 +135,7 @@ pub(super) fn decode_head(bytes: &[u8]) -> Result<Option<ChainHead>, ChainError>
             ),
         ));
     }
-    Ok(Some(head))
+    Ok(())
 }
 
 /// The empty `HEAD`, a new record's first write.

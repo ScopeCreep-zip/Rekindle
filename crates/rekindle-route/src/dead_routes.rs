@@ -40,9 +40,11 @@ struct Dead {
     at: Instant,
     /// The record seq of the first read after the death; a strictly higher
     /// one clears the entry.
-    seen_seq: Option<u64>,
+    seen_seq: HashMap<String, u64>,
     /// When it was last handed out for a probe.
     probed: Option<Instant>,
+    /// A sender already arranged a re-read when the first probe is due.
+    scheduled: bool,
 }
 
 /// What a read of a peer's record that returned a blob means for the dead
@@ -76,8 +78,9 @@ impl DeadRoutes {
                 blob.to_vec(),
                 Dead {
                     at: now,
-                    seen_seq: None,
+                    seen_seq: HashMap::new(),
                     probed: None,
+                    scheduled: false,
                 },
             );
         }
@@ -103,18 +106,44 @@ impl DeadRoutes {
         self.dead.remove(blob).is_some()
     }
 
+    /// Claim one delayed re-read for this death. The re-read still has to
+    /// claim a probe through `observe_at`, like any send that reaches it.
+    pub fn schedule_probe(&mut self, blob: &[u8], now: Instant) -> Option<Instant> {
+        if !self.is_dead(blob, now) {
+            return None;
+        }
+        let dead = self.dead.get_mut(blob)?;
+        let due = dead.at + REFETCH_GAP;
+        if dead.scheduled || dead.probed.is_some() || now >= due {
+            return None;
+        }
+        dead.scheduled = true;
+        Some(due)
+    }
+
     /// A read of the peer's record returned `blob` at `seq` at `now`: the
     /// first read after its death is the baseline, a strictly higher seq
     /// clears it, and the baseline seq read again one [`REFETCH_GAP`] after
     /// the death or the last probe asks for a probe ([`DeadRouteVerdict`]).
     pub fn observe(&mut self, blob: &[u8], seq: u64, now: Instant) -> DeadRouteVerdict {
+        self.observe_at("", blob, seq, now)
+    }
+
+    /// Observe a version scoped to the record that published it.
+    pub fn observe_at(
+        &mut self,
+        record: &str,
+        blob: &[u8],
+        seq: u64,
+        now: Instant,
+    ) -> DeadRouteVerdict {
         if !self.is_dead(blob, now) {
             return DeadRouteVerdict::NotDead;
         }
         let Some(d) = self.dead.get_mut(blob) else {
             return DeadRouteVerdict::NotDead;
         };
-        let seen = *d.seen_seq.get_or_insert(seq);
+        let seen = *d.seen_seq.entry(record.to_owned()).or_insert(seq);
         if seq > seen {
             self.dead.remove(blob);
             return DeadRouteVerdict::Cleared;

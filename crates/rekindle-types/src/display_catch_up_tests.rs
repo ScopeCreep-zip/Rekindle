@@ -98,3 +98,22 @@ fn a_held_write_relabelled_shows_its_target_by_name() {
     .with_name("Mods");
     assert_eq!(role.label, "Role edited Mods");
 }
+
+/// The Host's word table (plan E3.2 S7d-keys.10): a held re-enrolment reads
+/// "Re-enrolling this device", and the other kinds keep the words they had
+/// when labels were derived from the kind's name.
+#[test]
+fn a_held_re_enrolment_reads_as_the_host_label_and_other_kinds_keep_their_words() {
+    let label = |kind| PendingGovOp::held_as("h".into(), kind, PendingGovTarget::default()).label;
+    assert_eq!(
+        label(PendingGovKind::DeviceReEnrol),
+        "Re-enrolling this device"
+    );
+    assert_eq!(label(PendingGovKind::Kick), "Kick");
+    assert_eq!(label(PendingGovKind::RoleEdited), "Role edited");
+    assert_eq!(label(PendingGovKind::DeviceKey), "Device key");
+    assert_eq!(
+        label(PendingGovKind::SuccessorLinkRequest),
+        "Successor link request"
+    );
+}

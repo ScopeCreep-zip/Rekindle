@@ -106,6 +106,10 @@ impl RecordPort for RecordPool {
         RecordPool::set_republished(self, lease, subkey, data, writer).await
     }
 
+    fn cancel_republish(&self, record: &str, subkeys: &[u32]) {
+        RecordPool::cancel_republish(self, record, subkeys);
+    }
+
     async fn inspect(
         &self,
         lease: LeaseId,
@@ -122,6 +126,15 @@ impl RecordPort for RecordPool {
         subkeys: &[u32],
     ) -> Result<Vec<(u32, RecordValue)>, PortError> {
         RecordPool::read_changed(self, lease, subkeys).await
+    }
+
+    async fn refetch_hinted(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        claimed: u64,
+    ) -> Result<Option<RecordValue>, PortError> {
+        RecordPool::refetch_hinted(self, lease, subkey, claimed).await
     }
 
     async fn read_hinted(

@@ -1,4 +1,10 @@
-use rekindle_codec::member_record::{BeatState, PresenceBeat, BEAT_PERIOD_MS};
+use rekindle_codec::member_record::{BeatState, PresenceBeat, RecordScope, BEAT_PERIOD_MS};
+
+use rekindle_secrets::keys::MediaEncryptionKey;
+use rekindle_types::presence::{MemberSession, PresenceSharingPolicy, SessionLocation, ShareScope};
+use rekindle_utils::random::OsRandom;
+
+use crate::community::{open_extras, seal_extras};
 
 use super::{BeatView, Observed, BEAT_LIVENESS_MS};
 
@@ -233,4 +239,104 @@ fn a_leave_beat_ends_the_voice_claim() {
         PERIOD_START + 3,
     );
     assert_eq!(claims(&view), vec![(MEMBER.to_owned(), None, false)]);
+}
+
+#[test]
+fn opens_selected_devices_extras_at_its_own_scope_under_reciprocity() {
+    let primary = RecordScope {
+        community_id: "community",
+        member_record: "VLD0:primary",
+    };
+    let secondary = RecordScope {
+        community_id: "community",
+        member_record: "VLD0:replacement",
+    };
+    let key = MediaEncryptionKey::from_bytes([42; 32], 6);
+    let rotated = MediaEncryptionKey::from_bytes([43; 32], 7);
+    let policy = PresenceSharingPolicy {
+        share_location: ShareScope::Members,
+        ..PresenceSharingPolicy::default()
+    };
+    let location = SessionLocation::Text {
+        channel_id: "general".into(),
+    };
+    let sealed = seal_extras(
+        MemberSession {
+            location: Some(location.clone()),
+            ..MemberSession::default()
+        },
+        &policy,
+        Some(&key),
+        secondary,
+        &OsRandom,
+    )
+    .expect("the writer shared location using the effective device record");
+    let mut view = BeatView::default();
+    let primary_beat = PresenceBeat {
+        seq: 100,
+        state: BeatState::Online,
+        voice_channel: None,
+        beat_number: 0,
+        extras: None,
+    };
+    let secondary_beat = PresenceBeat {
+        seq: 1,
+        extras: Some(sealed),
+        ..primary_beat.clone()
+    };
+    view.observe_record("peer", primary.member_record, &primary_beat, Some(200), 200);
+    view.observe_record(
+        "peer",
+        secondary.member_record,
+        &secondary_beat,
+        Some(201),
+        201,
+    );
+    let (record, ciphertext) = view
+        .sealed_extras("peer")
+        .expect("the selected live device has extras");
+    let selected = RecordScope {
+        community_id: primary.community_id,
+        member_record: record,
+    };
+    assert_eq!(record, secondary.member_record);
+    assert_eq!(
+        open_extras(ciphertext, Some(&key), selected, &policy)
+            .unwrap()
+            .location,
+        Some(location)
+    );
+    assert!(open_extras(ciphertext, Some(&key), primary, &policy).is_none());
+    let other_key = MediaEncryptionKey::from_bytes([43; 32], 6);
+    assert!(open_extras(ciphertext, Some(&other_key), selected, &policy).is_none());
+    assert!(open_extras(ciphertext, Some(&rotated), selected, &policy).is_none());
+    assert!(open_extras(
+        ciphertext,
+        Some(&key),
+        selected,
+        &PresenceSharingPolicy::default()
+    )
+    .is_none());
+    let later = 202;
+    view.observe_record(
+        "peer",
+        primary.member_record,
+        &PresenceBeat {
+            seq: 101,
+            ..primary_beat
+        },
+        Some(later),
+        later,
+    );
+    assert!(
+        view.sealed_extras("peer").is_none(),
+        "the selected record has no extras"
+    );
+    view.retain_records(|_, record| record != primary.member_record);
+    assert_eq!(
+        view.sealed_extras("peer").map(|(record, _)| record),
+        Some(secondary.member_record)
+    );
+    assert_eq!(view.expire(201 + BEAT_LIVENESS_MS), ["peer"]);
+    assert!(view.sealed_extras("peer").is_none());
 }

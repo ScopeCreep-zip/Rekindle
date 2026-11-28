@@ -92,6 +92,7 @@ fn community_scope_receives_calls_and_notifications() {
     assert!(router.matches(
         1,
         &SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+            id: "a".into(),
             title: "t".into(),
             subject: None,
             body: "b".into(),

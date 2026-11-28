@@ -43,6 +43,8 @@ pub struct SeenFrontiers(Arc<Mutex<Seen>>);
 struct Seen {
     /// The frontier seq read per member record.
     read: BTreeMap<String, u64>,
+    /// The minimum a trigger named during each active catch-up.
+    minimum: BTreeMap<String, u64>,
     /// The (heads digest, checksum) last warned about per member record.
     divergent: BTreeMap<String, (OpSetDigest, RosterChecksum)>,
     /// Our merge of the op set with this digest.
@@ -81,11 +83,30 @@ impl SeenFrontiers {
         self.get(record).is_none_or(|read| seq > read)
     }
 
-    /// Mark `record`'s frontier read at `seq`: `true` when it moved past
-    /// the seq read (any seq for a record never read).
+    /// Set the frontier floor while a trigger is being serviced. The
+    /// sweeps share the read marker and must also respect this floor.
+    pub fn set_minimum(&self, record: &str, minimum: Option<u64>) {
+        let mut seen = self.0.lock();
+        if let Some(minimum) = minimum {
+            seen.minimum.insert(record.to_owned(), minimum);
+        } else {
+            seen.minimum.remove(record);
+        }
+    }
+
+    /// Mark `record`'s frontier read at `seq` when it reaches the active
+    /// trigger's minimum. Returns true when it advances the read marker.
     pub fn mark_read(&self, record: &str, seq: u64) -> bool {
         use std::collections::btree_map::Entry;
-        match self.0.lock().read.entry(record.to_owned()) {
+        let mut seen = self.0.lock();
+        if seen
+            .minimum
+            .get(record)
+            .is_some_and(|minimum| seq < *minimum)
+        {
+            return false;
+        }
+        match seen.read.entry(record.to_owned()) {
             Entry::Vacant(slot) => {
                 slot.insert(seq);
                 true

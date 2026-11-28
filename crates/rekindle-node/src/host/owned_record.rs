@@ -48,6 +48,10 @@ impl StoredRecord {
         record: OwnedRecord,
         db_key: Option<String>,
     ) -> Result<Self, String> {
+        if record == OwnedRecord::Prekeys {
+            rekindle_vault::typed::owner_keys::finish_prekey_owner(vault, db_key.as_deref())
+                .map_err(|e| e.to_string())?;
+        }
         Ok(Self {
             db_key,
             entry: load_owner(vault, owner_key(record)).map_err(|e| e.to_string())?,

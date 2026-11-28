@@ -199,6 +199,11 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Re-enrol this device after a restore or a copy of its data wrote
+    /// under its key: one re-enrolment in every community (the Host's
+    /// review is shown and proved; never forced).
+    ReEnrolDevice,
+
     /// Retire one of your own device keys in a community (a lost or
     /// stolen device): every member then refuses its later ops.
     RetireDevice {

@@ -28,8 +28,8 @@ mod tests;
 mod unknown_tests;
 
 pub(crate) use device::{
-    read_device_key, read_device_readmit, read_device_retired, write_device_key,
-    write_device_readmit, write_device_retired,
+    read_device_key, read_device_re_enrol, read_device_readmit, read_device_retired,
+    write_device_key, write_device_re_enrol, write_device_readmit, write_device_retired,
 };
 use rekindle_types::dht_layout::member_record::{MAX_FRONTIER_REFS, MAX_SUBKEY_VALUE_LEN};
 use rekindle_types::governance::{Frontier, GovernanceOp, OpHash, OpRef, RosterChecksum};

@@ -175,17 +175,39 @@ function peerEnv(home: string): NodeJS.ProcessEnv {
   };
 }
 
+/** An app's data root to start a peer from, and its user's passphrase: the
+ *  peer is then that identity's copy (a restored backup), not a new one. */
+export interface PeerSeed {
+  /** The app's root (launch.ts `App.dataRoot`, `DataRoot::under`: `data/`, `config/`). */
+  dataRoot: string;
+  passphrase: string;
+}
+
+/**
+ * The daemon's DataRoot inside a fleet HOME (rekindle-utils paths.rs
+ * `DataRoot::resolve`): macOS keeps data and config in one Application
+ * Support folder; elsewhere they are the XDG data and config homes.
+ */
+function homeDataRoot(home: string): { data: string; config: string } {
+  if (process.platform === "darwin") {
+    const both = path.join(home, "Library", "Application Support", "com.rekindle.app");
+    return { data: both, config: both };
+  }
+  return { data: path.join(home, ".local", "share", "com.rekindle.app"), config: path.join(home, ".config", "com.rekindle.app") };
+}
+
 /**
  * Start one peer: its own HOME, `rekindle node start`, a new identity named
- * `displayName`, then wait until the CLI reports it attached.
+ * `displayName` (or, with `seed`, a copy of an app's data root unlocked with
+ * its passphrase), then wait until the CLI reports it attached.
  */
-async function startPeer(displayName: string): Promise<Peer> {
+async function startPeer(displayName: string, seed?: PeerSeed): Promise<Peer> {
   const home = mkdtempSync(FLEET_PREFIX);
   chownSync(home, process.getuid?.() ?? 0, process.getgid?.() ?? 0);
   writeFileSync(path.join(home, MARKER), "");
   const env = peerEnv(home);
   const passFile = path.join(home, "pass");
-  writeFileSync(passFile, randomBytes(18).toString("base64url"), { mode: 0o600 });
+  writeFileSync(passFile, seed ? seed.passphrase : randomBytes(18).toString("base64url"), { mode: 0o600 });
   chmodSync(passFile, 0o600);
   const exe = cliPath();
 
@@ -294,8 +316,20 @@ async function startPeer(displayName: string): Promise<Peer> {
   }
 
   try {
+    if (seed) {
+      // The copy: the app's files where this HOME's daemon looks for them,
+      // as a backup restored onto a second machine would put them.
+      const root = homeDataRoot(home);
+      mkdirSync(root.data, { recursive: true });
+      mkdirSync(root.config, { recursive: true });
+      cpSync(path.join(seed.dataRoot, "config"), root.config, { recursive: true });
+      cpSync(path.join(seed.dataRoot, "data"), root.data, { recursive: true });
+    }
     await run(exe, ["--no-input", "node", "start"], { env });
-    const made = (await cli(["init", "--display-name", displayName, "--passphrase-file", passFile])) as { publicKey?: string } | null;
+    const made = seed
+      ? null
+      : ((await cli(["init", "--display-name", displayName, "--passphrase-file", passFile])) as { publicKey?: string } | null);
+    if (seed) await cli(["unlock", "--passphrase-file", passFile]);
     const list = (await cli(["identity", "list"])) as { publicKey: string }[];
     peer.publicKey = made?.publicKey ?? list[0]?.publicKey ?? "";
     if (!peer.publicKey) throw new Error(`peer ${displayName}: no identity after init`);
@@ -305,6 +339,15 @@ async function startPeer(displayName: string): Promise<Peer> {
     throw err;
   }
   return peer;
+}
+
+/**
+ * A copy of the app user's identity on a peer: the app's data root copied
+ * into a fresh fleet HOME and its daemon unlocked with the user's passphrase
+ * (plan E3.2 S7d-keys.10: the copy that re-enrols the shared device key).
+ */
+export async function startClone(displayName: string, seed: PeerSeed): Promise<Peer> {
+  return startPeer(displayName, seed);
 }
 
 /** Start `names.length` peers one after another (each attached before the next). */

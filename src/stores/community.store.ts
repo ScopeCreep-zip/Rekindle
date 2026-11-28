@@ -193,7 +193,7 @@ import type { EventLocation, GameServer, RecurrenceRule, Thread } from "../ipc/c
 
 export type { GameServer, Thread };
 
-import type { KeyStatus } from "../ipc/channels/community_governance_events";
+import type { CatchUpView, KeyStatus } from "../ipc/channels/community_governance_events";
 
 /**
  * A scheduled community event (architecture §21) — the calendar entry
@@ -256,6 +256,9 @@ export interface Community {
   myPseudonymKey: string | null;
   /** Whether we hold the community's current key (FX3). */
   keyStatus?: KeyStatus | null;
+  /** The governance writes the unlock barrier holds, with the Host's label
+   *  for each (`CatchUp`; plan E3.2 S7d-keys.10): shown while pending. */
+  catchUp?: CatchUpView | null;
   /** What we may not do here and why, as the Host says (never-hide): a
    *  control is disabled with the reason, never hidden. */
   denied?: DeniedCapabilities;

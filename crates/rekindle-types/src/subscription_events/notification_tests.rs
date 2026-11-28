@@ -11,6 +11,7 @@ fn postcard_round_trips_every_variant() {
             sound_ref: Some("ping".into()),
         },
         NotificationEvent::SystemAlert {
+            id: "a".into(),
             title: "t".into(),
             subject: None,
             body: "b".into(),

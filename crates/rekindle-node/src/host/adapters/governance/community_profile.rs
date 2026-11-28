@@ -13,7 +13,7 @@
 use rekindle_codec::member_record::{card::decode_member_card, RecordScope};
 use rekindle_governance::state::CommunityPolicyState;
 use rekindle_governance_runtime::member_card::{
-    card_of, refresh_own_card, write_card, OwnCardText,
+    card_of, read_card, write_card, MemberRecordRef, OwnCardText,
 };
 use rekindle_governance_runtime::{CardText, GovernanceRuntimeDeps, GovernanceRuntimeError};
 use rekindle_types::dht_layout::member_record::CARD;
@@ -26,6 +26,7 @@ use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
     GameActivity, MembershipEvent, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
 };
+use rekindle_vault::typed::community_keys::{load_member_hpke_secret, persist_member_hpke_secret};
 
 use super::HostGovernance;
 use crate::host::community::CommunityStore;
@@ -119,6 +120,48 @@ impl HostGovernance {
         }
     }
 
+    pub(super) fn refresh_bound_device_card(&self, community: &str, record: String) {
+        let host = self.clone();
+        let community = community.to_owned();
+        self.ctx
+            .community_scope(&community)
+            .spawn_or_drop("device publication card", async move {
+                let lock = host.ctx.communities.profile_write_lock(&community);
+                let _held = lock.lock().await;
+                if host.is_publication_record(&community, &record) {
+                    let text = host.own_card_text(&community);
+                    if let Err(error) = host.publish_own_card(&community, &text).await {
+                        tracing::debug!(%community, %error, "device publication card skipped");
+                    }
+                }
+            });
+    }
+
+    /// Replace the copied HPKE secret at the device cutover, including
+    /// when the replacement must still be readmitted under rule 7.
+    pub(super) fn replace_card_secret(
+        &self,
+        community: &str,
+        secret: &[u8; 32],
+    ) -> Result<(), String> {
+        let guard = self.ctx.vault.lock();
+        let vault = guard.as_ref().ok_or("the identity is locked")?;
+        persist_member_hpke_secret(vault, community, secret)
+            .map_err(|e| format!("member card secret not saved: {e}"))
+    }
+
+    /// An inert replacement publishes its card when readmission makes its
+    /// binding effective, through `refresh_bound_device_card`.
+    pub(super) async fn publish_re_enrolled_card(&self, community: &str) -> Result<(), String> {
+        let lock = self.ctx.communities.profile_write_lock(community);
+        let _held = lock.lock().await;
+        if self.own_record_keys(community).is_ok() {
+            self.publish_own_card(community, &self.own_card_text(community))
+                .await?;
+        }
+        Ok(())
+    }
+
     /// Write `text` to our card, then read it back into the card cache.
     pub(super) async fn publish_own_card(
         &self,
@@ -129,13 +172,28 @@ impl HostGovernance {
         let hpke = {
             let guard = self.ctx.vault.lock();
             let vault = guard.as_ref().ok_or("no identity is unlocked")?;
-            rekindle_vault::typed::community_keys::load_member_hpke_secret(vault, community)
+            load_member_hpke_secret(vault, community)
                 .map_err(|e| format!("member hpke secret: {e}"))?
                 .ok_or("no member hpke secret is stored")?
         };
         let port = self.record_port().map_err(|e| e.to_string())?;
         write_card(&*port, &keys.own(community), text, &hpke).await?;
-        refresh_own_card(self, community).await
+        if !self.is_publication_record(community, &keys.record) {
+            self.stop_member_record_republishes(&keys.record);
+            return Ok(());
+        }
+        let author =
+            GovernanceRuntimeDeps::my_pseudonym(self, community).ok_or("no pseudonym of ours")?;
+        let binding = MemberRecordRef {
+            community_id: community,
+            pseudonym: &author,
+            record: &keys.record,
+            owner: &keys.owner,
+        };
+        if let Some(card) = read_card(&*port, &binding).await? {
+            self.note_member_card_impl(community, &author, card_of(&card));
+        }
+        Ok(())
     }
 
     /// Note a verified card; news is cached on the member's
@@ -205,9 +263,18 @@ impl HostGovernance {
             map.get(community)
                 .and_then(|c| c.watch_ring.get(record).copied())
         };
-        let (Some(lease), Some(author)) = (lease, self.author_of_record(community, record)) else {
+        let (Some(lease), Some((author, binding))) =
+            (lease, self.binding_of_record(community, record))
+        else {
             return;
         };
+        let Ok(port) = self.record_port() else { return };
+        if !port
+            .owner_of(lease)
+            .is_ok_and(|owner| owner == binding.owner)
+        {
+            return;
+        }
         let Ok(Some((_, bytes))) = self.read_hinted_value(lease, CARD).await else {
             return;
         };

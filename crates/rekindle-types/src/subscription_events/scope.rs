@@ -139,7 +139,8 @@ impl SubscriptionEvent {
             // A transfer is the device's: its file is on this machine.
             Self::Notification(_)
             | Self::Network(_)
-            | Self::IntentPending(_)
+            | Self::IntentPending { .. }
+            | Self::HeldReviews(_)
             | Self::Transfer(_) => EventScope::Device,
             Self::System(e) => match e {
                 SystemEvent::RaidDetected { community, .. }

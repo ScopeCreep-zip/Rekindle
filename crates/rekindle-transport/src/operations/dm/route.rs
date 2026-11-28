@@ -2,8 +2,10 @@
 //! E2.1) or, when it has none, from the peer's profile record.
 
 use rekindle_records::port::PeerTarget;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 
 use crate::broadcast::node::TransportNode;
+use crate::liveness::dead::Probed;
 use crate::operations::friend::{state, FriendHost};
 
 /// The peer's cached route blob while it is fresh; a stale one is dropped.
@@ -66,39 +68,89 @@ pub(crate) fn cached_route(node: &TransportNode, peer: &str) -> Option<(Vec<u8>,
     Some((blob, target))
 }
 
-/// Read a fresh route blob from the peer's profile record (subkey 6): a
-/// friend's, or a group member's from the roster we hold; and
-/// cache it.
+/// Re-resolve and cache a route from the peer's profile (subkey 6).
+/// A published blob still held dead needs a successful probe first.
 pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec<u8>> {
     let node = host.node().ok()?;
-    let profile_key = profile_key(host, peer).await?;
-    let records = node.require_records().ok()?;
-    let blob = rekindle_protocol::dht::profile::read_profile_subkey(
-        records.as_ref(),
-        &profile_key,
-        rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
-        true,
-    )
+    refresh_profile(host, &node, peer, |blob| {
+        schedule_probe(host, &node, peer, blob);
+    })
     .await
-    .ok()??;
-    if blob.is_empty() {
-        return None;
+}
+
+async fn refresh_profile(
+    host: &dyn FriendHost,
+    node: &TransportNode,
+    peer: &str,
+    on_held: impl FnOnce(&[u8]) + Send,
+) -> Option<Vec<u8>> {
+    let (record, blob, seq) = read_profile_route(host, peer).await?;
+    let live = node.liveness();
+    match live.route_read_on(&record, &blob, u64::from(seq)) {
+        DeadRouteVerdict::Held => {
+            on_held(&blob);
+            tracing::debug!(peer = %peer, "profile route was declared dead; not using it");
+            return None;
+        }
+        DeadRouteVerdict::Probe => {
+            // RH1r-c S2/S3: the re-read claims one probe per gap. Only a
+            // probe can re-import a held blob; keep the frame off it
+            // until it answers. A route learned during the probe wins.
+            let previous = cached(node, peer);
+            let result = node.probe_route(&blob).await;
+            let peers = node.peers();
+            let mut registry = peers.write();
+            if let Some(current) = registry.get_route(peer).filter(|current| {
+                *current != blob.as_slice() && Some(*current) != previous.as_deref()
+            }) {
+                return Some(current.to_vec());
+            }
+            if result != Probed::Answered {
+                tracing::debug!(peer = %peer, ?result, "profile route did not prove delivery");
+                return None;
+            }
+            registry.cache_route(peer, blob.clone());
+            return Some(blob);
+        }
+        DeadRouteVerdict::NotDead | DeadRouteVerdict::Cleared => {
+            if live.failure_cached(peer, &blob) {
+                tracing::debug!(peer = %peer, "profile route is the one we suspect; not using it");
+                return None;
+            }
+        }
     }
-    // A route we suspected stays out of use for its failure cache, unless
-    // its probe answers (plan RH1r-c S2).
-    if node.liveness().failure_cached(peer, &blob) {
-        tracing::debug!(peer = %peer, "profile route is the one we suspect; not using it");
-        return None;
-    }
-    // A blob Veilid declared dead is never cached again until the peer
-    // republishes it (plan RV1g B1, B3).
-    if node.liveness().route_declared_dead(&blob) {
-        tracing::debug!(peer = %peer, "profile route was declared dead; not using it");
-        return None;
-    }
-    cache(&node, peer, blob.clone());
+    cache(node, peer, blob.clone());
     tracing::debug!(peer = %peer, "fetched fresh route blob from DHT inline");
     Some(blob)
+}
+
+/// A send can back off past the probe gap. Schedule one re-read for the
+/// dead blob, in the unlock scope, and wake waiting rows if it recovers.
+fn schedule_probe(host: &dyn FriendHost, node: &TransportNode, peer: &str, blob: &[u8]) {
+    let Some(at) = node.liveness().schedule_route_probe(blob) else {
+        return;
+    };
+    let owned = host.owned();
+    let peer = peer.to_owned();
+    let blob = blob.to_vec();
+    host.scope()
+        .spawn_or_drop("re-test dead peer route", async move {
+            tokio::time::sleep_until(at).await;
+            let Ok(node) = owned.node() else {
+                return;
+            };
+            if node.liveness().route_declared_dead(&blob)
+                && refresh_profile(owned.as_ref(), &node, &peer, |_| {})
+                    .await
+                    .is_some()
+            {
+                reachable_again(
+                    owned.as_ref(),
+                    &peer,
+                    "their published route proved delivery",
+                );
+            }
+        });
 }
 
 /// The profile record a peer's route is published on: a friend's, else
@@ -110,12 +162,12 @@ async fn profile_key(host: &dyn FriendHost, peer: &str) -> Option<String> {
     }
 }
 
-/// The peer's route blob and its record seq, read from the network and not
-/// cached (plan RH1r-c S2: the caller takes it only under a higher seq).
+/// The publishing record key, its route blob and the subkey's seq, read
+/// from the network without updating the peer-route cache.
 pub(crate) async fn read_profile_route(
     host: &dyn FriendHost,
     peer: &str,
-) -> Option<(Vec<u8>, u32)> {
+) -> Option<(String, Vec<u8>, u32)> {
     let profile_key = profile_key(host, peer).await?;
     let records = host.node().ok()?.require_records().ok()?;
     rekindle_protocol::dht::profile::read_profile_subkey_seq(
@@ -126,6 +178,7 @@ pub(crate) async fn read_profile_route(
     .await
     .ok()?
     .filter(|(blob, _)| !blob.is_empty())
+    .map(|(blob, seq)| (profile_key, blob, seq))
 }
 
 /// Read the friend's current route from their mailbox record and cache it.

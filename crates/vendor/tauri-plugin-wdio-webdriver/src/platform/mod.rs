@@ -45,6 +45,8 @@ mod macos_keys;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+mod linux_focus;
+#[cfg(target_os = "linux")]
 mod linux_keys;
 
 use std::sync::Arc;

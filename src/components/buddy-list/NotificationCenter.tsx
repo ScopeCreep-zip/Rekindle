@@ -1,42 +1,23 @@
-import { type Component, For, onCleanup, onMount, Show } from "solid-js";
-import { handleStartDmCall } from "../../actions/calls.actions";
-import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
-import { commands } from "../../ipc/commands";
+import { type Component, Show } from "solid-js";
+import { dispatchSkinAction } from "../../actions/skin.actions";
+import { ICON_BELL } from "../../icons";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
-import {
-  markAllNotificationsRead,
-  markNotificationRead,
-  notificationState,
-  unreadNotifications,
-} from "../../stores/notification.store";
-import { formatRelativeTime } from "../../utils/formatting";
+import { unreadNotifications } from "../../stores/notification.store";
 
+/**
+ * The stock layout's notification bell. Opening goes through the Host's
+ * `openNotifications`, as a pack's notifications control does, so the Host
+ * acknowledges its unread bit (contract alerts, 2026-11-27); closing is the
+ * shell's own. The inbox itself is `NotificationPanel`, mounted once in the
+ * buddy list.
+ */
 const NotificationCenter: Component = () => {
-  const open = (): boolean => buddyListUI.showNotifications;
-  const setOpen = (v: boolean | ((prev: boolean) => boolean)): void =>
-    setBuddyListUI("showNotifications", typeof v === "function" ? v(open()) : v);
-  let panelRef: HTMLDivElement | undefined;
-
-  function toggle(): void {
-    setOpen((prev) => !prev);
-  }
-
-  function handleClickOutside(e: MouseEvent): void {
-    if (panelRef && !panelRef.contains(e.target as Node)) {
-      setOpen(false);
-    }
-  }
-
-  onMount(() => {
-    document.addEventListener("mousedown", handleClickOutside);
-  });
-
-  onCleanup(() => {
-    document.removeEventListener("mousedown", handleClickOutside);
-  });
-
+  const toggle = (): void => {
+    if (buddyListUI.showNotifications) setBuddyListUI("showNotifications", false);
+    else void dispatchSkinAction("NotificationBell", { kind: "openNotifications" });
+  };
   return (
-    <div class="notification-bell-wrapper" ref={panelRef}>
+    <div class="notification-bell-wrapper">
       <button
         type="button"
         class="notification-bell"
@@ -47,7 +28,7 @@ const NotificationCenter: Component = () => {
             ? `Notifications, ${unreadNotifications()} unread`
             : "Notifications"
         }
-        aria-expanded={open()}
+        aria-expanded={buddyListUI.showNotifications}
       >
         <span class="nf-icon nf-icon-md" aria-hidden="true">
           {ICON_BELL}
@@ -58,102 +39,6 @@ const NotificationCenter: Component = () => {
           </span>
         </Show>
       </button>
-
-      <Show when={open()}>
-        <div class="notification-panel">
-          <div class="notification-panel-header">
-            <span class="notification-panel-title">Notifications</span>
-            <Show when={unreadNotifications() > 0}>
-              <button
-                type="button"
-                class="notification-mark-all"
-                onClick={markAllNotificationsRead}
-              >
-                Mark all read
-              </button>
-            </Show>
-          </div>
-
-          <div class="notification-panel-list">
-            <Show
-              when={notificationState.notifications.length > 0}
-              fallback={<div class="notification-empty">No notifications</div>}
-            >
-              <For each={notificationState.notifications}>
-                {(notification) => (
-                  <div
-                    class={
-                      notification.read
-                        ? "notification-item notification-item-read"
-                        : "notification-item"
-                    }
-                  >
-                    <div class="notification-item-content">
-                      <span class="notification-title">{notification.title}</span>
-                      <span class="notification-body">{notification.body}</span>
-                      <span class="notification-time">
-                        {formatRelativeTime(notification.timestamp)}
-                      </span>
-                      {/* Wave 12 W12.8 — missed-call action row. */}
-                      <Show
-                        when={notification.type === "missed_call" && notification.peerKey != null}
-                      >
-                        <div class="notification-actions">
-                          <button
-                            type="button"
-                            class="form-btn-secondary notification-action-btn"
-                            title="Call back"
-                            onClick={() => {
-                              const peerKey = notification.peerKey!;
-                              const name = notification.body.split(" (")[0];
-                              const kind = notification.callKind ?? "audio";
-                              void handleStartDmCall(peerKey, name, kind === "video");
-                              markNotificationRead(notification.id);
-                            }}
-                          >
-                            <span class="nf-icon" aria-hidden="true">
-                              {ICON_PHONE}
-                            </span>
-                            Call back
-                          </button>
-                          <button
-                            type="button"
-                            class="form-btn-secondary notification-action-btn"
-                            title="Send a message"
-                            onClick={() => {
-                              const peerKey = notification.peerKey!;
-                              void commands.openChatWindow(peerKey);
-                              markNotificationRead(notification.id);
-                            }}
-                          >
-                            <span class="nf-icon" aria-hidden="true">
-                              {ICON_SEND}
-                            </span>
-                            Message
-                          </button>
-                        </div>
-                      </Show>
-                    </div>
-                    <Show when={!notification.read}>
-                      <button
-                        type="button"
-                        class="notification-mark-read"
-                        onClick={() => markNotificationRead(notification.id)}
-                        title="Mark as read"
-                        aria-label="Mark notification as read"
-                      >
-                        <span class="nf-icon nf-icon-sm" aria-hidden="true">
-                          {ICON_CHECK}
-                        </span>
-                      </button>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </Show>
-          </div>
-        </div>
-      </Show>
     </div>
   );
 };

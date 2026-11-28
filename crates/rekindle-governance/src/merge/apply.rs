@@ -159,7 +159,11 @@ fn apply(
         // included (ADR 0022 rule 2), and a readmit counts in the deps of
         // the op it admits (rule 7): `resolve::prepare` harvests them from
         // the op set into `GovernanceState::devices` (K-CP), never here.
-        G::Checkpoint(_) | G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) => {}
+        G::Checkpoint(_)
+        | G::DeviceKey(_)
+        | G::DeviceRetired(_)
+        | G::DeviceReadmit(_)
+        | G::DeviceReEnrol(_) => {}
         // Kept whole: the gates judge acceptances against applied offers,
         // and readers show every successor (plan E3.2 S7s.3e).
         G::CommunitySuccessor(successor) => {

@@ -82,10 +82,21 @@ impl HostGovernance {
             (prev.as_ref().zip(diff.as_ref())).map_or_else(Default::default, |(prev, diff)| {
                 super::permission_events::permission_transitions(prev, &state, diff, now_secs)
             });
+        let devices_changed = prev
+            .as_ref()
+            .is_some_and(|previous| previous.devices != state.devices);
+        let previous_device_record = self
+            .own_record_keys(community_id)
+            .ok()
+            .map(|keys| keys.record);
         let (projected, held) =
             self.ctx
                 .communities
                 .project_governance(community_id, state, now_secs);
+        self.update_publication_binding(community_id, previous_device_record.as_deref());
+        if devices_changed {
+            crate::host::adapters::presence::view::retain_effective_beats(&self.ctx, community_id);
+        }
         self.store_held_threads(community_id, &held, now_secs);
         self.refresh_files(community_id);
         if let Some(shell) = &self.ctx.shell {
@@ -278,6 +289,7 @@ impl HostGovernance {
             tracing::error!(error = %e, community = %community.id, "created community not recorded");
             return;
         }
+        self.begin_member_record(&community.id);
         self.open_gossip_mesh(&community.id);
         self.install_created(&super::state_builder::CreatedCommunity {
             id: &community.id,

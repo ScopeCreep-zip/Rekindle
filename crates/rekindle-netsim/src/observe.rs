@@ -62,9 +62,20 @@ impl Netsim {
     pub fn app_gets(&self, node: usize, key: &str) -> u64 {
         self.net.inner.lock().nodes[node]
             .app_gets
-            .get(key)
+            .iter()
+            .filter(|((record, _), _)| record == key)
+            .map(|(_, count)| count)
+            .sum()
+    }
+
+    /// Network gets of one subkey of a record.
+    #[must_use]
+    pub fn app_gets_at(&self, node: usize, key: &str, subkey: u32) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .app_gets
+            .get(&(key.to_owned(), subkey))
             .copied()
-            .unwrap_or(0)
+            .unwrap_or_default()
     }
 
     /// How many range-only pushes naming more than one subkey (a replica
@@ -149,6 +160,24 @@ impl Netsim {
     #[must_use]
     pub fn app_calls(&self, node: usize) -> u64 {
         self.net.inner.lock().nodes[node].app_calls
+    }
+
+    /// Application set attempts at this record and subkey, including misses.
+    #[must_use]
+    pub fn app_sets_at(&self, node: usize, record: &str, subkey: u32) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .app_sets_at
+            .get(&(record.to_owned(), subkey))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Whether the application has a set in flight for this record and subkey.
+    #[must_use]
+    pub fn is_setting(&self, node: usize, key: &str, subkey: u32) -> bool {
+        self.net.inner.lock().nodes[node]
+            .setting
+            .contains_key(&(key.to_owned(), subkey))
     }
 
     /// Each replica's value at `key`/`subkey`, in placement order.

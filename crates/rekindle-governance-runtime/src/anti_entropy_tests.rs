@@ -420,7 +420,7 @@ async fn a_hinted_frontier_read_never_inspects_first() {
         "VLD0:m",
         &seen,
         &mut known,
-        FrontierRead::Hinted,
+        FrontierRead::Hinted { minimum: None },
     )
     .await
     .expect("read");

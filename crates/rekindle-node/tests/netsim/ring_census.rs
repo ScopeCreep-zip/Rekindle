@@ -5,6 +5,7 @@
 //! wall-clock guard ends the test process with the last census when the
 //! run passes its limit, since a stalled simulated clock prints nothing.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::sync::{mpsc, Arc};
 
@@ -12,20 +13,31 @@ use parking_lot::Mutex;
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
-use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
+use rekindle_types::dht_layout::member_record::{BEAT, SUBKEY_COUNT};
 
 use crate::harness::Community;
 
 /// How long a ring scenario may run on the wall clock.
 pub const WALL_LIMIT: Duration = Duration::from_secs(70 * 60);
 
+/// The watchers of each member record that subscribe to the given subkey.
+pub fn member_watchers(community: &Community, subkey: u32) -> BTreeMap<String, BTreeSet<usize>> {
+    let mut watched = community.sim.watchers_of_dflt(SUBKEY_COUNT);
+    for (record, nodes) in &mut watched {
+        nodes.retain(|node| {
+            community
+                .sim
+                .watched_subkeys(*node, record)
+                .contains(&subkey)
+        });
+    }
+    watched
+}
+
 /// One census line at simulated time `at`.
 async fn line(community: &Community, at: Duration) -> String {
-    let watched = community.sim.watchers_of_dflt(SUBKEY_COUNT);
-    let mut watchers: Vec<usize> = watched
-        .values()
-        .map(std::collections::BTreeSet::len)
-        .collect();
+    let watched = member_watchers(community, BEAT);
+    let mut watchers: Vec<usize> = watched.values().map(BTreeSet::len).collect();
     watchers.sort_unstable();
     let mut merged = Vec::with_capacity(community.nodes.len());
     for node in &community.nodes {
@@ -45,7 +57,7 @@ async fn line(community: &Community, at: Duration) -> String {
         });
     }
     format!(
-        "census t={}s: {} records watched, watchers per M {watchers:?}, refusals {}, merged members {merged:?}",
+        "census t={}s: {} records watched, ring watchers per M {watchers:?}, refusals {}, merged members {merged:?}",
         at.as_secs(),
         watched.len(),
         community.sim.watch_refusals(),

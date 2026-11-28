@@ -89,6 +89,14 @@ pub enum VaultKey {
     DeviceOpKey {
         community: String,
     },
+    /// Old record and owner retained in the device vault until the
+    /// re-enrolment outbox lands its retirement locator.
+    PendingRetirementOwner {
+        community: String,
+        device: String,
+    },
+    /// A committed re-enrolment waiting for its unlock barriers.
+    PendingDeviceReEnrol,
 
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
@@ -103,6 +111,8 @@ pub enum VaultKey {
     AccountOwnerKeypair,
     PersonalSyncOwnerKeypair,
     PrekeyRecordOwnerKeypair,
+    /// A replacement record whose identity row may still be committing.
+    PendingPrekeyOwner,
     /// A friend invite's request inbox: its record key and owner keypair
     /// (plan E2.5, D17), one entry per open invite.
     RequestInboxOwnerKeypair {
@@ -144,6 +154,7 @@ impl VaultKey {
             | Self::AccountOwnerKeypair
             | Self::PersonalSyncOwnerKeypair
             | Self::PrekeyRecordOwnerKeypair
+            | Self::PendingPrekeyOwner
             | Self::DeviceVaultSecret
             | Self::RequestInboxOwnerKeypair { .. }
             | Self::DmParticipantOwner { .. }
@@ -161,19 +172,28 @@ impl VaultKey {
             | Self::MemberRecordOwner { .. }
             | Self::MemberHpkeSecret { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
-            Self::DeviceOpKey { .. } => "device",
+            Self::DeviceOpKey { .. }
+            | Self::PendingRetirementOwner { .. }
+            | Self::PendingDeviceReEnrol => "device",
             Self::ClientKey { .. } => "clients",
         }
     }
 
     /// Whether this entry belongs to this device only, so an identity export
     /// never carries it (ADR 0022 rule 4: a device key never travels with an
-    /// export). `DeviceVaultSecret` is the one such entry the identity vault
-    /// holds; `DeviceOpKey` lives in the device vault, which export never
-    /// reads, and is named here so no store exports it either.
+    /// export). The identity vault holds `DeviceVaultSecret` and staged
+    /// `PendingPrekeyOwner` locally. `DeviceOpKey` lives in the device vault,
+    /// which export never reads.
     #[must_use]
     pub fn is_device_scoped(&self) -> bool {
-        matches!(self, Self::DeviceVaultSecret | Self::DeviceOpKey { .. })
+        matches!(
+            self,
+            Self::DeviceVaultSecret
+                | Self::DeviceOpKey { .. }
+                | Self::PendingRetirementOwner { .. }
+                | Self::PendingDeviceReEnrol
+                | Self::PendingPrekeyOwner
+        )
     }
 
     /// The variant's tag and its fields, in order.
@@ -187,6 +207,7 @@ impl VaultKey {
             Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
             Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
             Self::PrekeyRecordOwnerKeypair => ("prekey_record_owner_keypair", vec![]),
+            Self::PendingPrekeyOwner => ("pending_prekey_owner", vec![]),
             Self::RequestInboxOwnerKeypair { record } => {
                 ("request_inbox_owner_keypair", vec![s(record)])
             }
@@ -227,6 +248,10 @@ impl VaultKey {
             Self::MemberHpkeSecret { community } => ("member_hpke_secret", vec![s(community)]),
             Self::DeviceVaultSecret => ("device_vault_key", vec![]),
             Self::DeviceOpKey { community } => ("device_op_key", vec![s(community)]),
+            Self::PendingRetirementOwner { community, device } => {
+                ("pending_retirement_owner", vec![s(community), s(device)])
+            }
+            Self::PendingDeviceReEnrol => ("pending_device_re_enrol", vec![]),
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
@@ -263,6 +288,7 @@ impl VaultKey {
             ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
             ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
             ("prekey_record_owner_keypair", []) => Self::PrekeyRecordOwnerKeypair,
+            ("pending_prekey_owner", []) => Self::PendingPrekeyOwner,
             ("request_inbox_owner_keypair", [r]) => {
                 Self::RequestInboxOwnerKeypair { record: r.clone() }
             }
@@ -313,6 +339,11 @@ impl VaultKey {
             ("device_op_key", [c]) => Self::DeviceOpKey {
                 community: c.clone(),
             },
+            ("pending_retirement_owner", [c, d]) => Self::PendingRetirementOwner {
+                community: c.clone(),
+                device: d.clone(),
+            },
+            ("pending_device_re_enrol", []) => Self::PendingDeviceReEnrol,
             ("mac_key", []) => Self::AuditMacKey,
             ("tail", []) => Self::AuditTail,
             ("client", [k]) => Self::ClientKey {

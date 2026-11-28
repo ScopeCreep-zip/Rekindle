@@ -18,16 +18,26 @@ import type {
 import { groupDigits } from "./safety_number";
 
 /** A kind whose review words are not its name's: the contract's wording. */
+/** Initialisms inside `IntentKind` names (rekindle-types intent/kind.rs), kept upper-case
+ *  when a kind's name becomes its title: "Start DM call", "Open external URL", "Rotate MEK". */
+const INITIALISMS = new Set(["Dm", "Mek", "Qr", "Svg", "Url"]);
+
 const KIND_WORDS: Partial<Record<IntentKind, string>> = {
   // E3.4 S6 contract: "Change your name in this community".
   setCommunityDisplayName: "Change your name in this community",
+  // E3.2 S7d-keys.10: "Re-enrol", hyphenated as the Host words it ("Re-enrol this device").
+  reEnrolDevice: "Re-enrol device",
 };
 
 /** `deleteChannel` → `Delete channel`, unless the kind has its own words. */
 export function kindPhrase(kind: IntentKind): string {
   const own = KIND_WORDS[kind];
   if (own) return own;
-  const words = kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  const words = kind
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(" ")
+    .map((w) => (INITIALISMS.has(w) ? w.toUpperCase() : w.toLowerCase()))
+    .join(" ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -135,6 +145,9 @@ export function factText(fact: Fact): string {
     );
   }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
+  // The Host words this fact itself (Fact::device_re_enrolment, the plan's
+  // text with its seq); the shell adds nothing.
+  if ("deviceReEnrolment" in fact) return fact.deviceReEnrolment.statement;
   return `${fact.messagesDeleted.count} messages are deleted for members.`;
 }
 

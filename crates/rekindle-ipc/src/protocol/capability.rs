@@ -189,6 +189,7 @@ impl IpcRequest {
             // A commit runs the request the gate held, which passed this
             // caller's capability check when it was selected.
             | Self::IntentCommit { .. }
+            | Self::IntentListHeld
             | Self::IntentCancel { .. }
             // An undo's inverse passes this check on its own at the gate.
             | Self::Undo { .. }

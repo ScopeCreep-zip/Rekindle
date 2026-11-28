@@ -287,6 +287,8 @@ export type Fact =
   | { safetyNumberChanged: { oldSafetyNumber: string; newSafetyNumber: string } }
   | { keyChanged: { oldFingerprint: string; newFingerprint: string } }
   | { membersAffected: { count: number } }
+  /** Plan E3.2 S7d-keys.10: `statement` is the Host's words, shown as given. */
+  | { deviceReEnrolment: { lastSeq: number; statement: string } }
   | { messagesDeleted: { count: number } };
 
 export type Escalation =
