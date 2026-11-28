@@ -10,7 +10,7 @@ license.workspace = true
 workspace = true
 
 [features]
-webdriver-test = ["rekindle-types/webdriver-test"]
+webdriver-test = [ "rekindle-types/webdriver-test" ]
 
 [dependencies]
 async-trait = "0.1"

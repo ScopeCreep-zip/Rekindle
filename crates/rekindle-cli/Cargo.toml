@@ -16,7 +16,7 @@ name = "rekindle"
 path = "src/main.rs"
 
 [features]
-webdriver-test = ["rekindle-ipc/webdriver-test"]
+webdriver-test = [ "rekindle-ipc/webdriver-test" ]
 
 [dependencies]
 anyhow = { workspace = true }

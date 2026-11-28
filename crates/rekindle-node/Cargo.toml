@@ -154,7 +154,7 @@ netsim-scale = [  ]
 netsim-entry = [  ]
 # Real-app test hooks (host::webdriver), enabled explicitly by the desktop
 # and fleet test builds. Debug only (cargo xtask check-webdriver-release).
-webdriver-test = ["rekindle-ipc/webdriver-test"]
+webdriver-test = [ "rekindle-ipc/webdriver-test" ]
 
 [dev-dependencies]
 rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }

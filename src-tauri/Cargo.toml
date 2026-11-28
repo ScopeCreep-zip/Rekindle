@@ -91,13 +91,13 @@ zbus = "5"
 # with prevent_exit(), see tauri#11489
 
 # tauri-plugin-sql removed — using rusqlite directly for veilid-core compatibility
+axum = { version = "0.8", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = { version = "2", features = [ "deep-link" ] }
-axum = { version = "0.8", optional = true }
 tauri-plugin-wdio-webdriver = { path = "../crates/vendor/tauri-plugin-wdio-webdriver", optional = true }
 
 parking_lot = { workspace = true }
