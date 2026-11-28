@@ -340,6 +340,8 @@ async fn commit(
 /// accepted friend: to an accepted friend they are entries of our DM
 /// chain, settled by the friend's `DmAck` (plan RV2c, D22,
 /// [`super::friend_control`]), so a stalled call no longer holds them.
+/// Co-creator answers, withdrawals and join links are receipted (plan E3.2
+/// S7s.3). They apply only to a held creation or invite for that anchor.
 /// A call's `CallEnd` is receipted (plan CE4, lead decision 22): sent as
 /// an `app_message` it settled on leaving and was lost unseen by a frozen
 /// peer (Veilid 0.5.8 `rpc_app_message.rs:24`: a statement no one
@@ -360,6 +362,10 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
             | DmTypeId::GroupDmRosterGrow
+            | DmTypeId::CreatorAccept
+            | DmTypeId::CreatorDecline
+            | DmTypeId::CreatorWithdrawn
+            | DmTypeId::CreatorJoin
             | DmTypeId::CallEnd
     )
 }

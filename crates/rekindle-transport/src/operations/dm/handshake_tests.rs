@@ -148,3 +148,15 @@ fn reset_requests_and_declines_wait_for_their_receipt() {
         }
     }
 }
+
+#[test]
+fn co_creator_answers_withdrawals_and_join_links_wait_for_their_receipt() {
+    for kind in [
+        DmTypeId::CreatorAccept,
+        DmTypeId::CreatorDecline,
+        DmTypeId::CreatorWithdrawn,
+        DmTypeId::CreatorJoin,
+    ] {
+        assert!(receipted(kind));
+    }
+}
