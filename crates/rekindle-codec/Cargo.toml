@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Rekindle wire types and encodings (Cap'n Proto schemas, envelopes, record pages), with no Veilid"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

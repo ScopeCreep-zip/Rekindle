@@ -172,12 +172,17 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
 pub(super) async fn frames(ctx: &DaemonContext) -> Answer<SkinFrames> {
     let id = resolved(ctx).await?;
     let held = package_of(ctx, &id).await?;
+    let tokens_href = serve::tokens_href(&held.address);
     let windows =
         rekindle_lifecycle::run_blocking(move || serve::frames(&held.bytes, &held.address))
             .await
             .map_err(|e| failed("skin frames task", e))?
             .map_err(|e| failed("skin frames", e))?;
-    Ok(SkinFrames { id, windows })
+    Ok(SkinFrames {
+        id,
+        tokens_href,
+        windows,
+    })
 }
 
 /// `SkinFile`: one file of the package a `skin://` path names. Every

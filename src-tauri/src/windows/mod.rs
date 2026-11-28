@@ -13,12 +13,11 @@ pub mod popup_place;
 mod rebind;
 mod reveal;
 mod shape;
+pub(crate) use shape::{frame_of_label, presented_skin};
 mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
-/// Which skin frame a window wears, by label (the signal windows, `skin_windows`).
-pub use shape::frame_of_label;
 
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
@@ -155,10 +154,18 @@ fn base_builder<'a>(
         None
     };
     let captures_media = kind.captures_media();
-    let Size { inner, min } = size(kind);
-    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
-        .inner_size(inner.0, inner.1)
-        .min_inner_size(min.0, min.1)
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()));
+    let builder = if let Some((wanted, constraints)) = shape::initial_sizing(app, label) {
+        builder
+            .inner_size(wanted.0, wanted.1)
+            .inner_size_constraints(constraints)
+    } else {
+        let Size { inner, min } = size(kind);
+        builder
+            .inner_size(inner.0, inner.1)
+            .min_inner_size(min.0, min.1)
+    };
+    let builder = builder
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -194,18 +201,20 @@ fn with_store<'a>(
 
 /// Build the window hidden, enable platform media capture if `kind`
 /// captures, then show it ([`first_show`]: a window built visible opens
-/// taller than its inner size on GTK Wayland), and shape it once shown
-/// ([`shape::attach`]; GTK realizes the GDK window on the show).
+/// taller than its inner size on GTK Wayland). Attach the shape controller
+/// before the show realizes the native surface.
 fn finish(
     builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
     kind: WindowKind,
 ) -> Result<WebviewWindow, String> {
     let window = first_show::open(builder, |window| {
+        shape::attach(window, shape::frame_of_label(window.label()));
         if kind.captures_media() {
             crate::platform::enable_webview_media_capture(window);
         }
     })?;
-    shape::attach(&window, shape::frame_of_label(window.label()));
+    #[cfg(not(target_os = "linux"))]
+    shape::revealed(&window);
     Ok(window)
 }
 
@@ -216,6 +225,8 @@ fn raise(app: &AppHandle, label: &str) -> bool {
         return false;
     };
     reveal_window(&window);
+    #[cfg(not(target_os = "linux"))]
+    shape::revealed(&window);
     true
 }
 
@@ -262,8 +273,7 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
         labels::BUDDY_LIST,
         "/buddy-list".to_owned(),
     )?
-    .title("Rekindle")
-    .max_inner_size(400.0, 900.0);
+    .title("Rekindle");
     finish(builder, WindowKind::BuddyList)?;
     // A skin window: the Host serves its signals from now on (plan CR1); one
     // opened before the Host is announced when it starts (`announce_open`).

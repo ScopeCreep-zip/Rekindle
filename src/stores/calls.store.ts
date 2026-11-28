@@ -42,7 +42,7 @@ interface CallReactionFloat {
 }
 
 /// Wave 12 W12.9 — frontend mirror of GroupCallState.
-export interface GroupCallEntry {
+interface GroupCallEntry {
   callId: string;
   /** Pubkey of whoever started the call. Equal to local pubkey when
    *  we're the initiator. */
@@ -60,7 +60,7 @@ export interface GroupCallEntry {
   expiresAtMs: number;
 }
 
-export interface CallsState {
+interface CallsState {
   /** Calls awaiting the local user's accept/decline decision. The
    *  IncomingCallModal reads `incomingCalls[0]` so multiple
    *  simultaneous offers are queued in arrival order. */

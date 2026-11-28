@@ -68,7 +68,7 @@ pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEv
             peer_key_changed(app, state, peer_key, new_key);
         }
         SubscriptionEvent::System(SystemEvent::SkinChanged { skin }) => {
-            super::shape::refresh(app);
+            super::shape::refresh(app, Some(skin.clone()));
             super::popup::skin_changed(app, state, &skin.shells);
         }
         _ => {}

@@ -1236,6 +1236,13 @@
     },
     "type": "sheetError"
   },
+  "skin.applyFailure.windowTooSmall": {
+    "data": {
+      "height": 380,
+      "width": 470
+    },
+    "type": "windowTooSmall"
+  },
   "skin.callOp.answer": {
     "arg": {
       "callId": "call-1"

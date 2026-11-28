@@ -1,27 +1,41 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  CreateEventRequest, EventInfo, ExclusionGroupEdit, Message, PresenceSharingPolicy,
+  CommunityAuditEntry,
+  ForumPostCreated,
+  InviteCreated,
+  InviteDto,
+  ThreadReplyOutcome,
+} from "./dto";
+import type {
+  CreateEventRequest,
+  EventInfo,
+  ExclusionGroupEdit,
+  Message,
+  PresenceSharingPolicy,
 } from "./types";
-import type { CommunityAuditEntry, ForumPostCreated, InviteCreated, InviteDto, ThreadReplyOutcome } from "./dto";
 
 export const governanceCommands = {
   // Reactions
   addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
-    hostInvoke<unknown>("add_reaction", { communityId, channelId, messageId, emoji }).then(() => undefined),
+    hostInvoke<unknown>("add_reaction", { communityId, channelId, messageId, emoji }).then(
+      () => undefined
+    ),
   removeReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
-    hostInvoke<unknown>("remove_reaction", { communityId, channelId, messageId, emoji }).then(() => undefined),
+    hostInvoke<unknown>("remove_reaction", { communityId, channelId, messageId, emoji }).then(
+      () => undefined
+    ),
 
   // Pins
   pinMessage: (communityId: string, channelId: string, messageId: string) =>
     hostInvoke<unknown>("pin_message", { communityId, channelId, messageId }).then(() => undefined),
   unpinMessage: (communityId: string, channelId: string, messageId: string) =>
     hostInvoke<unknown>("unpin_message", { communityId, channelId, messageId }).then(
-      () => undefined,
+      () => undefined
     ),
   getChannelPins: (communityId: string, channelId: string) =>
     hostInvoke<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]>(
       "get_channel_pins",
-      { communityId, channelId },
+      { communityId, channelId }
     ),
 
   /** Our typing in a channel, per composer edit (plan E3.4 S9): `typing` while it is non-empty;
@@ -42,10 +56,7 @@ export const governanceCommands = {
 
   // Audit log
   getAuditLog: (communityId: string, beforeTimestamp?: number, limit: number = 50) =>
-    hostInvoke<CommunityAuditEntry[]>(
-      "get_audit_log",
-      { communityId, beforeTimestamp, limit },
-    ),
+    hostInvoke<CommunityAuditEntry[]>("get_audit_log", { communityId, beforeTimestamp, limit }),
 
   // Categories
   createCategory: (communityId: string, name: string) =>
@@ -67,19 +78,32 @@ export const governanceCommands = {
 
   // Community invites
   createCommunityInvite: (communityId: string, maxUses: number, expiresInSeconds?: number) =>
-    hostInvoke<InviteCreated>("create_community_invite", { communityId, maxUses, expiresInSeconds: expiresInSeconds ?? null }),
+    hostInvoke<InviteCreated>("create_community_invite", {
+      communityId,
+      maxUses,
+      expiresInSeconds: expiresInSeconds ?? null,
+    }),
   revokeCommunityInvite: (communityId: string, inviteId: string) =>
     hostInvoke<unknown>("revoke_community_invite", { communityId, inviteId }),
   listCommunityInvites: (communityId: string) =>
-    hostInvoke<InviteDto[]>(
-      "list_community_invites", { communityId }
-    ),
+    hostInvoke<InviteDto[]>("list_community_invites", { communityId }),
 
   // Roles
   getRoles: (communityId: string) =>
-    hostInvoke<{ id: string; name: string; color: number; tagColours: { dark: number; light: number }; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable: boolean; exclusionGroup: string | null }[]>(
-      "get_roles", { communityId },
-    ),
+    hostInvoke<
+      {
+        id: string;
+        name: string;
+        color: number;
+        tagColours: { dark: number; light: number };
+        permissions: number;
+        position: number;
+        hoist: boolean;
+        mentionable: boolean;
+        selfAssignable: boolean;
+        exclusionGroup: string | null;
+      }[]
+    >("get_roles", { communityId }),
   createRole: (
     communityId: string,
     name: string,
@@ -89,7 +113,7 @@ export const governanceCommands = {
     mentionable: boolean,
     selfAssignable: boolean,
     /** Architecture §19.4 — when set, the member can hold at most one role per group. */
-    exclusionGroup?: string,
+    exclusionGroup?: string
   ) =>
     hostInvoke<string>("create_role", {
       communityId,
@@ -117,7 +141,7 @@ export const governanceCommands = {
      * Architecture §19.4 — pass `{ set: "..." }` to set, `"clear"` to
      * clear, or omit to leave unchanged.
      */
-    exclusionGroup?: ExclusionGroupEdit,
+    exclusionGroup?: ExclusionGroupEdit
   ) =>
     hostInvoke<unknown>("edit_role", {
       communityId,
@@ -141,13 +165,42 @@ export const governanceCommands = {
     hostInvoke<unknown>("self_assign_role", { communityId, roleId }),
   selfUnassignRole: (communityId: string, roleId: string) =>
     hostInvoke<unknown>("self_unassign_role", { communityId, roleId }),
-  timeoutMember: (communityId: string, pseudonymKey: string, durationSeconds: number, reason: string | null) =>
-    hostInvoke<unknown>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }).then(() => undefined),
+  timeoutMember: (
+    communityId: string,
+    pseudonymKey: string,
+    durationSeconds: number,
+    reason: string | null
+  ) =>
+    hostInvoke<unknown>("timeout_member", {
+      communityId,
+      pseudonymKey,
+      durationSeconds,
+      reason,
+    }).then(() => undefined),
   removeTimeout: (communityId: string, pseudonymKey: string) =>
     hostInvoke<unknown>("remove_timeout", { communityId, pseudonymKey }).then(() => undefined),
-  setChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string, allow: number, deny: number) =>
-    hostInvoke<void>("set_channel_overwrite", { communityId, channelId, targetType, targetId, allow, deny }),
-  deleteChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string) =>
+  setChannelOverwrite: (
+    communityId: string,
+    channelId: string,
+    targetType: string,
+    targetId: string,
+    allow: number,
+    deny: number
+  ) =>
+    hostInvoke<void>("set_channel_overwrite", {
+      communityId,
+      channelId,
+      targetType,
+      targetId,
+      allow,
+      deny,
+    }),
+  deleteChannelOverwrite: (
+    communityId: string,
+    channelId: string,
+    targetType: string,
+    targetId: string
+  ) =>
     hostInvoke<void>("delete_channel_overwrite", { communityId, channelId, targetType, targetId }),
   setSlowmode: (communityId: string, channelId: string, seconds: number) =>
     hostInvoke<unknown>("set_slowmode", { communityId, channelId, seconds }).then(() => undefined),
@@ -164,7 +217,7 @@ export const governanceCommands = {
     name: string,
     starterMessageId: string,
     forumTag?: string | null,
-    autoArchiveSeconds?: number,
+    autoArchiveSeconds?: number
   ) =>
     hostInvoke<string>("create_thread", {
       communityId,
@@ -175,18 +228,66 @@ export const governanceCommands = {
       autoArchiveSeconds: autoArchiveSeconds ?? null,
     }),
   getChannelThreads: (communityId: string, channelId: string) =>
-    hostInvoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
-      "get_channel_threads", { communityId, channelId }),
+    hostInvoke<
+      {
+        id: string;
+        channelId: string;
+        name: string;
+        starterMessageId: string;
+        creatorPseudonym: string;
+        forumTag?: string | null;
+        createdAt: number;
+        archived: boolean;
+        autoArchiveSeconds: number;
+        lastMessageAt: number;
+        messageCount: number;
+      }[]
+    >("get_channel_threads", { communityId, channelId }),
   getActiveThreads: (communityId: string, channelId: string) =>
-    hostInvoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
-      "get_active_threads", { communityId, channelId }),
+    hostInvoke<
+      {
+        id: string;
+        channelId: string;
+        name: string;
+        starterMessageId: string;
+        creatorPseudonym: string;
+        forumTag?: string | null;
+        createdAt: number;
+        archived: boolean;
+        autoArchiveSeconds: number;
+        lastMessageAt: number;
+        messageCount: number;
+      }[]
+    >("get_active_threads", { communityId, channelId }),
   sendThreadMessage: (communityId: string, threadId: string, body: string) =>
     hostInvoke<ThreadReplyOutcome>("send_thread_message", { communityId, threadId, body }),
   /** Plan FT1: a forum post's thread and its starter, created as one by the Host. */
-  createForumPost: (communityId: string, channelId: string, title: string, body: string, forumTag?: string | null) =>
-    hostInvoke<ForumPostCreated>("create_forum_post", { communityId, channelId, title, forumTag: forumTag ?? null, body }),
-  getThreadMessages: (communityId: string, threadId: string, limit: number, beforeTimestamp?: number) =>
-    hostInvoke<Message[]>("get_thread_messages", { communityId, threadId, limit, beforeTimestamp: beforeTimestamp ?? null }),
+  createForumPost: (
+    communityId: string,
+    channelId: string,
+    title: string,
+    body: string,
+    forumTag?: string | null
+  ) =>
+    hostInvoke<ForumPostCreated>("create_forum_post", {
+      communityId,
+      channelId,
+      title,
+      forumTag: forumTag ?? null,
+      body,
+    }),
+  getThreadMessages: (
+    communityId: string,
+    threadId: string,
+    limit: number,
+    beforeTimestamp?: number
+  ) =>
+    hostInvoke<Message[]>("get_thread_messages", {
+      communityId,
+      threadId,
+      limit,
+      beforeTimestamp: beforeTimestamp ?? null,
+    }),
   archiveThread: (communityId: string, threadId: string) =>
     hostInvoke<unknown>("archive_thread", { communityId, threadId }).then(() => undefined),
   unarchiveThread: (communityId: string, threadId: string) =>
@@ -195,8 +296,26 @@ export const governanceCommands = {
   // Community Events (architecture §21)
   createEvent: (communityId: string, request: CreateEventRequest) =>
     hostInvoke<string>("create_event", { communityId, request }),
-  editEvent: (communityId: string, eventId: string, title?: string, description?: string, startTime?: number, endTime?: number, channelId?: string, maxAttendees?: number) =>
-    hostInvoke<null>("edit_event", { communityId, eventId, title: title ?? null, description: description ?? null, startTime: startTime ?? null, endTime: endTime ?? null, channelId: channelId ?? null, maxAttendees: maxAttendees ?? null }),
+  editEvent: (
+    communityId: string,
+    eventId: string,
+    title?: string,
+    description?: string,
+    startTime?: number,
+    endTime?: number,
+    channelId?: string,
+    maxAttendees?: number
+  ) =>
+    hostInvoke<null>("edit_event", {
+      communityId,
+      eventId,
+      title: title ?? null,
+      description: description ?? null,
+      startTime: startTime ?? null,
+      endTime: endTime ?? null,
+      channelId: channelId ?? null,
+      maxAttendees: maxAttendees ?? null,
+    }),
   deleteEvent: (communityId: string, eventId: string) =>
     hostInvoke<null>("delete_event", { communityId, eventId }),
   cancelEvent: (communityId: string, eventId: string) =>
@@ -206,9 +325,11 @@ export const governanceCommands = {
   setEventRsvp: (communityId: string, eventId: string, status: string) =>
     hostInvoke<null>("set_event_rsvp", { communityId, eventId, status }),
   listEventAttendees: (communityId: string, eventId: string) =>
-    hostInvoke<{ pseudonymKey: string; status: string }[]>("list_event_attendees", { communityId, eventId }),
-  getEvents: (communityId: string) =>
-    hostInvoke<EventInfo[]>("get_events", { communityId }),
+    hostInvoke<{ pseudonymKey: string; status: string }[]>("list_event_attendees", {
+      communityId,
+      eventId,
+    }),
+  getEvents: (communityId: string) => hostInvoke<EventInfo[]>("get_events", { communityId }),
 
   // Game Servers
   addGameServer: (communityId: string, gameId: string, label: string, address: string) =>
@@ -216,8 +337,16 @@ export const governanceCommands = {
   removeGameServer: (communityId: string, serverId: string) =>
     hostInvoke<null>("remove_game_server", { communityId, serverId }),
   getGameServers: (communityId: string) =>
-    hostInvoke<{ id: string; gameId: string; label: string; address: string; addedBy: string; createdAt: number }[]>(
-      "get_game_servers", { communityId }),
+    hostInvoke<
+      {
+        id: string;
+        gameId: string;
+        label: string;
+        address: string;
+        addedBy: string;
+        createdAt: number;
+      }[]
+    >("get_game_servers", { communityId }),
 
   // Unread tracking
   markChannelRead: (communityId: string, channelId: string, lastMessageId: string) =>
@@ -227,5 +356,7 @@ export const governanceCommands = {
     hostInvoke<void>("set_members_on_screen", { communityId, members }),
   getUnreadCounts: (communityId: string) =>
     hostInvoke<{ channelId: string; unreadCount: number; mentionCount: number }[]>(
-      "get_unread_counts", { communityId }),
+      "get_unread_counts",
+      { communityId }
+    ),
 };

@@ -1,4 +1,4 @@
-import { Component, JSX, Show } from "solid-js";
+import { type Component, type JSX, Show } from "solid-js";
 
 type Variant = "primary" | "secondary" | "danger";
 
@@ -28,8 +28,7 @@ const VARIANT_CLASS: Record<Variant, string> = {
  */
 const LoadingButton: Component<LoadingButtonProps> = (props) => {
   const variantClass = () => VARIANT_CLASS[props.variant ?? "primary"];
-  const className = () =>
-    [variantClass(), props.class].filter(Boolean).join(" ");
+  const className = () => [variantClass(), props.class].filter(Boolean).join(" ");
 
   return (
     <button
@@ -41,10 +40,10 @@ const LoadingButton: Component<LoadingButtonProps> = (props) => {
       onClick={props.onClick}
     >
       <Show when={props.loading} fallback={props.children}>
-        <span class="loading-button-spinner" aria-hidden="true">…</span>
-        <span class="loading-button-label">
-          {props.loadingLabel ?? "Working"}
+        <span class="loading-button-spinner" aria-hidden="true">
+          …
         </span>
+        <span class="loading-button-label">{props.loadingLabel ?? "Working"}</span>
       </Show>
     </button>
   );

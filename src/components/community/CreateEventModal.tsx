@@ -1,6 +1,6 @@
-import { Component, createSignal, createEffect } from "solid-js";
-import Modal from "../common/Modal";
+import { type Component, createEffect, createSignal } from "solid-js";
 import { handleCreateEvent, handleEditEvent } from "../../actions/community.actions";
+import Modal from "../common/Modal";
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -71,7 +71,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
   function parseTimestamp(date: string, time: string): number | undefined {
     if (!date || !time) return undefined;
     const d = new Date(`${date}T${time}`);
-    if (isNaN(d.getTime())) return undefined;
+    if (Number.isNaN(d.getTime())) return undefined;
     return Math.floor(d.getTime() / 1000);
   }
 
@@ -103,7 +103,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
         start,
         end,
         undefined,
-        max && !isNaN(max) ? max : undefined,
+        max && !Number.isNaN(max) ? max : undefined
       );
     } else {
       await handleCreateEvent(props.communityId, {
@@ -111,7 +111,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
         description: description().trim(),
         startTime: start,
         endTime: end,
-        maxAttendees: max && !isNaN(max) ? max : undefined,
+        maxAttendees: max && !Number.isNaN(max) ? max : undefined,
       });
     }
     props.onClose();
@@ -120,7 +120,11 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
   const isValid = () => title().trim() && startDate() && startTime();
 
   return (
-    <Modal isOpen={props.isOpen} title={props.isEditing ? "Edit Event" : "Create Event"} onClose={props.onClose}>
+    <Modal
+      isOpen={props.isOpen}
+      title={props.isEditing ? "Edit Event" : "Create Event"}
+      onClose={props.onClose}
+    >
       <form class="form-group" onSubmit={handleSubmit}>
         <input
           class="form-input"
@@ -136,32 +140,36 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
           onInput={(e) => setDescription(e.currentTarget.value)}
           rows={3}
         />
-        <label class="form-label">Start</label>
+        <span class="form-label">Start</span>
         <div class="form-row">
           <input
             class="form-input"
             type="date"
+            aria-label="Start date"
             value={startDate()}
             onInput={(e) => setStartDate(e.currentTarget.value)}
           />
           <input
             class="form-input"
             type="time"
+            aria-label="Start time"
             value={startTime()}
             onInput={(e) => setStartTime(e.currentTarget.value)}
           />
         </div>
-        <label class="form-label">End (optional)</label>
+        <span class="form-label">End (optional)</span>
         <div class="form-row">
           <input
             class="form-input"
             type="date"
+            aria-label="End date"
             value={endDate()}
             onInput={(e) => setEndDate(e.currentTarget.value)}
           />
           <input
             class="form-input"
             type="time"
+            aria-label="End time"
             value={endTime()}
             onInput={(e) => setEndTime(e.currentTarget.value)}
           />

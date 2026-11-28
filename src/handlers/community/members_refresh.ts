@@ -1,6 +1,10 @@
-import { markMembersFailed, setCommunityMembers, communityState } from "../../stores/community.store";
-import { errorMessage } from "../../utils/error";
 import { commands } from "../../ipc/commands";
+import {
+  communityState,
+  markMembersFailed,
+  setCommunityMembers,
+} from "../../stores/community.store";
+import { errorMessage } from "../../utils/error";
 import { transformMember } from "../../utils/transformers";
 
 // The member list's groups are the Host's (`CommunityMemberView.group`), so

@@ -61,7 +61,7 @@ Three automated systems run continuously:
 | System | Cadence | Scope | Workflow |
 |--------|---------|-------|----------|
 | **Dependabot** | Weekly (Monday 09:00 UTC) | Cargo + npm + GitHub Actions | [`/.github/dependabot.yml`](../../.github/dependabot.yml) |
-| **`cargo-audit` + `cargo-deny`** | Daily (04:13 UTC scheduled) + every PR + every push | Rust workspace | [`/.github/workflows/audit.yml`](../../.github/workflows/audit.yml) |
+| **`cargo-deny`** (advisories from RustSec, bans, licenses, sources; the one advisory policy is `deny.toml [advisories]`) | Daily (04:13 UTC scheduled) + every PR + every push | Rust workspace | [`/.github/workflows/audit.yml`](../../.github/workflows/audit.yml) |
 | **`cargo deny check`** (advisories, bans, licenses, sources) | Every local gate run | Rust workspace | `cargo xtask check` (`check-supply-chain`, plan SC1) |
 | **Dependency-review (PR-time)** | Every PR | Cargo + npm dep diff | [`/.github/workflows/dependency-review.yml`](../../.github/workflows/dependency-review.yml) |
 | **CISA KEV cross-reference** | Weekly (Wed 06:00 UTC) | Cargo workspace | [`/.github/workflows/kev-check.yml`](../../.github/workflows/kev-check.yml) |
@@ -102,7 +102,7 @@ Every dependency's license must match the allowlist in
 
 MIT-0 was added on 2026-11-26 (lead decision): it is OSI-approved and is MIT
 without the attribution condition, so strictly more permissive than MIT and
-compatible with Rekindle's MIT licence. It first entered through Stylelint's
+compatible with Rekindle's MIT OR Apache-2.0 licence. It first entered through Stylelint's
 `@csstools/*` dependencies (FE-LINT).
 
 Copyleft licenses (GPL, AGPL, LGPL) are not on the allowlist.

@@ -35,10 +35,12 @@
 //   Linux laptop has neither Xvfb nor xdotool yet, so that check skips,
 //   saying so.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { OUT_DIR as WALK_LOGS } from "../../../walk/launch.ts";
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, newUser, openChat, type User } from "../../journeys.ts";
@@ -109,6 +111,20 @@ describe("a skinned window is the skin's shape", function () {
 
   after(async () => {
     await stopFleet(peers);
+    const worker = process.env.WDIO_WORKER_ID;
+    if (!worker || !/^\d+-\d+$/.test(worker)) throw new Error("The native run did not name its app log");
+    const input = createReadStream(path.join(WALK_LOGS, `wdio-${worker}.log`));
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        if (line.includes("window_shape_degraded") || line.includes("window_skin_too_small")) {
+          throw new Error(`Unexpected native window-shape fallback: ${line}`);
+        }
+      }
+    } finally {
+      lines.close();
+      input.destroy();
+    }
   });
 
   /** Apply `pack` from Settings → Appearance (its radio, then the intent review). */
@@ -211,7 +227,7 @@ describe("a skinned window is the skin's shape", function () {
       Object.assign(found, await measure(pack, "main", "buddy-list", href));
       Object.assign(found, await titleStrip("buddy-list"));
       if (!NATIVE_WAYLAND) {
-        // A resize recomputes the cut (the shaper reshapes on Resized).
+        // A resize queues a fresh native allocation pass for the cut.
         await sizeWindow(browser, { width: BUDDY_LIST.def.width + 60, height: BUDDY_LIST.def.height + 80 });
         Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
         await sizeWindow(browser, BUDDY_LIST.def);

@@ -103,6 +103,46 @@ fn imports_validates_and_is_byte_identical() {
 }
 
 #[test]
+fn a_validated_import_keeps_its_corner_cutout_when_resized_and_scaled() {
+    use crate::shape::{min_window, silhouette, Mask};
+    use rekindle_types::dto::skin::SkinWindow;
+
+    let imported = import(&tree(PASSING), "fixture", None).unwrap();
+    let package = validate::run(&imported.canonical.bytes).unwrap();
+    let frames = crate::serve::frames(&package.bytes, &package.address()).unwrap();
+    assert_eq!(frames.len(), 2);
+    for frame in frames {
+        assert!(matches!(
+            frame.window,
+            SkinWindow::Chat | SkinWindow::Community
+        ));
+        let masks: Vec<_> = frame
+            .masks
+            .into_iter()
+            .map(|m| Mask::from_parts(m.width, m.height, m.bits, m.faint).unwrap())
+            .collect();
+        let (w, h) = min_window(&frame.layout).unwrap();
+        for (w, h) in [(w, h), (w.max(360), h.max(400)), (w.max(427), h.max(453))] {
+            for scale in [1000, 1250, 1500, 2000] {
+                let rects = silhouette(&frame.layout, &masks, w.into(), h.into(), scale).unwrap();
+                let extent = (u32::from(w) * scale / 1000, u32::from(h) * scale / 1000);
+                let inside = |x, y| {
+                    rects
+                        .iter()
+                        .any(|r| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+                };
+                assert!(!inside(0, 0), "{:?} {w}x{h} @{scale}", frame.window);
+                assert!(inside(scale / 1000, 0));
+                assert!(inside(extent.0 / 2, extent.1 / 2));
+                assert!(rects
+                    .iter()
+                    .all(|r| { r.x + r.width <= extent.0 && r.y + r.height <= extent.1 }));
+            }
+        }
+    }
+}
+
+#[test]
 fn non_zero_alpha_is_refused() {
     let t = tree(&PASSING.replace("RGBA(16,16,16,0)", "RGBA(16,16,16,1)"));
     assert!(matches!(
@@ -156,7 +196,9 @@ fn xfire_own_skins_carry_the_owner_ruling() {
     let own = import(&t, "fixture", None).unwrap();
     assert!(own.notice.contains("Xfire, Inc.'s own work"));
     assert!(own.notice.contains("2026-10-15"));
-    assert!(own.notice.contains("MIT LICENSE does not cover"));
+    assert!(own
+        .notice
+        .contains("MIT OR Apache-2.0 licence does not cover"));
     let manifest =
         crate::manifest::parse(&crate::package::read(&own.canonical.bytes).unwrap()).unwrap();
     assert!(matches!(

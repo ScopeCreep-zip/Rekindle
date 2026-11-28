@@ -9,7 +9,7 @@ use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion, SkinDraftRepor
 use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure, SkinEntry, SkinLibrary};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::{CommandError, Done};
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 use crate::host_call;
 use crate::state::SharedState;
@@ -19,8 +19,19 @@ use crate::state::SharedState;
 #[tauri::command]
 pub async fn get_skin(
     id: Option<String>,
+    window: WebviewWindow,
     state: State<'_, SharedState>,
 ) -> Result<Done<SkinApplied>, CommandError> {
+    if id.is_none() && crate::windows::frame_of_label(window.label()).is_some() {
+        return crate::windows::presented_skin(&window)
+            .await
+            .map(|value| Done { value, undo: None })
+            .ok_or_else(|| CommandError::Failed {
+                code: 503,
+                message: "The window is waiting for its skin allocation".to_owned(),
+                remediation: None,
+            });
+    }
     host_call::call(&state, IpcRequest::SkinGet { id }).await
 }
 
@@ -238,6 +249,13 @@ pub async fn report_skin_apply_failed(
     skin: String,
     cause: SkinApplyFailure,
 ) -> Result<Done<()>, CommandError> {
+    if matches!(cause, SkinApplyFailure::WindowTooSmall { .. }) {
+        return Err(CommandError::Failed {
+            code: 400,
+            message: "Window allocation reports come from the desktop shell".to_owned(),
+            remediation: None,
+        });
+    }
     let window = window.label().to_owned();
     host_call::call(
         &state,

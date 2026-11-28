@@ -8,4 +8,4 @@ import type { SkinSignalSet } from "../ipc/commands/dto_skin_run";
  */
 const [skinSignals, setSkinSignals] = createSignal<SkinSignalSet | null>(null);
 
-export { skinSignals, setSkinSignals };
+export { setSkinSignals, skinSignals };

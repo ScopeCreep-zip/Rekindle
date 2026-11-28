@@ -71,6 +71,8 @@ pub enum SkinApplyFailure {
     ImageDecode { path: String },
     /// The stylesheet did not load; `detail` is what the window saw.
     SheetError { detail: String },
+    /// The native canvas cannot fit the skin's minimum logical dimensions.
+    WindowTooSmall { width: u16, height: u16 },
 }
 
 /// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):
@@ -160,5 +162,7 @@ pub struct SkinWindowFrame {
 pub struct SkinFrames {
     /// The skin the frames are of.
     pub id: String,
+    /// The same content-addressed stylesheet URI as SkinApplied.
+    pub tokens_href: String,
     pub windows: Vec<SkinWindowFrame>,
 }

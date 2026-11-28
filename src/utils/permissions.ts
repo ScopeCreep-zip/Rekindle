@@ -49,7 +49,7 @@ function permissionBits(value: string | bigint | null | undefined): bigint {
 
 export function hasPermission(
   permissions: string | bigint | null | undefined,
-  required: bigint,
+  required: bigint
 ): boolean {
   const perms = permissionBits(permissions);
   if ((perms & ADMINISTRATOR) !== 0n) return true;
@@ -61,8 +61,11 @@ export function hasPermission(
  *  (base plus its overwrites) when given and known, else the base. The
  *  frontend computes no policy from roles. */
 export function servedPermissions(
-  community: { myPermissions: string; myChannelPermissions: Record<string, string> } | null | undefined,
-  channelId?: string | null,
+  community:
+    | { myPermissions: string; myChannelPermissions: Record<string, string> }
+    | null
+    | undefined,
+  channelId?: string | null
 ): bigint {
   if (!community) return 0n;
   const inChannel = channelId ? community.myChannelPermissions[channelId] : undefined;
@@ -120,8 +123,16 @@ export const PERMISSION_CATEGORIES = [
     name: "Threads",
     permissions: [
       { key: "MANAGE_THREADS", label: "Manage Threads", value: MANAGE_THREADS },
-      { key: "CREATE_PUBLIC_THREADS", label: "Create Public Threads", value: CREATE_PUBLIC_THREADS },
-      { key: "CREATE_PRIVATE_THREADS", label: "Create Private Threads", value: CREATE_PRIVATE_THREADS },
+      {
+        key: "CREATE_PUBLIC_THREADS",
+        label: "Create Public Threads",
+        value: CREATE_PUBLIC_THREADS,
+      },
+      {
+        key: "CREATE_PRIVATE_THREADS",
+        label: "Create Private Threads",
+        value: CREATE_PRIVATE_THREADS,
+      },
       { key: "SEND_IN_THREADS", label: "Send In Threads", value: SEND_IN_THREADS },
     ],
   },

@@ -15,7 +15,7 @@ Licence
     quote: "The Combat skin is an official skin created by Xfire."
   Xfire is defunct; the Rekindle owner ruled on 2026-10-15 that
   Xfire's own assets may be used, and replaces them with the same command.
-  Rekindle's MIT LICENSE does not cover this pack.
+  Rekindle's MIT OR Apache-2.0 licence does not cover this pack.
 
 Colour groups (15 defined)
   MenuTextCG RGBA(255,255,255,0) -> token menubar.text

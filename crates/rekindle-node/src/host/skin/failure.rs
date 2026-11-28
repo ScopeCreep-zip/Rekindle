@@ -57,6 +57,15 @@ pub(crate) async fn report(ctx: &DaemonContext, request: IpcRequest) -> IpcRespo
     else {
         unreachable!("{} is not SkinApplyFailed", request.name());
     };
+    if matches!(cause, SkinApplyFailure::WindowTooSmall { .. }) {
+        ctx.publish_event(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
+            window,
+            skin,
+            cause,
+            reverted: false,
+        }));
+        return IpcResponse::ok(&());
+    }
     if !ctx.skin.failures.first(&skin, &cause) {
         tracing::debug!(%window, %skin, ?cause, "another window could not apply a skin");
         // Idempotent: the first report already ended a trial of it.

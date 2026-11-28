@@ -1,5 +1,5 @@
-import { Component, For } from "solid-js";
-import { PERMISSION_CATEGORIES, hasPermission } from "../../../ipc/permissions";
+import { type Component, For } from "solid-js";
+import { hasPermission, PERMISSION_CATEGORIES } from "../../../ipc/permissions";
 
 interface PermissionCheckboxListProps {
   permissions: bigint;
@@ -10,9 +10,7 @@ const PermissionCheckboxList: Component<PermissionCheckboxListProps> = (props) =
   <For each={PERMISSION_CATEGORIES}>
     {(category) => (
       <div>
-        <div class="settings-category-label">
-          {category.name}
-        </div>
+        <div class="settings-category-label">{category.name}</div>
         <For each={category.permissions}>
           {(perm) => (
             <label class="settings-option">

@@ -15,6 +15,40 @@ fn sub(e: SubscriptionEvent) -> Audience {
     WebviewEvent::Subscription(e).audience()
 }
 
+#[test]
+fn the_rectangular_skin_fallback_only_resets_the_allocated_window() {
+    let event = WebviewEvent::SkinFrameBase {
+        window: "buddy-list".to_owned(),
+    };
+    let audience = event.audience();
+    assert!(audience.includes("buddy-list"));
+    assert!(!audience.includes("settings"));
+    assert!(!audience.includes("chat-3f1a9c0b7e2d4f6a"));
+    let envelope = event.envelope(None).unwrap();
+    assert_eq!(envelope.channel, "skin-event");
+    assert_eq!(
+        envelope.payload.pointer("/system/skinChanged/skin"),
+        Some(&serde_json::Value::Null)
+    );
+}
+
+#[test]
+fn the_skin_minimum_notice_only_reaches_the_constrained_window() {
+    let event =
+        WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
+            window: "buddy-list".to_owned(),
+            skin: "builtin:total-chaos".to_owned(),
+            cause: rekindle_types::dto::skin_library::SkinApplyFailure::WindowTooSmall {
+                width: 470,
+                height: 380,
+            },
+            reverted: false,
+        }));
+    assert!(event.audience().includes("buddy-list"));
+    assert!(!event.audience().includes("settings"));
+    assert_eq!(event.channel(), "skin-apply-event");
+}
+
 /// Our forget reaches the buddy list and every community window, not only
 /// the window that pressed Leave, nor a chat window.
 #[test]
@@ -289,7 +323,7 @@ fn device_events_reach_every_post_login_window() {
 }
 
 #[test]
-fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
+fn a_skin_change_is_delivered_directly_only_to_unframed_windows() {
     let e = WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinChanged {
         skin: rekindle_types::dto::skin_library::SkinApplied {
             id: "builtin:symbiosis".into(),
@@ -306,14 +340,18 @@ fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
     let audience = e.audience();
     for label in [
         "login",
-        "buddy-list",
         "settings",
-        "chat-0123456789ab",
-        "community-x",
+        "community-browser",
         "profile-x",
         "call-0123456789ab",
     ] {
         assert!(audience.includes(label), "{label}");
+    }
+    for label in ["buddy-list", "chat-0123456789ab", "community-x"] {
+        assert!(
+            !audience.includes(label),
+            "{label} waits for its native allocation"
+        );
     }
 }
 

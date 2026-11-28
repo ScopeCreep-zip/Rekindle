@@ -187,6 +187,11 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
                     h.update(b"sheet|");
                     h.update(detail.as_bytes());
                 }
+                SkinApplyFailure::WindowTooSmall { width, height } => {
+                    h.update(b"window_too_small|");
+                    h.update(&width.to_le_bytes());
+                    h.update(&height.to_le_bytes());
+                }
             }
             h.update(&[u8::from(*reverted)]);
         }

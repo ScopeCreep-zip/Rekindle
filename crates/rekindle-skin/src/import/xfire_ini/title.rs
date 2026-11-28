@@ -296,6 +296,7 @@ fn component(section: &Section) -> Node {
     for key in [
         "Stretch",
         "DefaultWidth",
+        "DefaultHeight",
         "MinWidth",
         "MinHeight",
         "MaxWidth",

@@ -64,10 +64,22 @@ function startTone(spec: ToneSpec, volume: number): RingHandle {
     }
     setTimeout(() => {
       for (const osc of oscs) {
-        try { osc.stop(); } catch { /* already stopped */ }
-        try { osc.disconnect(); } catch { /* ignore */ }
+        try {
+          osc.stop();
+        } catch {
+          /* already stopped */
+        }
+        try {
+          osc.disconnect();
+        } catch {
+          /* ignore */
+        }
       }
-      try { gain.disconnect(); } catch { /* ignore */ }
+      try {
+        gain.disconnect();
+      } catch {
+        /* ignore */
+      }
     }, releaseMs + 5);
   };
 
@@ -116,7 +128,7 @@ export function playIncomingRing(opts?: { volume?: number }): RingHandle {
       attackMs: 10,
       releaseMs: 50,
     },
-    opts?.volume ?? 0.4,
+    opts?.volume ?? 0.4
   );
 }
 
@@ -129,7 +141,7 @@ export function playOutgoingRingback(opts?: { volume?: number }): RingHandle {
       attackMs: 10,
       releaseMs: 50,
     },
-    opts?.volume ?? 0.3,
+    opts?.volume ?? 0.3
   );
 }
 
@@ -142,6 +154,6 @@ export function playBusyTone(opts?: { volume?: number }): RingHandle {
       attackMs: 5,
       releaseMs: 25,
     },
-    opts?.volume ?? 0.25,
+    opts?.volume ?? 0.25
   );
 }

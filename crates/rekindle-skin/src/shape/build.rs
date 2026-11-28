@@ -13,7 +13,9 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{encode_png, DynamicImage, RgbaImage};
-use rekindle_types::dto::skin::{FrameTile, Insets, SkinWindow, TileAxis, WindowLayout};
+use rekindle_types::dto::skin::{
+    FrameTile, Insets, SkinWindow, TileAxis, WindowLayout, WindowSizeHints,
+};
 
 use super::Mask;
 use crate::import::ImportError;
@@ -157,6 +159,7 @@ pub fn from_nine(
             content,
             min_width: u16_of(&file, min_width)?,
             min_height: u16_of(&file, min_height)?,
+            size_hints: WindowSizeHints::default(),
             tiles,
             tree: None,
             title: None,

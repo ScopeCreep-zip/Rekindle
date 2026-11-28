@@ -257,6 +257,10 @@
     max-width: 100%;
   }
 
+  .tooltip-wrapper:is(:hover, :focus-within) > .tooltip-bubble {
+    display: block;
+  }
+
   .tooltip-bubble {
     position: absolute;
     bottom: 100%;
@@ -272,6 +276,7 @@
     white-space: nowrap;
     pointer-events: none;
     z-index: var(--z-tooltip);
+    display: none;
   }
 
   /* Scroll area */
@@ -298,6 +303,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: left;
   }
 
   .identity-bar-name:hover {

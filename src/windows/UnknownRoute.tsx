@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 
 /// Shown when a webview loads a path the app does not route. Every window

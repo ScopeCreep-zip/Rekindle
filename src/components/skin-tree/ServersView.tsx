@@ -1,10 +1,26 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  type Component,
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { handleLaunchGame } from "../../actions/game.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import { subscribeServersView } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
-import { serverCommands, type ServerCategory, type ServerInfo, type ServerRefusal, type ServerRow, type ServerVerdict, type ServersView as View } from "../../ipc/commands/dto_servers";
 import { isCommandError } from "../../ipc/commands/dto";
+import {
+  type ServerCategory,
+  type ServerInfo,
+  type ServerRefusal,
+  type ServerRow,
+  type ServerVerdict,
+  serverCommands,
+  type ServersView as View,
+} from "../../ipc/commands/dto_servers";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import { formatRelativeTime } from "../../utils/formatting";
@@ -53,10 +69,13 @@ function infoText(info: ServerInfo): string {
   }
 }
 
-const rowKey = (r: ServerRow): string => `${r.source}|${r.gameId ?? ""}|${r.address}|${r.friend?.publicKey ?? ""}`;
+const rowKey = (r: ServerRow): string =>
+  `${r.source}|${r.gameId ?? ""}|${r.address}|${r.friend?.publicKey ?? ""}`;
 
 /** One of a row's buttons: always listed, the Host's verdict enabling it. */
-const RowButton: Component<{ label: string; refused: string | null; onPress: () => void }> = (props) => (
+const RowButton: Component<{ label: string; refused: string | null; onPress: () => void }> = (
+  props
+) => (
   <button
     type="button"
     class="servers-view-action"
@@ -71,7 +90,8 @@ const RowButton: Component<{ label: string; refused: string | null; onPress: () 
   </button>
 );
 
-const verdictText = (v: ServerVerdict): string | null => (v.allowed ? null : REFUSAL_TEXT[v.reason]);
+const verdictText = (v: ServerVerdict): string | null =>
+  v.allowed ? null : REFUSAL_TEXT[v.reason];
 
 const ServersView: Component = () => {
   const [view, setView] = createSignal<View | null>(null);
@@ -80,7 +100,10 @@ const ServersView: Component = () => {
 
   onMount(() => {
     void subscribeServersView(setView).then((u) => (unlisten = u));
-    serverCommands.serversView().then(setView).catch((e) => addToast(`Servers not read: ${errorMessage(e)}`, "error"));
+    serverCommands
+      .serversView()
+      .then(setView)
+      .catch((e) => addToast(`Servers not read: ${errorMessage(e)}`, "error"));
   });
   onCleanup(() => unlisten?.());
 
@@ -97,7 +120,9 @@ const ServersView: Component = () => {
   const select = (r: ServerRow): void => {
     setSelected(rowKey(r));
     // A server whose game is not known (a community's non-numeric game id) selects nothing.
-    void sendSkinSelection(r.gameId === null ? null : { kind: "server", arg: { gameId: r.gameId, address: r.address } });
+    void sendSkinSelection(
+      r.gameId === null ? null : { kind: "server", arg: { gameId: r.gameId, address: r.address } }
+    );
   };
 
   const run = async (what: string, action: () => Promise<unknown>): Promise<void> => {
@@ -106,7 +131,8 @@ const ServersView: Component = () => {
       if (answer && typeof answer === "object" && "categories" in answer) setView(answer as View);
     } catch (e) {
       // A review the user cancelled (Refresh and Add are reviewed) is no failure.
-      if (!(isCommandError(e) && e.type === "cancelled")) addToast(`${what}: ${errorMessage(e)}`, "error");
+      if (!(isCommandError(e) && e.type === "cancelled"))
+        addToast(`${what}: ${errorMessage(e)}`, "error");
     }
   };
 
@@ -117,7 +143,9 @@ const ServersView: Component = () => {
   const addFavourite = (r: ServerRow): void => {
     if (r.gameId === null) return;
     const gameId = r.gameId;
-    void run("Not added", () => commands.addFavouriteServer(gameId, r.address, r.label || r.gameName));
+    void run("Not added", () =>
+      commands.addFavouriteServer(gameId, r.address, r.label || r.gameName)
+    );
   };
   const remove = (r: ServerRow): void => {
     if (r.gameId === null) return;
@@ -126,12 +154,16 @@ const ServersView: Component = () => {
       "Not removed",
       r.source === "recent"
         ? () => serverCommands.recentServerRemove(gameId, r.address)
-        : () => commands.removeFavouriteServer(gameId, r.address),
+        : () => commands.removeFavouriteServer(gameId, r.address)
     );
   };
 
   const meta = (r: ServerRow): string =>
-    [r.friend?.displayName, r.address, r.lastSeen !== null ? formatRelativeTime(r.lastSeen * 1000) : null]
+    [
+      r.friend?.displayName,
+      r.address,
+      r.lastSeen !== null ? formatRelativeTime(r.lastSeen * 1000) : null,
+    ]
       .filter((s): s is string => !!s)
       .join(" ÃÂ· ");
 
@@ -153,15 +185,18 @@ const ServersView: Component = () => {
       </div>
       <For each={view()?.categories ?? []}>
         {(category) => (
-          <div class="servers-view-section" role="group" aria-label={categoryTitle(category)}>
+          <fieldset class="servers-view-section" aria-label={categoryTitle(category)}>
             <div class="servers-view-title">{categoryTitle(category)}</div>
-            <Show when={category.rows.length > 0} fallback={<div class="servers-view-empty">None</div>}>
+            <Show
+              when={category.rows.length > 0}
+              fallback={<div class="servers-view-empty">None</div>}
+            >
               <For each={category.rows}>
                 {(r) => (
                   <div
                     class="servers-view-row"
                     role="option"
-                    tabindex="0"
+                    tabIndex={0}
                     aria-selected={selected() === rowKey(r)}
                     onClick={() => select(r)}
                     onKeyDown={(e) => {
@@ -186,14 +221,22 @@ const ServersView: Component = () => {
                         refused={r.join.joinable ? null : notJoinableText(r.join)}
                         onPress={() => join(r)}
                       />
-                      <RowButton label="Add to Favorites" refused={verdictText(r.addFavourite)} onPress={() => addFavourite(r)} />
-                      <RowButton label="Remove" refused={verdictText(r.remove)} onPress={() => remove(r)} />
+                      <RowButton
+                        label="Add to Favorites"
+                        refused={verdictText(r.addFavourite)}
+                        onPress={() => addFavourite(r)}
+                      />
+                      <RowButton
+                        label="Remove"
+                        refused={verdictText(r.remove)}
+                        onPress={() => remove(r)}
+                      />
                     </span>
                   </div>
                 )}
               </For>
             </Show>
-          </div>
+          </fieldset>
         )}
       </For>
     </div>
