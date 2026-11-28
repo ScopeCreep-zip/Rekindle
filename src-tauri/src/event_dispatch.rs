@@ -47,6 +47,8 @@ use subscription_channel::subscription_channel;
 pub enum WebviewEvent {
     /// The shared vocabulary every frontend observes.
     Subscription(SubscriptionEvent),
+    /// Present the rectangular base in a framed desktop window.
+    SkinFrameBase { window: String },
     /// The app lifecycle state machine moved.
     Lifecycle {
         state: rekindle_lifecycle::LifecycleState,
@@ -77,6 +79,7 @@ impl WebviewEvent {
     pub fn channel(&self) -> &'static str {
         match self {
             Self::Subscription(e) => subscription_channel(e),
+            Self::SkinFrameBase { .. } => "skin-event",
             Self::Lifecycle { .. } => "lifecycle-event",
             Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
@@ -88,6 +91,9 @@ impl WebviewEvent {
     fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
         match self {
             Self::Subscription(e) => serde_json::to_value(e),
+            Self::SkinFrameBase { .. } => Ok(serde_json::json!({
+                "system": { "skinChanged": { "skin": null } },
+            })),
             Self::Lifecycle { state, at_ms } => serde_json::to_value(LifecyclePayload {
                 state: *state,
                 at_ms: *at_ms,
@@ -111,7 +117,9 @@ impl WebviewEvent {
             // community's events go to every one of them (each filters by
             // its selection) and to the buddy list's community list.
             Self::Community(_) => communities(),
-            Self::CommunityFocusChannel { window, .. } => Audience::labels([window.clone()]),
+            Self::SkinFrameBase { window } | Self::CommunityFocusChannel { window, .. } => {
+                Audience::labels([window.clone()])
+            }
         }
     }
 
@@ -148,10 +156,19 @@ fn buddy_list() -> Audience {
 
 fn subscription_audience(event: &SubscriptionEvent) -> Audience {
     match event {
-        // Every window shows the skin, the login window included (plan
-        // E7.7.2): each swaps its stylesheet.
+        // Framed windows receive this same event from their native
+        // allocation controller after applying the matching geometry.
+        // Replaying an old Host cursor must not bypass that controller.
         SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => {
-            Audience::kinds(&WindowKind::ALL)
+            Audience::kinds(&[
+                WindowKind::Login,
+                WindowKind::Settings,
+                WindowKind::Call,
+                WindowKind::Profile,
+                WindowKind::SkinEditor,
+                WindowKind::SkinPopup,
+            ])
+            .with_labels([labels::community_label(None)])
         }
         // "Keep this skin?" is asked where skins are chosen: Settings →
         // Appearance renders it from the payload (plan E7.7.2). The quick
@@ -163,6 +180,23 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         // A skin a window could not apply goes to that window, by label,
         // and to Settings, where skins are chosen and a trial ends (plan
         // SK2-T1).
+        // Each of these also goes to the one window it names, by label (ADR 0013):
+        // - a window's Infoview, asked with its own label (`commands::infoview`);
+        // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
+        //   another chat window's set names another friend's capabilities;
+        // - a view switch pressed in a popup, addressed by the Host to its
+        //   launcher (plan SK2-N4).
+        // This arm stays ahead of the general SkinApplyFailed arm below.
+        SubscriptionEvent::System(
+            SystemEvent::SkinApplyFailed {
+                window,
+                cause: rekindle_types::dto::skin_library::SkinApplyFailure::WindowTooSmall { .. },
+                ..
+            }
+            | SystemEvent::Infoview(InfoviewEvent::Updated { window, .. })
+            | SystemEvent::SkinSignals { window, .. }
+            | SystemEvent::SkinShell { window, .. },
+        ) => Audience::labels([window.clone()]),
         SubscriptionEvent::System(SystemEvent::SkinApplyFailed { window, .. }) => {
             Audience::labels([window.clone()]).with_kinds(&[WindowKind::Settings])
         }
@@ -175,17 +209,6 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
             // windows the Infoview's feed reaches.
             | SystemEvent::ServersViewChanged { .. },
         ) => buddy_list().with_kinds(&[WindowKind::Chat]),
-        // Each goes to the one window it names, by label (ADR 0013):
-        // - a window's Infoview, asked with its own label (`commands::infoview`);
-        // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
-        //   another chat window's set names another friend's capabilities;
-        // - a view switch pressed in a popup, addressed by the Host to its
-        //   launcher (plan SK2-N4).
-        SubscriptionEvent::System(
-            SystemEvent::Infoview(InfoviewEvent::Updated { window, .. })
-            | SystemEvent::SkinSignals { window, .. }
-            | SystemEvent::SkinShell { window, .. },
-        ) => Audience::labels([window.clone()]),
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them. So does the Downloads
         // view (`EngineView::Files`), where its skin's download capabilities
@@ -385,7 +408,24 @@ pub fn spawn_host_stream(
                         crate::windows::follow_event(&app, &state, &sequenced.event);
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
-                            state.event_router.deliver(&envelope, &event.audience());
+                            let audience = event.audience();
+                            if let WebviewEvent::Subscription(SubscriptionEvent::System(
+                                SystemEvent::SkinChanged { skin },
+                            )) = &event
+                            {
+                                let windows = app.webview_windows();
+                                state.event_router.deliver_observed(
+                                    &envelope,
+                                    &audience,
+                                    |label| {
+                                        if let Some(window) = windows.get(label) {
+                                            crate::windows::skin_load::delivered(window, skin);
+                                        }
+                                    },
+                                );
+                            } else {
+                                state.event_router.deliver(&envelope, &audience);
+                            }
                         }
                     }
                     StreamFrame::InvalidSession => state
@@ -492,54 +532,6 @@ pub fn emit_notification(
 /// Send a legacy community-window event.
 pub fn emit_community(app: &AppHandle, event: CommunityEvent) {
     emit(app, WebviewEvent::Community(event));
-}
-
-/// A reloading window's replay from `from` (plan D3.2): the journaled
-/// events after it that were addressed to `label`, then `Resumed`; or
-/// `InvalidSession`, when the host cannot serve the cursor.
-#[must_use]
-pub fn replay_for(
-    host: &rekindle_node::host::Host,
-    label: &str,
-    from: rekindle_types::subscription_events::Cursor,
-) -> Vec<OutboundEnvelope> {
-    use rekindle_types::subscription_events::StreamFrame;
-    host.replay(from)
-        .into_iter()
-        .filter_map(|frame| match frame {
-            StreamFrame::Event(sequenced) => {
-                let event = WebviewEvent::Subscription(sequenced.event);
-                event
-                    .audience()
-                    .includes(label)
-                    .then(|| event.envelope(Some(sequenced.cursor)))
-                    .flatten()
-            }
-            StreamFrame::Resumed(cursor) => Some(OutboundEnvelope::resumed(cursor)),
-            StreamFrame::InvalidSession => Some(OutboundEnvelope::invalid_session()),
-            // Never journaled, so a replay never holds it.
-            StreamFrame::HostStopping { .. } => None,
-        })
-        .collect()
-}
-
-/// The session's standing events addressed to `label`, with their cursors
-/// (plan E7.1): what a window that just opened is handed before its live
-/// events, so a security alert raised at unlock, before the window
-/// subscribed, still reaches it.
-#[must_use]
-pub fn standing_for(host: &rekindle_node::host::Host, label: &str) -> Vec<OutboundEnvelope> {
-    host.standing()
-        .into_iter()
-        .filter_map(|sequenced| {
-            let event = WebviewEvent::Subscription(sequenced.event);
-            event
-                .audience()
-                .includes(label)
-                .then(|| event.envelope(Some(sequenced.cursor)))
-                .flatten()
-        })
-        .collect()
 }
 
 #[cfg(test)]

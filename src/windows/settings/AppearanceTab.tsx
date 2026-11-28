@@ -24,6 +24,7 @@ function refusal(e: unknown): string | null {
 
 /** Why a window could not show a skin, as one sentence (plan SK2-T1). */
 function failureText(f: SkinApplyFailed, name: string): string {
+  if (f.cause.type === "loadTimeout") return f.cause.data.message;
   const why =
     f.cause.type === "imageDecode"
       ? `its image ${f.cause.data.path.split("/").pop() ?? f.cause.data.path} did not load`

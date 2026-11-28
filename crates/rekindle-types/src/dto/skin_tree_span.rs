@@ -60,7 +60,34 @@ pub enum NodeSpan {
     /// the parent's length is what remains past the span's start: Combat's
     /// `ChatEdit` (`Y=Divider.BOTTOM ResizeY=100 IndentBottom=0`) is all
     /// of the rest.
-    Share { at: Anchor, permille: u16 },
+    Share {
+        at: Anchor,
+        permille: u16,
+        /// Px held back before the parent's far edge (plan SKW3, lead
+        /// ruling b). A share placed from its start ([`Anchor::Start`] or
+        /// [`Anchor::After`]) is of what lies between its start and that
+        /// point; any other is of the parent's length short of it.
+        /// xfire-classic's chat (`xfirechatwindow.xml:211-238`): `ChatArea`
+        /// `Y=ChatMenuBar.BOTTOM ResizeY=80 IndentBottom="19+20"` is 80% of
+        /// the box from its start to 39 px above the bottom (the 19 px under
+        /// the edit, its 14 px divider and 6 px of edit), and `ChatEdit`
+        /// `Y=ChatDivider.BOTTOM ResizeY=100 IndentBottom=19` the rest less
+        /// the 19 px under it. Combat's `ChatArea` (`Y=0`, no inset) is 80%
+        /// of its whole area. Zero is left out of the JSON. After a
+        /// sibling whose box moves with the window (SKC4c: centred, or
+        /// anchored at the end) it runs from that sibling's laid edge:
+        /// Bionical's chat `Rightlines` `X=SendButton.RIGHT ResizeX=100
+        /// IndentRight=20` beside the centred `SendButton`
+        /// (`biochat.ini:113-124`) is `After { SendButton, 0 }`, `permille`
+        /// 1000, `end` 20.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        end: i16,
+    },
+}
+
+/// Whether a share holds no end inset (its JSON leaves `end` out).
+const fn is_zero(end: &i16) -> bool {
+    *end == 0
 }
 
 /// `permille`/1000 of `len`, floored: a share's size.
@@ -102,12 +129,17 @@ impl NodeSpan {
             Self::Share {
                 at: at @ Anchor::After { gap, .. },
                 permille,
+                end,
             } => (
                 anchored(at, len, 0),
-                share_of(len - i32::from(*gap), *permille),
+                share_of(len - i32::from(*gap) - i32::from(*end), *permille),
             ),
-            Self::Share { at, permille } => {
-                let size = share_of(len, *permille);
+            Self::Share { at, permille, end } => {
+                let start = match at {
+                    Anchor::Start(o) => i32::from(*o),
+                    _ => 0,
+                };
+                let size = share_of(len - start - i32::from(*end), *permille);
                 (anchored(at, len, size), size)
             }
         }
@@ -121,7 +153,9 @@ impl NodeSpan {
         let (_, gap) = self.after()?;
         let start = sib_end + i32::from(gap);
         Some(match self {
-            Self::Share { permille, .. } => (start, share_of(len - start, *permille)),
+            Self::Share { permille, end, .. } => {
+                (start, share_of(len - start - i32::from(*end), *permille))
+            }
             _ => (start, self.place(len).1),
         })
     }
@@ -132,12 +166,12 @@ impl NodeSpan {
     /// then lies in, at the anchor `f` gives.
     #[must_use]
     pub fn share_through(self, len: i32, f: impl FnOnce(Self) -> Self) -> Self {
-        let Self::Share { at, permille } = self else {
+        let size = u16::try_from(self.place(len).1.max(0)).unwrap_or(u16::MAX);
+        let Self::Share { at, permille, end } = self else {
             return f(self);
         };
-        let size = u16::try_from(share_of(len, permille)).unwrap_or(u16::MAX);
         match f(Self::Fixed { at, size }) {
-            Self::Fixed { at, .. } => Self::Share { at, permille },
+            Self::Fixed { at, .. } => Self::Share { at, permille, end },
             moved => moved,
         }
     }

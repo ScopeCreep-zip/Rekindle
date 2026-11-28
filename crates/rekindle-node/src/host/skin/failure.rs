@@ -2,7 +2,8 @@
 //! image that did not decode, a stylesheet that did not load) and kept
 //! the skin it shows. The window only reports; the Host decides (lead
 //! decisions 51, 52): it logs the failure, tells that window and Settings
-//! (`SystemEvent::SkinApplyFailed`), and ends a trial of that skin at
+//! (`SystemEvent::SkinApplyFailed`, with its words for the failure, which
+//! it also answers the reporting window with), and ends a trial of that skin at
 //! once, so a library skin that does not render is not left on screen
 //! for the rest of "Keep this skin?".
 //!
@@ -57,13 +58,35 @@ pub(crate) async fn report(ctx: &DaemonContext, request: IpcRequest) -> IpcRespo
     else {
         unreachable!("{} is not SkinApplyFailed", request.name());
     };
+    let skin = match skin {
+        Some(skin) => skin,
+        None if matches!(cause, SkinApplyFailure::LoadTimeout { .. }) => {
+            match super::serve::resolved(ctx).await {
+                Ok(skin) => skin,
+                Err(response) => return response,
+            }
+        }
+        None => return IpcResponse::error(400, "skin failure has no skin id"),
+    };
+    // Every reporting window shows the Host's words for its failure.
+    let notice = cause.notice();
+    if matches!(cause, SkinApplyFailure::WindowTooSmall { .. }) {
+        ctx.publish_event(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
+            window,
+            skin,
+            cause,
+            notice: notice.clone(),
+            reverted: false,
+        }));
+        return IpcResponse::ok(&notice);
+    }
     if !ctx.skin.failures.first(&skin, &cause) {
         tracing::debug!(%window, %skin, ?cause, "another window could not apply a skin");
         // Idempotent: the first report already ended a trial of it.
         if let Ok(owner) = ctx.require_owner() {
             trial::revert_failed(ctx, &owner, &skin).await;
         }
-        return IpcResponse::ok(&());
+        return IpcResponse::ok(&notice);
     }
     tracing::warn!(%window, %skin, ?cause, "a window could not apply a skin");
     let reverted = match ctx.require_owner() {
@@ -74,7 +97,8 @@ pub(crate) async fn report(ctx: &DaemonContext, request: IpcRequest) -> IpcRespo
         window,
         skin,
         cause,
+        notice: notice.clone(),
         reverted,
     }));
-    IpcResponse::ok(&())
+    IpcResponse::ok(&notice)
 }

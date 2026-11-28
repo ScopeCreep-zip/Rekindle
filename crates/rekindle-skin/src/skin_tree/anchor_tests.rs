@@ -40,7 +40,7 @@ fn piece(path: &str) -> RgbaImage {
     RgbaImage::from_pixel(w.parse().unwrap(), h.parse().unwrap(), ON)
 }
 
-fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
+pub(super) fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
     imported_with(xml, PARTS)
 }
 
@@ -102,6 +102,22 @@ fn rule_1_an_unknown_component_without_art_is_refused() {
     let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="Mystery" Component="Mystery"/></Tile>"#;
     let e = imported(xml).unwrap_err();
     assert!(e.to_string().contains("has no role"), "{e}");
+}
+
+/// SKC3: siblings are laid per axis in dependency order: a tile anchored
+/// on y to a later tile that is anchored on x through it is laid (GlazeX's
+/// chat `UserNameField` / `MinimizeBox` / `CloseBox`); a cycle on one axis
+/// stays refused.
+#[test]
+fn anchors_resolve_per_axis_in_dependency_order() {
+    let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="UserNameField" X="10" Y="CloseBox.TOP" Component="UserNameField"/><Tile Name="MinimizeBox" X="UserNameField.RIGHT+2" Y="UserNameField.TOP" Component="MinimizeBox"/><Tile Name="CloseBox" X="MinimizeBox.RIGHT+2" Y="6" Component="CloseBox"/></Tile>"#;
+    let kids = root_of(xml);
+    assert_eq!(kids[0].y, fixed(6, 0));
+    assert_eq!(kids[1].y, fixed(6, 0));
+    assert_eq!(kids[2].y, fixed(6, 16));
+    let cycle = br#"<Tile Name="W" Component="MainWindow"><Tile Name="MinimizeBox" X="CloseBox.RIGHT" Component="MinimizeBox"/><Tile Name="CloseBox" X="MinimizeBox.RIGHT" Component="CloseBox"/></Tile>"#;
+    let e = imported(cycle).unwrap_err();
+    assert!(e.to_string().contains("placed before it"), "{e}");
 }
 
 #[test]
@@ -420,4 +436,33 @@ fn draw_on_topmost_lifts_a_tile_out_of_its_siblings_order() {
     let root = imported_with(xml, parts).unwrap().1.root;
     let z: Vec<i16> = root.iter().map(|n| n.z).collect();
     assert_eq!(z, vec![1002, 100, -1000]);
+}
+
+/// Plan SKW3 (lead ruling b): xfire-classic's chat `ChatEdit`
+/// (`xfirechatwindow.xml:211-238`: `Y=Divider.BOTTOM ResizeY=100
+/// IndentBottom=19`, after `ChatArea` `ResizeY=80` and a 14 px divider)
+/// stretches past the moving divider and keeps its 19 px end inset, where
+/// the importer once refused it.
+#[test]
+fn a_stretch_chained_past_a_moving_edge_keeps_its_end_inset() {
+    let span = super::anchor_share::chained(
+        ("Divider".to_owned(), 0),
+        0,
+        Some(100),
+        (0, 19, None),
+        (false, false),
+        &super::anchor::Y,
+    )
+    .unwrap();
+    assert_eq!(
+        span,
+        NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "Divider".into(),
+                gap: 0,
+            },
+            permille: 1000,
+            end: 19,
+        }
+    );
 }

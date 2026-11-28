@@ -1,4 +1,4 @@
-import { hostInvoke, invoke } from "../invoke";
+import { type Channel, hostInvoke, invoke } from "../invoke";
 import type {
   AuditExported,
   AuditVerified,
@@ -71,6 +71,11 @@ export const systemCommands = {
   // The skin this window shows (plan E7.7.2): a Host call; `null` asks
   // for the skin this device shows now.
   getSkin: (id: string | null = null) => hostInvoke<SkinApplied>("get_skin", { id }),
+  waitSkinOpen: () => invoke<string | null>("wait_skin_open"),
+  startSkinApply: (serial: number, skin: string, href: string, expired: Channel<string>) =>
+    invoke<string | null>("start_skin_apply", { serial, skin, href, expired }),
+  finishSkinApply: (attemptId: string, href: string | null) =>
+    invoke<void>("finish_skin_apply", { attemptId, href }),
   // Settings → Appearance: Host calls. A library skin chosen goes on
   // trial; the Host reverts it unless `keepSkin` keeps it.
   listSkins: () => hostInvoke<SkinLibrary>("list_skins"),
@@ -103,9 +108,10 @@ export const systemCommands = {
   setSkinSelection: (selection: SkinSelection | null) =>
     hostInvoke<void>("set_skin_selection", { selection }),
   // This window could not apply `skin` and kept the one it shows; the
-  // Host logs it and reverts a skin on trial (plan SK2-T1).
+  // Host logs it, reverts a skin on trial (plan SK2-T1) and answers with
+  // its words for the failure, which the window shows.
   reportSkinApplyFailed: (skin: string, cause: SkinApplyFailure) =>
-    hostInvoke<void>("report_skin_apply_failed", { skin, cause }),
+    hostInvoke<string>("report_skin_apply_failed", { skin, cause }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

@@ -82,13 +82,18 @@ pub(crate) fn target_fits(target: &rekindle_types::dto::transfer::TransferTarget
     community.len() <= 128 && channel_id.len() <= 64
 }
 
-/// A cause's text: an image's `skin://` href, bounded like a media path,
-/// or what the window saw, bounded like a short message.
+/// Failure details are bounded as a media path, a short message, or the
+/// same positive layout dimensions already checked by the skin helper.
 fn cause_fits(cause: &rekindle_types::dto::skin_library::SkinApplyFailure) -> bool {
     use rekindle_types::dto::skin_library::SkinApplyFailure as F;
     match cause {
         F::ImageDecode { path } => !path.is_empty() && path.len() <= 4096,
         F::SheetError { detail } => detail.len() <= 1024,
+        F::LoadTimeout { message } => message == F::LOAD_TIMEOUT_MESSAGE,
+        F::WindowTooSmall { width, height } => {
+            (1..=rekindle_skin::shape::MAX_WINDOW_WIDTH).contains(&u32::from(*width))
+                && (1..=rekindle_skin::shape::MAX_WINDOW_HEIGHT).contains(&u32::from(*height))
+        }
     }
 }
 
@@ -116,12 +121,14 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             ))
         }
         // `builtin:<id>`, `pkg:<hash>` or `dev:<hash>` (`SkinApplied::id`).
-        IpcRequest::SkinApplyFailed { skin, .. } if skin.is_empty() || skin.len() > 128 => {
+        IpcRequest::SkinApplyFailed {
+            skin: Some(skin), ..
+        } if skin.is_empty() || skin.len() > 128 => {
             Err(IpcResponse::error(400, "skin id not 1 to 128 bytes"))
         }
         IpcRequest::SkinApplyFailed { cause, .. } if !cause_fits(cause) => Err(IpcResponse::error(
             400,
-            "a skin apply failure field is longer than its bound",
+            "a skin apply failure field is out of bounds",
         )),
         IpcRequest::SkinSelectionSet {
             selection: Some(selection),

@@ -70,6 +70,10 @@ fn chat_trees_match_their_goldens() {
         ("alloy", include_str!("goldens/chat-alloy.txt")),
         ("simple-x", include_str!("goldens/chat-simple-x.txt")),
         ("xglow", include_str!("goldens/chat-xglow.txt")),
+        (
+            "xfire-classic",
+            include_str!("goldens/chat-xfire-classic.txt"),
+        ),
     ];
     // Every pack is compared before failing, each differing tree in the
     // message whole, so one run regenerates them all.
@@ -501,4 +505,40 @@ fn combats_top_lies_between_its_corners() {
             }
         }
     }
+}
+
+/// One line of composer text: the shell's 12 px base font
+/// (`src/styles/global.css:289`).
+const LINE: i32 = 12;
+
+/// Plan SKW3 (lead ruling b): every built-in's chat and group-chat
+/// composer edit is at least one text line tall at the served minimum.
+/// xfire-classic's `ChatEdit` (`Y=Divider.BOTTOM ResizeY=100
+/// IndentBottom=19`, `xfirechatwindow.xml:211-238`) was served 2 px tall
+/// from a package written before shares chained.
+#[test]
+fn every_composer_edit_holds_a_text_line() {
+    let mut edits = 0;
+    for b in &builtin::PACKS {
+        let package = package::read(b.bytes).unwrap();
+        let served = manifest::served(&package).unwrap();
+        for window in [SkinWindow::Chat, SkinWindow::Community] {
+            let Some(layout) = served.windows.get(&window) else {
+                continue;
+            };
+            let Some(tree) = layout.tree.as_ref() else {
+                continue;
+            };
+            let (width, height) = min_window(layout);
+            for [_, _, _, edit_h] in find(tree, width, height, NodeRole::Slot(SlotKey::ChatEdit)) {
+                edits += 1;
+                assert!(
+                    edit_h >= LINE,
+                    "{} {window:?} at {width}x{height}: the composer edit is {edit_h} px",
+                    b.id
+                );
+            }
+        }
+    }
+    assert!(edits > 0);
 }

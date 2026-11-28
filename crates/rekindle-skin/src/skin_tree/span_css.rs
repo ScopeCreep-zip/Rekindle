@@ -16,6 +16,15 @@ fn share(len: &str, permille: u16) -> String {
     format!("round(down, calc(({len}) * {permille} / 1000), 1px)")
 }
 
+/// The CSS length `len` short of an end inset `end` px.
+fn short_of(len: &str, end: i16) -> String {
+    if end == 0 {
+        len.to_owned()
+    } else {
+        format!("{len} - {end}px")
+    }
+}
+
 /// The sibling `sibling` among `prev` (the nodes laid before this one in
 /// the same parent) and the siblings laid before it.
 fn sibling<'a>(prev: &'a [SkinNode], sibling: &str) -> Option<(&'a SkinNode, &'a [SkinNode])> {
@@ -65,13 +74,18 @@ fn start_len(span: &NodeSpan, prev: &[SkinNode], x: bool) -> (String, String) {
         NodeSpan::Share {
             at: at @ Anchor::After { .. },
             permille,
+            end,
         } => {
             let start = anchored(at, "0px", prev, x);
-            let len = share(&format!("100% - {start}"), *permille);
+            let len = share(&short_of(&format!("100% - {start}"), *end), *permille);
             (start, len)
         }
-        NodeSpan::Share { at, permille } => {
-            let len = share("100%", *permille);
+        NodeSpan::Share { at, permille, end } => {
+            let base = match at {
+                Anchor::Start(o) if *o != 0 => format!("100% - {o}px"),
+                _ => "100%".to_owned(),
+            };
+            let len = share(&short_of(&base, *end), *permille);
             (anchored(at, &len, prev, x), len)
         }
     }

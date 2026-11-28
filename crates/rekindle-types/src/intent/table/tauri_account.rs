@@ -12,6 +12,9 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_avatar", Some(IntentKind::SetAvatar)),
     ("get_avatar", None),
     ("get_skin", None),
+    ("wait_skin_open", None),
+    ("start_skin_apply", None),
+    ("finish_skin_apply", None),
     // Each forwards its Host request (`shell_commands.rs`), with that row's kind.
     ("list_skins", None),
     ("validate_skin_draft", None),

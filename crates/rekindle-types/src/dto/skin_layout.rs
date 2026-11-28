@@ -104,6 +104,28 @@ pub struct FrameTile {
     pub fill: bool,
 }
 
+/// Author-supplied default and maximum dimensions of the whole window.
+/// Missing axes retain the window kind's own sizing policy.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowSizeHints {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_width: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_height: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<u16>,
+}
+
+impl WindowSizeHints {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// A window's frame layout (plan SK0 S1): the window is the frame
 /// rectangle grown by `outsets` (room for overhang art); the content
 /// rectangle is the frame rectangle shrunk by `content` and is always
@@ -115,6 +137,8 @@ pub struct WindowLayout {
     pub content: Insets,
     pub min_width: u16,
     pub min_height: u16,
+    #[serde(default, skip_serializing_if = "WindowSizeHints::is_empty")]
+    pub size_hints: WindowSizeHints,
     pub tiles: Vec<FrameTile>,
     /// The pack-laid title strip (plan SK1-S1); `None` keeps the app's.
     #[serde(default, skip_serializing_if = "Option::is_none")]

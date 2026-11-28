@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use rekindle_image::{encode_png, DynamicImage, Rgba, RgbaImage};
 
 use super::*;
-use crate::import::Imported;
+use crate::import::{walk, Imported};
 use crate::validate;
 
 /// The skin's folder: it names `Fixture.ini`; `LongName` differs.
@@ -105,6 +105,9 @@ fn tree() -> Tree {
     t
 }
 
+#[path = "background_art_tests.rs"]
+mod background_art_tests;
+
 /// The fixture's list ground, #101010, is also every window's ground
 /// (`bg.dark` follows `bg.primary`, plan E7.7.7 e777n). White on the online
 /// chip (`status.online` 60% over it) measures 4.44:1 there, under D4's
@@ -183,19 +186,32 @@ fn a_failing_pair_is_a_draft_naming_it() {
     validate::run(&d.suggested.unwrap().canonical.bytes).unwrap();
 }
 
+/// Lead ruling 2026-11-26 (it replaces `non_zero_alpha_is_refused`): a
+/// non-zero alpha byte is unused, COLORREF-style, so it is read as 0 and
+/// recorded in the NOTICE, positive or negative; a fourth field no byte
+/// holds still refuses.
 #[test]
-fn non_zero_alpha_is_refused() {
+fn non_zero_alpha_is_ignored_and_recorded() {
+    for written in ["RGBA(16,16,16,9)", "RGBA(16,16,16,-255)"] {
+        let mut t = tree();
+        t.insert(
+            "FixThemes.ini".into(),
+            THEME.replace("RGBA(16,16,16,0)", written).into_bytes(),
+        );
+        let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+        let read = format!("ColorGroup.BuddyViewBG={written} read as RGBA(16,16,16,0)");
+        assert!(notice.contains(&read), "{notice}");
+        assert!(notice.contains("a non-zero alpha byte ignored"), "{notice}");
+        assert!(notice.contains("BuddyViewBG RGBA(16,16,16,0) -> token bg.primary"));
+    }
     let mut t = tree();
     t.insert(
         "FixThemes.ini".into(),
         THEME
-            .replace("RGBA(16,16,16,0)", "RGBA(16,16,16,9)")
+            .replace("RGBA(16,16,16,0)", "RGBA(16,16,16,256)")
             .into_bytes(),
     );
-    assert!(matches!(
-        import(&t, FOLDER, "fixture", None),
-        Err(ImportError::NonZeroAlpha { alpha: 9, .. })
-    ));
+    assert!(import(&t, FOLDER, "fixture", None).is_err());
 }
 
 #[test]
@@ -478,4 +494,85 @@ fn the_sections_naming_a_colour_give_its_role_and_the_accent() {
         .refs
         .iter()
         .any(|a| a.token == "bg.primary" && a.kept.is_some()));
+}
+
+/// SKC2 (spec A8): an alias the theme never defines, or a file the tree
+/// lacks, is an undefined bitmap.
+#[test]
+fn resolve_reads_a_missing_alias_or_file_as_an_undefined_bitmap() {
+    let t = tree();
+    let aliases = BTreeMap::from([("GONE".to_owned(), "main\\gone.png".to_owned())]);
+    for v in ["NOALIAS", "GONE", "main\\gone.png"] {
+        assert!(
+            matches!(
+                resolve(&t, v, &aliases),
+                Err(ImportError::UndefinedBitmap { .. })
+            ),
+            "{v}"
+        );
+    }
+    assert!(resolve(&t, "main\\top.png", &aliases).is_ok());
+}
+
+/// SKC2 (spec A8): a frame piece naming a file the tree lacks lays
+/// nothing (its state is not emitted), and the NOTICE names the file.
+#[test]
+fn a_named_file_the_tree_lacks_lays_nothing_and_is_recorded() {
+    let mut t = tree();
+    let skin = skin_ini().replacen(
+        "Hover.topleft=main\\topleft.png",
+        "Hover.topleft=main\\gone.png",
+        1,
+    );
+    assert_ne!(skin, skin_ini());
+    t.insert("Fixture.ini".into(), skin.into_bytes());
+    let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+    assert!(notice.contains("main/gone.png"), "{notice}");
+}
+
+/// SKC2: a DEL byte is dropped and recorded (Xfire, Inc.'s stock
+/// `XfireThemes.ini` holds two); every other control character refuses.
+#[test]
+fn a_del_byte_is_dropped_and_recorded_other_controls_refuse() {
+    let mut t = tree();
+    let theme = format!(
+        "{THEME}\r\n[Ruby Red]\r\nColorGroup.ScrollbarColor=RGBA(88,-76,-76\u{7f}\u{7f})\r\n"
+    );
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+    assert!(notice.contains("FixThemes.ini: line"), "{notice}");
+    assert!(notice.contains("2 DEL (0x7F) byte(s) dropped"), "{notice}");
+    let mut t = tree();
+    let theme = format!("{THEME}\r\n[Ruby Red]\r\nX=1\u{1}\r\n");
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    assert!(matches!(
+        import(&t, FOLDER, "fixture", None),
+        Err(ImportError::Format { .. })
+    ));
+}
+
+/// SKC2: the written RGBA forms with one reading read as that colour, each
+/// recorded; a negative absolute channel, whose readings differ, refuses.
+#[test]
+fn rgba_forms_with_one_reading_are_normalised_and_recorded() {
+    for (written, what) in [
+        ("RGBA(183,184,184,0,)", "a trailing empty field dropped"),
+        ("RGBA(183,184,184.0)", "a zero fraction dropped"),
+        ("(183,184,184,0)", "the RGBA name added"),
+    ] {
+        let mut t = tree();
+        let theme = THEME.replace("RGBA(183,184,184,0)", written);
+        t.insert("FixThemes.ini".into(), theme.into_bytes());
+        let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+        let read = format!("ColorGroup.BuddyViewFriendText={written} read as RGBA(183,184,184");
+        assert!(notice.contains(&read), "{notice}");
+        assert!(notice.contains(what), "{notice}");
+    }
+    let mut t = tree();
+    let theme = THEME.replace("RGBA(16,16,16,0)", "RGBA(-16,16,16,0)");
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    assert!(matches!(
+        import(&t, FOLDER, "fixture", None),
+        Err(ImportError::BadColour { .. })
+    ));
 }

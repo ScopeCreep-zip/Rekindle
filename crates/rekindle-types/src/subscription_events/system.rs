@@ -61,12 +61,14 @@ pub enum SystemEvent {
         trial: Option<crate::dto::skin_library::SkinTrial>,
     },
     /// The window labelled `window` could not apply `skin` (`cause`) and
-    /// kept the skin it shows. `reverted`: `skin` was on trial and the
+    /// kept the skin it shows. `notice`: what that window tells the user
+    /// (`SkinApplyFailure::notice`). `reverted`: `skin` was on trial and the
     /// Host put the stored choice back. Triggered by: `SkinApplyFailed`.
     SkinApplyFailed {
         window: String,
         skin: String,
         cause: crate::dto::skin_library::SkinApplyFailure,
+        notice: String,
         reverted: bool,
     },
     /// The quick wipe was armed (`armed`, with its panic shortcut or none)

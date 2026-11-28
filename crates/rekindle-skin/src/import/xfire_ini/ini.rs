@@ -86,6 +86,8 @@ pub struct Ini {
     /// The text of every `;` comment line, after the `;`, trimmed, in file
     /// order (a skin's `version.ini` names its authors in them).
     pub comments: Vec<String>,
+    /// Every byte dropped from a line before it is read, `line n: what`.
+    pub normalised: Vec<String>,
 }
 
 impl Ini {
@@ -154,6 +156,7 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
     let mut sections: Vec<Section> = Vec::new();
     let mut repeated = Vec::new();
     let mut comments = Vec::new();
+    let mut normalised = Vec::new();
     let mut dest = Dest::Nowhere;
     for (i, raw) in text.split('\n').enumerate() {
         let n = i + 1;
@@ -164,6 +167,19 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
             return Err(err(n, &format!("longer than {MAX_LINE} bytes")));
         }
         let line = raw.strip_suffix('\r').unwrap_or(raw);
+        // A DEL (0x7F) is dropped and recorded: Xfire, Inc.'s stock
+        // `XfireThemes.ini` (the `Xfire` pack) carries two in a value of its
+        // `[Ruby Red]` theme, copied into every pack built on that file, and
+        // Xfire loaded it. Every other control character still refuses.
+        let dels = line.matches('\u{7f}').count();
+        let kept;
+        let line = if dels == 0 {
+            line
+        } else {
+            normalised.push(format!("line {n}: {dels} DEL (0x7F) byte(s) dropped"));
+            kept = line.replace('\u{7f}', "");
+            kept.as_str()
+        };
         if line.chars().any(|c| c.is_control() && c != '\t') {
             return Err(err(n, "a control character"));
         }
@@ -228,6 +244,7 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
         sections,
         repeated,
         comments,
+        normalised,
     })
 }
 

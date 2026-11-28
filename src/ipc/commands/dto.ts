@@ -499,7 +499,9 @@ export interface SkinTrial {
 /// reports it with `report_skin_apply_failed`, and the Host decides.
 export type SkinApplyFailure =
   | { type: "imageDecode"; data: { path: string } }
-  | { type: "sheetError"; data: { detail: string } };
+  | { type: "sheetError"; data: { detail: string } }
+  | { type: "loadTimeout"; data: { message: string } }
+  | { type: "windowTooSmall"; data: { width: number; height: number } };
 
 /// `list_skins`' answer (`SkinLibrary`).
 export interface SkinLibrary {
@@ -529,9 +531,10 @@ export interface SkinApplied {
   tokensHref: string;
   /// The region slots the skin paints.
   regions: string[];
-  /// The `skin://` href of every image the stylesheet draws: a window
-  /// decodes them all before it shows the sheet.
+  /// Shared region art to decode before showing the sheet.
   images: string[];
+  /// Frame and title art to decode only for the corresponding window kind.
+  frameImages?: Partial<Record<SkinShell["window"], string[]>>;
   /// The TUI's palette subset (the webview reads the stylesheet instead).
   palette: SkinPaletteColour[];
   /// Each tree-laid window kind's outline (plan SK2-S2); absent when the

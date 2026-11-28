@@ -102,6 +102,26 @@ pub fn render(
     for r in &read.repeated {
         let _ = writeln!(s, "    {r}");
     }
+    if !read.absent.is_empty() {
+        let _ = writeln!(
+            s,
+            "  bitmaps named but not in the tree, each laying nothing (spec A8) ({}):",
+            read.absent.len()
+        );
+        for a in &read.absent {
+            let _ = writeln!(s, "    {a}");
+        }
+    }
+    if !read.normalised.is_empty() {
+        let _ = writeln!(
+            s,
+            "  values read after a normalisation, as Xfire read them ({}):",
+            read.normalised.len()
+        );
+        for n in &read.normalised {
+            let _ = writeln!(s, "    {n}");
+        }
+    }
     let _ = writeln!(s, "  files not read ({}):", read.unread.len());
     for f in &read.unread {
         let _ = writeln!(s, "    {f}");

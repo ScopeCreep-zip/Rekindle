@@ -76,6 +76,10 @@ Dropped
     combat.ini: [StatusEdit] Text.bold (line 557)
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
+  bitmaps named but not in the tree, each laying nothing (spec A8) (3):
+    Graphics.INFOVIEWGRIPPERBOTTOMRIGHT
+    Graphics.INFOVIEWGRIPPERTOPRIGHT
+    middle.gif
   files not read (59):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini

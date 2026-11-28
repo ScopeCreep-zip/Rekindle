@@ -16,6 +16,8 @@
     "allow-subscribe-events",
     "allow-get-avatar",
     "allow-get-skin",
+    "allow-start-skin-apply",
+    "allow-finish-skin-apply",
     "allow-report-skin-apply-failed",
     "allow-get-community-avatar-data-url",
     "allow-get-community-details",

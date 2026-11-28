@@ -11,6 +11,7 @@ import path from "node:path";
 import type { Browser } from "webdriverio";
 import { WAIT_MS, sleep, waitUntil } from "../walk/helpers.ts";
 import { type Findings, checkGeometry, treeFitIn } from "./geometry.ts";
+import { type AppCapability, DISPLAY_CAPABILITY } from "./launcher.ts";
 import type { TreeFit } from "./geometry-page.ts";
 
 export interface Size {
@@ -172,7 +173,23 @@ export function sizes(w: WindowCase): [string, Size][] {
  * OS to refuse a smaller size.
  */
 export async function treeMinimum(b: Browser): Promise<Size | undefined> {
-  type Got = { width: number; height: number } | { none: true } | { error: string };
+  return (await treeLimits(b))?.min;
+}
+
+/** A tree-laid window's served limits: its minimum, and its maximum on each axis that has one. */
+export interface TreeLimits {
+  min: Size;
+  max: { width?: number; height?: number };
+}
+
+/**
+ * The limits the Host serves the window's skin tree (`SkinShell.minWidth/
+ * minHeight`, and `maxWidth/maxHeight` from `rekindle_skin::shape::max_size`,
+ * the same rule the desktop holds the window to; absent on an axis with no
+ * limit), or undefined when the window lays no tree.
+ */
+export async function treeLimits(b: Browser): Promise<TreeLimits | undefined> {
+  type Got = TreeLimits | { none: true } | { error: string };
   const got = (await b.execute((): Promise<Got> => {
     const frame = document.querySelector(".app-frame");
     if (!frame || !frame.querySelector(".skin-tree")) return Promise.resolve({ none: true });
@@ -182,15 +199,36 @@ export async function treeMinimum(b: Browser): Promise<Size | undefined> {
     return w.__TAURI_INTERNALS__.invoke("get_skin", { id: null }).then(
       (done): Got => {
         // A Host command answers `{ value, undo }` (ipc/invoke.ts hostInvoke).
-        type Shell = { window: string; popup?: { name: string }; minWidth: number; minHeight: number };
+        type Shell = { window: string; popup?: { name: string }; minWidth: number; minHeight: number; maxWidth?: number; maxHeight?: number };
         const shell = (done as { value: { shells?: Shell[] } }).value.shells?.find((s) => (popup ? s.popup?.name === popup : s.window === kind && !s.popup));
-        return shell ? { width: shell.minWidth, height: shell.minHeight } : { error: `no served shell for ${popup ?? kind ?? "this window"}` };
+        return shell
+          ? { min: { width: shell.minWidth, height: shell.minHeight }, max: { width: shell.maxWidth, height: shell.maxHeight } }
+          : { error: `no served shell for ${popup ?? kind ?? "this window"}` };
       },
       (e: unknown): Got => ({ error: `get_skin failed: ${String(e)}` }),
     );
   })) as Got;
   if ("error" in got) throw new Error(got.error);
   return "none" in got ? undefined : got;
+}
+
+/**
+ * Size the window `b` is in to `size`, raised on each axis to the minimum its
+ * skin serves (`treeMinimum`). A window never goes below its pack's minimum
+ * (the desktop sets it as the native min-size hint and the window manager
+ * honours it), so restoring an app default narrower than the pack asks a
+ * size the window cannot take. The size it was given is returned.
+ */
+export async function sizeWindowServed(b: Browser, size: Size): Promise<Size> {
+  const want = await servedSize(b, size);
+  await sizeWindow(b, want);
+  return want;
+}
+
+/** `size` raised on each axis to the minimum the window's skin serves (`treeMinimum`). */
+export async function servedSize(b: Browser, size: Size): Promise<Size> {
+  const min = await treeMinimum(b);
+  return min ? { width: Math.max(size.width, min.width), height: Math.max(size.height, min.height) } : size;
 }
 
 /**
@@ -250,14 +288,20 @@ async function innerSize(b: Browser): Promise<Size> {
 const OFF_SCREEN = { x: -16_000, y: -16_000 };
 
 /**
- * Added to a resize that never lands on a Wayland session: there a native
- * client cannot resize or place its own window (xdg-shell), so a spec that
- * sizes windows runs its app on X11 (`display: "x11"`, launcher.ts).
+ * Added to a resize that never lands when the app runs as a native Wayland
+ * client: it cannot resize or place its own window (xdg-shell), so a spec
+ * that sizes windows runs its app on X11 (`display: "x11"`, launcher.ts).
+ * Nothing is added when the session's app already runs on X11 (XWayland):
+ * there a refused size is the window's own minimum, not the protocol.
  */
-const WAYLAND_HINT =
-  process.platform === "linux" && process.env.WAYLAND_DISPLAY
-    ? ' (a Wayland session: a native Wayland client cannot resize its own window, xdg-shell; give this spec\'s config `display: "x11"`)'
-    : "";
+function waylandHint(b: Browser): string {
+  if (process.platform !== "linux" || !process.env.WAYLAND_DISPLAY) return "";
+  const caps = (b as unknown as { requestedCapabilities?: Record<string, unknown> }).requestedCapabilities ?? {};
+  // `rekindle:app` is consumed by the launcher; it keeps the display here.
+  const display = caps[DISPLAY_CAPABILITY] as AppCapability["display"] | undefined;
+  if (display === "x11") return "";
+  return ' (a Wayland session: a native Wayland client cannot resize its own window, xdg-shell; give this spec\'s config `display: "x11"`)';
+}
 
 /**
  * Give the current window the inner (CSS viewport) size `size`, off
@@ -283,7 +327,7 @@ export async function sizeWindow(b: Browser, size: Size): Promise<void> {
       return inner.width === size.width && inner.height === size.height;
     },
     WAIT_MS,
-    `window viewport stayed ${JSON.stringify(inner)}, wanted ${JSON.stringify(size)}${WAYLAND_HINT}`,
+    `window viewport stayed ${JSON.stringify(inner)}, wanted ${JSON.stringify(size)}${waylandHint(b)}`,
   );
   // Let layout and any ResizeObserver work land (E7.12 waited 300 ms after
   // its window's IPC settled; a window behind others renders no frames, so

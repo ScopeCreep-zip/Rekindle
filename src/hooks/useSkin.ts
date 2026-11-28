@@ -1,8 +1,11 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createSignal, onCleanup } from "solid-js";
-import { subscribeSkinEvents } from "../ipc/channels";
+import { subscribeSkinApplyFailed, subscribeSkinEvents } from "../ipc/channels";
 import { commands } from "../ipc/commands";
 import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
+import { Channel } from "../ipc/invoke";
+import { addToast } from "../stores/toast.store";
 
 /// The shown skin's window outlines (plan SK2-S2): set with the sheet that
 /// places their nodes, so the nested divs and their rules always belong to
@@ -68,16 +71,7 @@ function boundShells(shells: SkinShell[]): SkinShell[] {
   }
   // A community window with a community (`/community?id=`, plan SKW1) wears
   // the community frame; the community browser (no `id`) none.
-  const community =
-    path.startsWith("/community") && new URLSearchParams(window.location.search).has("id");
-  const kind: SkinShell["window"] | undefined =
-    path === "/buddy-list"
-      ? "main"
-      : path.startsWith("/chat")
-        ? "chat"
-        : community
-          ? "community"
-          : undefined;
+  const kind = framedWindow();
   return kind ? shells.filter((s) => s.window === kind && s.popup === undefined) : [];
 }
 
@@ -95,127 +89,293 @@ const LINK_ID = "rekindle-skin";
  */
 export function useSkin(): void {
   let stopped = false;
-  const unsubscribe = subscribeSkinEvents(applySkin);
+  let received = false;
+  const frame = framedWindow();
+  if (frame) {
+    // Hidden until this document's first committed skin (applySkin clears it
+    // before the commit that lets native reveal the window); a deadline
+    // failure shows the error instead.
+    document.documentElement.dataset.skinOpening = "";
+    void commands
+      .waitSkinOpen()
+      .then((error) => {
+        if (error !== null && !stopped) showOpeningError(error);
+      })
+      .catch(logSkinError);
+  }
+  const apply = (skin: SkinApplied | null): void => {
+    if (!openingFailed) void applySkin(skin, frame).catch(logSkinError);
+  };
+  const unsubscribe = subscribeSkinEvents((skin) => {
+    received = true;
+    apply(skin);
+  });
+  const unsubscribeFailure = subscribeSkinApplyFailed(({ window, cause, notice, reverted }) => {
+    // The Host's words for it (SkinApplyFailure::notice), never the shell's.
+    if (cause.type === "loadTimeout" && window === getCurrentWindow().label && !reverted) {
+      // Native also reports a switch whose allocation or JS handler never started.
+      showSkinError(notice);
+    }
+    if (cause.type === "windowTooSmall" && !document.getElementById(LINK_ID) && !loading) {
+      addToast(notice);
+    }
+  });
   void commands
     .getSkin()
     .then((skin) => {
-      if (!stopped) applySkin(skin);
+      if (!stopped && !received) apply(skin);
     })
-    .catch((err: unknown) => console.error("get_skin failed — this window shows no skin", err));
+    .catch(logSkinError);
   onCleanup(() => {
     stopped = true;
+    pending?.abort();
     void unsubscribe.then((unlisten) => unlisten());
+    void unsubscribeFailure.then((unlisten) => unlisten());
   });
 }
 
-/// Each apply's number: an apply a newer one superseded does nothing more,
-/// so a slow sheet or image can never land over a later choice.
-let generation = 0;
-
-/// The `<link>` of the newest apply still loading, if any.
-let loading: HTMLLinkElement | null = null;
+function showOpeningError(message: string): void {
+  openingFailed = true;
+  pending?.abort();
+  document.documentElement.dataset.skinOpening = "";
+  showSkinError(message);
+}
 
 /**
- * Apply `skin` to this window, showing it only once it can be drawn
- * whole. First every image it draws is decoded (`skin.images`, the shared
- * sheet's, plus its own trees' `images`, plan SK4): a
- * frame tile or region still loading paints nothing, so the window would
- * be see-through inside the shaper's cut, which already follows the new
- * skin. Then the sheet loads in its own `<link>` beside the shown one
- * (WebKit keeps a link's old `.sheet` until a changed `href` finishes
- * loading, so swapping in place would show the previous skin while the
- * link already names the new one). On `load` the new link takes the id,
- * the old one is removed and `data-skin-base` follows, so the id, the
- * sheet and the base always belong to the same skin. On any failure the
- * shown skin stays and the error is reported.
+ * Show `message` (the Host's words) in this window's skin alert: the whole
+ * window while it opens, else a strip above the page, in flow, so the page
+ * shrinks beneath it and no control is covered (22-skin-frame.css).
  */
-function applySkin(skin: SkinApplied): void {
-  const mine = ++generation;
-  loading?.remove();
-  loading = null;
-  const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
-  if (shown?.getAttribute("href") === skin.tokensHref) {
-    document.documentElement.dataset.skinBase = skin.base;
-    setShells(skin.shells ?? []);
-    return;
+function showSkinError(message: string): void {
+  if (!skinError) {
+    skinError = document.createElement("div");
+    skinError.className = "skin-load-error";
+    skinError.setAttribute("role", "alert");
+    document.body.prepend(skinError);
   }
-  // Held until the swap, so the decoded images stay in this document's cache.
-  // The shared sheet's images and this window's own trees' (plan SK4): a
-  // window never waits on art another window's tree draws.
-  const hrefs = [
-    ...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)]),
-  ];
-  const loads = hrefs.map((href) => {
-    const img = new Image();
-    img.src = href;
-    return { href, img };
-  });
-  const images = loads.map((l) => l.img);
-  // Each decode names its own href, so the report says which image failed.
-  const decoded = loads.map(({ href, img }) =>
-    img.decode().catch((err: unknown) => {
-      throw new SkinImageError(href, err);
-    })
-  );
-  Promise.all(decoded).then(
-    () => {
-      if (mine === generation) linkSheet(skin, mine, images);
-    },
-    (err: SkinImageError) => {
-      if (mine !== generation) return;
-      console.error(
-        `skin ${skin.id}: ${err.path} failed to decode — the shown skin stays`,
-        err.reason
-      );
-      report(skin, { type: "imageDecode", data: { path: err.path } });
-    }
-  );
+  skinError.textContent = message;
 }
 
-/** A skin image that did not decode: its `skin://` href and the reason. */
+function logSkinError(error: unknown): void {
+  console.error("Skin presentation failed", error);
+}
+
+let generation = 0;
+let pending: AbortController | undefined;
+let openingFailed = false;
+let loading: HTMLLinkElement | null = null;
+let skinError: HTMLDivElement | undefined;
+
+function framedWindow(): SkinShell["window"] | undefined {
+  const path = window.location.pathname;
+  if (path === "/buddy-list") return "main";
+  if (path.startsWith("/chat")) return "chat";
+  if (path.startsWith("/community") && new URLSearchParams(window.location.search).has("id")) {
+    return "community";
+  }
+  return undefined;
+}
+
+/**
+ * Hold decoded images through the stylesheet swap. A native deadline
+ * cancels the apply even if neither the image decoder nor the link settles.
+ */
+async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | undefined) {
+  // A framed document keeps its last committed skin during a native
+  // allocation change. Its first open has its own native error surface.
+  if (skin === null && frame) return;
+  pending?.abort();
+  const attempt = new AbortController();
+  pending = attempt;
+  const serial = ++generation;
+  const shown = document.getElementById(LINK_ID);
+  if (skin === null) {
+    shown?.remove();
+    delete document.documentElement.dataset.skinBase;
+    setShells([]);
+    setSkinTitleLogo(undefined);
+    setSheetsLinked((n) => n + 1);
+    return;
+  }
+
+  const expired = new Channel<string>((message) => {
+    if (!attempt.signal.aborted) {
+      attempt.abort();
+      showSkinError(message);
+    }
+  });
+  let attemptId: string | null = null;
+  let href: string | null = null;
+  try {
+    attemptId = await commands.startSkinApply(serial, skin.id, skin.tokensHref, expired);
+    if (attemptId === null || attempt.signal.aborted) return;
+    await untilAborted(commitSkin(skin, shown, frame, attempt.signal), attempt.signal);
+    if (!attempt.signal.aborted) {
+      href = skin.tokensHref;
+      skinError?.remove();
+      skinError = undefined;
+      // Displayable before the commit below, which is what lets native
+      // reveal the window: its first shown frame is the skinned page.
+      if (frame && !openingFailed) delete document.documentElement.dataset.skinOpening;
+    }
+  } catch (error) {
+    if (attempt.signal.aborted) return;
+    logSkinError(error);
+    const notice = await report(
+      skin,
+      error instanceof SkinImageError
+        ? { type: "imageDecode", data: { path: error.path } }
+        : {
+            type: "sheetError",
+            data: { detail: error instanceof Error ? error.message : String(error) },
+          }
+    );
+    if (
+      notice !== null &&
+      !attempt.signal.aborted &&
+      document.documentElement.dataset.skinOpening === undefined
+    ) {
+      showSkinError(notice);
+    }
+  } finally {
+    attempt.abort();
+    if (attemptId !== null) await commands.finishSkinApply(attemptId, href);
+  }
+}
+
+async function commitSkin(
+  skin: SkinApplied,
+  shown: HTMLElement | null,
+  frame: SkinShell["window"] | undefined,
+  signal: AbortSignal
+): Promise<void> {
+  const sameSheet = shown?.getAttribute("href") === skin.tokensHref;
+  if (!sameSheet) {
+    const hrefs = [
+      ...new Set([
+        ...skin.images,
+        ...(frame ? (skin.frameImages?.[frame] ?? []) : []),
+        ...boundShells(skin.shells ?? []).flatMap((s) => s.images),
+      ]),
+    ];
+    const images = hrefs.map((href) => {
+      const img = new Image();
+      img.src = href;
+      return img;
+    });
+    signal.addEventListener(
+      "abort",
+      () => {
+        for (const img of images) img.removeAttribute("src");
+      },
+      { once: true }
+    );
+    await Promise.all(
+      images.map((img, i) =>
+        img.decode().catch(() => {
+          throw new SkinImageError(hrefs[i]);
+        })
+      )
+    );
+    if (signal.aborted) return;
+    const next = await linkSheet(skin.tokensHref, signal);
+    if (signal.aborted) {
+      next.remove();
+      return;
+    }
+    shown?.remove();
+    next.id = LINK_ID;
+    images.length = 0;
+  }
+  document.documentElement.dataset.skinBase = skin.base;
+  setShells(skin.shells ?? []);
+  setSkinTitleLogo(skin.titleLogo);
+  if (!sameSheet) setSheetsLinked((n) => n + 1);
+  if (frame) {
+    const hasTree = skin.shells?.some((s) => s.window === frame && !s.popup) ?? false;
+    await waitForTree(frame, hasTree, signal);
+  }
+}
+
+function untilAborted(work: Promise<void>, signal: AbortSignal): Promise<void> {
+  return Promise.race([
+    work,
+    new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true })
+    ),
+  ]);
+}
+
+/** The route is lazy; wait until its frame and any served tree are in the DOM. */
+function waitForTree(
+  frame: SkinShell["window"],
+  hasTree: boolean,
+  signal: AbortSignal
+): Promise<void> {
+  const selector = `.app-frame[data-skin-window="${frame}"]${hasTree ? " .skin-tree" : ""}`;
+  if (document.querySelector(selector)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(selector)) {
+        observer.disconnect();
+        resolve();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    signal.addEventListener("abort", () => observer.disconnect(), { once: true });
+  });
+}
+
 class SkinImageError extends Error {
-  constructor(
-    readonly path: string,
-    readonly reason: unknown
-  ) {
+  constructor(readonly path: string) {
     super(`${path} failed to decode`);
   }
 }
 
-/** Load `skin`'s sheet beside the shown one and swap on `load` (apply `mine`). */
-function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]): void {
-  const next = document.createElement("link");
-  next.rel = "stylesheet";
-  loading = next;
-  next.addEventListener("load", () => {
-    if (mine !== generation) return;
-    loading = null;
-    document.getElementById(LINK_ID)?.remove();
-    next.id = LINK_ID;
-    document.documentElement.dataset.skinBase = skin.base;
-    setShells(skin.shells ?? []);
-    setSkinTitleLogo(skin.titleLogo);
-    setSheetsLinked((n) => n + 1);
-    images.length = 0;
+function linkSheet(href: string, signal: AbortSignal): Promise<HTMLLinkElement> {
+  return new Promise((resolve, reject) => {
+    const next = document.createElement("link");
+    next.rel = "stylesheet";
+    next.href = href;
+    loading = next;
+    const cancel = (): void => {
+      loading = null;
+      next.remove();
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    next.addEventListener(
+      "load",
+      () => {
+        loading = null;
+        signal.removeEventListener("abort", cancel);
+        resolve(next);
+      },
+      { once: true, signal }
+    );
+    next.addEventListener(
+      "error",
+      () => {
+        cancel();
+        reject(new Error(`${href} failed to load`));
+      },
+      { once: true, signal }
+    );
+    document.head.appendChild(next);
   });
-  next.addEventListener("error", () => {
-    if (mine !== generation) return;
-    loading = null;
-    next.remove();
-    console.error(`skin sheet ${skin.tokensHref} failed to load — the shown skin stays`);
-    report(skin, { type: "sheetError", data: { detail: `${skin.tokensHref} failed to load` } });
-  });
-  next.href = skin.tokensHref;
-  document.head.appendChild(next);
 }
 
 /**
  * Tell the Host this window could not apply `skin` (plan SK2-T1). The
  * window only reports: the Host logs it, tells this window and Settings,
- * and reverts `skin` if it is on trial.
+ * and reverts `skin` if it is on trial. It answers what the window tells
+ * the user, in its words (SkinApplyFailure::notice); null if the report
+ * did not reach it.
  */
-function report(skin: SkinApplied, cause: SkinApplyFailure): void {
-  void commands
-    .reportSkinApplyFailed(skin.id, cause)
-    .catch((err: unknown) => console.error(`skin ${skin.id}: the failure was not reported`, err));
+async function report(skin: SkinApplied, cause: SkinApplyFailure): Promise<string | null> {
+  try {
+    return await commands.reportSkinApplyFailed(skin.id, cause);
+  } catch (err: unknown) {
+    console.error(`skin ${skin.id}: the failure was not reported`, err);
+    return null;
+  }
 }

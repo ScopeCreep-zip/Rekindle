@@ -208,6 +208,9 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
         is_down: bool,
         modifiers: super::ModifierState,
     ) -> Result<(), WebDriverErrorResponse> {
+        // The selected window takes keyboard focus first, as a user's click
+        // gives it (linux_focus.rs); dispatch still refuses an unfocused webview.
+        super::linux_focus::hold_keyboard_focus(&self.window).await?;
         let (tx, rx) = oneshot::channel();
         self.window
             .with_webview(move |webview| {

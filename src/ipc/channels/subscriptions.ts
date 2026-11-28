@@ -237,8 +237,10 @@ export function subscribeCommunityEvents(
  * Subscribe to skin changes (`SystemEvent::SkinChanged`, plan E7.7.2):
  * every window, the login window included, receives them on `skin-event`.
  */
-export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promise<UnlistenFn> {
-  return on<{ system: { skinChanged: { skin: SkinApplied } } }>("skin-event", (payload) => {
+export function subscribeSkinEvents(
+  onSkin: (skin: SkinApplied | null) => void
+): Promise<UnlistenFn> {
+  return on<{ system: { skinChanged: { skin: SkinApplied | null } } }>("skin-event", (payload) => {
     onSkin(payload.system.skinChanged.skin);
   });
 }
@@ -310,6 +312,8 @@ export interface SkinApplyFailed {
   window: string;
   skin: string;
   cause: SkinApplyFailure;
+  /** What the window tells the user about it, in the Host's words. */
+  notice: string;
   /** The Host reverted `skin`, which was on trial. */
   reverted: boolean;
 }

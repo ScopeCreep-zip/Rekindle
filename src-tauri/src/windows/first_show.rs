@@ -58,21 +58,32 @@ impl Show for tauri::WebviewWindow {
     }
 }
 
-/// Build `builder` hidden, run `prepare` on the window, then show it.
+/// Build `builder` hidden and show it if `prepare` permits immediate display.
 ///
 /// # Errors
 /// The window could not be built. A failed show is logged: the window
 /// exists and the next [`super::reveal_window`] shows it.
 pub(super) fn open<B: Build>(
     builder: B,
-    prepare: impl FnOnce(&B::Window),
+    prepare: impl FnOnce(&B::Window) -> bool,
 ) -> Result<B::Window, String> {
     let window = builder.visible(false).build()?;
-    prepare(&window);
-    if let Err(e) = window.show() {
-        tracing::warn!(error = %e, "open: first show failed");
+    if prepare(&window) {
+        if let Err(e) = window.show() {
+            tracing::warn!(error = %e, "open: first show failed");
+        }
     }
     Ok(window)
+}
+
+/// The Host's local skin read and preparation precede construction, where
+/// the native and document reveal deadline starts.
+pub(super) async fn after_skin<T>(
+    prepare: impl std::future::Future<Output = Result<(), String>>,
+    build: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    prepare.await?;
+    build()
 }
 
 #[cfg(test)]

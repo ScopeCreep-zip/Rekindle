@@ -40,7 +40,7 @@ fn identity_and_key_changes_are_exclusive() {
 fn a_skin_apply_failure_is_open_and_the_users_own() {
     let failed = IpcRequest::SkinApplyFailed {
         window: "login".into(),
-        skin: "builtin:xfire-classic".into(),
+        skin: Some("builtin:xfire-classic".into()),
         cause: rekindle_types::dto::skin_library::SkinApplyFailure::SheetError {
             detail: String::new(),
         },

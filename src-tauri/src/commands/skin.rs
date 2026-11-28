@@ -9,7 +9,7 @@ use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion, SkinDraftRepor
 use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure, SkinEntry, SkinLibrary};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::{CommandError, Done};
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 use crate::host_call;
 use crate::state::SharedState;
@@ -19,8 +19,19 @@ use crate::state::SharedState;
 #[tauri::command]
 pub async fn get_skin(
     id: Option<String>,
+    window: WebviewWindow,
     state: State<'_, SharedState>,
 ) -> Result<Done<SkinApplied>, CommandError> {
+    if id.is_none() && crate::windows::frame_of_label(window.label()).is_some() {
+        return crate::windows::presented_skin(&window)
+            .await
+            .map(|value| Done { value, undo: None })
+            .ok_or_else(|| CommandError::Failed {
+                code: 503,
+                message: "The window is waiting for its skin allocation".to_owned(),
+                remediation: None,
+            });
+    }
     host_call::call(&state, IpcRequest::SkinGet { id }).await
 }
 
@@ -230,22 +241,58 @@ pub async fn set_skin_selection(
 /// The calling window could not apply `skin` (`useSkin.ts`: an image did
 /// not decode, or the stylesheet did not load) and kept the skin it
 /// shows. The window only reports; the Host logs it, tells this window
-/// and Settings, and reverts `skin` if it is on trial (plan SK2-T1).
+/// and Settings, reverts `skin` if it is on trial (plan SK2-T1), and
+/// answers with its words for the failure, which the window shows.
 #[tauri::command]
 pub async fn report_skin_apply_failed(
     state: State<'_, SharedState>,
     window: tauri::WebviewWindow,
     skin: String,
     cause: SkinApplyFailure,
-) -> Result<Done<()>, CommandError> {
+) -> Result<Done<String>, CommandError> {
+    if matches!(
+        cause,
+        SkinApplyFailure::WindowTooSmall { .. } | SkinApplyFailure::LoadTimeout { .. }
+    ) {
+        return Err(CommandError::Failed {
+            code: 400,
+            message: "Native skin failures come from the desktop shell".to_owned(),
+            remediation: None,
+        });
+    }
     let window = window.label().to_owned();
     host_call::call(
         &state,
         IpcRequest::SkinApplyFailed {
             window,
-            skin,
+            skin: Some(skin),
             cause,
         },
     )
     .await
+}
+
+/// The terminal result of this document's native reveal gate.
+#[tauri::command]
+pub async fn wait_skin_open(window: WebviewWindow) -> Result<Option<&'static str>, &'static str> {
+    crate::windows::skin_load::wait_open(&window).await
+}
+
+/// Claim the native skin apply before the webview asks its image and CSS loaders.
+#[tauri::command]
+pub async fn start_skin_apply(
+    window: WebviewWindow,
+    serial: u32,
+    skin: String,
+    href: String,
+    expired: tauri::ipc::Channel<&'static str>,
+) -> Option<String> {
+    crate::windows::skin_load::start_apply(&window, serial, &skin, &href, expired)
+}
+
+/// A completed apply cancels its watchdog. A committed sheet also joins
+/// the native allocation at the reveal gate.
+#[tauri::command]
+pub async fn finish_skin_apply(window: WebviewWindow, attempt_id: String, href: Option<String>) {
+    crate::windows::skin_load::finish_apply(&window, &attempt_id, href);
 }

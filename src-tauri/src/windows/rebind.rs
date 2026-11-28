@@ -68,7 +68,12 @@ pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEv
             peer_key_changed(app, state, peer_key, new_key);
         }
         SubscriptionEvent::System(SystemEvent::SkinChanged { skin }) => {
-            super::shape::refresh(app);
+            for window in app.webview_windows().values() {
+                if super::skin_load::framed(window) {
+                    super::skin_load::delivered(window, skin);
+                }
+            }
+            super::shape::refresh(app, Some(skin.clone()));
             super::popup::skin_changed(app, state, &skin.shells);
         }
         _ => {}

@@ -486,7 +486,8 @@ pub enum IpcRequest {
     /// reverts `skin` if it is on trial. Sent before unlock too.
     SkinApplyFailed {
         window: String,
-        skin: String,
+        /// Absent if the desktop timed out before receiving the selected skin.
+        skin: Option<String>,
         cause: rekindle_types::dto::skin_library::SkinApplyFailure,
     },
     /// Set game presence info.

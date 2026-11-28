@@ -13,18 +13,23 @@ pub mod popup_place;
 mod rebind;
 mod reveal;
 mod shape;
+pub(crate) mod skin_load;
+mod skin_reveal;
+pub(crate) use shape::{frame_of_label, presented_skin};
 mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
-/// Which skin frame a window wears, by label (the signal windows, `skin_windows`).
-pub use shape::frame_of_label;
 
+use std::future::Future;
+use std::sync::Arc;
+
+use rekindle_lifecycle::SessionScope;
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
 use serde::{Deserialize, Serialize};
 use tauri::utils::config::BackgroundThrottlingPolicy;
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
 
 use crate::state::SharedState;
@@ -67,51 +72,25 @@ impl SettingsTab {
 /// Size limits for one window kind: (inner, min inner).
 struct Size {
     inner: (f64, f64),
-    min: (f64, f64),
+    min: (u16, u16),
 }
 
 const fn size(kind: WindowKind) -> Size {
     let (inner, min) = match kind {
-        WindowKind::Login => ((380.0, 480.0), (340.0, 440.0)),
-        WindowKind::BuddyList => ((320.0, 650.0), (300.0, 500.0)),
-        WindowKind::Settings => ((500.0, 550.0), (420.0, 450.0)),
-        WindowKind::Chat => ((480.0, 550.0), (380.0, 400.0)),
-        WindowKind::Community => ((900.0, 650.0), (750.0, 500.0)),
-        WindowKind::Call => ((420.0, 540.0), (360.0, 420.0)),
-        WindowKind::Profile => ((380.0, 500.0), (340.0, 420.0)),
-        WindowKind::SkinEditor => ((640.0, 620.0), (480.0, 480.0)),
+        WindowKind::Login => ((380.0, 480.0), (340, 440)),
+        WindowKind::BuddyList => ((320.0, 650.0), (300, 500)),
+        WindowKind::Settings => ((500.0, 550.0), (420, 450)),
+        WindowKind::Chat => ((480.0, 550.0), (380, 400)),
+        WindowKind::Community => ((900.0, 650.0), (750, 500)),
+        WindowKind::Call => ((420.0, 540.0), (360, 420)),
+        WindowKind::Profile => ((380.0, 500.0), (340, 420)),
+        WindowKind::SkinEditor => ((640.0, 620.0), (480, 480)),
         // Placed and sized from the served popup (`popup::open`).
-        WindowKind::SkinPopup => ((200.0, 300.0), (100.0, 100.0)),
+        WindowKind::SkinPopup => ((200.0, 300.0), (100, 100)),
     };
     Size { inner, min }
 }
 
-/// The builder every window starts from: frameless transparent chrome,
-/// the navigation guard, no new windows, the media-permission policy for
-/// `kind`, background throttling, and the data root's webview store.
-///
-/// No OS shadow (plan SK0 S2/S3, research §5): the window is cut to its
-/// skin's silhouette ([`shape`]), and a shadow is drawn around the window
-/// **rectangle**, not the silhouette. On Windows `shadow(true)` also adds a
-/// 1px white border and Windows 11's rounded corners (tauri 2.12.1
-/// `window/mod.rs:2124-2132`), which a region window cannot have anyway;
-/// Linux does not support it; on macOS AppKit's shape-derived shadow is
-/// unreliable over WKWebView's layer tree. Classic Xfire drew none.
-///
-/// Background throttling is `Throttle` (plan A1.5, finding E7.14 F5): a
-/// hidden or covered window limits its timers but keeps running, so the
-/// buddy list in the tray and a covered chat window still take events,
-/// countdowns and badges. Without a policy, macOS WKWebView's inactive
-/// scheduling suspends a hidden view's tasks entirely; Signal and Element
-/// Desktop keep Electron's throttle-not-suspend default. wry maps it to
-/// WKPreferences `inactiveSchedulingPolicy` (macOS 14+, the E7.10 floor);
-/// WebKitGTK and WebView2 ignore it. `cargo xtask
-/// check-background-throttling` holds every window to this builder.
-///
-/// # Errors
-/// No data root is managed yet (`setup::run` manages it before the first
-/// window): a window is never built on the platform's default store when
-/// the root names another.
 /// Whether a window of `kind` acts on the click that activates it (macOS
 /// otherwise only focuses an inactive window, so a skin's close or chat
 /// button needed two clicks): every window drawn from a skin tree, as
@@ -124,12 +103,12 @@ const fn accepts_first_mouse(kind: WindowKind) -> bool {
     )
 }
 
-/// How a window of `kind`'s page runs while it is in the background
-/// (Tauri's `BackgroundThrottlingPolicy`, macOS 14+; Linux and Windows
-/// ignore it). A window that can carry live media (a call window, a chat
-/// window's video call, a community window's voice and video) decodes and
-/// answers keyframe and consent requests in its page, so it is never
-/// throttled; every other window is throttled, not suspended (lead ruling).
+/// `Throttle` keeps a background page processing Host state with limited
+/// scheduling (plan A1.5, finding E7.14 F5). Windows carrying live media
+/// use `Disabled` to answer keyframe and consent requests in real time.
+/// wry applies this to WKWebView's inactive scheduling on macOS 14+.
+/// WebKitGTK and WebView2 ignore the policy. Wayland native layout must
+/// advance independently of the compositor's paint callbacks.
 const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
     match kind {
         WindowKind::Call | WindowKind::Chat | WindowKind::Community => {
@@ -139,6 +118,17 @@ const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
     }
 }
 
+/// The builder every window starts from: frameless transparent chrome,
+/// navigation and media permissions, background scheduling, and the webview store.
+///
+/// No OS shadow (plan SK0 S2/S3, research §5): it would follow the window's
+/// rectangle while the window is cut to its skin's silhouette ([`shape`]).
+/// On Windows `shadow(true)` also adds a 1px white border and Windows 11's
+/// rounded corners (tauri 2.12.1 `window/mod.rs:2124-2132`). Linux lacks
+/// support and AppKit's shape-derived shadow is unreliable over WKWebView.
+///
+/// # Errors
+/// The data root is not yet managed (`setup::run` manages it before the first window).
 fn base_builder<'a>(
     app: &'a AppHandle,
     kind: WindowKind,
@@ -155,10 +145,18 @@ fn base_builder<'a>(
         None
     };
     let captures_media = kind.captures_media();
-    let Size { inner, min } = size(kind);
-    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
-        .inner_size(inner.0, inner.1)
-        .min_inner_size(min.0, min.1)
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()));
+    let builder = if let Some((wanted, constraints)) = shape::initial_sizing(app, label) {
+        builder
+            .inner_size(wanted.0, wanted.1)
+            .inner_size_constraints(constraints)
+    } else {
+        let Size { inner, min } = size(kind);
+        builder
+            .inner_size(inner.0, inner.1)
+            .min_inner_size(f64::from(min.0), f64::from(min.1))
+    };
+    let builder = builder
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -166,6 +164,11 @@ fn base_builder<'a>(
         .resizable(true)
         .background_throttling(background_policy(kind))
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
+        .on_page_load(|window, page| {
+            if page.event() == PageLoadEvent::Started {
+                skin_load::page_started(&window);
+            }
+        })
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
             navigation::permission_for(captures_media, permission)
@@ -192,21 +195,37 @@ fn with_store<'a>(
     }
 }
 
+/// Native callbacks can arrive on a UI thread outside the runtime.
+fn spawn_window_task(
+    scope: &Arc<SessionScope>,
+    name: &'static str,
+    task: impl Future<Output = ()> + Send + 'static,
+) {
+    let runtime = tauri::async_runtime::handle();
+    let _entered = runtime.inner().enter();
+    scope.spawn_or_drop(name, task);
+}
+
 /// Build the window hidden, enable platform media capture if `kind`
 /// captures, then show it ([`first_show`]: a window built visible opens
-/// taller than its inner size on GTK Wayland), and shape it once shown
-/// ([`shape::attach`]; GTK realizes the GDK window on the show).
+/// taller than its inner size on GTK Wayland). Attach the shape controller
+/// before the show realizes the native surface.
 fn finish(
     builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
     kind: WindowKind,
 ) -> Result<WebviewWindow, String> {
-    let window = first_show::open(builder, |window| {
+    first_show::open(builder, |window| {
+        let frame = frame_of_label(window.label());
+        skin_load::prepare(window);
+        shape::attach(window, frame);
         if kind.captures_media() {
             crate::platform::enable_webview_media_capture(window);
         }
-    })?;
-    shape::attach(&window, shape::frame_of_label(window.label()));
-    Ok(window)
+        if frame.is_some() {
+            skin_load::request(window, skin_reveal::Show::First);
+        }
+        frame.is_none()
+    })
 }
 
 /// Show, restore and focus an existing window ([`reveal_window`]). Returns
@@ -252,23 +271,40 @@ pub fn open_login(app: &AppHandle, preselect: Option<&PublicKeyHex>) -> Result<(
 /// revealed in place, never rebuilt: destroying a tray-hidden window and
 /// building another under its label left it hidden on COSMIC. A new one
 /// hydrates after the backend identity is set.
-pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
+pub async fn open_buddy_list(app: &AppHandle, state: &SharedState) -> Result<(), String> {
+    static OPEN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let scope = crate::state_helpers::login_scope(state).ok_or("No identity is unlocked")?;
+    let stop = scope.token();
+    let _opening = OPEN.lock().await;
+    if stop.is_cancelled() {
+        return Err("The login session ended".to_owned());
+    }
     if raise(app, labels::BUDDY_LIST) {
         return Ok(());
     }
-    let builder = base_builder(
-        app,
-        WindowKind::BuddyList,
-        labels::BUDDY_LIST,
-        "/buddy-list".to_owned(),
-    )?
-    .title("Rekindle")
-    .max_inner_size(400.0, 900.0);
-    finish(builder, WindowKind::BuddyList)?;
-    // A skin window: the Host serves its signals from now on (plan CR1); one
-    // opened before the Host is announced when it starts (`announce_open`).
-    crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
-    Ok(())
+    first_show::after_skin(
+        async {
+            tokio::select! {
+                biased;
+                () = stop.cancelled() => Err("The login session ended".to_owned()),
+                prepared = shape::prepare(app, state) => prepared,
+            }
+        },
+        || {
+            let builder = base_builder(
+                app,
+                WindowKind::BuddyList,
+                labels::BUDDY_LIST,
+                "/buddy-list".to_owned(),
+            )?
+            .title("Rekindle");
+            finish(builder, WindowKind::BuddyList)?;
+            // The Host serves the window's signals from now on (plan CR1).
+            crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
+            Ok(())
+        },
+    )
+    .await
 }
 
 /// What a chat window shows: a 1:1 conversation with a friend (identity

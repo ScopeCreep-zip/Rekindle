@@ -1,76 +1,96 @@
-//! Shaped windows (plan SK0 S3): every window is cut to its skin's
-//! silhouette, so the pixels outside the frame art are neither drawn nor
-//! hit, as Xfire's 1-bit window regions were (research
-//! `scratchpad/shaped/research.md` §1, §7).
-//!
-//! The silhouette is a list of device-pixel rectangles ([`ShapeRect`]), computed
-//! in Rust from the window's size and scale by `rekindle_skin::shape::
-//! silhouette` over the layout of the window's frame in the shown skin's
-//! validated package (the Host's `SkinFrames`, [`skin`]); a window with no
-//! frame, or a skin with no layout for it, keeps its whole rectangle,
-//! without the shadow. One function cuts a window, whatever the platform:
-//! - Linux: the GtkWindow's widget input shape (Wayland input region, X11
-//!   SHAPE input), kept by GTK across realize and every allocation; the
-//!   page's alpha draws the silhouette ([`linux`]);
-//! - Windows: `SetWindowRgn` ([`win32_region`]);
-//! - macOS: a cursor tracker toggling click-through ([`macos`]).
-//!
-//! **The webview never shapes a window** (plan SK0 S4, threat model W4):
-//! no IPC command takes a region or a cursor-ignore flag, so an XSS cannot
-//! make a window invisible or click-through. `cargo xtask
-//! check-no-shape-ipc` holds every `#[tauri::command]` to that.
-//!
-//! Recomputed on: creation ([`attach`]), `Resized` (which maximize,
-//! unmaximize and restore all raise; Tauri has no separate maximize event),
-//! `ScaleFactorChanged`, and a skin change ([`refresh`] from
-//! `rebind::follow_event` on `SystemEvent::SkinChanged`, which refetches
-//! the frames and reshapes every window).
-//!
-//! A framed window is also held to its skin's size ([`fit`], plan SK2-N4):
-//! its minimum is the frame's served `min_*` plus outsets, and a smaller
-//! window grows to it, when shaped and on every skin change.
+//! One allocation-driven controller per framed window. The validated Host
+//! frames, actual native allocation and backing scale determine the shape.
+//! No webview message can supply a shape, margins or cursor-ignore state.
 
+#[cfg(test)]
+mod allocation_goldens;
 mod geometry;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(any(target_os = "linux", test))]
+mod logical;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(not(target_os = "linux"))]
+mod native;
+#[cfg(any(target_os = "linux", test))]
+mod settle;
+mod sizing;
 mod skin;
 #[cfg(windows)]
 mod win32_region;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_lifecycle::SessionScope;
 use rekindle_types::dto::skin::SkinWindow;
-use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow, WindowEvent};
+use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure};
+use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
+use tokio::sync::watch;
+
+use crate::event_dispatch::WebviewEvent;
+use crate::event_router::Audience;
+use crate::state::SharedState;
+use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 pub use geometry::{ShapeRect, Silhouette};
+pub(super) use skin::prepare;
 pub use skin::{frame_of, frame_of_label, refresh};
 
-/// One shaped window: the skin frame it wears and the silhouette applied.
-struct Shaped {
-    frame: Mutex<Option<SkinWindow>>,
-    current: Arc<Mutex<Option<Silhouette>>>,
-    #[cfg(target_os = "macos")]
-    ignoring: Arc<std::sync::atomic::AtomicBool>,
-    #[cfg(target_os = "macos")]
-    stop: tokio_util::sync::CancellationToken,
+/// The frames and the stylesheet obtained from the same Host content key.
+struct Generation {
+    serial: u64,
+    frames: skin::SkinFrameMap,
+    skin: Option<SkinApplied>,
 }
 
-/// Every shaped window, by label. Managed on the app on first use.
-#[derive(Default)]
+struct Shaped {
+    frame: SkinWindow,
+    presented: watch::Sender<Option<SkinApplied>>,
+    applied: Mutex<Option<Arc<Generation>>>,
+    unfitted: AtomicU64,
+    tasks: Arc<SessionScope>,
+    #[cfg(not(target_os = "linux"))]
+    native: Mutex<native::State>,
+    #[cfg(not(target_os = "linux"))]
+    queued: AtomicBool,
+    #[cfg(target_os = "macos")]
+    current: Arc<Mutex<Option<Silhouette>>>,
+    #[cfg(target_os = "macos")]
+    ignoring: Arc<AtomicBool>,
+}
+
+impl Shaped {
+    fn spawn(&self, name: &'static str, task: impl Future<Output = ()> + Send + 'static) {
+        super::spawn_window_task(&self.tasks, name, task);
+    }
+}
+
 struct ShapeRegistry {
     windows: Mutex<HashMap<String, Arc<Shaped>>>,
-    /// The shown skin's frames (empty until the Host answers).
-    frames: Mutex<Arc<skin::SkinFrameMap>>,
-    /// The first fetch of the frames has been asked for.
+    generation: Mutex<Arc<Generation>>,
     requested: AtomicBool,
-    /// The newest frames fetch begun ([`begin_fetch`]); an answer from an
-    /// older one is dropped, as the webview drops a superseded skin sheet.
-    fetch: std::sync::atomic::AtomicU64,
+    fetch: AtomicU64,
+}
+
+impl Default for ShapeRegistry {
+    fn default() -> Self {
+        Self {
+            windows: Mutex::default(),
+            generation: Mutex::new(Arc::new(Generation {
+                serial: 0,
+                frames: skin::SkinFrameMap::new(),
+                skin: None,
+            })),
+            requested: AtomicBool::new(false),
+            fetch: AtomicU64::new(0),
+        }
+    }
 }
 
 fn registry(app: &AppHandle) -> tauri::State<'_, ShapeRegistry> {
@@ -80,257 +100,313 @@ fn registry(app: &AppHandle) -> tauri::State<'_, ShapeRegistry> {
     app.state::<ShapeRegistry>()
 }
 
-/// The registry entry for `window`, made (with its macOS tracker) if new.
-fn ensure(window: &WebviewWindow, frame: Option<SkinWindow>) -> Arc<Shaped> {
-    let app = window.app_handle();
-    let registry = registry(app);
-    let mut windows = registry.windows.lock();
-    if let Some(shaped) = windows.get(window.label()) {
-        return Arc::clone(shaped);
+fn desired(app: &AppHandle) -> Arc<Generation> {
+    Arc::clone(&registry(app).generation.lock())
+}
+
+fn is_latest(app: &AppHandle, generation: &Generation) -> bool {
+    registry(app).fetch.load(Ordering::SeqCst) == generation.serial
+}
+
+fn is_current(window: &WebviewWindow, shaped: &Arc<Shaped>) -> bool {
+    registry(window.app_handle())
+        .windows
+        .lock()
+        .get(window.label())
+        .is_some_and(|live| Arc::ptr_eq(live, shaped))
+}
+
+fn sizing(generation: &Generation, frame: SkinWindow) -> sizing::Sizing {
+    sizing::Sizing::for_frame(
+        frame,
+        generation.frames.get(&frame).map(|(layout, _)| layout),
+    )
+}
+
+/// Prefer the desired validated frames. A constrained canvas can keep an
+/// earlier generation until it can accommodate the new one.
+fn fitting(
+    window: &WebviewWindow,
+    shaped: &Shaped,
+    desired: &Arc<Generation>,
+    canvas: (f64, f64),
+) -> Option<Arc<Generation>> {
+    let fits = |generation: &Generation| {
+        !generation.frames.contains_key(&shaped.frame)
+            || sizing(generation, shaped.frame).fits(canvas)
+    };
+    if is_latest(window.app_handle(), desired) && fits(desired) {
+        return Some(Arc::clone(desired));
     }
-    let shaped = Arc::new(Shaped {
-        frame: Mutex::new(frame),
+    shaped
+        .applied
+        .lock()
+        .as_ref()
+        .filter(|applied| fits(applied))
+        .map(Arc::clone)
+}
+
+/// Use validated sizing at construction when it is already available.
+/// Otherwise start with the window kind's native defaults.
+pub(super) fn initial_sizing(
+    app: &AppHandle,
+    label: &str,
+) -> Option<((f64, f64), tauri::WindowSizeConstraints)> {
+    let frame = frame_of_label(label)?;
+    let generation = desired(app);
+    let policy = if is_latest(app, &generation) {
+        sizing(&generation, frame)
+    } else {
+        sizing::Sizing::for_frame(frame, None)
+    };
+    Some((policy.wanted, policy.constraints()))
+}
+
+/// Called only by a successful native allocation pass. A newer generation
+/// or a new window under the same label invalidates delayed work.
+fn publish(
+    window: &WebviewWindow,
+    shaped: &Arc<Shaped>,
+    wanted: &Arc<Generation>,
+    fitted: Option<Arc<Generation>>,
+) {
+    let app = window.app_handle();
+    let state = registry(app);
+    let windows = state.windows.lock();
+    let selected = state.generation.lock();
+    if !windows
+        .get(window.label())
+        .is_some_and(|live| Arc::ptr_eq(live, shaped))
+        || !Arc::ptr_eq(&selected, wanted)
+    {
+        return;
+    }
+    let (skin, current) = match fitted {
+        Some(applied) => {
+            let mut previous = shaped.applied.lock();
+            let current = Arc::ptr_eq(wanted, &applied)
+                && state.fetch.load(Ordering::SeqCst) == applied.serial;
+            let retained = previous
+                .as_ref()
+                .is_some_and(|saved| Arc::ptr_eq(saved, &applied));
+            if !current && !retained {
+                return;
+            }
+            let skin = applied.skin.clone();
+            *previous = Some(applied);
+            (skin, current)
+        }
+        None => (None, false),
+    };
+    let ready = skin.as_ref().filter(|_| current);
+    super::skin_load::allocated(window, ready.map(|skin| skin.tokens_href.as_str()));
+    if *shaped.presented.borrow() == skin {
+        return;
+    }
+    let event = match &skin {
+        Some(skin) => {
+            WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinChanged {
+                skin: skin.clone(),
+            }))
+        }
+        None => WebviewEvent::SkinFrameBase {
+            window: window.label().to_owned(),
+        },
+    };
+    // This presentation may follow a newer Host cursor. Its generation has
+    // already been checked above, so the normal stream must not discard it.
+    if let (Some(state), Some(envelope)) = (app.try_state::<SharedState>(), event.envelope(None)) {
+        state
+            .event_router
+            .deliver(&envelope, &Audience::labels([window.label().to_owned()]));
+    }
+    shaped.presented.send_replace(skin);
+}
+
+fn report_fit(
+    window: &WebviewWindow,
+    shaped: &Shaped,
+    wanted: &Generation,
+    fits: bool,
+    canvas: (f64, f64),
+) {
+    if fits {
+        shaped.unfitted.store(0, Ordering::Release);
+        return;
+    }
+    if !is_latest(window.app_handle(), wanted) {
+        return;
+    }
+    let Some((layout, _)) = wanted.frames.get(&shaped.frame) else {
+        return;
+    };
+    let Some((width, height)) = rekindle_skin::shape::min_window(layout) else {
+        return;
+    };
+    let Some(skin) = &wanted.skin else { return };
+    if shaped.unfitted.swap(wanted.serial, Ordering::AcqRel) == wanted.serial {
+        return;
+    }
+    super::skin_load::refused(window, skin);
+    let label = window.label().to_owned();
+    tracing::warn!(%label, skin = %skin.id, ?canvas, width, height, "window_skin_too_small");
+    let Some(state) = window
+        .app_handle()
+        .try_state::<SharedState>()
+        .map(|state| Arc::clone(&state))
+    else {
+        return;
+    };
+    let request = IpcRequest::SkinApplyFailed {
+        window: label,
+        skin: Some(skin.id.clone()),
+        cause: SkinApplyFailure::WindowTooSmall { width, height },
+    };
+    shaped.spawn("report constrained skin window", async move {
+        // The window's own toast shows the event's notice.
+        if let Err(error) = crate::host_call::call::<String>(&state, request).await {
+            tracing::warn!(?error, "window skin size could not be reported");
+        }
+    });
+}
+
+/// Bootstrap a framed webview from its native presentation, including
+/// reloads during a pending switch. Unframed windows query the Host directly.
+pub async fn presented_skin(window: &WebviewWindow) -> Option<SkinApplied> {
+    let mut presented = registry(window.app_handle())
+        .windows
+        .lock()
+        .get(window.label())?
+        .presented
+        .subscribe();
+    let wait = tokio::time::timeout(
+        super::skin_reveal::LOAD_LIMIT,
+        presented.wait_for(Option::is_some),
+    );
+    let skin = tokio::select! {
+        skin = wait => skin.ok()?.ok()?,
+        _ = super::skin_load::wait_open(window) => return None,
+    };
+    skin.as_ref().cloned()
+}
+
+/// Attach before the first show. GTK owns the realized root and calls its
+/// allocation handler. Other desktops schedule one native UI turn per burst.
+pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
+    let Some(frame) = frame else { return };
+    let scoped = Arc::new(Shaped {
+        frame,
+        presented: watch::channel(None).0,
+        applied: Mutex::default(),
+        unfitted: AtomicU64::new(0),
+        tasks: SessionScope::new(
+            "window shape",
+            Arc::new(|task| tracing::error!(task, "window shape task panicked")),
+        ),
+        #[cfg(not(target_os = "linux"))]
+        native: Mutex::default(),
+        #[cfg(not(target_os = "linux"))]
+        queued: AtomicBool::new(false),
+        #[cfg(target_os = "macos")]
         current: Arc::new(Mutex::new(None)),
         #[cfg(target_os = "macos")]
-        ignoring: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        #[cfg(target_os = "macos")]
-        stop: tokio_util::sync::CancellationToken::new(),
+        ignoring: Arc::new(AtomicBool::new(false)),
     });
+    let app = window.app_handle();
+    registry(app)
+        .windows
+        .lock()
+        .insert(window.label().to_owned(), Arc::clone(&scoped));
     #[cfg(target_os = "macos")]
     macos::start(
         window.clone(),
-        Arc::clone(&shaped.current),
-        Arc::clone(&shaped.ignoring),
-        shaped.stop.clone(),
+        Arc::clone(&scoped.current),
+        Arc::clone(&scoped.ignoring),
+        scoped.tasks.token(),
     );
-    windows.insert(window.label().to_owned(), Arc::clone(&shaped));
-    shaped
-}
 
-/// Cut `window` to the silhouette `rects` (device pixels, relative to the
-/// window's top-left corner).
-///
-/// # Errors
-/// The rectangles are empty or over the cap ([`Silhouette::new`]), or the
-/// platform refused the shape.
-pub fn apply_shape(window: &WebviewWindow, rects: &[ShapeRect]) -> Result<(), String> {
-    let silhouette = Silhouette::new(rects)?;
-    let shaped = ensure(window, None);
-    *shaped.current.lock() = Some(silhouette.clone());
-    platform_apply(window, &silhouette)
-}
-
-/// Give `window` back its whole rectangle, drawn and hit everywhere.
-///
-/// # Errors
-/// The platform refused to clear the shape.
-pub fn clear_shape(window: &WebviewWindow) -> Result<(), String> {
-    let shaped = ensure(window, None);
-    *shaped.current.lock() = None;
-    platform_clear(window)
-}
-
-#[cfg(target_os = "linux")]
-fn platform_apply(window: &WebviewWindow, silhouette: &Silhouette) -> Result<(), String> {
-    linux::apply(window, silhouette.clone())
-}
-
-#[cfg(target_os = "linux")]
-fn platform_clear(window: &WebviewWindow) -> Result<(), String> {
-    linux::clear(window)
-}
-
-#[cfg(windows)]
-fn platform_apply(window: &WebviewWindow, silhouette: &Silhouette) -> Result<(), String> {
     let target = window.clone();
-    let silhouette = silhouette.clone();
-    window
-        .run_on_main_thread(move || {
-            let result = target
-                .hwnd()
-                .map_err(|e| e.to_string())
-                .and_then(|hwnd| win32_region::set(hwnd, &silhouette));
-            if let Err(e) = result {
-                tracing::warn!(error = %e, label = target.label(), "window region not set");
-            }
-        })
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(windows)]
-fn platform_clear(window: &WebviewWindow) -> Result<(), String> {
-    let target = window.clone();
-    window
-        .run_on_main_thread(move || {
-            let result = target
-                .hwnd()
-                .map_err(|e| e.to_string())
-                .and_then(win32_region::clear);
-            if let Err(e) = result {
-                tracing::warn!(error = %e, label = target.label(), "window region not cleared");
-            }
-        })
-        .map_err(|e| e.to_string())
-}
-
-/// macOS: the tracker follows `current`, which the caller has set; this
-/// applies the new silhouette at once under the cursor instead of a tick
-/// later.
-#[cfg(target_os = "macos")]
-fn platform_apply(window: &WebviewWindow, silhouette: &Silhouette) -> Result<(), String> {
-    let shaped = ensure(window, None);
-    macos::apply_now(window, silhouette, &shaped.ignoring)
-}
-
-#[cfg(target_os = "macos")]
-fn platform_clear(window: &WebviewWindow) -> Result<(), String> {
-    let shaped = ensure(window, None);
-    macos::set(window, &shaped.ignoring, false)
-}
-
-/// Recompute and apply `window`'s silhouette for its current size and
-/// scale. A size with no silhouette (a minimized window's zero area, a
-/// provider error) leaves the window whole rather than keeping a stale
-/// shape cut for another size, which could cut into its content.
-pub fn reshape(window: &WebviewWindow) {
-    let shaped = ensure(window, None);
-    let frame = *shaped.frame.lock();
-    let frames = Arc::clone(&registry(window.app_handle()).frames.lock());
-    let computed = window
-        .inner_size()
-        .map_err(|e| e.to_string())
-        .and_then(|size| {
-            let scale = window.scale_factor().map_err(|e| e.to_string())?;
-            skin::compute(&frames, frame, size, scale)
-        });
-    let result = match computed {
-        Ok(silhouette) => {
-            if shaped.current.lock().as_ref() == Some(&silhouette) {
-                return;
-            }
-            apply_shape(window, silhouette.rects())
+    let watched = Arc::clone(&scoped);
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            forget(&target, &watched);
         }
-        Err(e) => {
-            tracing::debug!(error = %e, label = window.label(), "no silhouette; window left whole");
-            clear_shape(window)
+        #[cfg(not(target_os = "linux"))]
+        if matches!(
+            event,
+            WindowEvent::Resized(_)
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::Focused(_)
+        ) {
+            native::queue(&target, &watched);
         }
-    };
-    if let Err(e) = result {
-        tracing::warn!(error = %e, label = window.label(), "window shape not updated");
-    }
-}
-
-/// Hold `window` to the shown skin's size for its frame (plan SK2-N4): its
-/// minimum is the frame's served `min_*` grown by the outsets
-/// ([`skin::min_window`]), and a window smaller than that grows to it (a
-/// user's larger window is never shrunk); a kind the skin does not frame
-/// keeps its kind's own minimum (`windows::size`). Run when a window is
-/// shaped and on every skin change, not on each resize, so it never fights
-/// a drag.
-pub fn fit(window: &WebviewWindow) {
-    let shaped = ensure(window, None);
-    let Some(frame) = *shaped.frame.lock() else {
-        return;
-    };
-    let frames = Arc::clone(&registry(window.app_handle()).frames.lock());
-    let served = skin::min_window(&frames, Some(frame));
-    let min = served.unwrap_or_else(|| super::size(skin::kind_of(frame)).min);
-    if let Err(e) = window.set_min_size(Some(LogicalSize::new(min.0, min.1))) {
-        tracing::warn!(error = %e, label = window.label(), "window minimum not set");
-    }
-    if served.is_none() {
-        return;
-    }
-    let current = window
-        .inner_size()
-        .and_then(|size| Ok(size.to_logical::<f64>(window.scale_factor()?)))
-        .map(|s| (s.width, s.height));
-    match current {
-        Ok(current) => {
-            if let Some((w, h)) = skin::grown(current, min) {
-                if let Err(e) = window.set_size(LogicalSize::new(w, h)) {
-                    tracing::warn!(error = %e, label = window.label(), "window not grown to its skin");
-                }
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, label = window.label(), "window size unread"),
-    }
-}
-
-/// Shape a new window wearing `frame` ([`frame_of`] its kind) and keep it
-/// shaped: resize (and so maximize/unmaximize) and scale changes recompute
-/// it; destruction drops it and stops its tracker. The first window asks
-/// the Host for the shown skin's frames ([`refresh`]).
-pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
-    let shaped = ensure(window, frame);
-    *shaped.frame.lock() = frame;
-    if !registry(window.app_handle())
-        .requested
-        .swap(true, Ordering::AcqRel)
-    {
-        refresh(window.app_handle());
-    }
-    let target = window.clone();
-    window.on_window_event(move |event| match event {
-        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => reshape(&target),
-        WindowEvent::Destroyed => forget(&target),
-        _ => {}
     });
-    reshape(window);
-    fit(window);
+    #[cfg(target_os = "linux")]
+    linux::attach(window, &scoped);
+    #[cfg(not(target_os = "linux"))]
+    native::queue(window, &scoped);
+    if !registry(app).requested.swap(true, Ordering::AcqRel) {
+        refresh(app, None);
+    }
 }
 
-/// Drop `window`'s entry and stop its tracker.
-fn forget(window: &WebviewWindow) {
-    let removed = registry(window.app_handle())
+#[cfg(not(target_os = "linux"))]
+pub fn revealed(window: &WebviewWindow) {
+    let scoped = registry(window.app_handle())
         .windows
         .lock()
-        .remove(window.label());
-    #[cfg(target_os = "macos")]
-    if let Some(shaped) = removed {
-        shaped.stop.cancel();
+        .get(window.label())
+        .cloned();
+    if let Some(scoped) = scoped {
+        native::queue(window, &scoped);
     }
-    #[cfg(not(target_os = "macos"))]
-    drop(removed);
 }
 
-/// Begin a frames fetch: its generation, newer than every earlier one.
-fn begin_fetch(app: &AppHandle) -> u64 {
-    registry(app).fetch.fetch_add(1, Ordering::SeqCst) + 1
-}
-
-/// Keep the shown skin's `frames` from fetch `generation` and recompute
-/// every shaped window from them, unless a newer fetch has begun since
-/// (two quick skin changes: the first answer may arrive last).
-fn set_frames(app: &AppHandle, generation: u64, frames: skin::SkinFrameMap) {
-    let registry = registry(app);
+fn forget(window: &WebviewWindow, shaped: &Arc<Shaped>) {
+    let state = registry(window.app_handle());
+    let mut windows = state.windows.lock();
+    if windows
+        .get(window.label())
+        .is_some_and(|live| Arc::ptr_eq(live, shaped))
     {
-        let mut held = registry.frames.lock();
-        if registry.fetch.load(Ordering::SeqCst) != generation {
-            return;
-        }
-        *held = Arc::new(frames);
+        windows.remove(window.label());
     }
-    reshape_all(app);
-    fit_all(app);
+    shaped.tasks.token().cancel();
 }
 
-/// Hold every shaped window to the frames held ([`fit`]).
-fn fit_all(app: &AppHandle) {
-    let labels: Vec<String> = registry(app).windows.lock().keys().cloned().collect();
-    for label in labels {
-        if let Some(window) = app.get_webview_window(&label) {
-            fit(&window);
-        }
-    }
+fn begin_fetch(app: &AppHandle) -> u64 {
+    let state = registry(app);
+    let _presentation = state.generation.lock();
+    state.requested.store(true, Ordering::Release);
+    state.fetch.fetch_add(1, Ordering::SeqCst) + 1
 }
 
-/// Recompute every shaped window from the frames held.
-fn reshape_all(app: &AppHandle) {
-    let labels: Vec<String> = registry(app).windows.lock().keys().cloned().collect();
-    for label in labels {
+fn set_frames(
+    app: &AppHandle,
+    serial: u64,
+    frames: skin::SkinFrameMap,
+    skin: SkinApplied,
+) -> Result<(), String> {
+    let state = registry(app);
+    {
+        let mut desired = state.generation.lock();
+        if state.fetch.load(Ordering::SeqCst) != serial {
+            return Err("Host skin presentation was superseded during fetch".to_owned());
+        }
+        *desired = Arc::new(Generation {
+            serial,
+            frames,
+            skin: Some(skin),
+        });
+    }
+    let windows = state.windows.lock().clone();
+    for (label, shaped) in windows {
         if let Some(window) = app.get_webview_window(&label) {
-            reshape(&window);
+            #[cfg(target_os = "linux")]
+            linux::queue(&window, &shaped);
+            #[cfg(not(target_os = "linux"))]
+            native::queue(&window, &shaped);
         }
     }
+    Ok(())
 }

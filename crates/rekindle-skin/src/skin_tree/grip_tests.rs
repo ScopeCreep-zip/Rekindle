@@ -43,13 +43,13 @@ fn symbiosis_grips_resize_from_their_own_edge() {
         ("ResizeUp", Edge::Top),
     ] {
         assert_eq!(implied(name), Some(resizes(edge)), "{name}");
-        assert_eq!(check_grip(name, Some(name), &[]), Ok(()), "{name}");
+        assert_eq!(check_grip(name, Some(name), &[], &[]), Ok(()), "{name}");
     }
 }
 
 #[test]
 fn an_unknown_edge_is_refused_unless_the_pack_wires_the_grip() {
-    let refused = check_grip("ResizeUlbr", Some("ResizeUlbr"), &[]);
+    let refused = check_grip("ResizeUlbr", Some("ResizeUlbr"), &[], &[]);
     assert_eq!(
         refused,
         Err("ResizeUlbr: grip resizeulbr: unknown edge".to_owned())
@@ -58,7 +58,10 @@ fn an_unknown_edge_is_refused_unless_the_pack_wires_the_grip() {
         on: SkinEvent::LeftDown,
         run: SkinAction::Resize(Edge::BottomRight),
     }];
-    assert_eq!(check_grip("ResizeUlbr", Some("ResizeUlbr"), &wired), Ok(()));
+    assert_eq!(
+        check_grip("ResizeUlbr", Some("ResizeUlbr"), &[], &wired),
+        Ok(())
+    );
     // Never a guessed corner: the name implies no trigger at all.
     assert_eq!(implied("Gripper"), Some(Role::Acts(NodeRole::Button, None)));
 }
@@ -86,7 +89,33 @@ fn info_popup_grippers_are_corner_art() {
             Some(Role::Shows(NodeRole::Decor)),
             "{name} {component}"
         );
-        assert_eq!(check_grip(name, Some(component), &[]), Ok(()), "{name}");
+        assert_eq!(
+            check_grip(name, Some(component), &[], &[]),
+            Ok(()),
+            "{name}"
+        );
     }
     assert_eq!(implied("InfoInfoResizeRight"), Some(resizes(Edge::Right)));
+}
+
+/// SKC4: a tile holding tiles is their container, not a grip with an
+/// unknown edge: StreamEngine's `[ResizeTile]` and WoW TBC's `[Resize]`
+/// (`Class=Tile events=Transparent`) hold the grip windows the pack wires.
+#[test]
+fn a_grip_named_container_is_no_grip() {
+    let kids = ["ResizerTopLeft".to_owned(), "ResizerTop".to_owned()];
+    let facts = Facts {
+        has_art: false,
+        class: Some("Tile"),
+        children: &kids,
+    };
+    for name in ["ResizeTile", "Resize"] {
+        assert_eq!(role(name, Some(name), None, &facts), None, "{name}");
+        assert_eq!(check_grip(name, Some(name), &kids, &[]), Ok(()), "{name}");
+    }
+    // A leaf of the same name is still refused.
+    assert_eq!(
+        check_grip("ResizeTile", Some("ResizeTile"), &[], &[]),
+        Err("ResizeTile: grip resizetile: unknown edge".to_owned())
+    );
 }

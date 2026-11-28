@@ -173,6 +173,41 @@ fn closed(
     Ok(())
 }
 
+fn check_size_hints(
+    window: SkinWindow,
+    layout: &WindowLayout,
+    min: (u32, u32),
+) -> Result<(), SkinError> {
+    let hints = layout.size_hints;
+    for (axis, preferred, maximum, required, limit) in [
+        (
+            "width",
+            hints.default_width,
+            hints.max_width,
+            min.0,
+            MAX_WINDOW_WIDTH,
+        ),
+        (
+            "height",
+            hints.default_height,
+            hints.max_height,
+            min.1,
+            MAX_WINDOW_HEIGHT,
+        ),
+    ] {
+        let invalid = preferred.is_some_and(|value| value == 0 || u32::from(value) > limit)
+            || maximum
+                .is_some_and(|value| value == 0 || !(required..=limit).contains(&u32::from(value)));
+        if invalid {
+            return Err(bad(
+                &format!("windows.{}.sizeHints", name(window)),
+                &format!("invalid default or maximum {axis}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Refuses a manifest whose frame layouts break the rules above;
 /// `images` are the package's canonical images.
 ///
@@ -193,6 +228,7 @@ pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Res
         let o = layout.outsets;
         let base_w = u32::from(layout.min_width) + u32::from(o.left) + u32::from(o.right);
         let base_h = u32::from(layout.min_height) + u32::from(o.top) + u32::from(o.bottom);
+        check_size_hints(window, layout, (base_w, base_h))?;
         let span = |f: fn(&rekindle_types::dto::skin::FrameTile) -> u16| {
             layout
                 .tiles

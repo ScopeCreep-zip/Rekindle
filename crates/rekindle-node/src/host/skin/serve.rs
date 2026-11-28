@@ -89,7 +89,7 @@ async fn library_package(ctx: &DaemonContext, hash: &str) -> Answer<Option<Held>
 
 /// The skin this device shows now: the library skin on trial, else the
 /// stored choice, else (locked) the device login skin.
-async fn resolved(ctx: &DaemonContext) -> Answer<String> {
+pub(super) async fn resolved(ctx: &DaemonContext) -> Answer<String> {
     if let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) {
         if let Some(trial) = ctx.skin.trial.current(&owner) {
             return Ok(trial.id);
@@ -161,6 +161,7 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
         tokens_href: serve::tokens_href(&applied_address),
         regions: applied.regions,
         images: applied.images,
+        frame_images: applied.frame_images,
         palette: applied.palette,
         shells: applied.shells,
         title_logo: applied.title_logo,
@@ -172,12 +173,17 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
 pub(super) async fn frames(ctx: &DaemonContext) -> Answer<SkinFrames> {
     let id = resolved(ctx).await?;
     let held = package_of(ctx, &id).await?;
+    let tokens_href = serve::tokens_href(&held.address);
     let windows =
         rekindle_lifecycle::run_blocking(move || serve::frames(&held.bytes, &held.address))
             .await
             .map_err(|e| failed("skin frames task", e))?
             .map_err(|e| failed("skin frames", e))?;
-    Ok(SkinFrames { id, windows })
+    Ok(SkinFrames {
+        id,
+        tokens_href,
+        windows,
+    })
 }
 
 /// `SkinFile`: one file of the package a `skin://` path names. Every

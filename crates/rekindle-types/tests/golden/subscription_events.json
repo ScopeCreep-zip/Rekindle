@@ -2341,6 +2341,7 @@
           },
           "type": "imageDecode"
         },
+        "notice": "Rekindle could not load the skin for this window.",
         "reverted": true,
         "skin": "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "window": "chat-0123456789abcdef"

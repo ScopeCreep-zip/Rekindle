@@ -6,6 +6,7 @@
     "buddy-list"
   ],
   "permissions": [
+    "allow-wait-skin-open",
     "allow-get-own-presence",
     "core:window:allow-start-resize-dragging",
     "allow-get-infoview",

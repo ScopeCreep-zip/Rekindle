@@ -99,7 +99,9 @@ fn by_key(k: &str) -> Option<Role> {
         "tabbedtalkingstate" => shows(R::TalkingState),
         "chatarea" => shows(R::Slot(SlotKey::ChatArea)),
         "chatedit" => shows(R::Slot(SlotKey::ChatEdit)),
-        "typingmessage" | "typingmessagebg" | "chattypingmessage" => {
+        // Doom3 UAC-PDA's `[TYPING]` `Class=Text` shows the engine's
+        // `TypingMessage` string on `ActiveUserTyping` (`ChatSkin.ini:227-235`).
+        "typingmessage" | "typingmessagebg" | "chattypingmessage" | "typing" => {
             shows(R::Slot(SlotKey::TypingNotice))
         }
         // Onyx's and Space Cowboy's `ChatImButton` runs `SendMessage`.

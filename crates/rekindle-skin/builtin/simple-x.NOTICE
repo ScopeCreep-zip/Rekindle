@@ -117,6 +117,10 @@ Dropped
     SimpleX.ini: [StatusEdit] Text.bold (line 348)
     SimpleX.ini: [InfoViewButton] Skin.X (line 458)
     SimpleX.ini: [SearchFiles] Cursor (line 825)
+  bitmaps named but not in the tree, each laying nothing (spec A8) (3):
+    Graphics.HeaderColor
+    Graphics.MICRING
+    mainskin/info-button-holder.gif
   files not read (59):
     CScroll/Thumbs.db
     CScroll/scroll-gripper-grips-horz.gif

@@ -61,6 +61,8 @@ Dropped
     Xglow.ini: [BuddyView] Text.color_selected (line 359)
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
+  bitmaps named but not in the tree, each laying nothing (spec A8) (1):
+    Graphics.Base
   files not read (76):
     InGameMainSkin.ini
     InGameSkin.ini
@@ -158,5 +160,5 @@ Contrast changes (minimal Oklab-lightness walk) (20 made)
   status.offline: #959595 -> #8b8b8b (1.4.3 .pending-btn-block hovered text.on-fill on fill-shade 15% over status.offline: 4.02:1 -> passes, required 4.50:1)
   status.away-text: #ffcc00 -> #ffd520 (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.panel: 4.22:1 -> passes, required 4.50:1)
   selection.text: #74e2f8 -> #000417 (1.4.3 selection.text on accent.fill: 3.01:1 -> 4.50:1, required 4.50:1)
-  selection.text: #000417 -> #fcffff (1.4.11 .form-btn-primary icon hovered selection.text on accent.fill 80% over fill-shade: 2.53:1 -> 4.09:1, required 3.00:1)
   titlebar.start: #364447 -> #2d3b3e (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 4.09:1 -> 4.50:1, required 4.50:1)
+  selection.text: #000417 -> #000416 (1.4.3 ::selection selection.text on input.selection.bg 99.9% over input.bg: 4.49:1 -> 4.50:1, required 4.50:1)

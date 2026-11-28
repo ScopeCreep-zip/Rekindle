@@ -1,5 +1,7 @@
 //! `event_dispatch`'s audience and channel tests.
 
+use std::collections::BTreeMap;
+
 use super::*;
 use rekindle_types::subscription_events::{
     CallEvent, MembershipEvent, NotificationEvent, PresenceEvent, PresenceSnapshot, VoiceEvent,
@@ -13,6 +15,41 @@ const GROUP: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
 
 fn sub(e: SubscriptionEvent) -> Audience {
     WebviewEvent::Subscription(e).audience()
+}
+
+#[test]
+fn the_rectangular_skin_fallback_only_resets_the_allocated_window() {
+    let event = WebviewEvent::SkinFrameBase {
+        window: "buddy-list".to_owned(),
+    };
+    let audience = event.audience();
+    assert!(audience.includes("buddy-list"));
+    assert!(!audience.includes("settings"));
+    assert!(!audience.includes("chat-3f1a9c0b7e2d4f6a"));
+    let envelope = event.envelope(None).unwrap();
+    assert_eq!(envelope.channel, "skin-event");
+    assert_eq!(
+        envelope.payload.pointer("/system/skinChanged/skin"),
+        Some(&serde_json::Value::Null)
+    );
+}
+
+#[test]
+fn the_skin_minimum_notice_only_reaches_the_constrained_window() {
+    let event =
+        WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
+            window: "buddy-list".to_owned(),
+            skin: "builtin:total-chaos".to_owned(),
+            cause: rekindle_types::dto::skin_library::SkinApplyFailure::WindowTooSmall {
+                width: 470,
+                height: 380,
+            },
+            notice: "This skin needs a window at least 470 × 380 pixels.".to_owned(),
+            reverted: false,
+        }));
+    assert!(event.audience().includes("buddy-list"));
+    assert!(!event.audience().includes("settings"));
+    assert_eq!(event.channel(), "skin-apply-event");
 }
 
 /// Our forget reaches the buddy list and every community window, not only
@@ -294,7 +331,7 @@ fn device_events_reach_every_post_login_window() {
 }
 
 #[test]
-fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
+fn a_skin_change_is_delivered_directly_only_to_unframed_windows() {
     let e = WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinChanged {
         skin: rekindle_types::dto::skin_library::SkinApplied {
             id: "builtin:symbiosis".into(),
@@ -302,6 +339,7 @@ fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
             tokens_href: "skin://localhost/a/tokens.css".into(),
             regions: Vec::new(),
             images: Vec::new(),
+            frame_images: BTreeMap::new(),
             palette: Vec::new(),
             shells: Vec::new(),
             title_logo: None,
@@ -311,14 +349,18 @@ fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
     let audience = e.audience();
     for label in [
         "login",
-        "buddy-list",
         "settings",
-        "chat-0123456789ab",
-        "community-x",
+        "community-browser",
         "profile-x",
         "call-0123456789ab",
     ] {
         assert!(audience.includes(label), "{label}");
+    }
+    for label in ["buddy-list", "chat-0123456789ab", "community-x"] {
+        assert!(
+            !audience.includes(label),
+            "{label} waits for its native allocation"
+        );
     }
 }
 
@@ -345,6 +387,7 @@ fn a_skin_apply_failure_reaches_its_window_and_settings_only() {
         cause: rekindle_types::dto::skin_library::SkinApplyFailure::SheetError {
             detail: "failed to load".into(),
         },
+        notice: "Rekindle could not load the skin for this window.".into(),
         reverted: false,
     }));
     assert_eq!(e.channel(), "skin-apply-event");

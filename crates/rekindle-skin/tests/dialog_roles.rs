@@ -52,8 +52,7 @@ fn unset_reason(id: &str) -> &'static str {
 #[test]
 fn every_builtin_sets_every_dialog_role() {
     let mut unset = Vec::new();
-    // xfire-classic has no source tree: load serves its roles (below).
-    for pack in builtin::PACKS.iter().filter(|p| p.id != "xfire-classic") {
+    for pack in &builtin::PACKS {
         let t = tokens_of(pack.id);
         let missing: BTreeSet<&str> = dialog::roles().filter(|id| !t.contains_key(*id)).collect();
         if !missing.is_empty() {
@@ -98,23 +97,27 @@ fn derived(t: &BTreeMap<String, TokenValue>, base: Base, id: &str) -> Option<Tok
     d.apply(&view)
 }
 
-/// xfire-classic has no source tree and was imported before the roles
-/// existed: `registry::resolve` serves every role at load by the same table
-/// the importer writes from (ST1 ruling 4), so none takes a default; a role
-/// differs from its derivation only where the one dialog walk moved it
-/// (lead round 4 b).
+/// Model an xfire-classic package from before dialog roles were imported.
+fn legacy_classic_variant() -> (BTreeMap<String, TokenValue>, Base) {
+    let (mut t, base) = variant_of("xfire-classic");
+    t.retain(|id, _| !dialog::is_role(id));
+    (t, base)
+}
+
+/// `registry::resolve` derives missing dialog roles from the pack's own
+/// colours (ST1 ruling 4). A role differs from its derivation only where
+/// the dialog walk moved it (lead round 4 b).
 /// Fail-without: resolve's dialog rows following only a token the skin
 /// sets serves `menubar.bg` the default #0a0a0a, not its #060c1c.
 #[test]
 fn xfire_classic_is_served_every_dialog_role_from_its_own_colours() {
-    let (t, base) = variant_of("xfire-classic");
+    let (t, base) = legacy_classic_variant();
     let served = resolve(ENTRIES, base, &t);
     let view: BTreeMap<&str, TokenValue> = served.iter().map(|(e, v)| (e.id, v.clone())).collect();
     let mut filled = t.clone();
     dialog::fill(&mut filled, base);
     let moved = dialog_walk::settle(&mut filled, base, &dialog::is_role).changes;
     for id in dialog::roles() {
-        assert!(!t.contains_key(id), "{id}: its token file sets it");
         if !moved.iter().any(|c| c.token == id) {
             assert_eq!(Some(view[id].clone()), derived(&t, base, id), "{id}");
         }
@@ -129,7 +132,7 @@ fn xfire_classic_is_served_every_dialog_role_from_its_own_colours() {
 /// `progress.fill` under 3:1 on its track.
 #[test]
 fn xfire_classic_served_tokens_pass_every_dialog_constraint() {
-    let (t, base) = variant_of("xfire-classic");
+    let (t, base) = legacy_classic_variant();
     let names_role = |m: &access::Measured| {
         dialog::is_role(&m.fg)
             || dialog_walk::ground_parts(&m.ground)

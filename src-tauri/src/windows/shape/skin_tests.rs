@@ -3,11 +3,13 @@
 //! device size, and a kind the skin does not frame keeps its rectangle.
 
 use rekindle_skin::shape::ALPHA_OPAQUE;
-use rekindle_types::dto::skin::{FrameTile, Insets, SkinWindow, TileAxis, WindowLayout};
+use rekindle_types::dto::skin::{
+    FrameTile, Insets, SkinWindow, TileAxis, WindowLayout, WindowSizeHints,
+};
 use rekindle_types::dto::skin_library::{SkinFrames, SkinTileMask, SkinWindowFrame};
 use tauri::PhysicalSize;
 
-use super::{compute, decode, frame_of, frame_of_label, grown, kind_of, min_window};
+use super::{compute, decode, frame_of, frame_of_label, kind_of, min_window};
 use crate::window_labels::WindowKind;
 use crate::windows::shape::{ShapeRect, Silhouette};
 
@@ -23,6 +25,7 @@ const NO_INSETS: Insets = Insets {
 fn frames(bits: Vec<u8>) -> SkinFrames {
     SkinFrames {
         id: "builtin:test".to_owned(),
+        tokens_href: "skin://test/tokens.css".to_owned(),
         windows: vec![SkinWindowFrame {
             window: SkinWindow::Main,
             layout: WindowLayout {
@@ -33,6 +36,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                 },
                 min_width: 4,
                 min_height: 1,
+                size_hints: WindowSizeHints::default(),
                 tiles: vec![FrameTile {
                     image: "title.png".to_owned(),
                     width: 4,
@@ -75,6 +79,28 @@ fn the_buddy_list_is_cut_to_the_main_frame_at_its_device_size() {
         at_two,
         Silhouette::new(&[r(2, 0, 4, 2), r(0, 2, 8, 6)]).unwrap()
     );
+}
+
+#[test]
+fn fractional_scale_preserves_art_edges_and_reaches_the_native_client_edge() {
+    let decoded = decode(frames(vec![0b0110_0000])).unwrap();
+    for (scale, title_width) in [(1.25, 2), (1.5, 3), (1.75, 4)] {
+        let shape = compute(
+            &decoded,
+            Some(SkinWindow::Main),
+            PhysicalSize::new(8, 8),
+            scale,
+        )
+        .unwrap();
+        assert_eq!(
+            shape,
+            Silhouette::new(&[r(1, 0, title_width, 1), r(0, 1, 8, 7)]).unwrap(),
+            "{scale}×"
+        );
+        assert!(shape.contains(7.5, 7.5));
+        assert!(!shape.contains(8.0, 7.5));
+        assert!(!shape.contains(0.5, 0.5));
+    }
 }
 
 #[test]
@@ -144,17 +170,6 @@ fn a_framed_window_needs_the_frames_minimum_plus_its_outsets() {
     assert_eq!(kind_of(SkinWindow::Chat), WindowKind::Chat);
 }
 
-/// A window smaller than its skin's minimum grows on the short axis only;
-/// one that holds it (a user's larger window) is never shrunk.
-#[test]
-fn a_window_grows_to_its_skin_and_never_shrinks() {
-    let min = (348.0, 500.0);
-    assert_eq!(grown((320.0, 650.0), min), Some((348.0, 650.0)));
-    assert_eq!(grown((320.0, 400.0), min), Some((348.0, 500.0)));
-    assert_eq!(grown((348.0, 500.0), min), None);
-    assert_eq!(grown((900.0, 900.0), min), None);
-}
-
 /// Plan SK0 over E7.7 (TAB1 reverted): Symbiosis's InfoView tab
 /// (`MainInfoViewButton`, 13×115, `JustX="Right"` in the frame's
 /// `IndentRight="13"` column) protrudes beside the main frame in a 13 px
@@ -174,6 +189,7 @@ fn symbiosis_info_view_tab_protrudes_and_the_column_around_it_is_click_through()
     let windows = rekindle_skin::serve::frames(&canonical.bytes, &canonical.address()).unwrap();
     let decoded = decode(SkinFrames {
         id: "builtin:symbiosis".to_owned(),
+        tokens_href: rekindle_skin::serve::tokens_href(&canonical.address()),
         windows,
     })
     .unwrap();

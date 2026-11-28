@@ -36,6 +36,8 @@ pub struct Images<'a> {
     pub colours: &'a [ColourRow],
     /// The theme's `Graphics.<NAME>=` aliases, upper-cased names.
     pub aliases: &'a BTreeMap<String, String>,
+    /// Every named image the tree lacks (spec A8: it lays nothing).
+    pub absent: RefCell<BTreeSet<String>>,
     /// Every file decoded, for the `NOTICE`'s unread list.
     pub files: RefCell<BTreeSet<String>>,
 }
@@ -78,7 +80,13 @@ impl StateImages for IniSet<'_> {
         let Some(value) = self.section.get(&format!("{}.{ty}", self.prefix)) else {
             return Ok(None);
         };
-        let (file, bytes) = resolve(self.images.tree, value, self.images.aliases)?;
+        let (file, bytes) = match resolve(self.images.tree, value, self.images.aliases) {
+            Err(ImportError::UndefinedBitmap { name }) => {
+                self.images.absent.borrow_mut().insert(name);
+                return Ok(None);
+            }
+            other => other?,
+        };
         self.images.files.borrow_mut().insert(file.to_owned());
         let mut img = bitmap::decode(file, bytes)?;
         let group = if background {

@@ -44,9 +44,14 @@ pub(super) fn reveal(window: &impl Revealable) {
     }
 }
 
-/// [`reveal`] a window of the app.
-pub fn reveal_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
-    reveal(window);
+/// Show an ordinary window immediately. A skin window uses the same
+/// native and document handshake as its first show.
+pub fn reveal_window(window: &tauri::WebviewWindow) {
+    if super::skin_load::framed(window) {
+        super::skin_load::request(window, super::skin_reveal::Show::Raise);
+    } else {
+        reveal(window);
+    }
 }
 
 #[cfg(test)]

@@ -24,16 +24,21 @@ use rekindle_types::dto::skin_tree::{
     ContentFit, NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
 
-use super::anchor::{axis, chain, outer_for, Sibs, Sizes, X, Y};
+use super::anchor::{chain, outer_for, Sibs, Sizes, X, Y};
 use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
 use super::fit::fit;
+use super::import_sizing::root_size_hints;
 use super::layer::layer_of;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
+use super::place_order::{place, Lay};
 use super::roles::{check_grip, role, with_implied, Facts, Role};
-use super::triggers::{self, Pack};
+use super::{
+    triggers::{self, Pack},
+    wired,
+};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_pieces, Decode};
 use crate::import::ImportError;
@@ -290,6 +295,11 @@ impl Walk<'_> {
                     .map(str::to_owned)
             })
             .collect();
+        let pack = Pack {
+            popups: &self.popups,
+            groups: &self.group_ids,
+        };
+        let own_triggers = triggers::read(tile, comp, &id, &pack);
         let facts = Facts {
             has_art: !pieces.is_empty(),
             class: comp.and_then(|c| c.attr_ci("Class")),
@@ -301,6 +311,8 @@ impl Walk<'_> {
             .flatten();
         let role = chat
             .or_else(|| role(&id, component, parent, &facts))
+            .or_else(|| wired::role(&facts, own_triggers.as_deref().unwrap_or_default()))
+            .or_else(|| wired::text_role(&facts, comp, self.window == SkinWindow::Chat))
             .ok_or_else(|| {
                 bad(format!(
                     "{id}: component {} has no role",
@@ -312,19 +324,15 @@ impl Walk<'_> {
             .and_then(|c| c.attr_ci("ControlGroupId"))
             .or(tile.attr_ci("ControlGroupId"))
             .map(|g| g.trim().to_owned());
-        let pack = Pack {
-            popups: &self.popups,
-            groups: &self.group_ids,
-        };
         // A slot is a box the shell mounts its own control into (plan
         // SK17-2): the pack's engine triggers on it (the InfoView toggle's
         // `LaunchSkin` of a chat popup) are the control's, not the box's.
         let triggers = if matches!(role.shown(), NodeRole::Slot(_)) {
             Vec::new()
         } else {
-            triggers::read(tile, comp, &id, &pack)?
+            own_triggers?
         };
-        check_grip(&id, component, &triggers).map_err(bad)?;
+        check_grip(&id, component, &children, &triggers).map_err(bad)?;
         let fit = content::fit_of(comp, !pieces.is_empty());
         Ok(Read {
             tile,
@@ -359,37 +367,22 @@ impl Walk<'_> {
             .iter()
             .map(|t| (t.id.to_ascii_lowercase(), t.wh))
             .collect();
-        let mut placed: Vec<Option<(NodeSpan, NodeSpan)>> = vec![None; tiles.len()];
-        loop {
-            let mut progress = false;
-            let mut first_err = None;
-            for (i, t) in tiles.iter().enumerate() {
-                if placed[i].is_some() {
-                    continue;
-                }
-                let refs = (&names, &sizes);
-                let slot = matches!(t.role.shown(), NodeRole::Slot(_));
-                // A tile of the window's own layout, not of a nested tile.
-                let kind = (slot, path.is_empty());
-                let xy = axis(t.tile, &X, t.wh.0, t.max.0, kind, refs)
-                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, kind, refs)?)));
-                match xy {
-                    Ok(xy) => {
-                        names.insert(t.id.to_ascii_lowercase(), xy.clone());
-                        placed[i] = Some(xy);
-                        progress = true;
-                    }
-                    Err(e) => {
-                        first_err.get_or_insert_with(|| bad(format!("{}: {e}", t.id)));
-                    }
-                }
-            }
-            match first_err {
-                None => break,
-                Some(e) if !progress => return Err(e),
-                Some(_) => {}
-            }
-        }
+        let lays: Vec<Lay<'_>> = tiles
+            .iter()
+            .map(|t| Lay {
+                id: &t.id,
+                tile: t.tile,
+                wh: t.wh,
+                max: t.max,
+                slot: matches!(t.role.shown(), NodeRole::Slot(_)),
+            })
+            .collect();
+        let placed: Vec<Option<(NodeSpan, NodeSpan)>> =
+            // The window's own layout's tiles, not a nested tile's.
+            place(&lays, &mut names, &sizes, path.is_empty())?
+                .into_iter()
+                .map(Some)
+                .collect();
         // Plan SK15b: the chains on a content text stay symbolic in the
         // node; its children and the names they see use the laid spans.
         let mut kept: Vec<(NodeSpan, NodeSpan)> = placed
@@ -509,6 +502,8 @@ pub fn add(
             by_name.entry(name.to_ascii_lowercase()).or_insert(c);
         }
     }
+    let laid = super::status_field::add(window, layout, &by_name)?;
+    let layout = laid.as_ref().unwrap_or(layout);
     let popups = components
         .iter()
         .filter(|n| n.name.eq_ignore_ascii_case("Popups"))
@@ -550,13 +545,14 @@ pub fn add(
     };
     outdent::clip_window(&mut tree.root, &mut art)?;
     clip(&mut tree.root, ((None, None), [Some(0); 2]), &mut art)?;
-    let window = layout.attr_ci("Component").unwrap_or("MainWindow");
-    let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
+    let component = layout.attr_ci("Component").unwrap_or("MainWindow");
+    let declared = walk.by_name.get(&component.to_ascii_lowercase()).copied();
     let pack_min = (
         limit_of(declared, "MinWidth").unwrap_or(0),
         limit_of(declared, "MinHeight").unwrap_or(0),
     );
     fit(&mut tree, pack_min, rows, &mut built.0)?;
+    built.0.size_hints = root_size_hints(declared, tree.outsets)?;
     if tree
         .boxes(0, 0)
         .iter()
@@ -573,5 +569,8 @@ pub fn add(
     content::restore(&mut tree, held)?;
     built.1.extend(walk.files);
     built.0.tree = Some(tree);
+    if window == SkinWindow::Main {
+        crate::shape::paint::deduplicate_legacy_frame(&mut built.0, &built.1);
+    }
     Ok(())
 }

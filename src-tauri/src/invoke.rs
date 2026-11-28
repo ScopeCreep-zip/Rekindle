@@ -340,6 +340,9 @@ macro_rules! status_commands {
 macro_rules! skin_commands {
     ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::skin::get_skin,
+        commands::skin::wait_skin_open,
+        commands::skin::start_skin_apply,
+        commands::skin::finish_skin_apply,
         commands::skin::list_skins,
         commands::skin::import_skin,
         commands::skin::remove_skin,

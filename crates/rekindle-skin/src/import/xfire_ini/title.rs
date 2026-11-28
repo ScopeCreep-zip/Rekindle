@@ -259,7 +259,16 @@ fn component(section: &Section) -> Node {
     })
     .collect();
     if text.contains_key("Font") {
-        children.push(node("Text", text, Vec::new()));
+        // The face's string, the engine resource id it shows, as the XML
+        // packs' `<Text>FriendsTitle</Text>` body (StreamEngine's
+        // `[WindowTitle]` `Text.text=ChatTitle`, `chat.ini:115-122`).
+        let mut face = node("Text", text, Vec::new());
+        section
+            .get("Text.text")
+            .unwrap_or_default()
+            .trim()
+            .clone_into(&mut face.text);
+        children.push(face);
     }
     if let Some(t) = triggers(section) {
         children.push(t);
@@ -287,6 +296,7 @@ fn component(section: &Section) -> Node {
     for key in [
         "Stretch",
         "DefaultWidth",
+        "DefaultHeight",
         "MinWidth",
         "MinHeight",
         "MaxWidth",

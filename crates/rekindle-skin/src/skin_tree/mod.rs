@@ -21,6 +21,7 @@ pub mod dim;
 pub mod disabled;
 mod fit;
 pub mod import;
+mod import_sizing;
 pub mod inset;
 mod keep;
 pub mod label_style;
@@ -29,11 +30,14 @@ mod outdent;
 mod passes;
 pub mod pieces;
 pub mod place;
+mod place_order;
 pub mod popup;
 pub mod roles;
 pub mod row_pages;
 mod settle;
+mod sibs;
 mod span_css;
+mod status_field;
 mod tab_step;
 pub mod target;
 pub mod text_box;
@@ -41,7 +45,10 @@ pub mod text_top;
 pub mod titles;
 mod triggers;
 pub mod validate;
+pub mod wired;
 
+#[cfg(test)]
+mod anchor_moving_tests;
 #[cfg(test)]
 mod anchor_tests;
 #[cfg(test)]
@@ -90,3 +97,5 @@ mod text_box_tests;
 mod text_top_tests;
 #[cfg(test)]
 mod triggers_tests;
+#[cfg(test)]
+mod wired_tests;

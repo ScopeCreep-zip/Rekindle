@@ -236,6 +236,7 @@
 '.profile-empty-hint' = { on = ["--color-xfire-bg-dark"] }
 '.profile-mutual-item' = { on = ["--color-xfire-bg-dark"] }
 '.typing-label' = { on = ["--color-xfire-bg-dark"] }
+'.skin-load-error' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-emoji-btn' = { on = ["--color-xfire-bg-input"] }
 '.message-input-emoji-btn:hover' = { on = ["--color-xfire-bg-input"] }
 '.community-sidebar-header' = { on = ["--color-xfire-bg-dark"] }

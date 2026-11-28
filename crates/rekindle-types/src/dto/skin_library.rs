@@ -1,7 +1,11 @@
 //! The skin library over IPC (plan E7.7.2): `SkinList`'s answer and the
 //! entry `SkinImport` answers.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
+
+use crate::dto::skin::SkinWindow;
 
 /// One skin the user can choose: a built-in or a library package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +75,43 @@ pub enum SkinApplyFailure {
     ImageDecode { path: String },
     /// The stylesheet did not load; `detail` is what the window saw.
     SheetError { detail: String },
+    /// The native canvas cannot fit the skin's minimum logical dimensions.
+    WindowTooSmall { width: u16, height: u16 },
+    /// The native clock expired before the window could present this skin.
+    LoadTimeout { message: String },
+}
+
+impl SkinApplyFailure {
+    /// The skin-load error the Host and desktop show on deadline.
+    pub const LOAD_TIMEOUT_MESSAGE: &'static str =
+        "Rekindle could not load the skin for this window in time.";
+
+    /// The skin-load error a window shows when an image or its stylesheet
+    /// did not load.
+    pub const LOAD_FAILED_MESSAGE: &'static str =
+        "Rekindle could not load the skin for this window.";
+
+    #[must_use]
+    pub fn load_timeout() -> Self {
+        Self::LoadTimeout {
+            message: Self::LOAD_TIMEOUT_MESSAGE.to_owned(),
+        }
+    }
+
+    /// What the window tells the user about this failure: the Host's words,
+    /// which the window shows as served (thin frontend).
+    #[must_use]
+    pub fn notice(&self) -> String {
+        match self {
+            Self::ImageDecode { .. } | Self::SheetError { .. } => {
+                Self::LOAD_FAILED_MESSAGE.to_owned()
+            }
+            Self::WindowTooSmall { width, height } => {
+                format!("This skin needs a window at least {width} × {height} pixels.")
+            }
+            Self::LoadTimeout { message } => message.clone(),
+        }
+    }
 }
 
 /// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):
@@ -85,10 +126,11 @@ pub struct SkinApplied {
     pub base: crate::dto::skin::SkinBase,
     pub tokens_href: String,
     pub regions: Vec<String>,
-    /// The `skin://` href of every image the stylesheet draws, so a window
-    /// can decode them before it shows the sheet (plan SK0: a frame tile
-    /// not yet loaded paints nothing inside the shaper's cut).
+    /// Shared region art to decode before showing the sheet.
     pub images: Vec<String>,
+    /// Frame and title art to decode only for the corresponding window kind.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub frame_images: BTreeMap<SkinWindow, Vec<String>>,
     /// The skin's resolved colours for the TUI's roles (plan E7.7.2 "the
     /// TUI applies the palette subset from the same DTO"), mapped by the
     /// generator's TUI table, so a terminal never parses CSS.
@@ -160,5 +202,7 @@ pub struct SkinWindowFrame {
 pub struct SkinFrames {
     /// The skin the frames are of.
     pub id: String,
+    /// The same content-addressed stylesheet URI as SkinApplied.
+    pub tokens_href: String,
     pub windows: Vec<SkinWindowFrame>,
 }

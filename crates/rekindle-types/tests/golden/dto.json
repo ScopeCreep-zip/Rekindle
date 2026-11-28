@@ -1539,6 +1539,13 @@
     },
     "type": "sheetError"
   },
+  "skin.applyFailure.windowTooSmall": {
+    "data": {
+      "height": 380,
+      "width": 470
+    },
+    "type": "windowTooSmall"
+  },
   "skin.callOp.answer": {
     "arg": {
       "callId": "call-1"
@@ -1923,6 +1930,30 @@
         "sibling": "Divider"
       }
     },
+    "kind": "share",
+    "permille": 1000
+  },
+  "skin.nodeSpan.shareAfterEnd": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 0,
+        "sibling": "Divider"
+      }
+    },
+    "end": 19,
+    "kind": "share",
+    "permille": 1000
+  },
+  "skin.nodeSpan.shareAfterMoving": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 0,
+        "sibling": "SendButton"
+      }
+    },
+    "end": 20,
     "kind": "share",
     "permille": 1000
   },

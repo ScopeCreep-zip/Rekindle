@@ -12,16 +12,18 @@ use crate::import::xfire_xml::title::reference;
 use crate::import::ImportError;
 
 use super::import::bad;
+use super::sibs::span_of;
+pub(super) use super::sibs::Sibs;
 
 /// One axis's attribute names.
 pub(super) struct Axis {
-    pos: &'static str,
+    pub(super) pos: &'static str,
     just: &'static str,
     resize: &'static str,
     pub(super) indent: [&'static str; 2],
     pub(super) outdent: [&'static str; 2],
-    far: &'static str,
-    near: &'static str,
+    pub(super) far: &'static str,
+    pub(super) near: &'static str,
     size: &'static str,
     end_just: &'static str,
 }
@@ -67,44 +69,6 @@ pub(super) enum At {
     Centre(i32),
 }
 
-/// The names a tile's anchors see, in its parent's frame: every tile
-/// placed before it in the window outside its own branch (its siblings,
-/// its ancestors' siblings), as Xfire's engine resolved a name against any
-/// tile already laid in the window. Each is its box where that is
-/// expressible in the frame, else the edges that are: Space Cowboy's
-/// `ChatEdit` `Y="ChatArea.BOTTOM+2"` (`chatwindow.xml:37`) under
-/// `ListViewBG2`, which sits on `ChatArea.BOTTOM+5` and so is fixed from
-/// the window's bottom; there `ChatArea`'s bottom is a point, its top
-/// (82 px from the window's top) is not.
-#[derive(Clone, Default)]
-pub(super) struct Sibs {
-    spans: BTreeMap<String, (NodeSpan, NodeSpan)>,
-    /// Per axis (x, y), the near and far edge, when known in the frame.
-    edges: BTreeMap<String, [[Option<At>; 2]; 2]>,
-}
-
-impl Sibs {
-    pub(super) fn new() -> Self {
-        Self::default()
-    }
-
-    /// `name` laid at `xy` in this frame; it shadows an outer tile of the
-    /// same name.
-    pub(super) fn insert(&mut self, name: String, xy: (NodeSpan, NodeSpan)) {
-        self.edges.remove(&name);
-        self.spans.insert(name, xy);
-    }
-}
-
-impl FromIterator<(String, (NodeSpan, NodeSpan))> for Sibs {
-    fn from_iter<I: IntoIterator<Item = (String, (NodeSpan, NodeSpan))>>(it: I) -> Self {
-        Self {
-            spans: it.into_iter().collect(),
-            edges: BTreeMap::new(),
-        }
-    }
-}
-
 /// Each sibling's art size, known before it is placed: XGlow's `Middle`
 /// ends `Bottom.height` above the bottom while `Bottom` sits on
 /// `Middle.BOTTOM`, a cycle only in position, never in size.
@@ -117,16 +81,6 @@ pub(super) fn resize(tile: &Node, ax: &Axis) -> Option<u16> {
     tile.attr_ci(ax.resize)
         .and_then(|r| r.trim().parse::<u16>().ok())
         .filter(|r| (1..=100).contains(r))
-}
-
-fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
-    sibs.spans.get(&name.to_ascii_lowercase()).map(|s| {
-        if axis.pos == "X" {
-            s.0.clone()
-        } else {
-            s.1.clone()
-        }
-    })
 }
 
 /// A sum of signed terms, each a number or a sibling's `width`/`height`.
@@ -432,19 +386,32 @@ pub(super) fn axis(
     let ind = |k| expr(tile.attr_ci(k), (sibs, sizes), ax);
     let start_in = ind(ax.indent[0])? - ind(ax.outdent[0])?;
     let end_in = ind(ax.indent[1])? - ind(ax.outdent[1])?;
-    let pos = match pos {
-        Pos::After(sibling, by) => {
-            return super::anchor_share::chained(
-                (sibling, by),
-                size,
-                resize(tile, ax),
-                (start_in, end_in, max),
-                (at_end, centred),
-                ax,
-            )
-        }
-        pos => pos,
+    // SKC4c: a `Resize*` tile from an edge of a sibling that moves with
+    // the window (centred, or for a share end-anchored) chains on it
+    // (Bionical's `Rightlines` `X=SendButton.RIGHT ResizeX=100
+    // IndentRight=20` beside the centred `SendButton`, `biochat.ini:
+    // 113-124`); a stretch from an end-anchored edge stays `from_far`.
+    let moves = matches!(
+        (&pos, resize(tile, ax)),
+        (Pos::Ref(At::Centre(_)), Some(_)) | (Pos::Ref(At::End(_)), Some(1..=99))
+    ) && !at_end
+        && !centred
+        && max.is_none();
+    let link = match &pos {
+        Pos::After(sibling, by) => Some((sibling.clone(), *by)),
+        _ if moves => super::anchor_share::moving(tile, ax, sibs),
+        _ => None,
     };
+    if let Some(link) = link {
+        return super::anchor_share::chained(
+            link,
+            size,
+            resize(tile, ax),
+            (start_in, end_in, max),
+            (at_end, centred),
+            ax,
+        );
+    }
     if let Some(pct @ 1..=99) = resize(tile, ax) {
         return super::anchor_share::share(
             pos,
@@ -550,16 +517,20 @@ fn shift(span: &NodeSpan, inner: &NodeSpan) -> Option<NodeSpan> {
         NodeSpan::Share {
             at: Anchor::Start(off),
             permille,
+            end: held,
         } => NodeSpan::Share {
             at: Anchor::Start(by(off, start)?),
             permille,
+            end: held,
         },
         NodeSpan::Share {
             at: Anchor::End(off),
             permille,
+            end: held,
         } => NodeSpan::Share {
             at: Anchor::End(by(off, end)?),
             permille,
+            end: held,
         },
         NodeSpan::Share { .. }
         | NodeSpan::Fixed {

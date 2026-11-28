@@ -46,8 +46,11 @@ pub struct NetworkStatus {
 /// Creates a fresh buddy-list window so its `onMount → hydrateState()` runs
 /// AFTER the backend identity is set, then destroys the login window.
 #[tauri::command]
-pub async fn show_buddy_list(app: tauri::AppHandle) -> Result<(), String> {
-    windows::open_buddy_list(&app)?;
+pub async fn show_buddy_list(
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    windows::open_buddy_list(&app, state.inner()).await?;
     // Destroy login window (if still alive). Using destroy() for immediate
     // label cleanup — close() is async and would cause label collisions
     // if the user somehow triggers this path again quickly.

@@ -3,8 +3,8 @@
 //! per failing pair, every change recorded"; there is no exception for our
 //! own skin).
 //!
-//! The validator is the oracle: the package is rebuilt and run through
-//! [`validate::run`]; on a contrast refusal the colour the skin may set
+//! The validator is the oracle: each candidate runs its rules before the
+//! final canonical output; on a contrast refusal the colour the skin may set
 //! (the text token, or its ground when the text is a fixed role) keeps
 //! its Oklab a and b and moves its lightness away from the other colour,
 //! the smallest move (bisected to 2⁻²⁰ of the way, [`crate::lightness`])
@@ -185,8 +185,8 @@ pub fn settle(
     tokens.retain(|id, _| !dialog::is_role(id));
     let based = walk(tokens, base, &build, &mut changes)?;
     tokens.extend(held);
-    if let WalkResult::Unsettled(_) = based {
-        return Ok((based, changes));
+    if let Err(unsettled) = based {
+        return Ok((WalkResult::Unsettled(unsettled), changes));
     }
     dialog::fill(tokens, base);
     let dialogs = dialog_walk::settle(tokens, base, &dialog::is_role);
@@ -210,15 +210,15 @@ fn walk(
     base: Base,
     build: &impl Fn(&BTreeMap<String, TokenValue>) -> Result<Vec<u8>, ImportError>,
     changes: &mut Vec<Change>,
-) -> Result<WalkResult, ImportError> {
-    let check = |bytes: &[u8]| validate::run_on(bytes, BASE_TABLE);
+) -> Result<Result<(), Unsettled>, ImportError> {
+    let check = |bytes: &[u8]| validate::check_trial(bytes, BASE_TABLE);
     loop {
         let err = match check(&build(tokens)?) {
-            Ok(c) => return Ok(WalkResult::Passed(c)),
+            Ok(()) => return Ok(Ok(())),
             Err(e) => e,
         };
         let stop = |why: &str| {
-            WalkResult::Unsettled(Unsettled {
+            Err(Unsettled {
                 error: err.clone(),
                 why: why.to_owned(),
             })
@@ -251,7 +251,7 @@ fn walk(
             let walked = lightness_walk(original, up, |c| {
                 trial.insert(target.clone(), color(c));
                 Ok(match check(&build(&trial)?) {
-                    Ok(_) => true,
+                    Ok(()) => true,
                     Err(e) => !same(&e),
                 })
             })?;

@@ -114,6 +114,28 @@ fn checked_with(
 }
 
 #[test]
+fn sizing_metadata_adds_optional_axes_and_refuses_impossible_limits() {
+    let (layout, _) = from_nine(SkinWindow::Main, &nine()).unwrap();
+    let legacy = serde_json::to_value(&layout).unwrap();
+    assert!(legacy.get("sizeHints").is_none());
+    assert_eq!(
+        serde_json::from_value::<WindowLayout>(legacy).unwrap(),
+        layout
+    );
+    assert_eq!(
+        checked(&nine(), |layout| {
+            layout.size_hints.default_height = Some(22);
+            layout.size_hints.max_height = Some(50);
+        }),
+        Ok(())
+    );
+    assert!(checked(&nine(), |layout| layout.size_hints.max_width =
+        Some(layout.min_width - 1))
+    .is_err());
+    assert!(checked(&nine(), |layout| layout.size_hints.default_height = Some(0)).is_err());
+}
+
+#[test]
 fn a_well_formed_frame_passes() {
     assert_eq!(checked(&nine(), |_| {}), Ok(()));
 }
@@ -487,11 +509,14 @@ fn total_chaos_lays_its_content_region() {
     // `TabbedControl` keeps its place, x = -1 + 50 = 49; lead decision 27:
     // the `BottomBar` is clipped to the 61 px under `Content` at the
     // window's bottom edge, so bottom 61, the row's `IndentBottom`.
+    // SKW3 ruling (a): the pack declares a `StatusView` (`components.xml:898-902`,
+    // MinHeight 20) but lays none, so the import lays it before the views
+    // tile at `TabHeader.BOTTOM` and the views start under it: 203 + 20 = 223.
     let (_, b) = builtin::find("builtin:total-chaos").unwrap();
     let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
     let main = &m.windows[&SkinWindow::Main];
     let c = main.content;
-    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 61, 49));
+    assert_eq!((c.top, c.right, c.bottom, c.left), (223, 50, 61, 49));
 }
 
 /// Lead decision 3 (plan SK2, 2026-11-20): under the pack's component tree

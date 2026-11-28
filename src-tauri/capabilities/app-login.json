@@ -10,6 +10,8 @@
     "allow-delete-identity",
     "allow-get-avatar",
     "allow-get-skin",
+    "allow-start-skin-apply",
+    "allow-finish-skin-apply",
     "allow-report-skin-apply-failed",
     "allow-intent-cancel",
     "allow-intent-commit",

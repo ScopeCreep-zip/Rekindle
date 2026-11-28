@@ -9,7 +9,7 @@ use std::sync::Arc;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_skin::shape::{silhouette, Mask, SCALE_ONE};
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
-use rekindle_types::dto::skin_library::SkinFrames;
+use rekindle_types::dto::skin_library::{SkinApplied, SkinFrames};
 use tauri::{AppHandle, Manager, PhysicalSize};
 
 use super::{ShapeRect, Silhouette};
@@ -67,20 +67,11 @@ pub const fn kind_of(frame: SkinWindow) -> WindowKind {
 /// when the skin lays no frame for that kind (or a minimum past `u16`,
 /// which the helper never passes).
 #[must_use]
+#[cfg(test)]
 pub fn min_window(frames: &SkinFrameMap, frame: Option<SkinWindow>) -> Option<(f64, f64)> {
     let (layout, _) = frame.and_then(|f| frames.get(&f))?;
     let (w, h) = rekindle_skin::shape::min_window(layout)?;
     Some((f64::from(w), f64::from(h)))
-}
-
-/// The size (logical px) to grow a window of `current` to so it holds
-/// `min`; `None` when it already does. A larger window is never shrunk.
-#[must_use]
-pub fn grown(current: (f64, f64), min: (f64, f64)) -> Option<(f64, f64)> {
-    if current.0 >= min.0 && current.1 >= min.1 {
-        return None;
-    }
-    Some((current.0.max(min.0), current.1.max(min.1)))
 }
 
 /// Decode the Host's answer (tile masks, then outline node art masks); a
@@ -129,15 +120,31 @@ pub fn compute(
         .map_err(|e| e.to_string())
     };
     let (w, h) = (logical(size.width)?, logical(size.height)?);
+    let device_edge = |logical, physical| {
+        let nominal = u64::from(logical) * u64::from(per_mille) / u64::from(SCALE_ONE);
+        // A rounded logical canvas can end one pixel before the native
+        // client area. Keep interior art edges and reconcile the outer edge.
+        move |edge: u32| {
+            if u64::from(edge) == nominal {
+                physical
+            } else {
+                edge.min(physical)
+            }
+        }
+    };
+    let right = device_edge(w, size.width);
+    let bottom = device_edge(h, size.height);
     let rects = silhouette(layout, masks, w, h, per_mille).map_err(|e| format!("{e:?}"))?;
     let rects: Vec<ShapeRect> = rects
         .into_iter()
         .map(|r| -> Result<ShapeRect, String> {
+            let x = r.x.min(size.width);
+            let y = r.y.min(size.height);
             Ok(ShapeRect {
-                x: i32::try_from(r.x).map_err(|e| e.to_string())?,
-                y: i32::try_from(r.y).map_err(|e| e.to_string())?,
-                w: r.width,
-                h: r.height,
+                x: i32::try_from(x).map_err(|e| e.to_string())?,
+                y: i32::try_from(y).map_err(|e| e.to_string())?,
+                w: right(r.x.saturating_add(r.width)).saturating_sub(x),
+                h: bottom(r.y.saturating_add(r.height)).saturating_sub(y),
             })
         })
         .collect::<Result<_, _>>()?;
@@ -164,29 +171,52 @@ fn per_mille(scale: f64) -> Option<u32> {
     Some(lo)
 }
 
-/// Fetch the shown skin's frames from the Host, keep them, and reshape
-/// every window (on the first shaped window and on every skin change); an
-/// answer a later change superseded is dropped.
-pub fn refresh(app: &AppHandle) {
+/// Match the frames to the announced stylesheet by its canonical URL.
+/// An older fetch or a different frame/stylesheet pair cannot enter native layout.
+pub fn refresh(app: &AppHandle, announced: Option<SkinApplied>) {
     let Some(state) = app.try_state::<SharedState>().map(|s| Arc::clone(&s)) else {
         return;
     };
     let generation = super::begin_fetch(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let answer = crate::host_call::call::<SkinFrames>(&state, IpcRequest::SkinFrames).await;
-        let frames = match answer
-            .map_err(|e| format!("{e:?}"))
-            .and_then(|d| decode(d.value))
-        {
-            Ok(frames) => frames,
-            Err(e) => {
-                tracing::warn!(error = %e, "skin frames unavailable; windows stay whole");
-                SkinFrameMap::new()
-            }
-        };
-        super::set_frames(&app, generation, frames);
+        if let Err(error) = stage(&app, &state, generation, announced).await {
+            tracing::debug!(%error, generation, "skin presentation not staged");
+        }
     });
+}
+
+/// Resolve and stage the unlocked identity's presentation before building
+/// its first framed window. The Host still owns selection and validation.
+pub(in crate::windows) async fn prepare(
+    app: &AppHandle,
+    state: &SharedState,
+) -> Result<(), String> {
+    stage(app, state, super::begin_fetch(app), None).await
+}
+
+async fn stage(
+    app: &AppHandle,
+    state: &SharedState,
+    generation: u64,
+    announced: Option<SkinApplied>,
+) -> Result<(), String> {
+    let skin = if let Some(skin) = announced {
+        skin
+    } else {
+        crate::host_call::call::<SkinApplied>(state, IpcRequest::SkinGet { id: None })
+            .await
+            .map_err(|e| e.to_string())?
+            .value
+    };
+    let frames = crate::host_call::call::<SkinFrames>(state, IpcRequest::SkinFrames)
+        .await
+        .map_err(|e| e.to_string())?
+        .value;
+    if frames.id != skin.id || frames.tokens_href != skin.tokens_href {
+        return Err("Host skin frames were superseded during fetch".to_owned());
+    }
+    super::set_frames(app, generation, decode(frames)?, skin)
 }
 
 #[cfg(test)]

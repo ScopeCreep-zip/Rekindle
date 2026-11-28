@@ -35,10 +35,12 @@
 //   Linux laptop has neither Xvfb nor xdotool yet, so that check skips,
 //   saying so.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { OUT_DIR as WALK_LOGS } from "../../../walk/launch.ts";
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, newUser, openChat, type User } from "../../journeys.ts";
@@ -46,7 +48,7 @@ import { decodePng, encodePng, over, type Rgba } from "../../png.ts";
 import { type Box, type Cut, disagreements, silhouette } from "../../silhouette.ts";
 import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
-import { BUDDY_LIST, sizeWindow } from "../../windows.ts";
+import { BUDDY_LIST, servedSize, sizeWindow, sizeWindowServed, treeLimits } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "shape");
 // The accessible variant (plan SK14) re-lays only Symbiosis's controls: its
@@ -109,6 +111,20 @@ describe("a skinned window is the skin's shape", function () {
 
   after(async () => {
     await stopFleet(peers);
+    const worker = process.env.WDIO_WORKER_ID;
+    if (!worker || !/^\d+-\d+$/.test(worker)) throw new Error("The native run did not name its app log");
+    const input = createReadStream(path.join(WALK_LOGS, `wdio-${worker}.log`));
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        if (line.includes("window_shape_degraded") || line.includes("window_skin_too_small")) {
+          throw new Error(`Unexpected native window-shape fallback: ${line}`);
+        }
+      }
+    } finally {
+      lines.close();
+      input.destroy();
+    }
   });
 
   /** Apply `pack` from Settings → Appearance (its radio, then the intent review). */
@@ -211,10 +227,25 @@ describe("a skinned window is the skin's shape", function () {
       Object.assign(found, await measure(pack, "main", "buddy-list", href));
       Object.assign(found, await titleStrip("buddy-list"));
       if (!NATIVE_WAYLAND) {
-        // A resize recomputes the cut (the shaper reshapes on Resized).
-        await sizeWindow(browser, { width: BUDDY_LIST.def.width + 60, height: BUDDY_LIST.def.height + 80 });
-        Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
-        await sizeWindow(browser, BUDDY_LIST.def);
+        // A resize queues a fresh native allocation pass for the cut: grown
+        // from the app default, or the pack's served minimum where wider, by
+        // 60x80, held to its served maximum (rekindle_skin::shape::max_size,
+        // the limit the desktop holds it to). A pack whose window cannot grow
+        // on either axis (Total Chaos: its minimum is its maximum) is not grown.
+        const base = await servedSize(browser, BUDDY_LIST.def);
+        const limits = await treeLimits(browser);
+        const grown = {
+          width: Math.min(base.width + 60, limits?.max.width ?? Number.POSITIVE_INFINITY),
+          height: Math.min(base.height + 80, limits?.max.height ?? Number.POSITIVE_INFINITY),
+        };
+        if (grown.width === base.width && grown.height === base.height) {
+          console.log(`[shape] ${pack.name}: the buddy list cannot grow (served ${base.width}x${base.height} to ${limits?.max.width}x${limits?.max.height}), not resized`);
+        } else {
+          await sizeWindow(browser, grown);
+          Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
+        }
+        // Back to the app default, or the pack's served minimum where it is wider.
+        await sizeWindowServed(browser, BUDDY_LIST.def);
       }
       await browser.switchToWindow(handles.chat);
       Object.assign(found, await measure(pack, "chat", "chat", href));

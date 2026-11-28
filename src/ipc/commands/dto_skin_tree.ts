@@ -421,6 +421,9 @@ export interface SkinShell {
    *  (plan SK4): what the desktop's fit holds the window to. */
   minWidth: number;
   minHeight: number;
+  /** The window's served maximum, absent on an axis with no limit (`rekindle_skin::shape::max_size`). */
+  maxWidth?: number;
+  maxHeight?: number;
   /** The `skin://` hrefs this tree's own rules draw beyond the shared sheet's
    *  (`SkinApplied.images`), decoded only by a window laying this tree. */
   images: string[];
@@ -435,11 +438,12 @@ type NodeAnchor =
   | { kind: "centre"; offset: { by: number; before: number; after: number } }
   | { kind: "after"; offset: { sibling: string; gap: number } };
 
-/** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. */
+/** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. A share's `end` is the px held back
+ *  before the parent's far edge (absent when 0; plan SKW3); the Host lays every span into CSS. */
 type NodeSpan =
   | { kind: "fixed"; at: NodeAnchor; size: number }
   | { kind: "stretch"; start: number; end: number }
-  | { kind: "share"; at: NodeAnchor; permille: number };
+  | { kind: "share"; at: NodeAnchor; permille: number; end?: number };
 
 /** `PopupAnchor`: the popup's left side `offset` px from the launching window's `edge`. */
 interface PopupAnchor {

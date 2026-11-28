@@ -113,6 +113,9 @@ Dropped
     Alloy.ini: [MainWindow] Window6.IndentRight (line 58)
     Alloy.ini: [StatusEdit] Text.bold (line 304)
     Alloy.ini: [SearchFiles] Cursor (line 734)
+  bitmaps named but not in the tree, each laying nothing (spec A8) (2):
+    Graphics.HeaderColor
+    Graphics.MICRING
   files not read (62):
     AlloyScroll/Thumbs.db
     AlloyScroll/scroll-gripper-grips-horz.gif

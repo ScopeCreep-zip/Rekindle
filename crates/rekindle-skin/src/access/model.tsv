@@ -772,6 +772,7 @@
 .skin-credits	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-credits-stated	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-credits-term	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.skin-load-error	text	var(--color-xfire-text-primary)	--color-xfire-bg-dark	1.0	false
 .skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
 .skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-end	1.0	true
 .skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true

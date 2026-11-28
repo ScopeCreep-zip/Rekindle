@@ -96,7 +96,7 @@ pub(super) fn key(name: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn view(name: &str) -> Option<ViewKey> {
+pub(super) fn view(name: &str) -> Option<ViewKey> {
     let n = name.to_ascii_lowercase();
     [
         ("chatroom", ViewKey::ChatRooms),
@@ -234,16 +234,22 @@ fn edge(rest: &str) -> Option<Edge> {
 /// the old `_ => BottomRight` default misread five Symbiosis grips). A
 /// grip the pack wires itself (XGlow's `[Gripper]`, Combat's
 /// `[ResizeUlbr]`: `Action.lbtndown=ResizeBR`) needs no edge from its
-/// name.
+/// name. A tile holding tiles is their container, not a grip: Xfire's
+/// grip is the tile its `Resize<edge>` press runs on (`ResizeT`/`B`/`L`/
+/// `R`/`UL`/`UR`/`BL`/`BR`, [`super::triggers`]), and StreamEngine's
+/// `[ResizeTile]` and WoW TBC's `[Resize]` are `Class=Tile
+/// events=Transparent` holders of their grip windows (`chat.ini:223-231`,
+/// `Chat.ini:420-428`), which take no press themselves (SKC4).
 ///
 /// # Errors
 /// The refusal, naming the tile and the grip's key.
 pub fn check_grip(
     name: &str,
     component: Option<&str>,
+    children: &[String],
     triggers: &[NodeTrigger],
 ) -> Result<(), String> {
-    if triggers.iter().any(NodeTrigger::presses) {
+    if !children.is_empty() || triggers.iter().any(NodeTrigger::presses) {
         return Ok(());
     }
     [Some(name), component]
@@ -352,7 +358,9 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "menubackground" if f.children.iter().any(|c| key(c) == "menubar") => Some(R::Decor),
         "menubar" | "menubackground" | "menubg" => Some(R::MenuBar),
         "statusedit" | "status" => Some(R::StatusText),
-        "downarrow" | "statusbtn" | "buttonstatuschanger" => Some(R::StatusList),
+        // Guild Wars UI's `StatusArrow` `Class="Menu"` runs `MenuStatus`
+        // (`gwcomponents.xml:572-580`), the status list's arrow.
+        "downarrow" | "statusbtn" | "buttonstatuschanger" | "statusarrow" => Some(R::StatusList),
         // The ad's container and its view: the inner one is its part
         // (Symbiosis's `AdViewContainer` > `AdView`, Total Chaos's
         // `AdBar` > `AdArea`).
@@ -541,8 +549,15 @@ pub fn role(
                 .and_then(|()| view(name))
                 .map(|v| Role::Shows(R::Tab(v)))
         })
-        .or_else(|| resize(&name_k))
-        .or_else(|| comp.as_deref().and_then(resize));
+        // A tile holding tiles is their container, never itself a grip
+        // ([`check_grip`]).
+        .or_else(|| f.children.is_empty().then(|| resize(&name_k)).flatten())
+        .or_else(|| {
+            f.children
+                .is_empty()
+                .then(|| comp.as_deref().and_then(resize))
+                .flatten()
+        });
     let found = match found {
         Some(Role::Shows(R::ButtonRow(_))) => {
             view(name).map(|v| Role::Shows(R::ButtonRow(v))).or(found)
@@ -567,13 +582,16 @@ pub fn role(
         {
             shows(R::Part)
         }
-        (None, _) => {
-            let classless = f.class.is_none_or(|c| {
-                ["tile", "image", "bitmap", "background"]
-                    .iter()
-                    .any(|t| c.trim().eq_ignore_ascii_case(t))
-            });
-            (f.has_art && classless).then_some(Role::Shows(R::Decor))
-        }
+        (None, _) => (f.has_art && classless(f)).then_some(Role::Shows(R::Decor)),
     }
+}
+
+/// Whether the tile's class is plain art (`Tile`, `Image`, `Bitmap`,
+/// `Background`) or absent.
+pub(super) fn classless(f: &Facts<'_>) -> bool {
+    f.class.is_none_or(|c| {
+        ["tile", "image", "bitmap", "background"]
+            .iter()
+            .any(|t| c.trim().eq_ignore_ascii_case(t))
+    })
 }

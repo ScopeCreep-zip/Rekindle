@@ -30,15 +30,14 @@ impl EvalResultRegistry {
     /// No-op if `id` is unknown or already completed, so a duplicate or late report is harmless.
     pub fn complete(&self, id: &str, result: Value) {
         let sender = self.pending.lock().remove(id);
-        match sender {
-            Some(tx) => {
-                if tx.send(result).is_err() {
-                    tracing::debug!(%id, "eval result posted after its caller stopped waiting");
-                } else {
-                    tracing::debug!(%id, "eval result delivered");
-                }
-            }
-            None => tracing::debug!(%id, "eval result posted for an unknown id"),
+        let Some(tx) = sender else {
+            tracing::debug!(%id, "eval result posted for an unknown id");
+            return;
+        };
+        if tx.send(result).is_err() {
+            tracing::debug!(%id, "eval result posted after its caller stopped waiting");
+        } else {
+            tracing::debug!(%id, "eval result delivered");
         }
     }
 

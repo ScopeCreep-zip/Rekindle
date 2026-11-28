@@ -32,14 +32,14 @@ pub async fn subscribe_events(
         let window = label.clone();
         let snapshot = std::iter::once(()).flat_map(move |()| {
             host.as_ref()
-                .map(|host| crate::event_dispatch::standing_for(host, &window))
+                .map(|host| crate::event_snapshot::standing_for(host, &window))
                 .unwrap_or_default()
         });
         state.event_router.register(label, channel, snapshot);
         return Ok(());
     };
     let replay = match host {
-        Some(host) => crate::event_dispatch::replay_for(&host, &label, from),
+        Some(host) => crate::event_snapshot::replay_for(&host, &label, from),
         // Before the host starts there is no journal to replay from.
         None => vec![OutboundEnvelope::invalid_session()],
     };

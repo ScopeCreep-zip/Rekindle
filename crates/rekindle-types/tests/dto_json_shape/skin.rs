@@ -34,6 +34,13 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add(
+        "skin.applyFailure.windowTooSmall",
+        to(SkinApplyFailure::WindowTooSmall {
+            width: 470,
+            height: 380,
+        }),
+    );
+    add(
         "skin.entry.builtin",
         to(SkinEntry {
             id: "builtin:xfire-classic".into(),
@@ -260,6 +267,7 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
         to(NodeSpan::Share {
             at: Anchor::Start(0),
             permille: 800,
+            end: 0,
         }),
     );
     add(
@@ -270,6 +278,31 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
                 gap: 0,
             },
             permille: 1000,
+            end: 0,
+        }),
+    );
+    add(
+        "skin.nodeSpan.shareAfterEnd",
+        to(NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "Divider".into(),
+                gap: 0,
+            },
+            permille: 1000,
+            end: 19,
+        }),
+    );
+    // SKC4c: a stretch from a centred sibling's far edge to 20 px short of
+    // the far side (Bionical's chat `Rightlines`, `biochat.ini:113-124`).
+    add(
+        "skin.nodeSpan.shareAfterMoving",
+        to(NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "SendButton".into(),
+                gap: 0,
+            },
+            permille: 1000,
+            end: 20,
         }),
     );
     add(

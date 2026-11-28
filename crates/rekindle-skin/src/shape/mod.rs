@@ -20,7 +20,9 @@ mod composite;
 pub mod css;
 mod mask;
 mod nodes;
+pub(crate) mod paint;
 mod silhouette;
+mod sizing;
 pub mod title;
 
 #[cfg(test)]
@@ -39,6 +41,7 @@ pub use css::{frame_css, frame_parts, layered, min_window, TreeSheet, MAX_FRAME_
 pub use mask::{of_layout, Faint, Mask, ALPHA_OPAQUE};
 pub use nodes::outline_nodes;
 pub use silhouette::{content_area, silhouette, Area, Rect, SCALE_ONE};
+pub use sizing::{max_size, max_window, MAIN_CEILING};
 
 /// A layout that does not compose (a mask that does not decode, or a
 /// silhouette past [`MAX_RECTS`]).

@@ -29,7 +29,7 @@ fn image() -> SkinApplyFailure {
 fn failed(window: &str, skin: &str, cause: SkinApplyFailure) -> IpcRequest {
     IpcRequest::SkinApplyFailed {
         window: window.into(),
-        skin: skin.into(),
+        skin: Some(skin.into()),
         cause,
     }
 }
@@ -56,9 +56,15 @@ async fn next_failed(
                 window,
                 skin,
                 cause,
+                notice,
                 reverted,
             }) = s.event
             {
+                assert_eq!(
+                    notice,
+                    cause.notice(),
+                    "the event carries the Host's words for its cause"
+                );
                 return (window, skin, cause, reverted);
             }
         }
@@ -88,6 +94,14 @@ async fn a_report_out_of_bounds_is_refused() {
             builtin::DEFAULT,
             SkinApplyFailure::SheetError {
                 detail: "d".repeat(1025),
+            },
+        ),
+        failed(
+            REPORTING_WINDOW,
+            builtin::DEFAULT,
+            SkinApplyFailure::WindowTooSmall {
+                width: 0,
+                height: 380,
             },
         ),
     ] {
@@ -166,6 +180,20 @@ async fn a_skin_on_trial_that_fails_is_reverted_and_logged() {
             .0,
     );
     assert!(chosen.trial.is_some(), "a library skin goes on trial");
+    assert_eq!(shown(&host).await, id);
+
+    let mut size_events = host.ctx.journal.subscribe(None);
+    let constrained = SkinApplyFailure::WindowTooSmall {
+        width: 470,
+        height: 380,
+    };
+    let size_report = report(&host, failed(REPORTING_WINDOW, &id, constrained.clone())).await;
+    assert_eq!(status_of(&size_report), None, "{size_report:?}");
+    assert_eq!(
+        next_failed(&mut size_events).await,
+        (REPORTING_WINDOW.into(), id.clone(), constrained, false)
+    );
+    assert!(library(&host).await.trial.is_some());
     assert_eq!(shown(&host).await, id);
 
     let mut events = host.ctx.journal.subscribe(None);

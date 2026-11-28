@@ -1,5 +1,10 @@
-use super::*;
-use crate::{builtin, manifest, validate};
+use std::collections::BTreeSet;
+
+use rekindle_types::dto::skin::SkinWindow;
+use rekindle_types::dto::skin_action::{MenuRegistry, PackUrl, SkinAction};
+
+use super::{body, files, origin, pack_link, parse_path, sheet_images, stylesheet, Cache, File};
+use crate::{builtin, conform, manifest, package, shape, validate};
 
 const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -43,13 +48,17 @@ fn every_builtin_lists_each_image_its_stylesheet_draws_once() {
         let a = c.address();
         let applied = stylesheet(&c.bytes, &a).unwrap();
         assert!(!applied.images.is_empty(), "{}", pack.id);
-        let shared: std::collections::BTreeSet<&str> =
-            applied.images.iter().map(String::as_str).collect();
+        let shared: BTreeSet<&str> = applied.images.iter().map(String::as_str).collect();
         assert_eq!(shared.len(), applied.images.len(), "{} twice", pack.id);
         let mut listed = shared.clone();
+        for images in applied.frame_images.values() {
+            let own: BTreeSet<&str> = images.iter().map(String::as_str).collect();
+            assert_eq!(own.len(), images.len(), "{} repeats frame art", pack.id);
+            assert!(own.is_disjoint(&shared), "{} shares frame art", pack.id);
+            listed.extend(own);
+        }
         for shell in &applied.shells {
-            let own: std::collections::BTreeSet<&str> =
-                shell.images.iter().map(String::as_str).collect();
+            let own: BTreeSet<&str> = shell.images.iter().map(String::as_str).collect();
             assert_eq!(own.len(), shell.images.len(), "{} twice", pack.id);
             assert!(own.is_disjoint(&shared), "{} shares tree art", pack.id);
             listed.extend(own);
@@ -76,12 +85,13 @@ fn a_trees_art_is_served_on_its_shell_and_none_is_lost() {
         let c = validate::run(pack.bytes).unwrap();
         let a = c.address();
         let applied = stylesheet(&c.bytes, &a).unwrap();
-        let whole: std::collections::BTreeSet<String> =
-            sheet_images(&applied.css, &format!("{}/{a}", origin()))
-                .into_iter()
-                .collect();
-        let mut union: std::collections::BTreeSet<String> =
-            applied.images.iter().cloned().collect();
+        let whole: BTreeSet<String> = sheet_images(&applied.css, &format!("{}/{a}", origin()))
+            .into_iter()
+            .collect();
+        let mut union: BTreeSet<String> = applied.images.iter().cloned().collect();
+        for images in applied.frame_images.values() {
+            union.extend(images.iter().cloned());
+        }
         for shell in &applied.shells {
             union.extend(shell.images.iter().cloned());
         }
@@ -91,20 +101,41 @@ fn a_trees_art_is_served_on_its_shell_and_none_is_lost() {
         let base = format!("{}/{a}", origin());
         let mut images = files(&p);
         images.extend(made);
-        let (_, trees) = shape::frame_parts(&m, &images, &base).unwrap();
+        let (frames, trees) = shape::frame_parts(&m, &images, &base).unwrap();
         for href in &applied.images {
             let outside = applied.css.matches(&format!("url(\"{href}\")")).count()
-                > trees
+                > frames
                     .iter()
-                    .map(|t| t.css.matches(&format!("url(\"{href}\")")).count())
-                    .sum::<usize>();
-            assert!(outside, "{}: {href} is tree art only", pack.id);
+                    .map(|f| {
+                        let needle = format!("url(\"{href}\")");
+                        f.tiles.matches(&needle).count() + f.title.matches(&needle).count()
+                    })
+                    .sum::<usize>()
+                    + trees
+                        .iter()
+                        .map(|t| t.css.matches(&format!("url(\"{href}\")")).count())
+                        .sum::<usize>();
+            assert!(outside, "{}: {href} is scoped art only", pack.id);
         }
         if pack.id == symbiosis.id {
             let art: usize = applied.shells.iter().map(|s| s.images.len()).sum();
             assert!(art > applied.images.len(), "{}", pack.id);
         }
     }
+}
+
+#[test]
+fn accessible_symbiosis_keeps_frame_art_out_of_the_shared_preloads() {
+    let (_, pack) = builtin::find(conform::SOURCE).expect("Symbiosis is shipped");
+    let address = conform::address();
+    let applied = stylesheet(pack.bytes, address).expect("accessible stylesheet");
+    let base = format!("{}/{address}", origin());
+    // Only frame and tree consumers can match the shape layer's selectors.
+    let (shared, shape) = applied.css.split_once("@layer shape").expect("shape layer");
+    let shared = sheet_images(shared, &base);
+    let scoped = sheet_images(shape, &base);
+    assert!(scoped.iter().any(|href| !shared.contains(href)));
+    assert_eq!(applied.images, shared);
 }
 
 /// Plan SK4: a tree-laid window's shell serves its minimum with the
@@ -117,11 +148,11 @@ fn a_shell_serves_its_windows_minimum_with_the_outsets() {
     let applied = stylesheet(&c.bytes, &c.address()).unwrap();
     let p = package::read(&c.bytes).unwrap();
     let m = manifest::served(&p).unwrap();
-    let main = &m.windows[&rekindle_types::dto::skin::SkinWindow::Main];
+    let main = &m.windows[&SkinWindow::Main];
     let shell = applied
         .shells
         .iter()
-        .find(|s| s.window == rekindle_types::dto::skin::SkinWindow::Main && s.popup.is_none())
+        .find(|s| s.window == SkinWindow::Main && s.popup.is_none())
         .unwrap();
     assert_eq!(shell.min_width, 368);
     assert_eq!(

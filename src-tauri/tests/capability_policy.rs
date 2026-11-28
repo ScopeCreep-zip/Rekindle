@@ -162,6 +162,8 @@ fn login_window_is_pre_auth_only() {
         "get_avatar",
         // The device login skin it shows (plan E7.7.2).
         "get_skin",
+        "start_skin_apply",
+        "finish_skin_apply",
         // The review of the delete it issues (its passphrase proof).
         "intent_cancel",
         "intent_commit",

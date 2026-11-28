@@ -7,6 +7,10 @@
 //! empty. The test below keeps the tables true to `invoke.rs` and the
 //! command table.
 
+mod shell_local;
+
+pub use shell_local::SHELL_LOCAL;
+
 /// How a Host-call command reaches the Host. E4.1 adds `MediaUp`, the
 /// client→Host encoded-media lane (`HostApi::media_up`), with its first
 /// command.
@@ -467,21 +471,6 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("upload_sticker", HostCall::Request("StickerUpload")),
     ("delete_emoji", HostCall::Request("ExpressionDelete")),
     ("list_expressions", HostCall::Request("Expressions")),
-];
-
-/// The shell's own commands.
-pub const SHELL_LOCAL: &[&str] = &[
-    "subscribe_events",
-    "show_buddy_list",
-    "quit_app",
-    "open_chat_window",
-    "open_community_window",
-    "open_settings_window",
-    "open_skin_editor_window",
-    "open_skin_popup",
-    "open_profile_window",
-    "open_call_window",
-    "get_game_name",
 ];
 
 /// `(Tauri command, the step that ports it)`.

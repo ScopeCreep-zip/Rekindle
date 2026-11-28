@@ -28,3 +28,41 @@
     image-rendering: pixelated;
   }
 }
+
+@layer components {
+  :root[data-skin-opening] body > :not(.skin-load-error) {
+    display: none;
+  }
+
+  .skin-load-error {
+    display: grid;
+    place-content: center;
+    min-block-size: 100vh;
+    padding: 1rem;
+    color: var(--color-xfire-text-primary);
+    background: var(--color-xfire-bg-dark);
+  }
+
+  /* A failed switch on an open window: a strip above the page, in flow.
+   * The page shrinks beneath it, so no control is covered. */
+  :root:not([data-skin-opening]) .skin-load-error {
+    flex: none;
+    min-block-size: 0;
+    border-block-end: 1px solid currentcolor;
+  }
+
+  :root:not([data-skin-opening]) body:has(> .skin-load-error) {
+    display: flex;
+    flex-direction: column;
+    block-size: 100vh;
+  }
+
+  /* The page scrolls beneath the strip rather than clipping: a tree whose
+   * foot no longer fits keeps its bottom bar and composer reachable. */
+  :root:not([data-skin-opening]) body:has(> .skin-load-error) > #root {
+    flex: 1;
+    min-block-size: 0;
+    block-size: auto;
+    overflow: auto;
+  }
+}
