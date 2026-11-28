@@ -255,6 +255,26 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
         self.execute_async_script(script, &[]).await
     }
 
+    /// Run `body` as the body of an async function in the page and return its awaited value,
+    /// taken from the evaluation itself: no page global and no poll, so a document that commits
+    /// a navigation mid-call fails the call instead of leaving a result no poll can read (the
+    /// 90 s `execute/sync` stall after a same-label Settings re-create, 2026-11-27).
+    ///
+    /// Defaults to the platform's DirectEval channel (`arguments[last]` is the done callback):
+    /// macOS overrides that with `callAsyncJavaScript` and an out-of-band result. Linux overrides
+    /// this method with WebKitGTK's `webkit_web_view_call_async_javascript_function` (2.40+).
+    async fn call_async_function(&self, body: &str) -> Result<Value, WebDriverErrorResponse> {
+        let script = format!(
+            "var __done = arguments[arguments.length - 1];\n\
+             (async function () {{ {body} }})().then(__done, function (e) {{\n\
+               __done({{ __wd_success: false, __wd_error: (e && e.message) || String(e) }});\n\
+             }});"
+        );
+        // `execute_direct_eval` bounds itself with `within_script_timeout`; a second timer here
+        // would race it and drop its cleanup.
+        self.execute_direct_eval(&script).await
+    }
+
     // =========================================================================
     // Screenshots
     // =========================================================================
