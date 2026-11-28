@@ -23,6 +23,7 @@ fn a_connect_argument_yields_a_server_address() {
 /// line is loaded by its own refresh (this test process stands in).
 #[test]
 fn a_candidates_command_line_is_read_after_a_names_only_refresh() {
+    let _scan = crate::test_support::process_scan();
     let mut d = detector(exe_only_db());
     let me = sysinfo::get_current_pid().expect("own pid");
     d.system.refresh_processes_specifics(
