@@ -182,23 +182,34 @@ describe("a channel post is admitted at its signed governance cut (CP1)", functi
     // already hold the deny, or her post is rightly admitted. Her own Host
     // refusing a normal send proves it (there is no read of her Send
     // Messages; a probe sent before the deny arrives is admitted, harmless).
+    // Only the merged overwrite gives this reason (capability_words.rs): a
+    // community whose rules have not loaded, or a join not finished, is
+    // refused as PermissionDenied too, with other words, and proves nothing.
+    const DENY_MERGED = "Send Messages is turned off for you in this channel.";
     let probes = 0;
+    let last = "";
     await waitUntil(
       async () => {
         probes += 1;
         try {
           await peerPostChannel(bea, anchor, refusedChannel, `send probe ${probes}`);
+          last = `probe ${probes} was sent (the deny had not reached Bea)`;
           return false;
         } catch (e) {
           const refusal = e instanceof Error ? e.message : String(e);
-          if (!/permission|Send Messages|not allowed|refus/i.test(refusal)) throw e;
+          if (!refusal.includes(DENY_MERGED)) {
+            last = `probe ${probes} refused otherwise: ${refusal.slice(0, 200)}`;
+            return false;
+          }
           console.log(`[cp1] Bea's own Host refuses a normal send after ${probes} probe(s): ${refusal.slice(0, 160)}`);
           return true;
         }
       },
       NET_WAIT_MS * 2,
-      "Bea's own Host never refused a normal send: the deny overwrite never reached her"
-    );
+      ""
+    ).catch(() => {
+      throw new Error(`Bea's own Host never refused a normal send for the merged deny; last: ${last}`);
+    });
     await openCommunity(browser, COMMUNITY);
     await selectChannel(browser, "refused");
     // Bea's own Host refuses to send; the aid skips only that gate.
