@@ -1,4 +1,4 @@
-use super::*;
+use super::{CallEvent, CallParticipant, DirectCallInfo};
 
 #[test]
 fn a_group_call_connects_without_a_peer() {
@@ -136,6 +136,16 @@ fn sample_events() -> Vec<CallEvent> {
         },
         CallEvent::TimedOut {
             call_id: "c".into(),
+        },
+        CallEvent::Unreachable {
+            call_id: "c".into(),
+            reason: "invite not committed".into(),
+        },
+        CallEvent::FocusConversation {
+            call_id: "c".into(),
+            peer_key: "pk".into(),
+            peer_display_name: "Ada".into(),
+            reason: "call-started".into(),
         },
         CallEvent::Ended {
             call_id: "c".into(),

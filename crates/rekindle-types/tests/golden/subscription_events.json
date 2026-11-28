@@ -38,6 +38,16 @@
       }
     }
   },
+  "call.focusConversation": {
+    "call": {
+      "focusConversation": {
+        "callId": "call_99999999999999999999999999999999",
+        "peerDisplayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "call-started"
+      }
+    }
+  },
   "call.groupStarted": {
     "call": {
       "groupStarted": {
@@ -161,6 +171,14 @@
     "call": {
       "timedOut": {
         "callId": "call_99999999999999999999999999999999"
+      }
+    }
+  },
+  "call.unreachable": {
+    "call": {
+      "unreachable": {
+        "callId": "call_99999999999999999999999999999999",
+        "reason": "no_route"
       }
     }
   },

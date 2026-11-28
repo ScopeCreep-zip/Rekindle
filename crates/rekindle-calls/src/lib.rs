@@ -24,7 +24,10 @@ pub use group_state::{GroupCallState, GroupCallStatus};
 pub use signaling::registry::GroupCallSnapshot;
 pub use signaling::{CallRegistry, CallSignalEvent, CallSignalingDeps, GroupCallRegistry};
 pub use state::{CallKind, CallState, CallStatus};
-pub use state_machine::{CallInput, CallStateMachine, Effect};
+pub use state_machine::port::{interpret, CallPort};
+pub use state_machine::{
+    CallInput, CallStateMachine, CallTimer, Effect, InboundInvite, OutgoingCall,
+};
 
 // Wave 12 W12.9 — re-export the X25519 types so consumer crates
 // (src-tauri/services/group_calls.rs) don't have to depend on

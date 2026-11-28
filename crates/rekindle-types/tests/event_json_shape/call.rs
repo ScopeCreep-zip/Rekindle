@@ -17,6 +17,8 @@ pub const NAMES: &[&str] = &[
     "declined",
     "missed",
     "timedOut",
+    "unreachable",
+    "focusConversation",
     "ended",
     "mediaStateChanged",
     "reactionReceived",
@@ -35,6 +37,8 @@ pub fn variant_name(e: &CallEvent) -> &'static str {
         CallEvent::Declined { .. } => "declined",
         CallEvent::Missed { .. } => "missed",
         CallEvent::TimedOut { .. } => "timedOut",
+        CallEvent::Unreachable { .. } => "unreachable",
+        CallEvent::FocusConversation { .. } => "focusConversation",
         CallEvent::Ended { .. } => "ended",
         CallEvent::MediaStateChanged { .. } => "mediaStateChanged",
         CallEvent::ReactionReceived { .. } => "reactionReceived",
@@ -149,6 +153,22 @@ fn setup() -> Vec<Sample> {
             },
         ),
         ev("timedOut", CallEvent::TimedOut { call_id: call_id() }),
+        ev(
+            "unreachable",
+            CallEvent::Unreachable {
+                call_id: call_id(),
+                reason: text("no_route"),
+            },
+        ),
+        ev(
+            "focusConversation",
+            CallEvent::FocusConversation {
+                call_id: call_id(),
+                peer_key: pk('b'),
+                peer_display_name: text("Bob"),
+                reason: text("call-started"),
+            },
+        ),
     ]
 }
 

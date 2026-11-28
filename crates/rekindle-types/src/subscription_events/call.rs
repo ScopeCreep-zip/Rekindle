@@ -166,6 +166,21 @@ pub enum CallEvent {
     /// Host's skin signals fold it into `MuteSelf`/`UnmuteSelf` (lead
     /// decision 58).
     SelfMuteChanged { muted: bool, timestamp_ms: u64 },
+
+    /// Our outbound call never reached the peer: its invite could not be
+    /// committed or sent (no session, no route). No missed-call row, since
+    /// the peer never saw it.
+    Unreachable { call_id: String, reason: String },
+
+    /// Bring the conversation with `peer_key` forward, because call
+    /// `call_id` started or was answered (`reason`: `"call-started"`,
+    /// `"call-accepted"`).
+    FocusConversation {
+        call_id: String,
+        peer_key: String,
+        peer_display_name: String,
+        reason: String,
+    },
 }
 
 impl CallEvent {
@@ -182,6 +197,8 @@ impl CallEvent {
             | Self::Declined { call_id, .. }
             | Self::Missed { call_id, .. }
             | Self::TimedOut { call_id }
+            | Self::Unreachable { call_id, .. }
+            | Self::FocusConversation { call_id, .. }
             | Self::Ended { call_id, .. }
             | Self::MediaStateChanged { call_id, .. }
             | Self::ReactionReceived { call_id, .. }
