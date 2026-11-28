@@ -117,6 +117,9 @@ impl HostGovernance {
     }
 
     fn report_own_retirement(&self, community: &str, error: &GovernanceRuntimeError) {
+        if let Ok((record, _)) = self.own_op_record_writer(community) {
+            self.stop_member_record_republishes(&record);
+        }
         let first = self
             .ctx
             .communities

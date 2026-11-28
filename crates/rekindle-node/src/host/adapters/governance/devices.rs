@@ -69,6 +69,13 @@ impl HostGovernance {
     ) -> Result<(OpOutcome, [u8; 32]), GovernanceRuntimeError> {
         let outcome = Box::pin(device_ops::enrol(self, anchor)).await?;
         self.persist_governance_snapshot(anchor).await;
+        self.wake_device_publication(anchor);
+        if let Err(error) = self
+            .publish_own_card(anchor, &self.own_card_text(anchor))
+            .await
+        {
+            tracing::debug!(community = anchor, %error, "enrolled device card waits for publication");
+        }
         let key =
             rekindle_governance_runtime::deps::GovernanceRuntimeDeps::device_op_key(self, anchor)?
                 .ok_or_else(|| GovernanceRuntimeError::DeviceOpKeyMissing(anchor.to_string()))?;

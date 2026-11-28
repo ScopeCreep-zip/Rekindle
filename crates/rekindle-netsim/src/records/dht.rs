@@ -388,7 +388,7 @@ impl DhtBackend for SimDht {
         if !force_refresh && local.is_some() {
             return Ok(local);
         }
-        self.net.count_app_get(self.node, key);
+        self.net.count_app_get(self.node, key, subkey);
         let span = || self.read_span(key, Some(&[subkey]));
         let _slot = self.network(span, key, &[subkey]).await?;
         let mut inner = self.net.inner.lock();

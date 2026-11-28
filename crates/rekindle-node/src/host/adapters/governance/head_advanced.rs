@@ -31,12 +31,23 @@ impl HostGovernance {
         community_id: &str,
         record: &str,
     ) -> Option<PseudonymKey> {
-        let state = self.ctx.communities.governance_state(community_id)?;
+        let map = self.ctx.communities.map().read();
+        let state = map.get(community_id)?.governance_state.as_ref()?;
         state
             .members
             .iter()
-            .find(|(_, m)| m.member_record == record)
-            .map(|(p, _)| p.clone())
+            .find(|(_, member)| member.member_record == record)
+            .or_else(|| {
+                state.members.iter().find(|(p, _)| {
+                    state.devices.member(p).is_some_and(|devices| {
+                        devices
+                            .endorsements
+                            .values()
+                            .any(|endorsement| endorsement.device_record == record)
+                    })
+                })
+            })
+            .map(|(author, _)| author.clone())
     }
 
     /// Relay a hint for each relayed subkey our watch saw `record` change:
@@ -112,14 +123,20 @@ impl HostGovernance {
         lease: rekindle_records::lease::LeaseId,
         arrived_at: Option<u64>,
     ) -> Option<(u64, Observed)> {
-        let author = self.author_of_record(community_id, record)?;
+        let (author, binding) = self.binding_of_record(community_id, record)?;
+        if self.record_port().ok()?.owner_of(lease).ok()? != binding.owner {
+            return None;
+        }
         let (seq, bytes) = self.read_hinted_value(lease, BEAT).await.ok().flatten()?;
         let at = RecordScope {
             community_id,
             member_record: record,
         };
         let beat = decode_presence_beat(&bytes, at, &author.0).ok()?;
-        let observed = view::observe(&self.ctx, community_id, &author, &beat, arrived_at);
+        if self.binding_of_record(community_id, record)?.1 != binding {
+            return None;
+        }
+        let observed = view::observe_record(&self.ctx, at, &author, &beat, arrived_at);
         if let Some(sealed) = &beat.extras {
             view::take_extras(&self.ctx, at, &author, beat.seq, sealed);
         }

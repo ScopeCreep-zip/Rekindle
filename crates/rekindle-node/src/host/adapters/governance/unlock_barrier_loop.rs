@@ -105,7 +105,10 @@ impl HostGovernance {
                         .next_round(rekindle_transport::operations::direct::CALL_DEADLINE)
                         .await;
                 }
-                BarrierPhase::Passed => return,
+                BarrierPhase::Passed => {
+                    self.wake_device_publication(community);
+                    return;
+                }
                 BarrierPhase::Restored(fact) => {
                     tracing::warn!(
                         community,

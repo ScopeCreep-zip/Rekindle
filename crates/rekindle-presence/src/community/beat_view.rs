@@ -111,12 +111,11 @@ pub struct Observed {
 /// The beat view of one community, by member pseudonym (hex).
 #[derive(Debug, Clone, Default)]
 pub struct BeatView {
-    members: BTreeMap<String, Entry>,
+    members: BTreeMap<String, BTreeMap<String, Entry>>,
 }
 
 impl BeatView {
-    /// Take `beat`, `member`'s verified beat, delivered at `arrived_at_ms`
-    /// (`None` for a cold read), at `now_ms`.
+    /// Take a beat from a member with a single record.
     pub fn observe(
         &mut self,
         member: &str,
@@ -124,58 +123,100 @@ impl BeatView {
         arrived_at_ms: Option<u64>,
         now_ms: u64,
     ) -> Observed {
-        let held = self.members.get(member).cloned();
-        if held.as_ref().is_some_and(|h| beat.seq <= h.seq) {
+        self.observe_record(member, member, beat, arrived_at_ms, now_ms)
+    }
+
+    /// Take a verified beat, ordering its sequence within its own record.
+    pub fn observe_record(
+        &mut self,
+        member: &str,
+        record: &str,
+        beat: &PresenceBeat,
+        arrived_at_ms: Option<u64>,
+        now_ms: u64,
+    ) -> Observed {
+        let records = self.members.entry(member.to_owned()).or_default();
+        let held = records.get(record);
+        if held.is_some_and(|h| beat.seq <= h.seq) {
             return Observed::default();
         }
+        let previous = Self::selected(records).cloned();
+        let state_changed = held.map(|entry| entry.state) != Some(beat.state);
         let live_until = live_until(beat.beat_number, arrived_at_ms);
         let shown = if beat.state.is_present() && now_ms < live_until {
             beat.state
         } else {
             BeatState::Offline
         };
-        let entry = Entry {
-            seq: beat.seq,
-            state: beat.state,
-            live_until,
-            shown,
-            seen_at: now_ms,
-            voice_channel: beat.voice_channel.clone(),
-            extras: None,
-        };
-        let voice_changed = held.as_ref().and_then(Entry::voice_claim) != entry.voice_claim();
-        self.members.insert(member.to_owned(), entry);
-        let was = held.as_ref().map_or(BeatState::Offline, |h| h.shown);
+        records.insert(
+            record.to_owned(),
+            Entry {
+                seq: beat.seq,
+                state: beat.state,
+                live_until,
+                shown,
+                seen_at: now_ms,
+                voice_channel: beat.voice_channel.clone(),
+                extras: None,
+            },
+        );
+        let current = Self::selected(records).expect("the observed record was inserted");
+        let was = previous.as_ref().map_or(BeatState::Offline, |e| e.shown);
         Observed {
-            state_changed: held.map(|h| h.state) != Some(beat.state),
-            shown: (was != shown).then_some(shown),
-            voice_changed,
+            state_changed,
+            shown: (was != current.shown).then_some(current.shown),
+            voice_changed: previous.as_ref().and_then(Entry::voice_claim) != current.voice_claim(),
         }
     }
 
-    /// Keep `extras`, opened from `member`'s beat `seq`, while that beat is
-    /// the one held.
+    fn selected(records: &BTreeMap<String, Entry>) -> Option<&Entry> {
+        records
+            .values()
+            .max_by_key(|e| (e.shown.is_present(), e.seen_at))
+    }
+
+    /// Keep extras for a member with a single record.
     pub fn set_extras(&mut self, member: &str, seq: u64, extras: Option<SessionExtras>) {
-        if let Some(entry) = self.members.get_mut(member).filter(|e| e.seq == seq) {
+        self.set_record_extras(member, member, seq, extras);
+    }
+
+    /// Keep extras from the same record and beat that is still held.
+    pub fn set_record_extras(
+        &mut self,
+        member: &str,
+        record: &str,
+        seq: u64,
+        extras: Option<SessionExtras>,
+    ) {
+        if let Some(entry) = self
+            .members
+            .get_mut(member)
+            .and_then(|records| records.get_mut(record))
+            .filter(|e| e.seq == seq)
+        {
             entry.extras = extras;
         }
     }
 
-    /// `member`'s opened extras, when its beat carried ones we can read.
+    /// The present device's extras, if their beat carried readable ones.
     #[must_use]
     pub fn extras(&self, member: &str) -> Option<&SessionExtras> {
-        self.members.get(member).and_then(|e| e.extras.as_ref())
+        Self::selected(self.members.get(member)?).and_then(|e| e.extras.as_ref())
     }
 
-    /// Every member's voice claim, for the voice roster reconcile: the
-    /// beat's channel while the member shows present (`fresh`), none once
-    /// its beat is offline, departed or stale, so a ghost expires.
+    /// Every member's current voice claim.
     #[must_use]
     pub fn voice_rows(&self) -> Vec<VoicePresenceRow> {
-        (self.members.iter())
-            .map(|(member, e)| {
+        self.members
+            .iter()
+            .filter_map(|(member, records)| {
+                let e = Self::selected(records)?;
                 let claim = e.voice_claim().map(str::to_owned);
-                VoicePresenceRow::claim(member.clone(), claim, e.shown.is_present())
+                Some(VoicePresenceRow::claim(
+                    member.clone(),
+                    claim,
+                    e.shown.is_present(),
+                ))
             })
             .collect()
     }
@@ -185,14 +226,14 @@ impl BeatView {
     pub fn shown(&self, member: &str) -> BeatState {
         self.members
             .get(member)
+            .and_then(Self::selected)
             .map_or(BeatState::Offline, |e| e.shown)
     }
 
-    /// When `member`'s last beat reached us (our clock, ms), `None` when
-    /// none did.
+    /// When the selected device's beat reached us (our clock, ms).
     #[must_use]
     pub fn seen_at(&self, member: &str) -> Option<u64> {
-        self.members.get(member).map(|e| e.seen_at)
+        Self::selected(self.members.get(member)?).map(|e| e.seen_at)
     }
 
     /// Whether `member` may be present: no beat of theirs has reached us
@@ -203,6 +244,7 @@ impl BeatView {
     pub fn may_be_present(&self, member: &str) -> bool {
         self.members
             .get(member)
+            .and_then(Self::selected)
             .is_none_or(|e| e.shown.is_present())
     }
 
@@ -213,17 +255,42 @@ impl BeatView {
     pub fn present_count(&self) -> usize {
         self.members
             .values()
+            .filter_map(Self::selected)
             .filter(|e| e.shown.is_present())
             .count()
+    }
+
+    /// Drop beats from records that are no longer effective.
+    pub fn retain_records(
+        &mut self,
+        mut keep: impl FnMut(&str, &str) -> bool,
+    ) -> Vec<(String, BeatState)> {
+        let mut changed = Vec::new();
+        self.members.retain(|member, records| {
+            let before = records.len();
+            records.retain(|record, _| keep(member, record));
+            if records.len() != before {
+                let shown = Self::selected(records).map_or(BeatState::Offline, |entry| entry.shown);
+                changed.push((member.clone(), shown));
+            }
+            !records.is_empty()
+        });
+        changed
     }
 
     /// Turn every member whose beat went stale by `now_ms` offline; the
     /// members turned.
     pub fn expire(&mut self, now_ms: u64) -> Vec<String> {
         let mut expired = Vec::new();
-        for (member, entry) in &mut self.members {
-            if entry.shown.is_present() && now_ms >= entry.live_until {
-                entry.shown = BeatState::Offline;
+        for (member, records) in &mut self.members {
+            let mut changed = false;
+            for entry in records.values_mut() {
+                if entry.shown.is_present() && now_ms >= entry.live_until {
+                    entry.shown = BeatState::Offline;
+                    changed = true;
+                }
+            }
+            if changed {
                 expired.push(member.clone());
             }
         }
@@ -233,7 +300,9 @@ impl BeatView {
     /// When the next shown member goes stale (our clock, ms).
     #[must_use]
     pub fn next_expiry(&self) -> Option<u64> {
-        (self.members.values())
+        self.members
+            .values()
+            .flat_map(BTreeMap::values)
             .filter(|e| e.shown.is_present())
             .map(|e| e.live_until)
             .min()

@@ -5,7 +5,9 @@
 //! [`crate::frontier_exchange::request_frontier`]. A
 //! round takes the highest seq of our device key `d` over the DHT head and
 //! each peer that answered ([`judge_round`]). The round awaits each bounded
-//! member call, including its route re-read and retry after a full timeout.
+//! member call. Each effective device record has room for a full first
+//! timeout, a pinned M/6 read and a full retry. The device-set cap bounds
+//! how many records are tried for one logical peer.
 //! The barrier has two exits: a round in which at least one known ring
 //! peer answered, or an empty ring (a sole creator, which completes on the
 //! DHT head alone). A round with no answer is retried on every ring

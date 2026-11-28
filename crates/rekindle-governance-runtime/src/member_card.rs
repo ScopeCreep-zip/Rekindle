@@ -8,23 +8,24 @@
 //! the beat comes last. [`publish_own_record`] is that order, for the join
 //! and for origin.
 //!
-//! **Reads.** A value read from `M(p)` is accepted only if the record's
-//! descriptor owner (`owner_of`) equals the `memberRecordOwner` from `p`'s
-//! `MemberJoined` and the value's inner signature verifies under `p`
+//! **Reads.** The descriptor owner (`owner_of`) must match the effective
+//! device record binding from MemberJoined or its device endorsement.
+//! The value's deployed inner signature verifies under the member pseudonym
 //! (`rekindle_codec::member_record`).
 //!
 //! The beat written here carries no `extras`: presence never waits for the
 //! community key (§4.4 step 6), and E3.4 builds the beat engine that
 //! rewrites it.
 
-use rekindle_records::port::OpenIntent;
 use std::future::Future;
 
 use rekindle_codec::member_record::{
     beat::decode_presence_beat, beat_number_at, card::decode_member_card, BeatState, MemberCard,
     PresenceBeat, RecordScope, SealedExtras, SignedMemberCard,
 };
-use rekindle_records::port::{RecordPort, SetOutcome};
+use rekindle_governance::device_judge::{judge_key, KeyJudgement};
+use rekindle_governance::state::GovernanceState;
+use rekindle_records::port::{OpenIntent, RecordPort, RecordValue, SetOutcome};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::id::PseudonymKey;
@@ -120,6 +121,7 @@ pub(crate) async fn write_subkey(
     write_subkey_seq(port, own, subkey, bytes, Rewrite::Republished)
         .await
         .map(drop)
+        .map_err(|error| error.to_string())
 }
 
 /// How a member record write reaches readers: a value every reader must
@@ -131,6 +133,26 @@ enum Rewrite {
     EveryBeat,
 }
 
+/// The typed result of a member subkey losing to an existing value.
+#[derive(Debug, thiserror::Error)]
+pub enum SubkeyWriteError {
+    #[error("member record subkey was superseded at seq {}", .0.seq)]
+    Superseded(RecordValue),
+    #[error("{0}")]
+    Failed(String),
+}
+
+pub(crate) async fn write_republished_subkey(
+    port: &dyn RecordPort,
+    own: &OwnRecord<'_>,
+    subkey: u32,
+    bytes: Vec<u8>,
+) -> Result<(), SubkeyWriteError> {
+    write_subkey_seq(port, own, subkey, bytes, Rewrite::Republished)
+        .await
+        .map(drop)
+}
+
 /// [`write_subkey`], answering the subkey's DHT seq the write left in our
 /// local copy (what a `HeadAdvanced` hint names).
 async fn write_subkey_seq(
@@ -139,11 +161,12 @@ async fn write_subkey_seq(
     subkey: u32,
     bytes: Vec<u8>,
     rewrite: Rewrite,
-) -> Result<u64, String> {
+) -> Result<u64, SubkeyWriteError> {
     let lease = port
         .acquire(own.record, Some(own.writer), OpenIntent::Hold)
         .await
-        .map_err(|e| format!("open member record: {e}"))?;
+        .map_err(|e| SubkeyWriteError::Failed(format!("open member record: {e}")))?;
+    let expected = bytes.clone();
     let written = match rewrite {
         Rewrite::Republished => {
             port.set_republished(lease, subkey, bytes, Some(own.writer))
@@ -151,20 +174,26 @@ async fn write_subkey_seq(
         }
         Rewrite::EveryBeat => port.set(lease, subkey, bytes, Some(own.writer)).await,
     };
-    let stored = match written.map_err(|e| format!("write member record subkey {subkey}: {e}")) {
-        // An identical rewrite (`Unchanged`) is ours on the network too.
-        Ok(SetOutcome::Landed | SetOutcome::Unchanged) => port
-            .get(lease, subkey, false)
-            .await
-            .map_err(|e| format!("read back member record subkey {subkey}: {e}"))
-            .and_then(|v| {
-                v.map(|v| u64::from(v.seq))
-                    .ok_or_else(|| format!("member record subkey {subkey} not in the local copy"))
-            }),
-        Ok(other) => Err(format!(
+    let stored = match written {
+        Ok(SetOutcome::Landed | SetOutcome::Unchanged) => {
+            match port.get(lease, subkey, false).await {
+                Ok(Some(value)) if value.data == expected => Ok(u64::from(value.seq)),
+                Ok(Some(value)) => Err(SubkeyWriteError::Superseded(value)),
+                Ok(None) => Err(SubkeyWriteError::Failed(format!(
+                    "member record subkey {subkey} not in the local copy"
+                ))),
+                Err(error) => Err(SubkeyWriteError::Failed(format!(
+                    "read back member record subkey {subkey}: {error}"
+                ))),
+            }
+        }
+        Ok(SetOutcome::Superseded(value)) => Err(SubkeyWriteError::Superseded(value)),
+        Ok(other) => Err(SubkeyWriteError::Failed(format!(
             "member record subkey {subkey} not stored: {other:?}"
-        )),
-        Err(e) => Err(e),
+        ))),
+        Err(error) => Err(SubkeyWriteError::Failed(format!(
+            "write member record subkey {subkey}: {error}"
+        ))),
     };
     port.release(lease).await;
     stored
@@ -239,7 +268,9 @@ pub async fn write_own_beat(
     let bytes = beat
         .encode(own.scope(), own.pseudonym)
         .map_err(|e| format!("presence beat: {e}"))?;
-    write_subkey_seq(port, own, member_record::BEAT, bytes, Rewrite::EveryBeat).await
+    write_subkey_seq(port, own, member_record::BEAT, bytes, Rewrite::EveryBeat)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// Publish our member record in §4.4's order: the card (`M`/0, so the
@@ -265,7 +296,9 @@ where
     // community, later, with `CommunitySetDisplayName`.
     write_card(port, own, &OwnCardText::default(), hpke_secret).await?;
     if !profile.route.is_empty() {
-        crate::member_routes::write_routes(port, own, &profile.route, profile.now_ms).await?;
+        crate::member_routes::write_routes(port, own, &profile.route, profile.now_ms)
+            .await
+            .map_err(|error| error.to_string())?;
     }
     publish_ops.await?;
     if profile.status == SessionStatus::Invisible {
@@ -275,12 +308,66 @@ where
 }
 
 /// A member's record as their `MemberJoined` names it.
+#[derive(Clone, Copy)]
 pub struct MemberRecordRef<'a> {
     pub community_id: &'a str,
     pub pseudonym: &'a PseudonymKey,
     pub record: &'a str,
     /// `memberRecordOwner`.
     pub owner: &'a str,
+}
+
+/// Each effective device record for a current membership in endorsement
+/// order. M(p) takes its owner from MemberJoined; M(p,d) takes its owner
+/// from the endorsement signed for M(p).
+#[must_use]
+pub fn member_device_records<'a>(
+    state: &'a GovernanceState,
+    community_id: &'a str,
+    pseudonym: &'a PseudonymKey,
+) -> Vec<MemberRecordRef<'a>> {
+    let Some((record, owner)) = state
+        .members
+        .get(pseudonym)
+        .map(|member| (&member.member_record, &member.member_record_owner))
+        .or_else(|| {
+            state
+                .pending_members
+                .get(pseudonym)
+                .map(|member| (&member.member_record, &member.member_record_owner))
+        })
+        .filter(|_| !state.is_departed(pseudonym) && !state.bans.contains(pseudonym))
+    else {
+        return Vec::new();
+    };
+    let Some(devices) = state.devices.member(pseudonym) else {
+        return Vec::new();
+    };
+    devices
+        .endorsements
+        .values()
+        .filter_map(|endorsement| {
+            let key = &endorsement.device_key;
+            let current = devices.endorsement_for(pseudonym, community_id, record, key)?;
+            if current != endorsement
+                || judge_key(devices, pseudonym, community_id, record, key, u64::MAX)
+                    != KeyJudgement::Effective
+            {
+                return None;
+            }
+            let device_record = &endorsement.device_record;
+            let device_owner = &endorsement.device_record_owner;
+            if device_record == record && device_owner != owner {
+                return None;
+            }
+            Some(MemberRecordRef {
+                community_id,
+                pseudonym,
+                record: device_record,
+                owner: device_owner,
+            })
+        })
+        .collect()
 }
 
 /// Read `subkey` of `member.record`, refusing a record whose descriptor
@@ -408,42 +495,6 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     }
 }
 
-/// Read our own card back (`M`/0, owner pinned to our roster entry) and
-/// remember what it says: after we rewrite it, the card cache holds what a
-/// verified read returns, never what we meant to write (plan E3.4 S6).
-///
-/// # Errors
-/// We hold no pseudonym or roster entry there, or the read or its
-/// verification failed.
-pub async fn refresh_own_card<D: crate::deps::GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-) -> Result<(), String> {
-    let state = deps
-        .governance_state(community_id)
-        .ok_or("no governance state")?;
-    let me = deps
-        .my_pseudonym(community_id)
-        .ok_or("no pseudonym of ours")?;
-    let (record, owner) = (state.members.get(&me))
-        .map(|m| (&m.member_record, &m.member_record_owner))
-        .or_else(|| {
-            (state.pending_members.get(&me)).map(|m| (&m.member_record, &m.member_record_owner))
-        })
-        .ok_or("we are not in the roster")?;
-    let port = deps.record_port().map_err(|e| e.to_string())?;
-    let at = MemberRecordRef {
-        community_id,
-        pseudonym: &me,
-        record,
-        owner,
-    };
-    if let Some(signed) = read_card(&*port, &at).await? {
-        deps.note_member_card(community_id, &me, card_of(&signed));
-    }
-    Ok(())
-}
-
 /// What a verified card says that the community renders.
 #[must_use]
 pub fn card_of(signed: &SignedMemberCard) -> crate::deps::CardText {
@@ -463,23 +514,19 @@ fn cards_to_read<'a>(
     own: Option<&PseudonymKey>,
     named: impl Fn(&PseudonymKey) -> bool,
 ) -> Vec<MemberRecordRef<'a>> {
-    let mut pending: Vec<_> = (state.pending_members.iter())
-        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.stamp))
+    let mut pending: Vec<_> = state
+        .pending_members
+        .iter()
+        .map(|(p, m)| (p, m.stamp))
         .collect();
-    pending.sort_by_key(|(_, _, _, stamp)| *stamp);
-    let mut members: Vec<_> = (state.members.iter())
-        .filter(|(p, _)| !state.is_departed(p))
-        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.joined))
-        .collect();
-    members.sort_by_key(|(_, _, _, stamp)| *stamp);
-    (pending.into_iter().chain(members))
-        .filter(|(pseudonym, ..)| own != Some(*pseudonym) && !named(pseudonym))
-        .map(|(pseudonym, record, owner, _)| MemberRecordRef {
-            community_id,
-            pseudonym,
-            record,
-            owner,
-        })
+    pending.sort_by_key(|(_, stamp)| *stamp);
+    let mut members: Vec<_> = state.members.iter().map(|(p, m)| (p, m.joined)).collect();
+    members.sort_by_key(|(_, stamp)| *stamp);
+    pending
+        .into_iter()
+        .chain(members)
+        .filter(|(pseudonym, _)| own != Some(*pseudonym) && !named(pseudonym))
+        .flat_map(|(pseudonym, _)| member_device_records(state, community_id, pseudonym))
         .collect()
 }
 

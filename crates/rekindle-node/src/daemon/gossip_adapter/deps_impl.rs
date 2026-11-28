@@ -73,17 +73,15 @@ impl GossipDeps for DaemonGossipAdapter {
 
     // ---------- Route resolution ----------
 
-    /// A send to the peer's route failed: the Host forgets its cached
-    /// route and re-reads the peer's `M`/6 once, pinned to its
-    /// `MemberJoined` owner and verified under its pseudonym (plan E3.4
-    /// S4).
+    /// Re-resolve the failed blob against owner-pinned device records (S4).
     async fn resolve_peer_route_from_dht(
         &self,
         community_id: &str,
         peer_pseudonym: &str,
+        failed_blob: &[u8],
     ) -> Option<Vec<u8>> {
         crate::host::adapters::governance::HostGovernance::new(std::sync::Arc::clone(&self.ctx))
-            .reread_member_route(community_id, peer_pseudonym)
+            .reread_member_route(community_id, peer_pseudonym, failed_blob)
             .await
     }
 

@@ -44,7 +44,7 @@ pub use registry::{
     PresenceWrite,
 };
 pub use reread_cap::{REREAD_BACKOFF_MAX, REREAD_BACKOFF_MIN};
-pub use routes::MemberRouteCache;
+pub use routes::{MemberRouteCache, RouteVersion};
 pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};
 pub use spawn::{
     start_presence_poll, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STEADY_TICK_INTERVAL_SECS,

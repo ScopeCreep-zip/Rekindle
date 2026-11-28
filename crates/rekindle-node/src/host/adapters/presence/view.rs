@@ -16,6 +16,7 @@ use std::sync::Weak;
 use std::time::Duration;
 
 use rekindle_codec::member_record::{BeatState, PresenceBeat, RecordScope, SealedExtras};
+use rekindle_governance_runtime::member_card::member_device_records;
 use rekindle_presence::community::Observed;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
@@ -36,13 +37,14 @@ pub(crate) const EXPIRY_CHECK: Duration = Duration::from_secs(30);
 /// our row and the buddy list both show, while our beat lags an idle change
 /// by design (plan E3.4 "Constant rate"); a view entry for us would draw our
 /// own row from that lagging copy (finding PR1).
-pub(crate) fn observe(
+pub(crate) fn observe_record(
     ctx: &DaemonContext,
-    community: &str,
+    at: RecordScope<'_>,
     author: &PseudonymKey,
     beat: &PresenceBeat,
     arrived_at_ms: Option<u64>,
 ) -> Observed {
+    let community = at.community_id;
     let member = author.to_hex();
     let now = ctx.clock.now_ms();
     let observed = {
@@ -53,7 +55,9 @@ pub(crate) fn observe(
         if state.my_pseudonym_key.as_deref() == Some(member.as_str()) {
             return Observed::default();
         }
-        state.beat_view.observe(&member, beat, arrived_at_ms, now)
+        state
+            .beat_view
+            .observe_record(&member, at.member_record, beat, arrived_at_ms, now)
     };
     if let Some(shown) = observed.shown {
         publish(ctx, community, member, shown);
@@ -62,6 +66,27 @@ pub(crate) fn observe(
         reconcile_voice(ctx, community);
     }
     observed
+}
+
+#[cfg(test)]
+pub(crate) fn observe(
+    ctx: &DaemonContext,
+    community: &str,
+    author: &PseudonymKey,
+    beat: &PresenceBeat,
+    arrived_at_ms: Option<u64>,
+) -> Observed {
+    let member = author.to_hex();
+    observe_record(
+        ctx,
+        RecordScope {
+            community_id: community,
+            member_record: &member,
+        },
+        author,
+        beat,
+        arrived_at_ms,
+    )
 }
 
 /// Open `author`'s `sealed` extras from its beat `seq` at `at` with our
@@ -82,7 +107,34 @@ pub(crate) fn take_extras(
         .cloned();
     let extras = rekindle_presence::community::open_extras(sealed, key.as_ref(), at, &policy);
     if let Some(state) = ctx.communities.map().write().get_mut(community) {
-        state.beat_view.set_extras(&author.to_hex(), seq, extras);
+        state
+            .beat_view
+            .set_record_extras(&author.to_hex(), at.member_record, seq, extras);
+    }
+}
+
+/// Expire retired or otherwise ineffective device beats at the merge.
+pub(crate) fn retain_effective_beats(ctx: &DaemonContext, community: &str) {
+    let changed = {
+        let mut map = ctx.communities.map().write();
+        let Some(c) = map.get_mut(community) else {
+            return;
+        };
+        let Some(state) = c.governance_state.as_ref() else {
+            return;
+        };
+        c.beat_view.retain_records(|member, record| {
+            let author = PseudonymKey::from_hex_lossy(member);
+            member_device_records(state, community, &author)
+                .iter()
+                .any(|at| at.record == record)
+        })
+    };
+    if !changed.is_empty() {
+        for (member, shown) in changed {
+            publish(ctx, community, member, shown);
+        }
+        reconcile_voice(ctx, community);
     }
 }
 
@@ -157,7 +209,8 @@ fn expire_all(ctx: &DaemonContext) -> Option<u64> {
         let mut map = ctx.communities.map().write();
         for (community, state) in map.iter_mut() {
             for member in state.beat_view.expire(now) {
-                turned.push((community.clone(), member));
+                let shown = state.beat_view.shown(&member);
+                turned.push((community.clone(), member, shown));
             }
             if let Some(at) = state.beat_view.next_expiry() {
                 next = Some(next.map_or(at, |n| n.min(at)));
@@ -165,8 +218,8 @@ fn expire_all(ctx: &DaemonContext) -> Option<u64> {
         }
     }
     let mut communities = std::collections::BTreeSet::new();
-    for (community, member) in turned {
-        publish(ctx, &community, member, BeatState::Offline);
+    for (community, member, shown) in turned {
+        publish(ctx, &community, member, shown);
         communities.insert(community);
     }
     for community in communities {

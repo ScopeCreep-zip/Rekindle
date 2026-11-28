@@ -37,7 +37,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_netsim::{Fault, RELEASES_PEER_ROUTE, RPC_TIMEOUT};
 use rekindle_node::host::adapters::governance::MemberCallError;
 use rekindle_records::port::RouteClass;
-use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
+use rekindle_types::dht_layout::member_record::{ROUTES, SUBKEY_COUNT};
 
 use crate::harness::{eventually, Community};
 
@@ -167,7 +167,7 @@ async fn dead_behind_dropped_hints(community: &Community, x: usize, settle: Dura
 async fn call_lands(community: &Community, x: usize, calls: u64, why: &str) {
     let sim = &community.sim;
     let record = record_of(community, x).await;
-    let (gets, before) = (sim.app_gets(0, &record), member_calls(community));
+    let (gets, before) = (sim.app_gets_at(0, &record, ROUTES), member_calls(community));
     let hex = community.pseudonym(x).await;
     let reply = community.nodes[0]
         .host
@@ -175,7 +175,11 @@ async fn call_lands(community: &Community, x: usize, calls: u64, why: &str) {
         .netsim_call_member(&community.anchor, &hex, payload())
         .await;
     assert!(reply.is_ok(), "the call lands on the new route: {reply:?}");
-    assert_eq!(sim.app_gets(0, &record) - gets, 1, "exactly one M/6 read");
+    assert_eq!(
+        sim.app_gets_at(0, &record, ROUTES) - gets,
+        1,
+        "exactly one M/6 read"
+    );
     assert_eq!(member_calls(community) - before, calls, "{why}");
     let current = community.nodes[x].routes.own_blob(RouteClass::General);
     assert_eq!(cached(community, x).await, current, "the cache moved");
@@ -237,11 +241,20 @@ async fn a_member_with_no_newer_route_is_unreachable_after_one_reread() {
         node: y,
         offline: true,
     });
+    let tests_failed = released(&community);
     sim.fault(Fault::RouteDeath { node: y });
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(
+        released(&community),
+        tests_failed,
+        "the call starts before the route test"
+    );
 
     let record = record_of(&community, y).await;
-    let (gets, calls) = (sim.app_gets(0, &record), member_calls(&community));
+    let (gets, calls) = (
+        sim.app_gets_at(0, &record, ROUTES),
+        member_calls(&community),
+    );
     let hex = community.pseudonym(y).await;
     let reply = community.nodes[0]
         .host
@@ -249,7 +262,11 @@ async fn a_member_with_no_newer_route_is_unreachable_after_one_reread() {
         .netsim_call_member(&community.anchor, &hex, payload())
         .await;
     assert_eq!(reply, Err(MemberCallError::Unreachable));
-    assert_eq!(sim.app_gets(0, &record) - gets, 1, "exactly one M/6 read");
+    assert_eq!(
+        sim.app_gets_at(0, &record, ROUTES) - gets,
+        1,
+        "exactly one M/6 read"
+    );
     assert_eq!(
         member_calls(&community) - calls,
         1,
@@ -302,7 +319,13 @@ async fn a_member_that_missed_the_rotation_asks_and_is_answered_by_m6() {
             },
         )))
         .await;
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert!(
+        eventually(sim, Duration::from_secs(180), || async {
+            community_generation(&community, 0).await > before
+        })
+        .await,
+        "the rotator finished its initial push while its sends were dropped"
+    );
     assert_eq!(
         community_generation(&community, z).await,
         before,
@@ -319,13 +342,18 @@ async fn a_member_that_missed_the_rotation_asks_and_is_answered_by_m6() {
         .await,
         "node {z} holds the rotated key"
     );
-    assert!(answered() > answered_before, "a RequestMEK was answered");
+    assert!(
+        eventually(sim, Duration::from_secs(60), || async {
+            answered() > answered_before
+        })
+        .await,
+        "a RequestMEK was answered and its acknowledgement reached the responder"
+    );
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn barrier_recovers_a_ring_peers_route_without_a_hint() {
     use rekindle_governance_runtime::unlock_barrier::BarrierPhase;
-    use rekindle_types::dht_layout::member_record::ROUTES;
 
     let community = Community::of(2, 4431).await;
     let caller = community.nodes[0].host.governance();
@@ -367,5 +395,76 @@ async fn barrier_recovers_a_ring_peers_route_without_a_hint() {
         caller.netsim_barrier_round(&community.anchor).await,
         Some(BarrierPhase::Passed),
         "Dee's frontier provides the one ring answer"
+    );
+    let current = dee.routes.own_blob(RouteClass::General).unwrap();
+    assert_eq!(cached(&community, 1).await, Some(current));
+    community.sim.fault(Fault::OutsideDead {
+        node: 1,
+        class: RouteClass::General,
+    });
+    assert_eq!(
+        caller.netsim_barrier_round(&community.anchor).await,
+        None,
+        "when M/6 stays unchanged and no ring peer answers, the barrier has no verdict"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn member_call_reread_rejects_a_late_read_and_probe_after_the_successor_dies() {
+    use rekindle_presence::community::RouteVersion;
+    use tokio::sync::oneshot;
+
+    let community = Community::of(2, 4432).await;
+    let caller = community.nodes[0].host.governance();
+    let dee = &community.nodes[1];
+    let record = record_of(&community, 1).await;
+    let previous = community.sim.network_get(&record, ROUTES).unwrap();
+    let blob = dee.routes.own_blob(RouteClass::General).unwrap();
+    let old = RouteVersion {
+        seq: u64::from(previous.seq),
+        blob,
+    };
+    assert!(caller.netsim_observe_route_value(&community.anchor, &record, &previous));
+
+    let (answered, answer) = oneshot::channel();
+    let (resume, resumed) = oneshot::channel();
+    let probe =
+        caller.netsim_delay_probe_answer(&community.anchor, &record, &old, answered, resumed);
+    let rotates = async {
+        answer.await.expect("the old route answered the probe");
+        dee.routes.replace_own_class(RouteClass::General);
+        let read = || {
+            community
+                .sim
+                .network_get(&record, ROUTES)
+                .filter(|value| value.seq > previous.seq)
+        };
+        assert!(
+            eventually(&community.sim, Duration::from_secs(20), || async {
+                read().is_some()
+            })
+            .await
+        );
+        assert!(caller.netsim_observe_route_value(&community.anchor, &record, &read().unwrap()));
+        let successor = dee.routes.own_blob(RouteClass::General).unwrap();
+        assert_ne!(successor, old.blob);
+        assert_eq!(cached(&community, 1).await, Some(successor.clone()));
+        caller.netsim_declare_member_route_dead(&community.anchor, successor);
+        assert!(!caller.netsim_observe_route_value(&community.anchor, &record, &previous));
+        resume.send(()).unwrap();
+    };
+    let (installed, ()) = tokio::join!(probe, rotates);
+    assert!(
+        !installed,
+        "the old probe answer cannot install the older version"
+    );
+    assert_eq!(cached(&community, 1).await, None);
+
+    let before = community.sim.app_gets_at(0, &record, ROUTES);
+    assert_eq!(caller.netsim_barrier_round(&community.anchor).await, None);
+    assert_eq!(
+        community.sim.app_gets_at(0, &record, ROUTES) - before,
+        1,
+        "no second read for the same failed device"
     );
 }

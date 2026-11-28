@@ -1,103 +1,116 @@
-//! Dead member routes revived by a probe (plan RH1r-c S2/S3 on the
-//! governance and bootstrap paths; inventory item 25; E3.4 S4/S5).
-//!
-//! A member whose route is alive never republishes it: its loopback passes,
-//! so Veilid tells it nothing (0.5.8 `ping_validator.rs:800-830`), while one
-//! importer's single remote test ping lost on a slow round trip removes the
-//! route there (`ping_validator.rs:741-744`). The transport then refuses
-//! the blob for its failure cache (`rekindle_route::dead_routes`). When a
-//! read of the member's `M`/6 finds the same blob at the same seq one
-//! re-fetch gap after the death, it is probed once by a call
-//! ([`rekindle_transport::TransportNode::probe_route`]): Veilid allows the
-//! re-import and tests it again (`route_remote.rs:21-40`), and an answer
-//! makes it usable at once. A route that clears, revived here or
-//! republished at a higher seq, is cached again and the mesh's held
-//! broadcasts go then (E3.4 S5), not only on the next beat move.
+//! A member route that still appears on M/6 can answer a liveness probe.
+//! Check the record/version before sending it and again before making the
+//! answer visible. Watches or concurrent reads can advance M/6 meanwhile.
 
-use rekindle_route::dead_routes::DeadRouteVerdict;
+use rekindle_presence::community::RouteVersion;
 use rekindle_transport::liveness::dead::Probed;
-use rekindle_types::id::PseudonymKey;
+use rekindle_transport::route_trace::blob_tag;
+use rekindle_utils::log_scrub::tag;
 
 use super::HostGovernance;
 
 impl HostGovernance {
-    /// Take `author`'s route `blob`, read at DHT `seq` with verdict `seen`,
-    /// into `community`'s cache unless it is still `dead`; one that cleared
-    /// sends the broadcasts the mesh held for want of peers.
-    pub(crate) fn take_route(
+    pub(crate) fn take_probed_route(
         &self,
         community: &str,
-        author: &PseudonymKey,
-        seq: u64,
-        blob: Vec<u8>,
-        seen: DeadRouteVerdict,
-        dead: bool,
-    ) {
-        if dead {
-            return;
-        }
-        {
-            let mut map = self.ctx.communities.map().write();
-            if let Some(c) = map.get_mut(community) {
-                c.member_routes.observe(author, seq, blob);
-            }
-        }
-        if seen == DeadRouteVerdict::Cleared {
+        record: &str,
+        version: &RouteVersion,
+    ) -> bool {
+        let current = self.binding_of_record(community, record).is_some()
+            && self
+                .ctx
+                .communities
+                .map()
+                .write()
+                .get_mut(community)
+                .is_some_and(|c| c.member_routes.set_usable(record, version, true));
+        if current {
             self.drain_pending_mesh(community);
         }
+        current
     }
 
-    /// Probe `author`'s dead route `blob` (read at `seq`) once; an answer
-    /// takes it into the cache as cleared. `true` when it answered.
     pub(super) async fn probe_member_route(
         &self,
         community: &str,
-        author: &PseudonymKey,
-        seq: u64,
-        blob: Vec<u8>,
+        record: &str,
+        version: &RouteVersion,
+    ) -> bool {
+        if self.binding_of_record(community, record).is_none()
+            || !self
+                .ctx
+                .communities
+                .map()
+                .read()
+                .get(community)
+                .is_some_and(|c| c.member_routes.is_current(record, version))
+        {
+            return false;
+        }
+        let Ok(node) = self.transport() else {
+            return false;
+        };
+        let disposition = match node.probe_route(&version.blob).await {
+            Probed::Answered => {
+                if self.take_probed_route(community, record, version) {
+                    "probe_answered"
+                } else {
+                    "probe_obsolete"
+                }
+            }
+            Probed::ImportFailed(reason) | Probed::Silent(reason) => {
+                tracing::debug!(%reason, "member route probe failed");
+                "probe_failed"
+            }
+        };
+        tracing::debug!(
+            community,
+            control_type = "probe",
+            route_tag = %blob_tag(&version.blob),
+            record_tag = %tag(record),
+            seq = version.seq,
+            read_disposition = disposition,
+            "member route resolution"
+        );
+        disposition == "probe_answered"
+    }
+
+    /// Run a transport probe and let the simulator delay delivery of its answer.
+    #[cfg(feature = "netsim-entry")]
+    pub async fn netsim_delay_probe_answer(
+        &self,
+        community: &str,
+        record: &str,
+        version: &RouteVersion,
+        answered: tokio::sync::oneshot::Sender<()>,
+        resume: tokio::sync::oneshot::Receiver<()>,
     ) -> bool {
         let Ok(node) = self.transport() else {
             return false;
         };
-        match node.probe_route(&blob).await {
-            Probed::Answered => {
-                tracing::info!(
-                    community,
-                    "a dead member route answered its probe: usable again"
-                );
-                self.take_route(
-                    community,
-                    author,
-                    seq,
-                    blob,
-                    DeadRouteVerdict::Cleared,
-                    false,
-                );
-                true
-            }
-            Probed::ImportFailed(reason) | Probed::Silent(reason) => {
-                tracing::info!(community, %reason, "a dead member route did not answer its probe");
-                false
-            }
+        if node.probe_route(&version.blob).await != Probed::Answered {
+            return false;
         }
+        if answered.send(()).is_err() || resume.await.is_err() {
+            return false;
+        }
+        self.take_probed_route(community, record, version)
     }
 
-    /// [`Self::probe_member_route`] on the community's scope.
     pub(super) fn spawn_member_route_probe(
         &self,
         community: &str,
-        author: &PseudonymKey,
-        seq: u64,
-        blob: Vec<u8>,
+        record: &str,
+        version: RouteVersion,
     ) {
         let governance = self.clone();
         let owned = community.to_owned();
-        let author = author.clone();
+        let record = record.to_owned();
         self.ctx
             .community_scope(community)
             .spawn_or_drop("dead member route probe", async move {
                 governance
-                    .probe_member_route(&owned, &author, seq, blob)
+                    .probe_member_route(&owned, &record, &version)
                     .await;
             });
     }

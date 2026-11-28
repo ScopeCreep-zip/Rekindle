@@ -76,7 +76,7 @@ async fn a_dead_route_behind_an_unchanged_m6_costs_one_reread_for_many_sends() {
         let fresh = community.nodes[0]
             .host
             .governance()
-            .reread_member_route(&community.anchor, &hex)
+            .reread_member_route(&community.anchor, &hex, old.as_deref().unwrap())
             .await;
         assert_eq!(fresh, None, "re-read {n}: the dead blob is no route");
         tokio::time::sleep(Duration::from_secs(2)).await;

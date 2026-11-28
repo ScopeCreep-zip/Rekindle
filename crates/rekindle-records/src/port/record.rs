@@ -283,6 +283,9 @@ pub trait RecordPort: Send + Sync {
         writer: Option<&str>,
     ) -> Result<SetOutcome, PortError>;
 
+    /// Stop future re-sends of subkeys whose writer binding has ended.
+    fn cancel_republish(&self, record: &str, subkeys: &[u32]);
+
     /// Inspect the leased record.
     async fn inspect(
         &self,

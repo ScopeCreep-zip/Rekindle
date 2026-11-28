@@ -104,12 +104,12 @@ pub trait GossipDeps: Send + Sync + 'static {
     fn record_peer_reliability(&self, community_id: &str, peer_key: &str, success: bool);
 
     // === Route resolution (async) ===
-    /// Look up the peer's fresh route_blob via the community member
-    /// registry. Returns `None` if no valid blob is published.
+    /// Look up a usable route different from the failed send's blob.
     async fn resolve_peer_route_from_dht(
         &self,
         community_id: &str,
         peer_pseudonym: &str,
+        failed_blob: &[u8],
     ) -> Option<Vec<u8>>;
 
     /// Single-flight gate coalescing concurrent `(community, peer)`

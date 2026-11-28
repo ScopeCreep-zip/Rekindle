@@ -5,14 +5,14 @@
 
 use std::sync::Arc;
 
-use rekindle_record_pool::test_support::{pool_on, MemDht};
+use rekindle_record_pool::test_support::{pool_on, Contest, MemDht};
 use rekindle_records::port::RecordPort;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionStatus;
 
 use super::{read_member_route, write_routes, RoutePin};
-use crate::member_card::{publish_own_record, OwnProfile, OwnRecord};
+use crate::member_card::{publish_own_record, OwnProfile, OwnRecord, SubkeyWriteError};
 
 #[tokio::test]
 async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
@@ -102,4 +102,46 @@ async fn a_joined_read_refuses_a_record_of_another_owner() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn routes_return_the_rival_value_when_the_write_is_superseded() {
+    let dht = Arc::new(MemDht::default());
+    let pool = pool_on(Arc::clone(&dht));
+    let (lease, record, writer) =
+        RecordPort::create(&*pool, &rekindle_records::schema::member_record(), None)
+            .await
+            .unwrap();
+    let owner = pool.owner_of(lease).unwrap();
+    let pseudonym = SigningKey::from_bytes(&[5; 32]);
+    let own = OwnRecord {
+        community_id: "community",
+        record: &record,
+        writer: &writer,
+        pseudonym: &pseudonym,
+    };
+    let rival = rekindle_codec::member_record::routes::MemberRoutes {
+        general: b"rival route".to_vec(),
+        issued_at: 2_000,
+    }
+    .encode(
+        rekindle_codec::member_record::RecordScope {
+            community_id: own.community_id,
+            member_record: own.record,
+        },
+        &pseudonym,
+    )
+    .unwrap();
+    dht.contest(Contest::Rival {
+        data: rival.clone(),
+        writer: owner.clone(),
+    });
+    let Err(SubkeyWriteError::Superseded(value)) =
+        write_routes(&*pool, &own, b"fresh route", 1_000).await
+    else {
+        panic!("the writer should retain the rival value");
+    };
+    assert_eq!(value.writer, owner);
+    assert_eq!(value.data, rival);
+    pool.release(lease).await;
 }

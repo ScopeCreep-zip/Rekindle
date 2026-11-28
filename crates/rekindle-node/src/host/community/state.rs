@@ -142,6 +142,8 @@ pub struct CommunityState {
     pub(crate) initializing_member_routes: bool,
     /// The device record and blob last published in this session.
     pub(crate) written_member_route: Option<(String, Vec<u8>)>,
+    /// An independently written M/6 halted publication for this record.
+    pub(crate) conflicted_member_route: Option<String>,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

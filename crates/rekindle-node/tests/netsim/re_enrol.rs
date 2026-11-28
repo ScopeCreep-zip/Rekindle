@@ -201,26 +201,23 @@ async fn re_enrolment_waits_for_the_users_commit() {
 }
 
 async fn card_key(community: &Community, anchor: &str) -> [u8; 32] {
-    use rekindle_governance_runtime::member_card::{read_card, MemberRecordRef};
+    use rekindle_governance_runtime::member_card::{member_device_records, read_card};
     let governance = community.nodes[0].host.governance();
     let p = governance.my_pseudonym(anchor).unwrap();
     let merged = governance.governance_state(anchor).unwrap();
-    let member = &merged.members[&p];
+    let bindings = member_device_records(&merged, anchor, &p);
+    assert_eq!(
+        bindings.len(),
+        1,
+        "one effective record remains for the member"
+    );
     let pool = governance.record_port().unwrap();
-    read_card(
-        pool.as_ref(),
-        &MemberRecordRef {
-            community_id: anchor,
-            pseudonym: &p,
-            record: &member.member_record,
-            owner: &member.member_record_owner,
-        },
-    )
-    .await
-    .unwrap()
-    .unwrap()
-    .card
-    .hpke_key
+    read_card(&*pool, &bindings[0])
+        .await
+        .unwrap()
+        .unwrap()
+        .card
+        .hpke_key
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -302,88 +299,8 @@ async fn re_enrolment_replaces_every_per_device_secret_in_every_community() {
     }).await, "the contact is prompted to replace the session");
 }
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn re_enrol_from_a_cloned_root_retires_the_original_key() {
-    use rekindle_types::subscription_events::NotificationEvent;
-    let mut community = Community::create(4, 7029).await;
-    community.join(1).await;
-    community.join(3).await;
-    tokio::time::sleep(Duration::from_secs(60)).await;
-    community.nodes[1].ok(IpcRequest::Lock).await;
-    let backup = crate::data_root::snapshot(&community.sim, &community.nodes[1]);
-    crate::devices::unlock(&community, 1).await;
-
-    let role = crate::devices::self_assignable_role(&community, "after the copy").await;
-    assert!(
-        eventually(&community.sim, LIMIT, || crate::equivocation::shows(
-            &community,
-            1,
-            "after the copy"
-        ))
-        .await
-    );
-    crate::devices::self_assign(&community, 1, &role)
-        .await
-        .unwrap();
-    let member = community.pseudonym(1).await;
-    assert!(crate::devices::sees_role(&community, 0, &member, &role).await);
-
-    community.nodes[2].ok(IpcRequest::Lock).await;
-    crate::data_root::restore(&community.sim, &community.nodes[2], &backup);
-    let unused = community.nodes.remove(2);
-    let mut copy = unused.restart(&community.sim, Duration::from_secs(1)).await;
-    copy.public_key = community.nodes[1].public_key.clone();
-    community.nodes.insert(2, copy);
-    crate::devices::unlock(&community, 2).await;
-    let original_events = community.nodes[1].events().await;
-    wait_for_review(&community, 2).await;
-    // The CLI command maps directly to this request. The harness applies
-    // the requested proof through the same gate as the CLI.
-    let result = community.nodes[2]
-        .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
-            LifecycleRequest::CommunityDeviceReEnrol {},
-        )))
-        .await
-        .unwrap();
-    assert!(result["reEnrolled"][0].get("error").is_none(), "{result:?}");
-    assert!(
-        eventually(&community.sim, LIMIT, || async {
-            let original = community.nodes[1].host.governance();
-            rekindle_governance_runtime::device_re_enrol::retired_from(&original, &community.anchor)
-                .is_ok_and(|retired| retired.is_some())
-        })
-        .await,
-        "the original merges the retirement carried on the new record"
-    );
-    let signing_stopped = |event: &SubscriptionEvent| {
-        matches!(
-            event,
-            SubscriptionEvent::Notification(NotificationEvent::SystemAlert { title, .. }) if title == "Signing stopped"
-        )
-    };
-    assert!(
-        eventually(&community.sim, LIMIT, || async {
-            original_events.any(signing_stopped)
-        })
-        .await,
-        "the original receives its signing-stopped alert"
-    );
-    crate::equivocation::create_role(&community, 0, "after re-enrolment").await;
-    assert!(
-        eventually(&community.sim, LIMIT, || {
-            crate::equivocation::shows(&community, 1, "after re-enrolment")
-        })
-        .await
-    );
-    assert_eq!(
-        original_events.matching(signing_stopped),
-        1,
-        "one alert in the original session"
-    );
-    community.nodes[1].ok(IpcRequest::Lock).await;
-    crate::devices::unlock(&community, 1).await;
-    wait_for_review(&community, 1).await;
-}
+#[path = "re_enrol_cloned_root.rs"]
+mod cloned_root;
 
 async fn solo_creator_and_restored_copy(seed: u64) -> (Community, crate::data_root::Backup) {
     let mut community = Community::create(2, seed).await;

@@ -439,6 +439,8 @@ describe("a restored copy re-enrols the device: the original is told and offered
       throw new Error("the committed re-enrolment was never held while every ring peer was paused");
     });
     const heldLine = await byText(browser, ".catch-up-notice", LABEL, NET_WAIT_MS);
+    expect(await heldLine.getAttribute("role")).toBe("status");
+    expect((await deviceView())?.status).toBe("needsReenrol");
     console.log(`[reenrol] held: catch-up line "${(await heldLine.getText()).trim()}"`);
     await shot("catch-up-reenrolling");
 

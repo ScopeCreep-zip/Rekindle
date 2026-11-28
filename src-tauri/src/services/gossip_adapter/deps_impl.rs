@@ -83,13 +83,13 @@ impl GossipDeps for GossipAdapter {
         &self,
         community_id: &str,
         peer_pseudonym: &str,
+        failed_blob: &[u8],
     ) -> Option<Vec<u8>> {
-        // A send to the peer's route failed: the Host forgets its cached
-        // route and re-reads the peer's `M`/6 once, pinned and verified
-        // (plan E3.4 S4).
+        // The Host re-resolves the failed blob against owner-pinned
+        // device records (plan E3.4 S4).
         let governance = crate::state_helpers::host_governance(&self.state).ok()?;
         governance
-            .reread_member_route(community_id, peer_pseudonym)
+            .reread_member_route(community_id, peer_pseudonym, failed_blob)
             .await
     }
 

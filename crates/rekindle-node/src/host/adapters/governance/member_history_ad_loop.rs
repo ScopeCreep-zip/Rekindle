@@ -22,7 +22,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use rekindle_governance_runtime::member_card::MemberRecordRef;
+use rekindle_governance_runtime::member_card::member_device_records;
 use rekindle_governance_runtime::member_history_ad::{
     advertised, read_history_ad, write_history_ad,
 };
@@ -45,13 +45,26 @@ type Written = (Vec<HistoryRange>, u64);
 pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
     let mut checks = tokio::time::interval(AD_CHECK);
     let mut written: BTreeMap<String, Written> = BTreeMap::new();
-    while stop.run_until_cancelled(checks.tick()).await.is_some() {
+    loop {
+        tokio::select! {
+            () = stop.cancelled() => return,
+            _ = checks.tick() => {},
+            () = host.ctx.communities.member_history_changed.notified() => {},
+        }
         if rekindle_presence::hides_presence(host.ctx.own_presence.status()) {
             continue;
         }
         let targets = host.sync_targets();
-        written.retain(|community, _| targets.contains(community));
-        for community_id in targets {
+        let bindings = targets
+            .into_iter()
+            .filter_map(|community| {
+                host.own_record_keys(&community)
+                    .ok()
+                    .map(|keys| (community, keys))
+            })
+            .collect::<Vec<_>>();
+        written.retain(|record, _| bindings.iter().any(|(_, keys)| keys.record == *record));
+        for (community_id, keys) in bindings {
             if stop.is_cancelled() {
                 return;
             }
@@ -65,15 +78,15 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
                 advertised(host.held_ranges(&community_id).await),
                 key.generation(),
             );
-            if written.get(&community_id) == Some(&ad) {
+            if written.get(&keys.record) == Some(&ad) {
                 continue;
             }
             match host
-                .publish_own_history_ad(&community_id, &ad.0, &key)
+                .publish_own_history_ad(&community_id, &keys, &ad.0, &key)
                 .await
             {
                 Ok(()) => {
-                    written.insert(community_id, ad);
+                    written.insert(keys.record, ad);
                 }
                 Err(error) => {
                     tracing::warn!(community = %community_id, %error, "history ad not written");
@@ -130,16 +143,19 @@ impl HostGovernance {
     async fn publish_own_history_ad(
         &self,
         community_id: &str,
+        keys: &super::member_routes_loop::OwnRecordKeys,
         ranges: &[HistoryRange],
         key: &MediaEncryptionKey,
     ) -> Result<(), String> {
-        let keys = self.own_record_keys(community_id)?;
+        if !self.is_publication_record(community_id, &keys.record) {
+            return Err("device publication binding changed".into());
+        }
         let port = self.record_port().map_err(|e| e.to_string())?;
         write_history_ad(&*port, &keys.own(community_id), ranges, key, &*self.ctx.rng).await
     }
 
     /// The history ads of the members of `community_id` other than us, read
-    /// from each one's `M`/5 (owner pinned to its `MemberJoined`) and opened
+    /// from effective device records (owner pinned to the device binding) and opened
     /// with our current community key: the advertisers a joiner's bundle
     /// and a history request pick from (plan E3.4 S7, E3.5). A member whose
     /// ad is absent, unreadable or sealed under another generation is left
@@ -159,34 +175,33 @@ impl HostGovernance {
         };
         let me = self.my_pseudonym(community_id);
         let mut ads = Vec::new();
-        for (pseudonym, member) in &state.members {
+        for pseudonym in state.members.keys() {
             if me.as_ref() == Some(pseudonym) || state.is_departed(pseudonym) {
                 continue;
             }
-            let at = MemberRecordRef {
-                community_id,
-                pseudonym,
-                record: &member.member_record,
-                owner: &member.member_record_owner,
-            };
-            let read = match read_history_ad(&*port, &at).await {
-                Ok(Some(bytes)) => decode_member_history_ads(
-                    &bytes,
-                    &key,
-                    rekindle_codec::member_record::RecordScope {
-                        community_id,
-                        member_record: &member.member_record,
-                    },
-                    &pseudonym.0,
-                )
-                .map_err(|e| e.to_string()),
-                Ok(None) => continue,
-                Err(error) => Err(error),
-            };
-            match read {
-                Ok(ranges) => ads.push((pseudonym.clone(), ranges)),
-                Err(error) => {
-                    tracing::debug!(community = %community_id, %error, "history ad refused");
+            for at in member_device_records(&state, community_id, pseudonym) {
+                let read = match read_history_ad(&*port, &at).await {
+                    Ok(Some(bytes)) => decode_member_history_ads(
+                        &bytes,
+                        &key,
+                        rekindle_codec::member_record::RecordScope {
+                            community_id,
+                            member_record: at.record,
+                        },
+                        &pseudonym.0,
+                    )
+                    .map_err(|e| e.to_string()),
+                    Ok(None) => continue,
+                    Err(error) => Err(error),
+                };
+                match read {
+                    Ok(ranges) => {
+                        ads.push((pseudonym.clone(), ranges));
+                        break;
+                    }
+                    Err(error) => {
+                        tracing::debug!(community = %community_id, %error, "history ad refused");
+                    }
                 }
             }
         }

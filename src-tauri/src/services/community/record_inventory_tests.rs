@@ -1,8 +1,6 @@
-use super::*;
-use crate::state::community::CommunityRecords;
+use super::{warmable_record_keys, CommunityState};
 use rekindle_governance::state::{GovernanceState, InviteState};
 use rekindle_types::id::PseudonymKey;
-use std::collections::{HashMap, HashSet, VecDeque};
 
 fn invite(creator: PseudonymKey, secrets_key: &str, expires_at: Option<u64>) -> InviteState {
     InviteState {
@@ -26,80 +24,14 @@ fn community(
     gov: Option<GovernanceState>,
     overflow_keys: Vec<String>,
 ) -> CommunityState {
-    CommunityState {
-        genesis_cert: None,
-        key_pending_since_ms: None,
-        published_key_status: None,
-        held_threads: std::collections::HashSet::new(),
-        id: "gov-id".to_string(),
-        name: "T".to_string(),
-        description: None,
-        channels: Vec::new(),
-        categories: Vec::new(),
-        my_role_ids: Vec::new(),
-        roles: Vec::new(),
-        my_pseudonym_key: Some(hex::encode(my_pk.0)),
-        mek_generation: 0,
-        member_registry_key: Some("reg-key".to_string()),
-        my_subkey_index: None,
-        my_segment_index: None,
-        segments: Vec::new(),
-        watch_ring: std::collections::BTreeMap::new(),
-        sealed_pages: rekindle_node::host::community::sealed_pages::SealedPages::default(),
-        removal_watch: std::collections::BTreeMap::new(),
-        key_drop: None,
-        own_record_watch: None,
-        own_key_retired_shown: false,
-        key_drop_writer: std::sync::Arc::default(),
-        beat_view: rekindle_presence::community::BeatView::default(),
-        on_screen: rekindle_presence::community::OnScreen::default(),
-        member_routes: rekindle_presence::community::MemberRouteCache::default(),
-        head_hints: rekindle_node::host::community::state::HeadHints::default(),
-        outbox_streams: std::sync::Arc::default(),
-        outbox_unmapped: std::sync::Arc::default(),
-        snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),
-        anchor: Some("gov-key".to_string()),
-        my_member_record: None,
-        governance_state: gov,
-        own_removal: None,
-        removal_gate: std::sync::Arc::default(),
-        message_clock: 0,
-        gossip: None,
-        slot_keypair: None,
-        registry_owner_keypair: None,
-        slot_seed: None,
-        known_members: HashSet::new(),
-        watched_records: HashSet::new(),
-        record_sequences: HashMap::new(),
-        channel_last_send_at: HashMap::new(),
-        peer_reliability: HashMap::new(),
-        tasks: None,
-        leases: rekindle_records::lease::CommunityLeases::default(),
-        loops_started: false,
-        departing: false,
-        departure_running: false,
-        open_community_records: CommunityRecords {
-            governance_overflow_keys: overflow_keys,
-            ..CommunityRecords::default()
-        },
-        my_event_rsvps: HashMap::new(),
-        event_rsvps_by_event: HashMap::new(),
-        onboarding_complete: false,
-        my_bio: None,
-        my_pronouns: None,
-        my_theme_color: None,
-        my_badges: Vec::new(),
-        my_avatar_ref: None,
-        my_banner_ref: None,
-        icon_hash: None,
-        banner_hash: None,
-        member_profiles: HashMap::new(),
-        recent_member_joins: VecDeque::new(),
-        my_session_location: None,
-        presence_policy: rekindle_types::presence::PresenceSharingPolicy::default(),
-        members: std::collections::HashMap::new(),
-        synced_channels: std::collections::BTreeSet::new(),
-    }
+    let mut state = CommunityState::new("gov-id");
+    state.name = "T".into();
+    state.my_pseudonym_key = Some(hex::encode(my_pk.0));
+    state.member_registry_key = Some("reg-key".into());
+    state.anchor = Some("gov-key".into());
+    state.governance_state = gov;
+    state.open_community_records.governance_overflow_keys = overflow_keys;
+    state
 }
 
 #[test]
