@@ -21,20 +21,11 @@ pub trait ScriptOps<R: Runtime>: PlatformExecutor<R> {
         let args_json = serde_json::to_string(args)
             .map_err(|e| WebDriverErrorResponse::invalid_argument(&e.to_string()))?;
 
-        // Generate unique result variable name
-        let result_var = format!("__wdio_exec_{}", uuid::Uuid::new_v4());
-
-        // Wrapper script that:
-        // 1. Executes the user's script as a function body (per W3C WebDriver spec §13.2.2)
-        // 2. Stores result in a global variable for polling
-        // Note: We use an IIFE that returns `undefined` to avoid Promise serialization issues
-        //
-        // The script is treated as a function body. Clients that want to return a value must
-        // include an explicit `return` statement — this matches WebdriverIO's function-object
-        // wrapping (`return (fn).apply(null, arguments)`) and raw string scripts like
-        // `"return document.title"`.
-        let wrapper = format!(
-            r"(function() {{
+        // The script runs as an async function body (W3C WebDriver §13.2.2: the script is a
+        // function body applied to the arguments); its result object comes back from the call
+        // itself (`call_async_function`), never through a page global a navigation can wipe.
+        let body = format!(
+            r"
                 var ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 
                 function serializeValue(value) {{
@@ -83,56 +74,17 @@ pub trait ScriptOps<R: Runtime>: PlatformExecutor<R> {
                     return arg;
                 }}
 
-                // Start async execution (fire and forget)
-                (async function() {{
-                    try {{
-                        var args = {args_json}.map(deserializeArg);
-                        // W3C-compliant: wrap as function body, apply with args
-                        var raw_result = await (async function() {{ {script} }}).apply(null, args);
-                        var serialized = serializeValue(raw_result);
-                        window['{result_var}'] = {{ __wd_success: true, __wd_value: serialized }};
-                    }} catch (e) {{
-                        window['{result_var}'] = {{ __wd_success: false, __wd_error: e.message || String(e) }};
-                    }}
-                }})();
-
-                // Return undefined to avoid Promise serialization issues
-                return undefined;
-            }})()",
+                try {{
+                    var args = {args_json}.map(deserializeArg);
+                    var raw_result = await (async function() {{ {script} }}).apply(null, args);
+                    return {{ __wd_success: true, __wd_value: serializeValue(raw_result) }};
+                }} catch (e) {{
+                    return {{ __wd_success: false, __wd_error: e.message || String(e) }};
+                }}",
         );
 
-        // Execute the wrapper script (fire and forget, returns undefined)
-        self.evaluate_js(&wrapper).await?;
-
-        // Poll for the result with timeout
-        let poll_script = format!("window['{result_var}']");
-        let timeout = std::time::Duration::from_millis(self.script_timeout_ms());
-        let start = std::time::Instant::now();
-        let poll_interval = std::time::Duration::from_millis(50);
-
-        loop {
-            let poll_result = self.evaluate_js(&poll_script).await?;
-            let inner = poll_result.get("value").cloned().unwrap_or(Value::Null);
-
-            // Check if we have a result
-            if !inner.is_null() && inner.get("__wd_success").is_some() {
-                // Clean up the global variable
-                let cleanup_script = format!("delete window['{result_var}']");
-                let _ = self.evaluate_js(&cleanup_script).await;
-
-                return extract_script_result_from_inner(&inner);
-            }
-
-            if start.elapsed() > timeout {
-                // Clean up on timeout
-                let cleanup_script = format!("delete window['{result_var}']");
-                let _ = self.evaluate_js(&cleanup_script).await;
-
-                return Err(WebDriverErrorResponse::script_timeout());
-            }
-
-            tokio::time::sleep(poll_interval).await;
-        }
+        let inner = self.call_async_function(&body).await?;
+        extract_script_result_from_inner(&inner)
     }
 }
 
