@@ -152,11 +152,9 @@ netsim-scale = [  ]
 # `HostGovernance::netsim_call_member`); only this crate's own
 # dev-dependency below turns it on, so no production build has it.
 netsim-entry = [  ]
-# The real-app suite's damaged-post switch (plan E7.14,
-# `host::webdriver`): only `rekindle-desktop`'s own `webdriver-test`
-# feature turns it on, in a debug build (`lib.rs` compile_error!), never a
-# release one (`cargo xtask check-webdriver-release`).
-webdriver-test = [  ]
+# Real-app test hooks (host::webdriver), enabled explicitly by the desktop
+# and fleet test builds. Debug only (cargo xtask check-webdriver-release).
+webdriver-test = ["rekindle-ipc/webdriver-test"]
 
 [dev-dependencies]
 rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }

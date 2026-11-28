@@ -15,6 +15,9 @@ workspace = true
 name = "rekindle"
 path = "src/main.rs"
 
+[features]
+webdriver-test = ["rekindle-ipc/webdriver-test"]
+
 [dependencies]
 anyhow = { workspace = true }
 base64 = "0.22"

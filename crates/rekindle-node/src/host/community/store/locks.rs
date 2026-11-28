@@ -178,6 +178,8 @@ impl CommunityStore {
     /// Drop a community — on leave.
     pub fn remove(&self, community_id: &str) {
         self.map.write().remove(community_id);
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        self.governance_ingest_holds.remove(community_id);
         self.ring_moves.lock().remove(community_id);
         self.rebuilds.lock().remove(community_id);
         self.rebuild_flights.lock().remove(community_id);
@@ -196,6 +198,8 @@ impl CommunityStore {
     /// Drop every community. Called when the session ends.
     pub fn clear(&self) {
         self.map.write().clear();
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        self.governance_ingest_holds.clear();
         self.ring_moves.lock().clear();
         self.rebuilds.lock().clear();
         self.rebuild_flights.lock().clear();

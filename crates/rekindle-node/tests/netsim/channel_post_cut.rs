@@ -237,3 +237,117 @@ async fn a_channel_post_stays_pending_until_its_governance_cut_resolves() {
         "the same id resolves to the accepted post"
     );
 }
+
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn webdriver_post_skips_the_author_gate_but_the_reader_refuses_it() {
+    let community = Community::of(2, 973).await;
+    let channel = community.general_id(0).await;
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelOverwriteSet {
+                community: community.anchor.clone(),
+                channel_id: channel.clone(),
+                target_type: "role".into(),
+                target_id: RoleId::EVERYONE.to_hex(),
+                allow: 0,
+                deny: SEND_MESSAGES,
+            },
+        )))
+        .await;
+    let author = &community.nodes[1];
+    let gov = author.host.governance();
+    let channel_id = rekindle_types::id::ChannelId::from_hex(&channel).unwrap();
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            gov.governance_state(&community.anchor)
+                .is_some_and(|state| {
+                    state.overwrites.iter().any(|((id, _), overwrite)| {
+                        *id == channel_id && overwrite.deny & SEND_MESSAGES != 0
+                    })
+                })
+        })
+        .await
+    );
+    assert_eq!(
+        community.post(1, "ordinary post").await.unwrap_err().code,
+        403
+    );
+
+    let posted = author
+        .ok(IpcRequest::WebdriverPostSkippingLocalPermission {
+            channel,
+            body: "signed by the denied author".into(),
+            reply_to: None,
+        })
+        .await;
+    let id = message_id(&posted);
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            post_row(&community, 0, id).await.is_some_and(|row| {
+                row["body"] == ""
+                    && row["admission"]["status"] == "refused"
+                    && row["admission"]["reason"] == "missingPermission"
+            })
+        })
+        .await
+    );
+}
+
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn webdriver_governance_hold_makes_a_live_post_pending_until_release() {
+    let community = Community::of(2, 974).await;
+    let anchor = &community.anchor;
+    let reader = &community.nodes[1];
+    reader
+        .ok(IpcRequest::WebdriverHoldGovernanceOps {
+            community: anchor.clone(),
+        })
+        .await;
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelSetTopic {
+                community: anchor.clone(),
+                channel_id: community.general_id(0).await,
+                topic: "creates a new governance head".into(),
+            },
+        )))
+        .await;
+
+    let body = "post made after the topic update";
+    let posted = community.post(0, body).await.unwrap();
+    let id = message_id(&posted);
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            post_row(&community, 1, id)
+                .await
+                .is_some_and(|row| row["body"] == "" && row["admission"]["status"] == "pending")
+        })
+        .await
+    );
+    // Wait for a normal receive path to fetch the op while the hold is active.
+    for _ in 0..30 {
+        community.sim.quiesce().await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    assert_eq!(
+        post_row(&community, 1, id).await.unwrap()["admission"]["status"],
+        "pending"
+    );
+
+    let released = reader
+        .ok(IpcRequest::WebdriverReleaseGovernanceOps {
+            community: anchor.clone(),
+        })
+        .await;
+    assert!(released["released"].as_u64().unwrap() > 0);
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            post_row(&community, 1, id)
+                .await
+                .is_some_and(|row| row["body"] == body && row["admission"].is_null())
+        })
+        .await
+    );
+}
