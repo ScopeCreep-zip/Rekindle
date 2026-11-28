@@ -15,22 +15,6 @@ use crate::host::{shell_hooks, Host};
 #[derive(Default)]
 struct Recorder(parking_lot::Mutex<Vec<String>>);
 
-/// The test shells hold no voice session.
-struct NoVoice;
-
-impl rekindle_presence::SessionPresence for NoVoice {
-    fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
-        None
-    }
-
-    fn reconcile_voice_roster(
-        &self,
-        _community_id: &str,
-        _rows: Vec<rekindle_presence::VoicePresenceRow>,
-    ) {
-    }
-}
-
 /// A key reader over an empty cache: the test shells hold no keys.
 fn empty_channel_keys() -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
     crate::daemon::mek_rotation::provider_over(
@@ -84,10 +68,6 @@ impl shell_hooks::ShellHooks for Recorder {
 
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
         empty_channel_keys()
-    }
-
-    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
-        Arc::new(NoVoice)
     }
 
     async fn community_records_ready(
@@ -264,10 +244,6 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
 
         fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
             empty_channel_keys()
-        }
-
-        fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
-            Arc::new(NoVoice)
         }
 
         async fn community_records_ready(

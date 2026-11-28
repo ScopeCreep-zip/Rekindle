@@ -546,6 +546,11 @@ pub enum IpcRequest {
     /// The static role-editor permission catalogue, available in any state.
     PermissionCatalogue,
 
+    /// Set the held voice session's microphone state.
+    VoiceSetMute { muted: bool },
+    /// Set the held voice session's playback state.
+    VoiceSetDeafen { deafened: bool },
+
     #[cfg(all(feature = "webdriver-test", debug_assertions))]
     WebdriverPostSkippingLocalPermission {
         channel: String,

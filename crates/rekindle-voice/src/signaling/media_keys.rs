@@ -240,7 +240,7 @@ pub(in crate::signaling) async fn on_peer_added(
             "installed media keys held until the sender's join"
         );
     }
-    let join = keys.on_join(joiner, Instant::now());
+    let join = keys.on_join(joiner, deps.clock().monotonic());
     for key in join.joiner {
         spawn_delivery(deps, community_id, channel_id, joiner, key);
     }
@@ -275,7 +275,7 @@ pub(in crate::signaling) async fn on_peer_removed(
     if is_stage && departure == Departure::LeftChannel {
         return;
     }
-    match keys.on_leave(Instant::now()) {
+    match keys.on_leave(deps.clock().monotonic()) {
         LeaveRotation::Rotated(key) => {
             deliver_to_roster(deps, community_id, channel_id, transport, &key).await;
         }

@@ -135,11 +135,11 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn last_inbound_media_ms(&self, call_id: &str) -> Option<u64> {
-        if !self.state.call_media.is(call_id) {
-            return None;
-        }
-        let engine = self.state.voice_engine.lock();
-        engine.as_ref().and_then(|h| h.media_liveness.latest())
+        self.state
+            .host
+            .current()?
+            .voice()
+            .direct_media_last_seen(call_id)
     }
 
     fn spawn_consent_watch(&self, call_id: String, since_ms: u64) {
@@ -172,25 +172,45 @@ impl CallSignalingDeps for CallsAdapter {
         peer_pubkey_hex: &str,
         _kind: CallKind,
     ) -> Result<(), CallError> {
-        super::call_media::start(&self.state, &self.app_handle, call_id, peer_pubkey_hex).await
+        let host = self.state.host.current().ok_or_else(|| {
+            CallError::Session(rekindle_types::audio::VoiceFailure::SignInRequired.notice())
+        })?;
+        let call = self
+            .state
+            .active_calls
+            .get(call_id)
+            .filter(|call| call.peer_pubkey == peer_pubkey_hex)
+            .ok_or_else(|| {
+                CallError::Session(rekindle_types::audio::VoiceFailure::Session.notice())
+            })?;
+        let keys = rekindle_voice::CallMediaKeys {
+            secret: call.media_secret.ok_or_else(|| {
+                CallError::Session(rekindle_types::audio::VoiceFailure::Session.notice())
+            })?,
+            sender: call.media_sender,
+        };
+        host.start_direct_voice(call_id, peer_pubkey_hex, keys)
+            .await
+            .map_err(CallError::Session)
     }
 
     async fn shutdown_voice_session(&self, call_id: &str) {
-        super::call_media::shutdown(&self.state, call_id).await;
+        if let Some(host) = self.state.host.current() {
+            host.stop_direct_voice(call_id).await;
+        }
     }
 
     fn voice_active(&self) -> bool {
-        self.state.voice_engine.lock().is_some()
+        self.state
+            .host
+            .current()
+            .is_some_and(|host| host.voice().engine_present())
     }
 
     fn pre_stage_voice_channel(&self) {
-        // W14.1: drop any stale staged receiver first so a previous
-        // aborted accept doesn't leak a dangling rx; create a fresh
-        // bounded mpsc and install both ends on AppState.
-        let (tx, rx) = tokio::sync::mpsc::channel(200);
-        *self.state.voice_packet_tx.write() = Some(tx);
-        *self.state.voice_packet_rx_staged.lock() = Some(rx);
-        tracing::info!("W14.1 — pre-staged voice receive channel on CallAccept arrival");
+        if let Some(host) = self.state.host.current() {
+            host.pre_stage_direct_voice();
+        }
     }
 
     fn spawn_dialing_call_timeout(

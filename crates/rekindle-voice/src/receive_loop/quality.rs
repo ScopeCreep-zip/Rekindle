@@ -18,7 +18,7 @@
 //! not need to scale, and shortening it would be the change that
 //! needed justifying, not lengthening it.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::VoiceReceiveLoop;
 
@@ -42,22 +42,26 @@ impl VoiceReceiveLoop {
     ) {
         self.key_drops += 1;
         self.deps.record_packet_drop();
-        let due = self
-            .last_key_request
-            .get(sender)
-            .is_none_or(|t| t.elapsed() >= KEY_REQUEST_INTERVAL);
+        let due = self.last_key_request.get(sender).is_none_or(|t| {
+            self.clock.monotonic().saturating_duration_since(*t) >= KEY_REQUEST_INTERVAL
+        });
         if due {
             tracing::info!(community = %community_id, channel = %channel_id, sender, index,
                 "requesting a sender's media key");
             self.deps
                 .request_media_key(community_id, channel_id, sender, index);
             self.last_key_request
-                .insert(sender.to_string(), Instant::now());
+                .insert(sender.to_string(), self.clock.monotonic());
         }
     }
 
     pub(super) fn log_quality_if_due(&mut self) {
-        if self.last_quality_check.elapsed() < Duration::from_secs(5) {
+        if self
+            .clock
+            .monotonic()
+            .saturating_duration_since(self.last_quality_check)
+            < Duration::from_secs(5)
+        {
             return;
         }
         // Phase 5 — surface receive-side jitter drops (overflow trims +
@@ -167,7 +171,7 @@ impl VoiceReceiveLoop {
         self.playout = super::PlayoutCounters::default();
         self.packets_received = 0;
         self.late_ticks = 0;
-        self.last_quality_check = Instant::now();
+        self.last_quality_check = self.clock.monotonic();
     }
 }
 

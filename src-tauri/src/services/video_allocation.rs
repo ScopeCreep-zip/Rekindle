@@ -14,11 +14,8 @@ use crate::state::AppState;
 /// The current video encoder target, for an encoder starting mid-call.
 #[must_use]
 pub fn encoder_kbps(state: &AppState) -> u32 {
-    let allocation = state
-        .voice_engine
-        .lock()
-        .as_ref()
-        .map(|h| *h.media.allocator().subscribe().borrow())
+    let allocation = crate::state_helpers::voice_media(state)
+        .map(|media| *media.allocator().subscribe().borrow())
         .unwrap_or_default();
     rekindle_voice::transport::allocation_follower::encoder_kbps(allocation)
 }
@@ -70,4 +67,32 @@ impl VideoEncoders for DesktopVideoEncoders {
             }),
         );
     }
+}
+
+/// Follow the current Host session while its video encoders are in the shell.
+pub(crate) fn bind(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    host: &rekindle_node::host::Host,
+    community_id: &str,
+    channel_id: &str,
+) {
+    let Some((media, scope)) = host
+        .voice()
+        .channel_video_allocation(community_id, channel_id)
+    else {
+        return;
+    };
+    let follower = rekindle_voice::transport::allocation_follower::VideoAllocationFollower {
+        encoders: DesktopVideoEncoders {
+            state: Arc::clone(state),
+            app: app.clone(),
+            community_id: community_id.to_owned(),
+            channel_id: channel_id.to_owned(),
+        },
+        allocator: Arc::clone(media.allocator()),
+        community_id: community_id.to_owned(),
+        channel_id: channel_id.to_owned(),
+    };
+    scope.spawn_with_token_or_drop("video allocation", |stop| follower.run(stop));
 }

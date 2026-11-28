@@ -1,7 +1,9 @@
 use rekindle_codec::community::envelope::{ControlPayload, MediaSessionKey, VoiceRosterEntry};
 use rekindle_governance_runtime::CardText;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceParticipant};
+use rekindle_types::subscription_events::{
+    StreamFrame, SubscriptionEvent, VoiceEvent, VoiceParticipant,
+};
 
 use crate::host::runtime::tests::offline_host;
 
@@ -19,16 +21,23 @@ async fn voice_join_prefers_the_verified_card_to_the_handshake() {
             game: None
         },
     ));
-    let event = host.governance().named_voice_event(
+    let from = host.ctx.journal.head();
+    rekindle_voice::signaling::handle_voice_signaling(
+        host.voice_signaling_deps(),
         "community",
         &cara.to_hex(),
-        &ControlPayload::VoiceJoin {
+        ControlPayload::VoiceJoin {
             channel_id: "stage".into(),
             route_blob: vec![1, 2, 3],
             display_name: Some("Handshake name".into()),
             session_key: MediaSessionKey::default(),
         },
-    );
+    )
+    .await;
+    let event = host.replay(from).into_iter().find_map(|frame| match frame {
+        StreamFrame::Event(event) => Some(event.event),
+        _ => None,
+    });
     let Some(SubscriptionEvent::Voice(VoiceEvent::Joined {
         display_name,
         route_blob,
@@ -55,10 +64,12 @@ async fn voice_roster_uses_the_fingerprint_when_the_card_has_no_name() {
             game: None
         },
     ));
-    let event = host.governance().named_voice_event(
+    let from = host.ctx.journal.head();
+    rekindle_voice::signaling::handle_voice_signaling(
+        host.voice_signaling_deps(),
         "community",
         &cara.to_hex(),
-        &ControlPayload::VoiceRoster {
+        ControlPayload::VoiceRoster {
             channel_id: "stage".into(),
             participants: [cara.to_hex(), "invalid-key".into()]
                 .into_iter()
@@ -72,7 +83,12 @@ async fn voice_roster_uses_the_fingerprint_when_the_card_has_no_name() {
                 })
                 .collect(),
         },
-    );
+    )
+    .await;
+    let event = host.replay(from).into_iter().find_map(|frame| match frame {
+        StreamFrame::Event(event) => Some(event.event),
+        _ => None,
+    });
     let Some(SubscriptionEvent::Voice(VoiceEvent::RosterUpdated { participants, .. })) = event
     else {
         panic!("expected a roster update");

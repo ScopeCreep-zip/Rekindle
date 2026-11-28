@@ -129,7 +129,6 @@ mod unlock_barrier_loop;
 pub(crate) mod unread;
 pub(crate) mod view_gain;
 pub(crate) mod views;
-mod voice_events;
 mod watch;
 mod watch_relay;
 pub mod watch_ring;

@@ -15,6 +15,7 @@ mod presence;
 mod servers;
 mod skin;
 mod thread;
+mod voice;
 
 use std::path::PathBuf;
 
@@ -88,6 +89,7 @@ fn samples() -> Map<String, Value> {
         assert!(out.insert(id.to_owned(), value).is_none(), "duplicate {id}");
     };
     presence::samples(&mut add);
+    voice::samples(&mut add);
     add(
         "channel.admission.pending",
         to(PostAdmission::Pending {

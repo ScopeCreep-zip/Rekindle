@@ -18,6 +18,10 @@ mod reask;
 
 struct FixedClock(AtomicI64);
 impl Clock for FixedClock {
+    fn monotonic(&self) -> std::time::Instant {
+        tokio::time::Instant::now().into_std()
+    }
+
     fn now_ms(&self) -> u64 {
         u64::try_from(self.0.load(Ordering::SeqCst)).unwrap_or(0)
     }

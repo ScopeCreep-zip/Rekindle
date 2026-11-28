@@ -1,6 +1,6 @@
 //! Global keyboard shortcut registration and handlers.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+use rekindle_types::subscription_events::SubscriptionEvent;
 use std::sync::Arc;
 
 use rekindle_lifecycle::SessionScope;
@@ -53,7 +53,9 @@ pub fn register(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std
             if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyM)
                 || shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyM)
             {
-                toggle_mute(app_handle, &shortcut_state);
+                if let Some(host) = shortcut_state.host.current() {
+                    host.toggle_voice_muted();
+                }
             }
         })
         .build();
@@ -381,34 +383,6 @@ fn toggle_buddy_list(app_handle: &tauri::AppHandle) {
             crate::windows::reveal_window(&window);
             tracing::debug!("buddy list shown via global shortcut");
         }
-    }
-}
-
-/// Toggle voice mute state (Ctrl+Shift+M / Cmd+Shift+M).
-///
-/// Flips the mute flag on the voice engine and emits a `VoiceEvent::UserMuted`
-/// event so the frontend stays in sync.
-fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
-    // Read identity key first to avoid holding two locks simultaneously
-    let public_key = crate::state_helpers::owner_key_or_default(state);
-
-    if let Some(new_muted) = state.toggle_voice_mute() {
-        crate::event_dispatch::emit_self_muted(state, new_muted);
-        // Only meaningful inside a call: muting with no session running
-        // has no scope to report against, and `toggle_voice_mute`
-        // already returns `None` in that case.
-        if let Some(scope) = crate::state_helpers::current_voice_scope(state) {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
-                    scope,
-                    target_pseudonym: public_key,
-                    muted: new_muted,
-                }),
-            );
-        }
-
-        tracing::debug!(muted = new_muted, "voice mute toggled via global shortcut");
     }
 }
 

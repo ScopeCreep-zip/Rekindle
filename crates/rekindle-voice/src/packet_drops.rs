@@ -28,6 +28,13 @@ impl PacketDrops {
         self.total.load(Ordering::Relaxed)
     }
 
+    /// Clear the counters when the identity unlock scope ends.
+    pub fn reset(&self) {
+        self.ingress.store(0, Ordering::Relaxed);
+        self.receive.store(0, Ordering::Relaxed);
+        self.total.store(0, Ordering::Relaxed);
+    }
+
     /// Drain this interval's counters, then build events for the active scope.
     pub fn drain(&self, scope: Option<VoiceScope>) -> impl Iterator<Item = VoiceEvent> {
         let counts = [

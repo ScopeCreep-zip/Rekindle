@@ -219,12 +219,13 @@ async fn community_call(
                 if !admitted {
                     return Some(NAK.to_vec());
                 }
-                crate::services::voice_signaling_adapter::answer_media_key_call(
-                    app_handle, state, &payload,
-                )
-                .await
-                .encode(&payload)
-                .unwrap_or_else(|| NAK.to_vec())
+                let Some(host) = state.host.current() else {
+                    return Some(NAK.to_vec());
+                };
+                host.answer_voice_media_key_call(&payload)
+                    .await
+                    .encode(&payload)
+                    .unwrap_or_else(|| NAK.to_vec())
             }
             Some(ControlPayload::RequestAttachment {
                 channel_id: _,

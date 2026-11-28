@@ -128,13 +128,9 @@ impl ShellFollowUp {
                 sender_pseudonym,
                 payload,
             } => {
-                crate::services::voice_signaling_adapter::handle_voice_signaling(
-                    app,
-                    state,
-                    &community_id,
-                    &sender_pseudonym,
-                    payload,
-                );
+                if let Some(host) = state.host.current() {
+                    host.ingest_voice_signaling(&community_id, &sender_pseudonym, payload);
+                }
             }
             Self::VideoPayload {
                 community_id,

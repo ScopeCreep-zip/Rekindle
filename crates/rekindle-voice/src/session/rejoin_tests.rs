@@ -74,6 +74,10 @@ impl MediaKeySource for Joiner {
     fn call_media(&self, _: &str) -> Option<CallMediaKeys> {
         None
     }
+
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        Arc::new(rekindle_utils::SystemClock)
+    }
 }
 
 #[async_trait]
@@ -338,7 +342,8 @@ async fn ended_sessions_leave_no_egress_driver_running() {
     let joiner = Arc::new(Joiner::default());
     for _ in 0..3 {
         let egress = login.child("voice media egress");
-        let mut transport = VoiceTransport::new(CHANNEL.into());
+        let mut transport =
+            VoiceTransport::new(CHANNEL.into(), Arc::new(rekindle_utils::SystemClock));
         transport.set_signing_key(ed25519_dalek::SigningKey::from_bytes(&[3; 32]));
         transport.connect(
             Arc::new(Sink),

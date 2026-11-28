@@ -6,6 +6,8 @@ pub enum VoiceSource {
     Mic,
     /// Keep the capture pipeline live without opening a device or sending PCM.
     Silence,
+    /// Loop a recorded speech clip through the capture pipeline.
+    Speech,
 }
 
 /// Where the voice engine sends decoded audio.
@@ -136,6 +138,7 @@ pub enum VoiceFailure {
     SignInRequired,
     NotConnected,
     MediaRouteUnavailable,
+    ChannelUnavailable,
     Session,
 }
 
@@ -149,6 +152,7 @@ impl VoiceFailure {
             Self::SignInRequired => "Sign in to use voice.".into(),
             Self::NotConnected => "You're not connected to a voice channel.".into(),
             Self::MediaRouteUnavailable => "Your media route is unavailable.".into(),
+            Self::ChannelUnavailable => "That voice channel is unavailable.".into(),
             Self::Session => "Rekindle couldn't complete the voice action.".into(),
         }
     }

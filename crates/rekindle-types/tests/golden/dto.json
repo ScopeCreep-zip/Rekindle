@@ -1552,13 +1552,6 @@
     },
     "kind": "joinGroup"
   },
-  "skin.callOp.joinVoice": {
-    "arg": {
-      "channel": "voice",
-      "community": "VLD0:community"
-    },
-    "kind": "joinVoice"
-  },
   "skin.callOp.leave": {
     "arg": {
       "callId": "call-1"
@@ -2327,5 +2320,21 @@
   },
   "skin.window.chat": "chat",
   "skin.window.community": "community",
-  "skin.window.main": "main"
+  "skin.window.main": "main",
+  "voice.controls": {
+    "deafened": false,
+    "muted": true
+  },
+  "voice.joined": {
+    "channel": "04040404040404040404040404040404",
+    "community": "community",
+    "deafened": false,
+    "joined": true,
+    "muted": false
+  },
+  "voice.left": {
+    "channel": "04040404040404040404040404040404",
+    "community": "community",
+    "left": true
+  }
 }

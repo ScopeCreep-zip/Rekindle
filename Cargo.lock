@@ -7585,6 +7585,7 @@ name = "rekindle-media-bwe"
 version = "0.1.0"
 dependencies = [
  "fastrand",
+ "tokio",
  "tracing",
 ]
 
@@ -7655,6 +7656,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.8.6",
  "rekindle-audit",
+ "rekindle-calls",
  "rekindle-channel",
  "rekindle-codec",
  "rekindle-crypto",
@@ -7688,6 +7690,7 @@ dependencies = [
  "rekindle-types",
  "rekindle-utils",
  "rekindle-vault",
+ "rekindle-voice",
  "rustix 1.1.6",
  "sd-notify",
  "serde",

@@ -359,6 +359,9 @@ pub fn on_local_caps_reported(
             |i| i.local_caps_reported = true,
         );
     }
+    if let Some(host) = state.host.current() {
+        host.set_voice_video_capabilities(caps.clone());
+    }
     set_pending_local_caps(state, Some(caps));
     Ok(())
 }
@@ -384,7 +387,7 @@ fn set_pending_local_caps(state: &Arc<AppState>, caps: Option<MediaCapabilities>
 
 /// The most recently reported local WebCodecs probe caps, or `None`
 /// if the frontend hasn't reported yet. Also feeds the directed
-/// `MediaCapabilities` advertisements (`voice_adapter::io_helpers`) so
+/// `MediaCapabilities` advertisements from the Host so
 /// peers negotiate against our real probe matrix, not the placeholder.
 pub fn reported_local_caps(state: &Arc<AppState>) -> Option<MediaCapabilities> {
     let guard = state.video_sessions.inner.read();
@@ -494,3 +497,86 @@ pub fn on_peer_caps_received(
 #[cfg(test)]
 #[path = "video_session/tests.rs"]
 mod tests;
+
+/// Follow the Host's audio session for the existing community video shell.
+pub(crate) async fn follow_voice(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    host: &rekindle_node::host::Host,
+    event: &rekindle_types::subscription_events::VoiceEvent,
+) {
+    use rekindle_types::subscription_events::{VoiceEvent, VoiceScope};
+    let Some(scope @ VoiceScope::Community { community, channel }) = event.scope() else {
+        return;
+    };
+    match event {
+        VoiceEvent::LocalJoined { .. } => {
+            crate::services::video_allocation::bind(app, state, host, community, channel);
+            let reported_caps = reported_local_caps(state);
+            let caps_reported = reported_caps.is_some();
+            if let Some(caps) = reported_caps {
+                host.set_voice_video_capabilities(caps);
+            }
+            crate::services::community::media_ready_runtime::update_media_ready(
+                state,
+                community,
+                channel,
+                |i| i.local_caps_reported = caps_reported,
+            );
+            if let Err(error) = on_local_joined(state, community, channel) {
+                tracing::warn!(%error, "video session did not open");
+            }
+        }
+        VoiceEvent::RosterUpdated { .. } => {
+            let Some(roster) = host
+                .voice()
+                .roster()
+                .await
+                .filter(|roster| &roster.scope == scope)
+            else {
+                return;
+            };
+            let key = (community.clone(), channel.clone());
+            let previous: Vec<String> = state
+                .video_sessions
+                .inner
+                .read()
+                .get(&key)
+                .into_iter()
+                .flat_map(|slot| slot.peer_caps.keys())
+                .filter(|peer| peer.as_str() != LOCAL_PEER_KEY)
+                .cloned()
+                .collect();
+            for peer in previous.iter().filter(|peer| !roster.peers.contains(peer)) {
+                if let Err(error) = on_peer_left(state, community, channel, peer) {
+                    tracing::warn!(%error, "video peer removal failed");
+                }
+            }
+            for peer in roster.peers.iter().filter(|peer| !previous.contains(peer)) {
+                if let Err(error) = on_peer_joined(state, community, channel, peer) {
+                    tracing::warn!(%error, "video peer registration failed");
+                }
+            }
+            crate::services::community::media_ready_runtime::update_media_ready(
+                state,
+                community,
+                channel,
+                |i| i.roster_non_empty = !roster.peers.is_empty(),
+            );
+        }
+        VoiceEvent::Left { pseudonym, .. }
+            if host.voice().session().is_none()
+                && crate::state_helpers::current_owner_key(state)
+                    .as_ref()
+                    .is_ok_and(|owner| owner == pseudonym) =>
+        {
+            state
+                .video_sessions
+                .inner
+                .write()
+                .remove(&(community.clone(), channel.clone()));
+            crate::services::native_video::stop(state);
+        }
+        _ => {}
+    }
+}

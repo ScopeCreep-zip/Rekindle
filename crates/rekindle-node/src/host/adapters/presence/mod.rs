@@ -137,15 +137,9 @@ async fn run_on_screen(ctx: Weak<DaemonContext>, stop: tokio_util::sync::Cancell
     }
 }
 
-/// Our voice state (plan E3.4 S8-pre ruling: only the voice channel and
-/// roster): the shell's voice session until E4.1, and on `rekindled` the
-/// Host's own record ([`crate::host::own_voice`]). Our session and consent
-/// are the Host's ([`own_session`]).
+/// Both modes project the held Host session and receive the members' beats.
 pub(crate) fn session_presence(ctx: &DaemonContext) -> Arc<dyn SessionPresence> {
-    match &ctx.shell {
-        Some(shell) => shell.session_presence(),
-        None => Arc::new(ctx.own_voice.clone()),
-    }
+    Arc::new(super::voice::HostVoicePresence(ctx.this.clone()))
 }
 
 /// We joined or left a voice channel in `community` (plan E3.4 "Constant

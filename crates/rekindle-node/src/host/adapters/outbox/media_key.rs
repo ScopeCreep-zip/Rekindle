@@ -108,11 +108,11 @@ impl MediaKeyStreams {
 }
 
 impl OutboxSlot {
-    fn media_keys(&self) -> Option<MediaKeyStreams> {
+    pub(crate) fn media_keys(&self) -> Option<MediaKeyStreams> {
         self.current.read().clone().map(MediaKeyStreams)
     }
 
-    fn install_media_key_carrier(&self, carrier: Arc<dyn MediaKeyCarrier>) {
+    pub(crate) fn install_media_key_carrier(&self, carrier: Arc<dyn MediaKeyCarrier>) {
         (self.senders).install(StreamKind::MediaKey, Arc::new(MediaKeySender(carrier)));
     }
 }

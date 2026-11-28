@@ -67,6 +67,8 @@ rekindle-outbox = { path = "../rekindle-outbox" }
 # MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-dm = { path = "../rekindle-dm" }
+rekindle-calls = { path = "../rekindle-calls" }
+rekindle-voice = { path = "../rekindle-voice" }
 # Local wall-clock time for the Host's words ("You're timed out until
 # 14:05."): the reason a disabled community control shows (plan E3.2 S9).
 chrono = { version = "0.4", features = [ "clock" ], default-features = false }

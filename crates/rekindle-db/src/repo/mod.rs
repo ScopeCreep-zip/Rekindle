@@ -91,3 +91,5 @@ pub(crate) fn identity_from_text(text: &str, index: usize) -> rusqlite::Result<[
 #[cfg(test)]
 #[path = "mod_fixture.rs"]
 pub(crate) mod fixture;
+
+pub mod voice_session_events;

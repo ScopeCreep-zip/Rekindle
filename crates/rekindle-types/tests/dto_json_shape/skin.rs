@@ -400,13 +400,6 @@ fn selection_samples(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add(
-        "skin.callOp.joinVoice",
-        to(rekindle_types::dto::skin_run::CallOp::JoinVoice {
-            community: "VLD0:community".into(),
-            channel: "voice".into(),
-        }),
-    );
-    add(
         "skin.shellOp.openCommunityInfo",
         to(rekindle_types::dto::skin_run::ShellOp::OpenCommunityInfo {
             community: "VLD0:community".into(),

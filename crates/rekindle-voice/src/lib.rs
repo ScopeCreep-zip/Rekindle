@@ -211,22 +211,31 @@ pub struct VoiceEngine {
     /// jitter buffer. Only differences within it matter, so the origin
     /// is arbitrary — it just has to be stable for the engine's life.
     origin: std::time::Instant,
+
+    /// The clock port the arrival stamps read (plan E4.1).
+    clock: std::sync::Arc<dyn rekindle_utils::Clock>,
 }
 
 impl VoiceEngine {
     /// Build the engine and open the selected audio endpoints before publishing a session.
-    pub fn open(prefs: &AudioPrefs) -> Result<Self, VoiceError> {
-        let mut engine = Self::new(VoiceConfig {
-            input_device: prefs.input_device.clone(),
-            output_device: prefs.output_device.clone(),
-            input_volume: prefs.input_volume,
-            output_volume: prefs.output_volume,
-            noise_suppression: prefs.noise_suppression,
-            echo_cancellation: prefs.echo_cancellation,
-            input_channels: prefs.input_channels.clone(),
-            io: prefs.io,
-            ..VoiceConfig::default()
-        })?;
+    pub fn open(
+        prefs: &AudioPrefs,
+        clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+    ) -> Result<Self, VoiceError> {
+        let mut engine = Self::new(
+            VoiceConfig {
+                input_device: prefs.input_device.clone(),
+                output_device: prefs.output_device.clone(),
+                input_volume: prefs.input_volume,
+                output_volume: prefs.output_volume,
+                noise_suppression: prefs.noise_suppression,
+                echo_cancellation: prefs.echo_cancellation,
+                input_channels: prefs.input_channels.clone(),
+                io: prefs.io,
+                ..VoiceConfig::default()
+            },
+            clock,
+        )?;
         engine.start_audio()?;
         Ok(engine)
     }
@@ -238,7 +247,10 @@ impl VoiceEngine {
     }
 
     /// Create a new voice engine with the given configuration.
-    pub fn new(config: VoiceConfig) -> Result<Self, VoiceError> {
+    pub fn new(
+        config: VoiceConfig,
+        clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+    ) -> Result<Self, VoiceError> {
         let codec = OpusCodec::new(config.sample_rate, config.channels, config.frame_size)?;
         let (device_error_tx, device_error_rx) = mpsc::channel::<String>(16);
 
@@ -256,7 +268,8 @@ impl VoiceEngine {
             device_error_rx: Some(device_error_rx),
             device_error_tx: Some(device_error_tx),
             config,
-            origin: std::time::Instant::now(),
+            origin: clock.monotonic(),
+            clock,
         })
     }
 
@@ -354,7 +367,13 @@ impl VoiceEngine {
 
     /// Queue an opened inbound frame for playout.
     pub fn process_incoming(&mut self, frame: jitter::JitterFrame) {
-        let arrival_ms = u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let arrival_ms = u64::try_from(
+            self.clock
+                .monotonic()
+                .saturating_duration_since(self.origin)
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
         self.jitter_buffer.push(frame, arrival_ms);
     }
 

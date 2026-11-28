@@ -63,6 +63,11 @@ impl Clock for SimClock {
             held => held,
         }
     }
+
+    /// The paused tokio clock the whole run advances.
+    fn monotonic(&self) -> std::time::Instant {
+        tokio::time::Instant::now().into_std()
+    }
 }
 
 /// A node's generator: `StdRng` (ChaCha, a `CryptoRng`) seeded from the run

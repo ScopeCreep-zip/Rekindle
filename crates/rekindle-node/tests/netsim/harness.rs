@@ -13,6 +13,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::HostApi;
 use rekindle_netsim::Netsim;
 use rekindle_node::host::{Host, ShellHooks};
+use rekindle_types::audio::AudioIo;
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
 use rekindle_types::subscription_events::{
     FriendEvent, GovernanceEvent, StreamFrame, SubscriptionEvent,
@@ -55,6 +56,16 @@ pub type NodeFor<'a> =
 /// [`start`], node `i` in the mode and with the shell hooks `node_for(i)`
 /// (`HostConfig::shell`), as the desktop's.
 pub async fn start_with(n: usize, seed: u64, node_for: NodeFor<'_>) -> (Netsim, Vec<SimNode>) {
+    start_with_audio(n, seed, node_for, AudioIo::HEADLESS).await
+}
+
+/// Start Hosts with an explicit capture source and playout sink.
+pub async fn start_with_audio(
+    n: usize,
+    seed: u64,
+    node_for: NodeFor<'_>,
+    audio: AudioIo,
+) -> (Netsim, Vec<SimNode>) {
     // `RUST_LOG` shows a scenario's Host logs (`--nocapture`); the run's
     // WARN and ERROR events are counted per node ([`crate::logs`]).
     crate::logs::install();
@@ -69,7 +80,7 @@ pub async fn start_with(n: usize, seed: u64, node_for: NodeFor<'_>) -> (Netsim, 
         let routes = Arc::clone(&node.ports.routes);
         let index = node.index;
         let (mode, shell) = node_for(index);
-        let (host, db) = crate::restart::host_on(node, &dir, shell, mode).await;
+        let (host, db) = crate::restart::host_on(node, &dir, shell, mode, audio).await;
         hosts.push(SimNode {
             index,
             host,

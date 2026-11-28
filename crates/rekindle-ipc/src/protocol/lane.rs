@@ -193,6 +193,8 @@ impl IpcRequest {
 
             Self::VoiceJoin { .. } => ("VoiceJoin", Write, Authenticated),
             Self::VoiceLeave => ("VoiceLeave", Write, Authenticated),
+            Self::VoiceSetMute { .. } => ("VoiceSetMute", Write, Authenticated),
+            Self::VoiceSetDeafen { .. } => ("VoiceSetDeafen", Write, Authenticated),
 
             Self::NetworkStatus => ("NetworkStatus", Query, Authenticated),
             Self::NetworkPeers => ("NetworkPeers", Query, Authenticated),

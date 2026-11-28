@@ -214,24 +214,28 @@ impl DaemonHandler {
             }
         }
 
-        if let Some(ref sub_mgr) = *self.subscriptions.read() {
-            if let Some(
-                payload @ (ControlPayload::VoiceJoin { .. } | ControlPayload::VoiceRoster { .. }),
-            ) = envelope.as_control()
-            {
+        if let Some(payload) = envelope.as_control() {
+            if rekindle_voice::signaling::is_voice_signaling(payload) {
                 if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
-                    if sub_mgr.admit(community_id, sender_pseudonym, lamport_ts) {
-                        let host = crate::host::adapters::governance::HostGovernance::new(ctx);
-                        if let Some(event) =
-                            host.named_voice_event(community_id, sender_pseudonym, payload)
-                        {
-                            sub_mgr.process_event(event);
-                        }
+                    if self
+                        .subscriptions
+                        .read()
+                        .as_ref()
+                        .is_some_and(|sub| sub.admit(community_id, sender_pseudonym, lamport_ts))
+                    {
+                        crate::host::adapters::voice::handle_signaling(
+                            &ctx,
+                            community_id,
+                            sender_pseudonym,
+                            payload.clone(),
+                        );
                     }
                 }
-            } else {
-                sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts);
+                return;
             }
+        }
+        if let Some(ref sub_mgr) = *self.subscriptions.read() {
+            sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts);
         }
     }
 

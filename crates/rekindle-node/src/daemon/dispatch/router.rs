@@ -261,8 +261,10 @@ async fn route(
             channel,
             muted,
             deafened,
-        } => voice::handle_voice_join(ctx, state, &community, &channel, muted, deafened),
-        IpcRequest::VoiceLeave => voice::handle_voice_leave(ctx, state),
+        } => voice::handle_voice_join(ctx, state, &community, &channel, muted, deafened).await,
+        IpcRequest::VoiceLeave => voice::handle_voice_leave(ctx).await,
+        IpcRequest::VoiceSetMute { muted } => voice::handle_voice_mute(ctx, muted).await,
+        IpcRequest::VoiceSetDeafen { deafened } => voice::handle_voice_deafen(ctx, deafened).await,
 
         // ── Admin / Network ──────────────────────────────────────
         // Subscribe/Unsubscribe are handled server-side in the IPC bus router.

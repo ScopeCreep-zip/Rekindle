@@ -21,7 +21,7 @@
 //! to admit stale-row peers whose media is flowing.
 //!
 //! Pure and time-injectable like `jitter`: callers pass `now_ms` from
-//! one shared millisecond clock (`rekindle_utils::timestamp_ms()` in
+//! one shared millisecond clock (the clock port's `now_ms()` in
 //! production — the ledger spans loops with different `Instant`
 //! origins, so an origin-relative clock cannot key it). Interior
 //! mutability (a `parking_lot::Mutex` held only for sync map ops,

@@ -45,8 +45,8 @@ pub enum VoiceMode {
 /// IO port for shipping a finished voice packet to a peer's Veilid
 /// private route (architecture §14 `VoiceSessionDeps::send_voice_frame`).
 ///
-/// Implemented in the `src-tauri` voice adapter — the sanctioned layer
-/// that owns `veilid-core`. Injected into [`VoiceTransport`] so
+/// Implemented by the Host over the transport media sender.
+/// Injected into [`VoiceTransport`] so
 /// `rekindle-voice` stays free of `veilid-core` (Invariant 2 — only
 /// `rekindle-transport` and `rekindle-protocol` may import it). The
 /// adapter imports the route (cached) and calls Veilid `app_message`
@@ -117,7 +117,7 @@ pub struct VoicePeer {
 
 impl VoiceTransport {
     /// Create a new transport for a voice channel.
-    pub fn new(channel_id: String) -> Self {
+    pub fn new(channel_id: String, clock: Arc<dyn rekindle_utils::Clock>) -> Self {
         Self {
             channel_id,
             sender: None,
@@ -126,7 +126,7 @@ impl VoiceTransport {
             peers: HashMap::new(),
             mode: VoiceMode::default(),
             session_state: Arc::default(),
-            media: Arc::default(),
+            media: Arc::new(MediaRoster::new(clock)),
             scope: None,
         }
     }
@@ -240,6 +240,10 @@ impl VoiceTransport {
     /// signaling event on that edge, so repeat VoiceJoin re-announces
     /// (route refresh) don't re-fire membership downstream.
     pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> bool {
+        // Community mesh relays can deliver our own join back to us.
+        if pseudonym_key == hex::encode(&self.sender_key) {
+            return false;
+        }
         // Re-add keeps the original added_at (route upsert, not a
         // fresh join) so the presence-reconcile grace isn't reset by
         // repeat VoiceJoin announces.
@@ -257,13 +261,17 @@ impl VoiceTransport {
             peer = %pseudonym_key,
             "added voice peer"
         );
-        let link = PeerLink::new(route_blob, self.media.padding_key());
+        let link = PeerLink::new(
+            route_blob,
+            self.media.padding_key(),
+            Arc::clone(self.media.clock()),
+        );
         self.spawn_driver(pseudonym_key, &link);
         self.media.insert(pseudonym_key, Arc::clone(&link));
         self.peers.insert(
             pseudonym_key.to_string(),
             VoicePeer {
-                added_at: std::time::Instant::now(),
+                added_at: self.media.clock().monotonic(),
                 link,
             },
         );
@@ -294,9 +302,13 @@ impl VoiceTransport {
     /// `(pseudonym_key, seconds since added)` for every roster entry —
     /// the view the presence-derived roster reconcile decides over.
     pub fn peer_views(&self) -> Vec<(String, u64)> {
+        let now = self.media.clock().monotonic();
         self.peers
             .iter()
-            .map(|(k, v)| (k.clone(), v.added_at.elapsed().as_secs()))
+            .map(|(k, v)| {
+                let age = now.saturating_duration_since(v.added_at);
+                (k.clone(), age.as_secs())
+            })
             .collect()
     }
 

@@ -116,15 +116,6 @@ impl InboundHandler for ShellInbound {
             .unwrap_or_else(|| rekindle_lifecycle::SessionScope::closed("no host"))
     }
 
-    fn on_media(&self, _raw: &[u8], _arrived: std::time::Instant) {}
-
-    async fn on_media_key_call(
-        &self,
-        _payload: &rekindle_codec::community::envelope::ControlPayload,
-    ) -> rekindle_transport::subscriptions::media_key::MediaKeyReply {
-        rekindle_transport::subscriptions::media_key::MediaKeyReply::Refused
-    }
-
     async fn on_direct(&self, datagram: &[u8]) {
         if let Some(host) = self.host() {
             host.receive_direct(datagram).await;
@@ -150,12 +141,32 @@ impl InboundHandler for ShellInbound {
         let (Some(host), Some(control)) = (self.host(), envelope.into_control()) else {
             return;
         };
+        if rekindle_voice::signaling::is_voice_signaling(&control) {
+            host.ingest_voice_signaling(community_id, sender_pseudonym, control);
+            return;
+        }
         host.governance()
             .on_membership_control(community_id, sender_pseudonym, &control)
             .await;
     }
 
     async fn on_gossip_forward(&self, _envelope: &SignedEnvelope) {}
+
+    fn on_media(&self, raw: &[u8], arrived: std::time::Instant) {
+        if let Some(host) = self.host() {
+            let _handled = host.ingest_voice_media(raw, arrived, |_| {});
+        }
+    }
+
+    async fn on_media_key_call(
+        &self,
+        payload: &rekindle_codec::community::envelope::ControlPayload,
+    ) -> rekindle_transport::subscriptions::media_key::MediaKeyReply {
+        match self.host() {
+            Some(host) => host.answer_voice_media_key_call(payload).await,
+            None => rekindle_transport::subscriptions::media_key::MediaKeyReply::Refused,
+        }
+    }
 
     async fn on_head_advanced(&self, community_id: &str, sender: &str, hint: &[u8]) -> bool {
         self.host().is_some_and(|host| {
@@ -209,8 +220,6 @@ impl InboundHandler for ShellInbound {
 pub struct BareShell {
     cache: Arc<RwLock<MekCache>>,
     keys: Arc<dyn ChannelKeyProvider>,
-    /// The voice session and rosters (plan E3.4 S8-pre).
-    pub session: Arc<crate::sim_session_presence::SimSessionPresence>,
 }
 
 impl Default for BareShell {
@@ -222,7 +231,6 @@ impl Default for BareShell {
                 rekindle_vault::new_handle(),
             ),
             cache,
-            session: Arc::default(),
         }
     }
 }
@@ -261,9 +269,6 @@ impl ShellHooks for BareShell {
         Arc::clone(&self.keys)
     }
 
-    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
-        Arc::clone(&self.session) as Arc<dyn rekindle_presence::SessionPresence>
-    }
     async fn community_records_ready(
         &self,
         _community_id: &str,

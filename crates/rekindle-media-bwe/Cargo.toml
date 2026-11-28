@@ -13,6 +13,7 @@ workspace = true
 # tauri. Time is driven by the caller through `Instant`s, so the estimator
 # and the pacer run unchanged under a virtual clock.
 [dependencies]
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

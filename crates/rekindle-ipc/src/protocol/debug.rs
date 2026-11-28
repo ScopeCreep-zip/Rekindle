@@ -217,6 +217,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::GamePresenceClear
             | Self::VoiceJoin { .. }
             | Self::VoiceLeave
+            | Self::VoiceSetMute { .. }
+            | Self::VoiceSetDeafen { .. }
             | Self::NetworkStatus
             | Self::NetworkPeers
             | Self::AgentRegister { .. }
@@ -441,6 +443,14 @@ impl IpcRequest {
                 .field("deafened", deafened)
                 .finish(),
             Self::VoiceLeave => write!(f, "VoiceLeave"),
+            Self::VoiceSetMute { muted } => f
+                .debug_struct("VoiceSetMute")
+                .field("muted", muted)
+                .finish(),
+            Self::VoiceSetDeafen { deafened } => f
+                .debug_struct("VoiceSetDeafen")
+                .field("deafened", deafened)
+                .finish(),
             Self::NetworkStatus => write!(f, "NetworkStatus"),
             Self::NetworkPeers => write!(f, "NetworkPeers"),
             Self::AgentRegister {

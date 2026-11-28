@@ -99,24 +99,6 @@ pub async fn call_route_blob(
     settle_route(state, &route_id, result).map_err(|e| format!("app_call: {e}"))
 }
 
-/// `app_message` a peer through its route blob; as [`call_route_blob`],
-/// within the transport's send bound (`app_message_deadline`, LV28).
-pub async fn message_route_blob(
-    state: &Arc<AppState>,
-    route_blob: &[u8],
-    payload: Vec<u8>,
-) -> Result<(), String> {
-    use rekindle_transport::broadcast::deadline::app_message_deadline;
-    let route_id = import_route_blob(state, route_blob)?;
-    let (_, rc) = safe_api_and_routing_context(state).ok_or("not attached")?;
-    let deadline = app_message_deadline();
-    let send = rc.app_message(veilid_core::Target::RouteId(route_id.clone()), payload);
-    let result = tokio::time::timeout(deadline, send)
-        .await
-        .map_err(|_| unresolved("app_message", deadline))?;
-    settle_route(state, &route_id, result).map_err(|e| format!("app_message: {e}"))
-}
-
 /// The profile of [`safe_api_and_routing_context`]'s routing context: the
 /// 1:1 control class (Reliable / PreferOrdered, plan VU decision 2).
 fn safe_profile() -> rekindle_types::config::SafetyProfile {

@@ -125,23 +125,33 @@ fn joined(community: &str, channel: &str) -> SubscriptionEvent {
 
 #[test]
 fn call_joins_the_selected_voice_channel_else_the_first() {
-    let join = |community: &str, channel: &str| {
-        ShellOp::Call(CallOp::JoinVoice {
-            community: community.into(),
-            channel: channel.into(),
-        })
+    let target = |r: Result<Mapped, IpcResponse>| {
+        let Ok(Mapped::Request(req)) = r else {
+            panic!("expected a Host request: {r:?}")
+        };
+        let IpcRequest::VoiceJoin {
+            community,
+            channel,
+            muted: false,
+            deafened: false,
+        } = *req
+        else {
+            panic!("expected VoiceJoin: {req:?}")
+        };
+        (community, channel)
     };
     for action in [A::VoiceChat, A::HostVoiceChat] {
-        // A text channel shown: the community's first voice channel.
         assert_eq!(
-            shell_op(press(&action, &sel("c1", Some("t1")))),
-            join("c1", "v1")
+            target(press(&action, &sel("c1", Some("t1")))),
+            ("c1".into(), "v1".into())
         );
-        assert_eq!(shell_op(press(&action, &sel("c1", None))), join("c1", "v1"));
-        // A voice channel shown: that channel.
         assert_eq!(
-            shell_op(press(&action, &sel("c1", Some("v2")))),
-            join("c1", "v2")
+            target(press(&action, &sel("c1", None))),
+            ("c1".into(), "v1".into())
+        );
+        assert_eq!(
+            target(press(&action, &sel("c1", Some("v2")))),
+            ("c1".into(), "v2".into())
         );
         assert_eq!(refused_with(press(&action, &sel("c0", None))), NO_VOICE);
         assert_eq!(refused_with(press(&action, &sel("cx", None))), NOT_MEMBER);
@@ -240,6 +250,11 @@ fn each_community_capability_is_refused_with_the_hosts_words() {
     assert_eq!(on(&c1, C::LeaveVoiceChat, &i), None);
     assert_eq!(on(&c1, C::MuteSelf, &i), None);
     assert!(on(&c1, C::UnmuteSelf, &i).is_some_and(|w| !w.is_empty()));
-    // Another voice channel of it can still be joined.
-    assert_eq!(on(&sel("c1", Some("v2")), C::VoiceChat, &i), None);
+    let mut busy = w.clone();
+    busy.voice_start_refusal = Some("Leave voice in Netsim first.".into());
+    let another = sel("c1", Some("v2"));
+    assert_eq!(
+        refusal(C::VoiceChat, &i, &busy, Selected::of(Some(&another), None)).as_deref(),
+        Some("Leave voice in Netsim first.")
+    );
 }

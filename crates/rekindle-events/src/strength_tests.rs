@@ -27,6 +27,10 @@ struct PausedClock(tokio::time::Instant);
 const EPOCH_OFFSET_MS: u64 = 1_800_000_000_000;
 
 impl rekindle_utils::Clock for PausedClock {
+    fn monotonic(&self) -> std::time::Instant {
+        tokio::time::Instant::now().into_std()
+    }
+
     fn now_ms(&self) -> u64 {
         EPOCH_OFFSET_MS + u64::try_from(self.0.elapsed().as_millis()).unwrap_or(u64::MAX)
     }

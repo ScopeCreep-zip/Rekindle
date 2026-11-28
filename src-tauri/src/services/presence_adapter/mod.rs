@@ -22,10 +22,7 @@ pub mod community_deps;
 mod member_state;
 mod persist;
 mod scan;
-mod session_presence;
 mod state_reads;
-
-pub(crate) use session_presence::{voice_presence_changed, DesktopSessionPresence};
 
 /// Adapter struct — same shape as Phase 17/18/19/20 adapters.
 pub struct PresenceAdapter {

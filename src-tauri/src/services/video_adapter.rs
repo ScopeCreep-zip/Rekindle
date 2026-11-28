@@ -19,14 +19,23 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 pub struct VideoAdapter {
+    host: Arc<rekindle_node::host::Host>,
     pub(crate) state: Arc<AppState>,
     pub(crate) app_handle: tauri::AppHandle,
 }
 
 impl VideoAdapter {
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle) -> Arc<Self> {
-        Arc::new(Self { state, app_handle })
+    pub fn new(
+        state: Arc<AppState>,
+        app_handle: tauri::AppHandle,
+        host: Arc<rekindle_node::host::Host>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            host,
+            state,
+            app_handle,
+        })
     }
 }
 
@@ -96,7 +105,7 @@ impl VideoDeps for VideoAdapter {
         community_id: &str,
         channel_id: &str,
     ) -> std::sync::Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys> {
-        self.state.voice_sender_keys.keys(community_id, channel_id)
+        self.host.voice().channel_keys(community_id, channel_id)
     }
 
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {
@@ -110,29 +119,19 @@ impl VideoDeps for VideoAdapter {
         channel_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), rekindle_video::VideoError> {
-        crate::services::voice_adapter::media_egress::send_video_envelope(
-            &self.state,
-            community_id,
-            channel_id,
-            envelope,
-        )
-        .map_err(rekindle_video::VideoError::Transport)
+        self.host
+            .send_voice_video_envelope(community_id, channel_id, envelope)
+            .map_err(rekindle_video::VideoError::Transport)
     }
 
     fn local_active_channel(&self, community_id: &str) -> Option<String> {
-        let ve = self.state.voice_engine.lock();
-        let handle = ve.as_ref()?;
-        (handle.community_id.as_deref() == Some(community_id)).then(|| handle.channel_id.clone())
+        let scope = self.host.voice().session()?;
+        (scope.community() == Some(community_id)).then(|| scope.session_key().to_owned())
     }
 
     fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64) {
-        crate::services::voice_adapter::media_keys::request_media_key(
-            &self.state,
-            community_id,
-            channel_id,
-            sender,
-            index,
-        );
+        self.host
+            .request_voice_media_key(community_id, channel_id, sender, index);
     }
 
     fn increment_lamport(
@@ -321,7 +320,11 @@ pub fn send_video_frame(
         .read()
         .clone()
         .ok_or_else(|| "app handle not initialized".to_string())?;
-    let adapter = VideoAdapter::new(state.clone(), app_handle);
+    let host = state
+        .host
+        .current()
+        .ok_or_else(|| rekindle_types::audio::VoiceFailure::SignInRequired.notice())?;
+    let adapter = VideoAdapter::new(state.clone(), app_handle, Arc::clone(&host));
     let frame = rekindle_video::build_video_frame(
         adapter.as_ref(),
         &state.video_reassembly,
@@ -331,11 +334,12 @@ pub fn send_video_frame(
     )
     .map_err(|e| e.to_string())?;
     let fragment_count = u32::try_from(frame.envelopes.len()).unwrap_or(u32::MAX);
-    let routes = crate::services::voice_adapter::media_egress::send_video_frame(
-        state,
+    let routes = host.send_voice_video_frame(
         community_id,
         channel_id,
-        &frame,
+        &frame.envelopes,
+        frame.keyframe,
+        frame.media_bytes,
     )?;
     if routes == 0 {
         // Every route is paused or waiting for a keyframe; the allocator
@@ -360,7 +364,10 @@ pub fn handle_video_payload(
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    let adapter = VideoAdapter::new(state.clone(), app_handle.clone());
+    let Some(host) = state.host.current() else {
+        return;
+    };
+    let adapter = VideoAdapter::new(state.clone(), app_handle.clone(), host);
     let now_ms = u32::try_from(rekindle_utils::timestamp_ms() % u64::from(u32::MAX)).unwrap_or(0);
     rekindle_video::handle_video_payload(
         adapter.as_ref(),

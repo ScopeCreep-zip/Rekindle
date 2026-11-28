@@ -5,6 +5,10 @@ use super::*;
 struct Manual(AtomicU64);
 
 impl Clock for Manual {
+    fn monotonic(&self) -> std::time::Instant {
+        tokio::time::Instant::now().into_std()
+    }
+
     fn now_ms(&self) -> u64 {
         self.0.load(Ordering::SeqCst)
     }

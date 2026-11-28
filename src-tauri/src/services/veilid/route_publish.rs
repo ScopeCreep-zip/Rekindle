@@ -61,7 +61,7 @@ pub(crate) async fn run(
         if let RouteState::Available { blob } = route {
             match class {
                 RouteClass::General => republish_general(&state, &blob).await,
-                RouteClass::Media => republish_media(&state),
+                RouteClass::Media => tracing::info!("own media route republished"),
             }
         }
     }
@@ -72,15 +72,9 @@ async fn republish_general(state: &Arc<AppState>, blob: &[u8]) {
     // routes loop rewrites on every new `Available` blob (plan E3.4 S4),
     // never from a gossip re-announce.
     rewrite_presence_rows(state).await;
-    crate::services::voice_adapter::reannounce_voice_route(state);
     // A key held behind is asked for by the Host's community sync phase
     // on its own tick, never from here (FX3).
     tracing::info!(blob_len = blob.len(), "own route republished");
-}
-
-fn republish_media(state: &Arc<AppState>) {
-    crate::services::voice_adapter::reannounce_voice_route(state);
-    tracing::info!("own media route republished");
 }
 
 /// Our presence row in every joined community carries the general blob.

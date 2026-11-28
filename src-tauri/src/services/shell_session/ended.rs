@@ -10,7 +10,6 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_node::host::EndReason;
 use tauri::Manager as _;
 
-use crate::commands::voice::{shutdown_voice, VoiceShutdownOpts};
 use crate::services;
 use crate::state::{AppState, SharedState};
 
@@ -25,7 +24,7 @@ const LEAVE_ON_END_WAIT: Duration = Duration::from_secs(3);
 /// counters while the database is open (→ E3.1).
 pub(super) async fn ending(state: &SharedState, app: Option<&tauri::AppHandle>) {
     if let Some(app) = app {
-        leave_calls_and_voice(app, state).await;
+        leave_calls(app, state).await;
     }
     if let Ok(pool) = state.db.current() {
         services::community::flush_peer_reliability(state, &pool).await;
@@ -35,8 +34,7 @@ pub(super) async fn ending(state: &SharedState, app: Option<&tauri::AppHandle>) 
 /// The identity is out of the Host: clear what the GUI held of it, and show
 /// the login window when the user is signed out.
 pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, reason: EndReason) {
-    // The audio devices; the loops stopped with the scope.
-    shutdown_voice(state, &VoiceShutdownOpts::FULL).await;
+    services::native_video::stop(state);
     let signed_out = state
         .identity
         .read()
@@ -92,7 +90,6 @@ fn clear(state: &AppState) {
     // Each cache is the identity's own keyed tree (plan E3.0a).
     crate::state_helpers::clear_meks(state);
     state.dedup_cache.lock().clear();
-    state.voice_sender_keys.clear();
     tracing::info!("session state cleared — node still running");
 }
 
@@ -119,53 +116,18 @@ fn show_login(app: &tauri::AppHandle, signed_out: Option<&str>) {
     }
 }
 
-/// End every call and leave the voice channel before the session closes:
-/// `CallEnd` to each call peer, `VoiceLeave` to the channel roster, voice
-/// shut down, and our community presence row rewritten without its voice
-/// claim, so peers drop us at once instead of after 180 s of presence
-/// staleness (plan C7.27).
-///
-/// The steps run in order as one task on their own scope, which the end
-/// waits for up to `LEAVE_ON_END_WAIT`. Past it the step then running is
-/// named in the log and the task is stopped: an unsent leave message is
-/// simply not delivered, and the presence write is a record-pool call,
-/// which runs on the pool's own scope and is never aborted (C7.6g).
-async fn leave_calls_and_voice(app: &tauri::AppHandle, state: &Arc<AppState>) {
-    let Ok(pool) = state.db.current() else {
-        return;
-    };
+/// End the desktop's unported call signaling before the Host closes the unlock.
+async fn leave_calls(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    let Ok(pool) = state.db.current() else { return };
     let scope = SessionScope::new(
         "session end",
         Arc::new(|task| tracing::error!(task, "session end task panicked")),
     );
-    let step = Arc::new(parking_lot::Mutex::new("end calls"));
-    let (state_task, step_task, app) = (Arc::clone(state), Arc::clone(&step), app.clone());
-    scope.spawn_or_drop("leave calls and voice", async move {
-        let voice_community = state_task
-            .voice_engine
-            .lock()
-            .as_ref()
-            .and_then(|engine| engine.community_id.clone());
-        let calls =
-            services::calls_adapter::CallsAdapter::new(Arc::clone(&state_task), app.clone(), pool);
+    let calls = services::calls_adapter::CallsAdapter::new(Arc::clone(state), app.clone(), pool);
+    scope.spawn_or_drop("end calls", async move {
         rekindle_calls::signaling::end_all_calls(calls.as_ref(), "signed out").await;
-
-        *step_task.lock() = "announce voice leave";
-        if let Ok(voice) = services::voice_runtime::build_voice_session_deps(&app, &state_task) {
-            rekindle_voice::session::announce_leave(&voice).await;
-        }
-
-        *step_task.lock() = "shut down voice";
-        shutdown_voice(&state_task, &VoiceShutdownOpts::FULL).await;
-
-        if let Some(community_id) = voice_community {
-            *step_task.lock() = "presence row without voice";
-            services::community::presence::registry::write_our_presence(&state_task, &community_id)
-                .await;
-        }
     });
     if let Err(stuck) = scope.shutdown(LEAVE_ON_END_WAIT).await {
-        let step = *step.lock();
-        tracing::info!(step, %stuck, "session end: leaving calls and voice ran past its wait");
+        tracing::info!(%stuck, "call signaling ran past the session end deadline");
     }
 }

@@ -73,6 +73,12 @@ pub(crate) async fn run(
     if let Err(e) = ctx.outbox.start(ctx, &scope, &installed.view.public_key) {
         return fail(ctx, IpcResponse::error(500, format!("outbox: {e}"))).await;
     }
+    super::adapters::voice::install_carrier(ctx);
+    if let Err(error) = super::adapters::voice::spawn_telemetry(ctx, &scope)
+        .and_then(|()| super::adapters::voice::spawn_route_heal(ctx, &scope))
+    {
+        return fail(ctx, IpcResponse::error(500, format!("voice: {error}"))).await;
+    }
     // Our presence starts Online with the unlock (its publisher runs only
     // with a network).
     ctx.own_presence.start(&scope);
@@ -396,6 +402,7 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
     if let Some(shell) = &shell {
         shell.ending().await;
     }
+    super::adapters::voice::stop(ctx).await;
     // The stop token first, and the stages get [`STAGE_GRACE`] to stop at
     // it while the pool still answers, so a call in flight lands rather
     // than failing (R1-2); then draining the pool releases every task still
@@ -421,6 +428,7 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
     // community task it started (the unlock barrier's rounds among them) was
     // dropped. Both modes forget them here.
     ctx.community_scopes.lock().clear();
+    ctx.voice.reset_unlock();
     ctx.outbox.stop();
     ctx.game.forget();
     super::adapters::files::close(ctx);

@@ -15,7 +15,7 @@
 //! any peer has reported. The audio bitrate is not decided here: the
 //! allocator sets it from each route's estimate (plan E4.3.3).
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rekindle_media_stats::{LinkState, LinkTracker, QualityScore, ReceptionMetrics};
 use rekindle_types::subscription_events::VoiceQuality;
@@ -97,7 +97,7 @@ impl VoiceSendLoop {
     /// the metrics here are attributable to `reporter_key`.
     pub(super) fn note_receiver_report(&mut self, report: &VoiceReceiverReport) {
         let peer = hex::encode(&report.reporter_key);
-        let rtt_ms = report.round_trip_ms(rekindle_utils::timestamp_ms());
+        let rtt_ms = report.round_trip_ms(self.clock.now_ms());
         let link = self
             .peer_links
             .entry(peer.clone())
@@ -128,17 +128,23 @@ impl VoiceSendLoop {
         // Together these say which leg inflates a large RTT, so we stop
         // guessing whether the 8–16 s figure is outbound audio, the
         // peer's buffer, or a congested report path.
-        let now_ms = rekindle_utils::timestamp_ms();
+        let now_ms = self.clock.now_ms();
         // Media-plane proof of life for the presence reconcile: a
         // verified report proves this peer is alive even while VAD
         // keeps them silent (no voice packets for the receive loop to
         // note). Same wall clock the receive loop's note site stamps.
         self.media_liveness.note(&peer, now_ms);
         let lsr_age_ms = now_ms.saturating_sub(report.lsr_ms);
-        let report_gap_ms = link
-            .last_report_at
-            .map(|t| u64::try_from(t.elapsed().as_millis()).unwrap_or(u64::MAX));
-        link.last_report_at = Some(std::time::Instant::now());
+        let report_gap_ms = link.last_report_at.map(|t| {
+            u64::try_from(
+                self.clock
+                    .monotonic()
+                    .saturating_duration_since(t)
+                    .as_millis(),
+            )
+            .unwrap_or(u64::MAX)
+        });
+        link.last_report_at = Some(self.clock.monotonic());
 
         // Reports carry session totals; the tracker wants this window.
         // `saturating_sub` covers a peer that restarted its session and
@@ -271,7 +277,12 @@ impl VoiceSendLoop {
     }
 
     pub(super) fn report_quality_if_due(&mut self) {
-        if self.last_quality_report.elapsed() < Duration::from_secs(5) {
+        if self
+            .clock
+            .monotonic()
+            .saturating_duration_since(self.last_quality_report)
+            < Duration::from_secs(5)
+        {
             return;
         }
 
@@ -313,7 +324,7 @@ impl VoiceSendLoop {
             });
 
         self.packets_sent = 0;
-        self.last_quality_report = Instant::now();
+        self.last_quality_report = self.clock.monotonic();
     }
 
     /// Percent of datagrams our routes failed to send since the last pass.

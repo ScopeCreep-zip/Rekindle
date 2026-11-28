@@ -166,7 +166,10 @@ impl IpcRequest {
             | Self::PresenceSetMessage { .. }
             | Self::GamePresenceSet { .. }
             | Self::GamePresenceClear => Some(C::PresenceWrite),
-            Self::VoiceJoin { .. } | Self::VoiceLeave => Some(C::VoiceWrite),
+            Self::VoiceJoin { .. }
+            | Self::VoiceLeave
+            | Self::VoiceSetMute { .. }
+            | Self::VoiceSetDeafen { .. } => Some(C::VoiceWrite),
             Self::Unlock { .. }
             | Self::Lock
             | Self::Logout

@@ -77,14 +77,6 @@ pub enum CallOp {
     Video {
         friend: String,
     },
-    /// Join the voice channel `channel` of the community `community` (a
-    /// community window's `AppVoiceChat`/`AppHostVoiceChat`, plan E7.7
-    /// HSC1): the shell's `join_voice_channel` holds community voice until
-    /// plan E4.1 makes `VoiceJoin` the Host's.
-    JoinVoice {
-        community: String,
-        channel: String,
-    },
     End,
     Mute,
     Unmute,

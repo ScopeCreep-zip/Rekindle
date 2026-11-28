@@ -14,7 +14,6 @@ pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchest
 pub mod cross_device_sync;
 pub mod dm;
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
-pub mod gossip_adapter; // Phase 20.e-REDO — GossipDeps impl for mesh broadcast.
 pub mod mek_adapter; // Phase 17 — MekDistributeDeps impl + ChannelMekCache wrapper + Stronghold persist.
 pub mod message_service;
 pub mod native_video; // Linux-native GStreamer camera capture facade (plan rosy-bouncing-kahn Phase 3).
@@ -27,36 +26,6 @@ pub mod sync_communities;
 pub mod sync_runtime; // Phase 23.C — sync-handler runtime orchestration lifted from commands/sync.rs.
 pub mod veilid;
 pub mod video_adapter; // Phase 16 — VideoDeps impl + send/receive facades.
-pub mod voice_adapter; // Phase 14 — VoiceSessionDeps impl + voice free-fn facades.
+pub mod video_allocation;
 pub mod voice_runtime; // Phase 23.C — voice auxiliary helpers (audio device list/prefs + stage audience gate).
-pub mod voice_signaling_adapter; // Phase 14.k — VoiceSignalingDeps impl + signaling facade.
 pub mod window_runtime; // Phase 23.C — window helpers (get_network_status body).
-
-use std::sync::Arc;
-
-use crate::state::AppState;
-use rekindle_db::Db;
-
-/// Build a service adapter from the live app context.
-///
-/// Every adapter in this module takes the same three things —
-/// `Arc<AppState>`, the `AppHandle` and the `Db` — so every callsite
-/// grew its own local `build_adapter` to fetch them. Fifteen of those
-/// accumulated, and six were byte-identical in two groups of three that
-/// differed *only* in the message they returned for the same failure:
-/// "app handle or Db unavailable" against "app handle not
-/// initialized". That is what this duplication actually cost — not the
-/// lines, but two names for one condition, which is how a caller ends up
-/// matching on the wrong one.
-///
-/// Passing the constructor as a `fn` pointer rather than introducing a
-/// trait keeps this to one function: every adapter's `new` already has
-/// this exact shape, whether it returns `Self` or `Arc<Self>`.
-pub fn build_adapter<A>(
-    state: &Arc<AppState>,
-    new: fn(Arc<AppState>, tauri::AppHandle, Db) -> A,
-) -> Result<A, String> {
-    let (app_handle, pool) = crate::state_helpers::app_context(state)
-        .ok_or_else(|| "app handle or Db unavailable".to_string())?;
-    Ok(new(Arc::clone(state), app_handle, pool))
-}

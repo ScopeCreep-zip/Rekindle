@@ -18,6 +18,10 @@ pub enum HostCall {
 
 /// `(Tauri command, how it reaches the Host)`.
 pub const HOST_CALLS: &[(&str, HostCall)] = &[
+    ("join_voice_channel", HostCall::Request("VoiceJoin")),
+    ("leave_voice", HostCall::Request("VoiceLeave")),
+    ("set_mute", HostCall::Request("VoiceSetMute")),
+    ("set_deafen", HostCall::Request("VoiceSetDeafen")),
     ("create_identity", HostCall::Request("IdentityCreate")),
     ("login", HostCall::Request("Unlock")),
     ("get_identity", HostCall::Request("IdentityShow")),
@@ -509,17 +513,13 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("start_dm_call", "E4.1"),
     ("start_group_call", "E4.1"),
     ("get_stage_hand_raises", "E4.1"),
-    ("join_voice_channel", "E4.1"),
-    ("leave_voice", "E4.1"),
     ("list_audio_devices", "E4.1"),
     ("request_to_speak", "E4.1"),
     ("respond_to_speak_request", "E4.1"),
     ("server_deafen_member", "E4.1"),
     ("server_mute_member", "E4.1"),
     ("set_audio_devices", "E4.1"),
-    ("set_deafen", "E4.1"),
     ("set_input_channels", "E4.1"),
-    ("set_mute", "E4.1"),
     ("set_voice_mode", "E4.1"),
     ("play_soundboard", "E4.1"),
     ("upload_soundboard_sound", "E4.1"),

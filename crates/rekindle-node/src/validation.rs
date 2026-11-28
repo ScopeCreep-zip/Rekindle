@@ -392,6 +392,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::AuditVerify
         | IpcRequest::GamePresenceClear
         | IpcRequest::VoiceLeave
+        | IpcRequest::VoiceSetMute { .. }
+        | IpcRequest::VoiceSetDeafen { .. }
         | IpcRequest::NetworkStatus
         | IpcRequest::NetworkPeers
         | IpcRequest::PolicyReload

@@ -286,7 +286,7 @@ pub async fn start(
         width: target_width,
         height: target_height,
         fps: target_fps,
-        start_bitrate_kbps: crate::services::voice_adapter::video_allocation::encoder_kbps(state),
+        start_bitrate_kbps: crate::services::video_allocation::encoder_kbps(state),
         keyframe_max_dist: NATIVE_KEYFRAME_MAX_DIST,
     };
     // start() blocks up to its 2 s first-sample deadline. The pump keeps

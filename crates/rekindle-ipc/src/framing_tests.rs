@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    decode_frame, encode_frame, read_noise_message, write_noise_message, IpcError,
+    MAX_NOISE_MESSAGE,
+};
 
 #[test]
 fn encode_decode_roundtrip() {
@@ -45,4 +48,17 @@ async fn eof_before_length_is_connection_closed() {
         read_noise_message(&mut cursor).await,
         Err(IpcError::ConnectionClosed)
     ));
+}
+
+#[test]
+fn voice_controls_round_trip_over_the_ipc_codec() {
+    use rekindle_types::dto::voice::VoiceControls;
+
+    let controls = VoiceControls {
+        muted: true,
+        deafened: false,
+    };
+    let encoded = encode_frame(&controls).expect("voice controls encode");
+    assert_eq!(encoded, [1, 0], "voice control field order");
+    assert_eq!(decode_frame::<VoiceControls>(&encoded).unwrap(), controls);
 }

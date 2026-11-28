@@ -15,7 +15,6 @@ pub use rekindle_gossip::mesh::fanout_degree as gossip_degree;
 pub mod app_state;
 pub mod community;
 pub mod friend;
-pub mod gossip;
 pub mod host_slot;
 pub mod runtime;
 
@@ -25,9 +24,8 @@ pub use community::{
     MemberProfileSnapshot, RoleDefinition,
 };
 pub use friend::{FriendState, FriendshipState, GameInfoState, IdentityState, UserStatus};
-pub use gossip::{GossipOverlay, OnlineMember};
 pub use rekindle_channel::{AutoModCompiledCache, CompiledAutoModRule};
-pub use runtime::{NodeHandle, VoiceEngineHandle};
+pub use runtime::NodeHandle;
 
 /// Shared reference to `AppState`, used by both Tauri commands and background services.
 pub type SharedState = Arc<AppState>;

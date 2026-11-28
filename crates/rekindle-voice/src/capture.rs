@@ -1,4 +1,5 @@
 use std::sync::mpsc as std_mpsc;
+use std::time::Duration;
 
 use cpal::traits::DeviceTrait;
 use rekindle_types::audio::VoiceSource;
@@ -30,6 +31,7 @@ pub struct AudioCapture {
     /// Under [`VoiceSource::Silence`], the pipeline's sender, held open
     /// and never written, so the send loop sees a live, silent source.
     silence: Option<mpsc::Sender<Vec<f32>>>,
+    speech: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl AudioCapture {
@@ -39,6 +41,7 @@ impl AudioCapture {
             thread: AudioThread::new(sample_rate, channels, CAPTURE_LABELS),
             source,
             silence: None,
+            speech: None,
         }
     }
 
@@ -53,9 +56,19 @@ impl AudioCapture {
         picked: Option<Vec<u16>>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
-        if self.source == VoiceSource::Silence {
-            self.silence = Some(tx);
-            return Ok(());
+        match self.source {
+            VoiceSource::Silence => {
+                self.silence = Some(tx);
+                return Ok(());
+            }
+            VoiceSource::Speech => {
+                let runtime = tokio::runtime::Handle::try_current()
+                    .map_err(|error| VoiceError::Session(error.to_string()))?;
+                let (rate, channels) = self.thread.format();
+                self.speech = Some(runtime.spawn(play_speech(tx, rate, channels)));
+                return Ok(());
+            }
+            VoiceSource::Mic => {}
         }
         self.thread.start(
             device_name,
@@ -75,12 +88,44 @@ impl AudioCapture {
 
     /// Stop capturing audio.
     pub fn stop(&mut self) {
-        self.silence = None;
-        self.thread.stop();
+        if let Some(task) = self.speech.take() {
+            task.abort();
+            return;
+        }
+        if self.silence.take().is_none() && self.thread.is_active() {
+            self.thread.stop();
+        }
     }
 
     pub fn is_active(&self) -> bool {
-        self.silence.is_some() || self.thread.is_active()
+        self.silence.is_some() || self.speech.is_some() || self.thread.is_active()
+    }
+}
+
+impl Drop for AudioCapture {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+// Like a microphone callback, pace the PCM and drop frames under backpressure.
+async fn play_speech(tx: mpsc::Sender<Vec<f32>>, rate: u32, channels: u16) {
+    const SOURCE_RATE: u32 = 16_000;
+    const SAMPLES_PER_FRAME: usize = 320;
+    const SPEECH: &[u8] = include_bytes!("../assets/speech.pcm");
+    let mut samples = SPEECH.chunks_exact(2).cycle();
+    let mut frame = [0.0; SAMPLES_PER_FRAME];
+    let mut tick = tokio::time::interval(Duration::from_millis(20));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tick.tick().await;
+        for (out, bytes) in frame.iter_mut().zip(samples.by_ref()) {
+            *out = f32::from(i16::from_le_bytes([bytes[0], bytes[1]])) / f32::from(i16::MAX);
+        }
+        let output = adapt_audio(&frame, 1, SOURCE_RATE, channels, rate);
+        if let Err(mpsc::error::TrySendError::Closed(_)) = tx.try_send(output) {
+            break;
+        }
     }
 }
 

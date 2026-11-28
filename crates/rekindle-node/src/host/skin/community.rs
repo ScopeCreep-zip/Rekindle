@@ -6,10 +6,8 @@
 //! change, and the Host maps that row here:
 //!
 //! - `VoiceChat`/`HostVoiceChat` join the selected channel when it is a
-//!   voice channel, else the community's first voice channel. The shell's
-//!   `join_voice_channel` holds community voice until plan E4.1 makes
-//!   `VoiceJoin` the Host's ("exists, now held"), so the press is
-//!   `CallOp::JoinVoice`, run by the shell as every `CallOp` is now.
+//!   voice channel, else the community's first voice channel. The Host
+//!   runs `VoiceJoin` through its intent gate.
 //! - `MuteSelf`/`UnmuteSelf` are `CallOp::Mute`/`Unmute`.
 //! - `JoinGameLobby`, and `JoinFriend` (a pack's plain Join node, e.g.
 //!   Symbiosis's, asking `Capability::Join`), join the community's game
@@ -227,6 +225,7 @@ pub(crate) fn verdict(
     view: Option<&SkinCommunity>,
     channel: Option<&str>,
     server: Option<&str>,
+    start_refusal: Option<&str>,
 ) -> Option<CommunityVerdict> {
     use Capability as C;
     let in_voice_here = |c: Option<&str>| match inputs.voice() {
@@ -241,7 +240,7 @@ pub(crate) fn verdict(
         C::VoiceChat | C::HostVoiceChat => match join_target(view, channel) {
             Err(why) => Some(why),
             Ok(target) if in_voice_here(Some(target)) => Some(IN_VOICE),
-            Ok(_) => None,
+            Ok(_) => start_refusal,
         },
         C::Join | C::JoinGameLobby => {
             let words = server_target(view, server).err();
@@ -294,10 +293,12 @@ pub(crate) fn map(action: &A, read: &CommunityRead) -> Option<Result<Mapped, Ipc
     let view = read.view.as_ref();
     Some(match action {
         A::VoiceChat | A::HostVoiceChat => match join_target(view, read.channel.as_deref()) {
-            Ok(channel) => shell(ShellOp::Call(CallOp::JoinVoice {
+            Ok(channel) => Ok(Mapped::Request(Box::new(IpcRequest::VoiceJoin {
                 community: read.community.clone(),
                 channel: channel.to_owned(),
-            })),
+                muted: false,
+                deafened: false,
+            }))),
             Err(why) => refused(why),
         },
         A::MuteSelf => shell(ShellOp::Call(CallOp::Mute)),

@@ -380,6 +380,12 @@ pub fn spawn_host_stream(
                 match frame {
                     StreamFrame::Event(sequenced) => {
                         crate::state_helpers::project_own(&state, &sequenced.event);
+                        if let SubscriptionEvent::Voice(event) = &sequenced.event {
+                            crate::services::community::video_session::follow_voice(
+                                &app, &state, &host, event,
+                            )
+                            .await;
+                        }
                         if let rekindle_types::subscription_events::SubscriptionEvent::Presence(
                             rekindle_types::subscription_events::PresenceEvent::SelfChanged {
                                 snapshot,
@@ -455,14 +461,6 @@ pub fn emit_subscription(app: &AppHandle, event: &SubscriptionEvent) {
     emit(app, WebviewEvent::Subscription(event.clone()));
 }
 
-/// Send a voice event.
-pub fn emit_voice(app: &AppHandle, event: rekindle_types::subscription_events::VoiceEvent) {
-    emit(
-        app,
-        WebviewEvent::Subscription(SubscriptionEvent::Voice(event)),
-    );
-}
-
 /// Send a community membership event.
 pub fn emit_membership(
     app: &AppHandle,
@@ -479,21 +477,6 @@ pub fn emit_call(app: &AppHandle, event: CallEvent) {
     emit(
         app,
         WebviewEvent::Subscription(SubscriptionEvent::Call(event)),
-    );
-}
-
-/// Our own microphone mute changed (the mute button or the mute
-/// shortcut): a [`CallEvent::SelfMuteChanged`] on the call-event path,
-/// which the Host's skin signals fold into `MuteSelf`/`UnmuteSelf` (lead
-/// decision 58).
-pub fn emit_self_muted(state: &AppState, muted: bool) {
-    let timestamp_ms = rekindle_utils::timestamp_ms();
-    emit_from_state(
-        state,
-        WebviewEvent::Subscription(SubscriptionEvent::Call(CallEvent::SelfMuteChanged {
-            muted,
-            timestamp_ms,
-        })),
     );
 }
 

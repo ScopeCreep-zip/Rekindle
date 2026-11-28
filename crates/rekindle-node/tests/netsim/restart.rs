@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use rekindle_netsim::{Netsim, Node};
 use rekindle_node::host::{claim, Host, HostConfig, HostStores, ShellHooks, TransportSource};
+use rekindle_types::audio::AudioIo;
 use tracing::Instrument;
 
 use crate::harness::{node_span, SimNode};
@@ -26,6 +27,7 @@ pub async fn host_on(
     dir: &tempfile::TempDir,
     shell: Option<Arc<dyn ShellHooks>>,
     mode: SimMode,
+    audio: AudioIo,
 ) -> (Arc<Host>, Arc<rekindle_db::DbHandle>) {
     let root = rekindle_db::paths::DataRoot::under(dir.path());
     let storage_dir = root.data.join("veilid").display().to_string();
@@ -74,7 +76,7 @@ pub async fn host_on(
         root: claim(root).expect("claim the data root"),
         stores,
         transport,
-        audio: rekindle_types::audio::AudioIo::HEADLESS,
+        audio,
         serve_bus: false,
         clock,
         rng,
@@ -110,7 +112,7 @@ impl SimNode {
         tokio::time::sleep(down).await;
         let node = sim.start_node(index);
         let routes = Arc::clone(&node.ports.routes);
-        let (host, db) = host_on(node, &dir, None, mode).await;
+        let (host, db) = host_on(node, &dir, None, mode, AudioIo::HEADLESS).await;
         sim.quiesce().await;
         Self {
             index,

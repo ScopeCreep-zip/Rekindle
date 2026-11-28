@@ -7,7 +7,6 @@ use rekindle_types::subscription_events::{
     SubscriptionEvent, VoiceEvent, VoiceMediaReady, VoiceScope,
 };
 use rekindle_voice::media_ready::MediaReadyInputs;
-use rekindle_voice::session_state::VoiceSessionState;
 
 use crate::state::AppState;
 use crate::state_helpers::voice_session_state_for;
@@ -23,25 +22,6 @@ pub fn update_media_ready(
             emit(state, scope(community_id, channel_id), status);
         });
     }
-}
-
-pub fn clear_media_ready(state: &Arc<AppState>, community_id: &str, channel_id: &str) {
-    if let Some(session) = voice_session_state_for(state, community_id, channel_id) {
-        end(state, &session, Some(community_id), channel_id);
-    }
-}
-
-pub fn end(
-    state: &AppState,
-    session: &VoiceSessionState,
-    community_id: Option<&str>,
-    channel_id: &str,
-) {
-    session.end(|status| {
-        if let Some(community_id) = community_id {
-            emit(state, scope(community_id, channel_id), status);
-        }
-    });
 }
 
 /// The hard egress gate — `Err(reason)` until the session converged.

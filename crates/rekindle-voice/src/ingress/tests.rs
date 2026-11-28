@@ -19,7 +19,6 @@ use crate::transport::roster::MediaRoster;
 use crate::transport::VoicePacket;
 
 /// Records what the policy asked of the host.
-#[derive(Default)]
 struct Host {
     media: Arc<MediaRoster>,
     live: Mutex<Vec<String>>,
@@ -28,6 +27,20 @@ struct Host {
     feedback: AtomicUsize,
     packets: Mutex<Option<mpsc::Sender<VoicePacket>>>,
     reports: Mutex<Option<mpsc::Sender<VoiceReceiverReport>>>,
+}
+
+impl Default for Host {
+    fn default() -> Self {
+        Self {
+            media: Arc::new(MediaRoster::new(Arc::new(rekindle_utils::SystemClock))),
+            live: Mutex::default(),
+            drops: AtomicUsize::default(),
+            queued: AtomicUsize::default(),
+            feedback: AtomicUsize::default(),
+            packets: Mutex::default(),
+            reports: Mutex::default(),
+        }
+    }
 }
 
 impl MediaIngress for Host {

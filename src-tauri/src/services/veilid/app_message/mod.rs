@@ -283,10 +283,7 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
 /// True when the local user's active voice/video session is bound to
 /// exactly this (community, channel).
 fn local_in_channel(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> bool {
-    let ve = state.voice_engine.lock();
-    ve.as_ref().is_some_and(|handle| {
-        handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id
-    })
+    crate::state_helpers::voice_session_state_for(state, community_id, channel_id).is_some()
 }
 
 /// Relay `signed` one hop further through the Host's mesh (plan E3.4 S5),

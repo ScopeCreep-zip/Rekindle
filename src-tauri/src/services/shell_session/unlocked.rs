@@ -33,9 +33,6 @@ pub(super) async fn run(
     });
     let pool = state.db.current()?;
     let owner = view.public_key.as_str();
-    // Call media keys go out on the Host's outbox (plan E2.5).
-    services::voice_signaling_adapter::install_media_key_carrier(state);
-
     // Loaders: preferences (→ E4.1, E5.5). Friends are the Host's (plan
     // E2.1), and so are the communities and their governance (the Host's
     // warm-cache stage, plan E3.1 C1); this shell's live channel keys are
@@ -143,9 +140,6 @@ fn network_stages(
     pool: &rekindle_db::Db,
     scope: &Arc<SessionScope>,
 ) -> Result<(), rekindle_lifecycle::ScopeClosed> {
-    // Voice drop telemetry (→ E4.1).
-    services::voice_adapter::spawn_drop_telemetry(state, app, scope)?;
-
     // Community hydration, rebuild, republish and history catch-up are the
     // Host's network stage (plan E3.1 C2a); each community's presence poll,
     // keepalive and inspect loop start when it hands the records over
@@ -157,16 +151,6 @@ fn network_stages(
     scope.spawn_with_token("route reaction", |stop| {
         services::veilid::route_publish::run(route_app, route_state, stop)
     })?;
-    // A live 1:1 call's roster follows its peer's route: call signaling
-    // carries no routes, so the one route cache is their only source
-    // (→ E4.1, which moves the call FSM and this heal into the Host).
-    if let Some(node) = state.transport.read().clone() {
-        let updates = node.peers().read().updates();
-        let heal_state = Arc::clone(state);
-        scope.spawn_with_token("call route heal", |stop| {
-            services::voice_adapter::heal_call_routes(heal_state, node, updates, stop)
-        })?;
-    }
     Ok(())
 }
 

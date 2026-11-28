@@ -154,6 +154,8 @@ struct VoiceReceiveLoop {
     /// arbitrary — it just has to be monotonic and stable for the
     /// session.
     origin: Instant,
+    /// The session's clock port (plan E4.1).
+    clock: Arc<dyn rekindle_utils::Clock>,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -175,6 +177,7 @@ impl VoiceReceiveLoop {
         let channels: u16 = 1;
         let frame_size: usize = 960;
 
+        let clock = params.deps.clock();
         let key_source: Arc<dyn MediaKeySource> = params.deps.clone();
         let keys = Arc::new(MediaKeys::new(
             key_source,
@@ -201,7 +204,7 @@ impl VoiceReceiveLoop {
             packets_received: 0,
             late_ticks: 0,
             playout: PlayoutCounters::default(),
-            last_quality_check: Instant::now(),
+            last_quality_check: clock.monotonic(),
             key_drops: 0,
             last_key_request: HashMap::new(),
             community_id: params.community_id,
@@ -215,14 +218,21 @@ impl VoiceReceiveLoop {
             quality: params.quality,
             feedback_stats: params.feedback_stats,
             frame_ms: u64::try_from(frame_size).unwrap_or(960) * 1_000 / u64::from(sample_rate),
-            origin: Instant::now(),
+            origin: clock.monotonic(),
+            clock,
         })
     }
 
     /// Local milliseconds since loop start — the clock the LSR/DLSR
     /// echo measures its own delay in.
     fn local_ms(&self) -> u64 {
-        u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX)
+        u64::try_from(
+            self.clock
+                .monotonic()
+                .saturating_duration_since(self.origin)
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX)
     }
 
     async fn run_loop(mut self) {
@@ -311,7 +321,7 @@ impl VoiceReceiveLoop {
                             echo: SenderEcho::default(),
                             jitter_buffer: JitterBuffer::new(self.jitter_base_ms),
                             is_speaking: false,
-                            last_packet_time: Instant::now(),
+                            last_packet_time: self.clock.monotonic(),
                         },
                     );
                 }
@@ -335,14 +345,14 @@ impl VoiceReceiveLoop {
                 },
                 arrival_local_ms,
             );
-            participant.last_packet_time = Instant::now();
+            participant.last_packet_time = self.clock.monotonic();
             // Media-plane proof of life for the presence reconcile.
             // Wall-clock ms (`timestamp_ms`), NOT `local_ms`: the
             // ledger is shared with the send loop's receiver-report
             // path, and the loops' `Instant` origins differ — only the
             // wall clock is a domain both sides already stamp.
             self.media_liveness
-                .note(&hex::encode(&sender_key), rekindle_utils::timestamp_ms());
+                .note(&hex::encode(&sender_key), self.clock.now_ms());
 
             if !participant.is_speaking {
                 participant.is_speaking = true;
@@ -413,7 +423,7 @@ impl VoiceReceiveLoop {
 
         // When a frame popped now reaches the speaker: after the playback
         // ring's depth.
-        let played_wall_ms = rekindle_utils::timestamp_ms().saturating_add(u64::from(
+        let played_wall_ms = self.clock.now_ms().saturating_add(u64::from(
             self.playback_depth_ms
                 .load(std::sync::atomic::Ordering::Relaxed),
         ));
@@ -429,7 +439,12 @@ impl VoiceReceiveLoop {
                     decode_packet(participant, packet)
                 }
                 None => {
-                    if participant.last_packet_time.elapsed() < Duration::from_secs(2) {
+                    if self
+                        .clock
+                        .monotonic()
+                        .saturating_duration_since(participant.last_packet_time)
+                        < Duration::from_secs(2)
+                    {
                         // Expected packet missing. Once the gap outlives the
                         // jitter window it is loss, not reordering — jump and
                         // resume from the oldest buffered packet (a stalled
@@ -504,7 +519,12 @@ impl VoiceReceiveLoop {
         let timeout_keys: Vec<Vec<u8>> = self
             .participants
             .iter()
-            .filter(|(_, p)| p.last_packet_time.elapsed() > Duration::from_secs(5))
+            .filter(|(_, p)| {
+                self.clock
+                    .monotonic()
+                    .saturating_duration_since(p.last_packet_time)
+                    > Duration::from_secs(5)
+            })
             .map(|(k, _)| k.clone())
             .collect();
 
@@ -529,7 +549,11 @@ impl VoiceReceiveLoop {
     fn update_speaking_states(&mut self) {
         for (key, participant) in &mut self.participants {
             if participant.is_speaking
-                && participant.last_packet_time.elapsed() > Duration::from_millis(500)
+                && self
+                    .clock
+                    .monotonic()
+                    .saturating_duration_since(participant.last_packet_time)
+                    > Duration::from_millis(500)
             {
                 participant.is_speaking = false;
                 self.deps.emit_voice_event(VoiceSessionEvent::UserSpeaking {

@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::subscription_events::JoinHandshake;
 
 use rekindle_codec::community::envelope::{MediaSessionKey, VoiceRosterEntry};
@@ -114,8 +115,9 @@ pub(in crate::signaling) fn handle_voice_roster(
     deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
     channel_id: String,
-    participants: Vec<VoiceRosterEntry>,
+    mut participants: Vec<VoiceRosterEntry>,
 ) {
+    participants.retain(|entry| pseudonym_hex(&entry.pseudonym_key).is_ok());
     // §10.1/§10.5 — surface the full roster to the frontend so a joiner
     // immediately sees everyone already present, decoupled from
     // MEK-decrypt. The packet path only ever revealed members whose

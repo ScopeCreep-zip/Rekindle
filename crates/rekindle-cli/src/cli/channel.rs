@@ -241,11 +241,17 @@ pub enum VoiceCmd {
     /// Show current voice session participants.
     Status,
 
-    /// Toggle self-mute.
-    Mute,
+    /// Set microphone mute (default on).
+    Mute {
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        muted: bool,
+    },
 
-    /// Toggle self-deafen.
-    Deafen,
+    /// Set playback deafen (default on).
+    Deafen {
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        deafened: bool,
+    },
 }
 
 /// A community's channel administration (`rekindle community channel …`).

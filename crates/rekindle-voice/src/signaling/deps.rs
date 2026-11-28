@@ -240,6 +240,10 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
 
     // ── Cross-subsystem ops (deferred to Phase 17 / 19 / 20) ────
 
+    /// The clock the media-key ratchet reads (plan C9.2's port, E4.1):
+    /// the same one the media loops read.
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock>;
+
     /// The sender keys of our session on `(community, channel)` (plan
     /// C7.20): the same store the media loops seal and open with.
     fn channel_sender_keys(

@@ -157,16 +157,16 @@ pub struct ArrivalLedger {
     origin: Instant,
 }
 
-impl Default for ArrivalLedger {
-    fn default() -> Self {
+impl ArrivalLedger {
+    /// A ledger whose report clock starts at `clock`'s monotonic now.
+    #[must_use]
+    pub fn new(clock: &dyn rekindle_utils::Clock) -> Self {
         Self {
             peers: Mutex::default(),
-            origin: Instant::now(),
+            origin: clock.monotonic(),
         }
     }
-}
 
-impl ArrivalLedger {
     /// Note that `peer`'s datagram `transport_seq` arrived at `at`.
     pub fn record(&self, peer: &str, transport_seq: u32, at: Instant) {
         let mut peers = self.peers.lock();
@@ -230,6 +230,13 @@ impl ArrivalLedger {
     #[must_use]
     pub fn report_time_ms(&self, now: Instant) -> u64 {
         u64::try_from(now.saturating_duration_since(self.origin).as_millis()).unwrap_or(u64::MAX)
+    }
+
+    /// Highest signed audio sequence received from a peer. Padding and
+    /// feedback do not advance this sequence.
+    #[must_use]
+    pub fn audio_sequence(&self, peer: &str) -> Option<u64> {
+        self.peers.lock().get(peer)?.voice_seen.high_water()
     }
 
     /// Peers with arrivals waiting to be reported.

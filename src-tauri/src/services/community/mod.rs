@@ -26,13 +26,10 @@ pub mod watch;
 pub use bootstrap::answer_bootstrap_request;
 
 pub use expressions::{play_soundboard, upload_soundboard_sound};
-pub use gossip::{
-    flush_peer_reliability, hydrate_peer_reliability, record_peer_reliability,
-    send_to_channel_peers, send_to_channel_peers_now, start_peer_reliability_flush,
-};
+pub use gossip::{flush_peer_reliability, hydrate_peer_reliability, start_peer_reliability_flush};
 pub use governance::write_entry;
 pub use mek_rotation_orchestrators::spawn_departure_rotations;
 pub use notifications::notify_stored_post;
 pub use presence::presence_poll_tick_public;
-pub use stage::{list_hand_raises, persist_hand_raise};
+pub use stage::list_hand_raises;
 pub use watch::mark_watch_inactive;

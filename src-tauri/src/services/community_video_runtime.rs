@@ -129,12 +129,11 @@ pub fn send_video_keyframe_request_inner(
         channel_id: channel_id.to_string(),
         stream_id,
     });
-    crate::services::voice_adapter::media_egress::send_video_envelope(
-        state,
-        community_id,
-        channel_id,
-        &envelope,
-    )
+    let host = state
+        .host
+        .current()
+        .ok_or_else(|| rekindle_types::audio::VoiceFailure::SignInRequired.notice())?;
+    host.send_voice_video_envelope(community_id, channel_id, &envelope)
 }
 
 pub fn notify_video_topology_change_inner(
@@ -155,12 +154,11 @@ pub fn notify_video_topology_change_inner(
         reason,
         lamport,
     });
-    crate::services::voice_adapter::media_egress::send_video_envelope(
-        state,
-        community_id,
-        channel_id,
-        &envelope,
-    )
+    let host = state
+        .host
+        .current()
+        .ok_or_else(|| rekindle_types::audio::VoiceFailure::SignInRequired.notice())?;
+    host.send_voice_video_envelope(community_id, channel_id, &envelope)
 }
 
 #[cfg(test)]

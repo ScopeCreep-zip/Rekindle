@@ -8,7 +8,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use rekindle_codec::capnp_codec::transport_feedback::TransportFeedback;
@@ -36,11 +36,17 @@ pub struct PeerLink {
     stop: CancellationToken,
     sent: AtomicU64,
     failed: AtomicU64,
+    /// The pacing, feedback and hand-off clock (the session's clock port).
+    clock: Arc<dyn rekindle_utils::Clock>,
 }
 
 impl PeerLink {
     #[must_use]
-    pub fn new(route_blob: &[u8], padding_key: super::roster::PaddingKey) -> Arc<Self> {
+    pub fn new(
+        route_blob: &[u8],
+        padding_key: super::roster::PaddingKey,
+        clock: Arc<dyn rekindle_utils::Clock>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             controller: Mutex::new(RouteController::new()),
             padding_key,
@@ -49,6 +55,7 @@ impl PeerLink {
             stop: CancellationToken::new(),
             sent: AtomicU64::new(0),
             failed: AtomicU64::new(0),
+            clock,
         })
     }
 
@@ -67,14 +74,17 @@ impl PeerLink {
     pub fn enqueue_unpaced(&self, tag: u8, payload: Arc<[u8]>, media_bytes: usize) {
         self.controller
             .lock()
-            .enqueue_unpaced(tag, payload, media_bytes, Instant::now());
+            .enqueue_unpaced(tag, payload, media_bytes, self.clock.monotonic());
         self.wake.notify_one();
     }
 
     /// Queue a video frame; `false` if the route refused it (paused, or
     /// waiting for a keyframe).
     pub fn enqueue_video(&self, frame: &VideoFrame) -> bool {
-        let queued = self.controller.lock().enqueue_video(frame, Instant::now());
+        let queued = self
+            .controller
+            .lock()
+            .enqueue_video(frame, self.clock.monotonic());
         self.wake.notify_one();
         queued
     }
@@ -88,7 +98,7 @@ impl PeerLink {
     }
 
     pub fn on_feedback(&self, feedback: &TransportFeedback) -> RouteAllocation {
-        let now = Instant::now();
+        let now = self.clock.monotonic();
         let mut c = self.controller.lock();
         let estimate = c.on_feedback(feedback, now);
         let video_offered = c.video_offered(now);
@@ -128,13 +138,13 @@ impl PeerLink {
         scope_stop: CancellationToken,
     ) {
         let mut streak = 0u64;
-        let mut last_stats = Instant::now();
+        let mut last_stats = self.clock.monotonic();
         // How long each `app_message` took to hand off, since the last
         // stats line: while one is in flight, everything queued behind it
         // (voice included) waits.
         let mut send_times = SendTimes::default();
         loop {
-            let now = Instant::now();
+            let now = self.clock.monotonic();
             let (datagram, next, keyframe, stats) = {
                 let mut c = self.controller.lock();
                 c.handle_timeout(now);
@@ -162,13 +172,15 @@ impl PeerLink {
                 }
                 let route = self.route();
                 let seq = crate::media_frame::split_sequenced(&datagram).map(|(_, seq, _)| seq);
-                let started = Instant::now();
+                let started = self.clock.monotonic();
                 let result = sender.send_voice_frame(&route, datagram).await;
-                send_times.note(started.elapsed());
+                send_times.note(self.clock.monotonic().saturating_duration_since(started));
                 match result {
                     Ok(()) => {
                         if let Some(seq) = seq {
-                            self.controller.lock().on_handed_off(seq, Instant::now());
+                            self.controller
+                                .lock()
+                                .on_handed_off(seq, self.clock.monotonic());
                         }
                         self.sent.fetch_add(1, Ordering::Relaxed);
                         streak = 0;

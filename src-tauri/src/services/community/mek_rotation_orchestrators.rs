@@ -43,12 +43,9 @@ pub fn spawn_departure_rotations(
     community_id: &str,
     departed_pseudonym: &str,
 ) {
-    crate::services::voice_signaling_adapter::member_departed(
-        app_handle,
-        state,
-        community_id,
-        departed_pseudonym,
-    );
+    if let Some(host) = state.host.current() {
+        host.voice_member_departed(community_id, departed_pseudonym);
+    }
     let app_handle = app_handle.clone();
     let state = Arc::clone(state);
     let community_id = community_id.to_string();

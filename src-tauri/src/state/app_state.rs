@@ -17,20 +17,11 @@ use tokio::sync::mpsc;
 
 use super::community::CommunityMap;
 use super::friend::IdentityState;
-use super::runtime::{NodeHandle, VoiceEngineHandle};
+use super::runtime::NodeHandle;
 use rekindle_channel::AutoModCompiledCache;
 
 /// Central application state shared across all Tauri commands and services.
 pub struct AppState {
-    /// Channel for routing incoming voice packets from the dispatch loop to the receive loop.
-    pub voice_packet_tx: Arc<RwLock<Option<mpsc::Sender<rekindle_voice::transport::VoicePacket>>>>,
-    /// Channel for routing incoming RFC 3550 receiver reports from the
-    /// dispatch loop to the **send** loop — the return direction of
-    /// `voice_packet_tx`. Reports tell our sender what our audio looks
-    /// like at each peer, which is the only way it can see loss at all:
-    /// a successful `send()` says nothing about arrival.
-    pub voice_report_tx:
-        Arc<RwLock<Option<mpsc::Sender<rekindle_voice::receiver_report::VoiceReceiverReport>>>>,
     /// Identity (loaded after Stronghold unlock).
     pub identity: Arc<RwLock<Option<IdentityState>>>,
     /// Joined communities: the Host's one store (`HostStores::communities`,
@@ -59,13 +50,6 @@ pub struct AppState {
     /// The unlocked identity's preferences (`services::preferences`; the
     /// defaults while locked).
     pub preferences: RwLock<rekindle_types::preferences::Preferences>,
-    /// Voice engine state. `pub(crate)` so the Tauri-runtime adapters
-    /// keep direct access while external callers go through the typed
-    /// `AppState` helpers below.
-    pub(crate) voice_engine: Arc<Mutex<Option<VoiceEngineHandle>>>,
-    /// Which 1:1 call owns the running voice session's media (plan CE2,
-    /// lead decision 30): a call's end stops the media only when it owns it.
-    pub(crate) call_media: Arc<rekindle_calls::signaling::CallMediaOwner>,
     /// Channel for sending shutdown signals to background services.
     pub shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
     /// The identity's Ed25519 secret, stored at unlock for the unported
@@ -152,9 +136,6 @@ pub struct AppState {
     pub dedup_cache: Mutex<DedupCache>,
     /// Call-media sender keys per community voice channel session (plan
     /// C7.20): our own key and the keys participants sent us. Kept across
-    /// transport rebuilds, ended with the channel session, cleared on
-    /// logout.
-    pub voice_sender_keys: rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore,
     /// M10.4 — receiver-side per-(community, sender) gossip rate floor.
     pub gossip_rate_limits:
         Mutex<HashMap<(String, String), rekindle_gossip::rate_limit::TokenBucket>>,
@@ -178,12 +159,6 @@ pub struct AppState {
     /// Wave 12 W12.12 — temporarily muted peers (peer_pubkey_hex →
     /// expires_at_ms). In-memory only.
     pub temp_call_muted: Arc<Mutex<HashMap<String, u64>>>,
-    /// Wave 14 W14.4 — observability counter for dropped voice packets.
-    pub voice_packet_drops: rekindle_voice::packet_drops::PacketDrops,
-    /// Wave 14 W14.1 — pre-staged voice packet receiver.
-    pub voice_packet_rx_staged: parking_lot::Mutex<
-        Option<tokio::sync::mpsc::Receiver<rekindle_voice::transport::VoicePacket>>,
-    >,
     /// Wave 12 W12.9 — group call state (1:N).
     pub group_calls: Arc<Mutex<HashMap<String, rekindle_calls::group_state::GroupCallState>>>,
     /// Phase 11 Tier 1 — frontend-registered `ipc::Channel` handles for
@@ -212,26 +187,15 @@ pub struct AppState {
     pub media_key_admission: Mutex<MediaKeyAdmission>,
     /// Linux-native camera session slot (unit type off-Linux).
     pub native_video: crate::services::native_video::NativeVideoSlot,
-    /// Phase 5 — last-known halves of the merged ConnectionQuality
-    /// emission (send-side quality + receive-side jitter drops arrive
-    /// on different 5 s cadences; each emission carries both).
-    pub voice_quality_cache:
-        Mutex<crate::services::voice_adapter::event_mapping::VoiceQualityCache>,
     /// Channel-media sends that found an empty roster (observability —
     /// frames encoded but with nobody to send to).
     pub channel_send_empty_roster_drops: std::sync::atomic::AtomicU64,
-    /// Single-flight gate for per-(community, peer) DHT route
-    /// re-resolution. Lives on AppState because the gossip adapter is
-    /// rebuilt per send — the coalescing window must span sends.
-    pub gossip_resolve_gate: rekindle_gossip::ResolveGate,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         let clock: Arc<dyn rekindle_utils::Clock> = Arc::new(rekindle_utils::SystemClock);
         Self {
-            voice_packet_tx: Arc::new(RwLock::new(None)),
-            voice_report_tx: Arc::new(RwLock::new(None)),
             identity: Arc::new(RwLock::new(None)),
             communities: rekindle_node::host::community::new_map(),
             node: Arc::new(RwLock::new(None)),
@@ -240,8 +204,6 @@ impl Default for AppState {
             db: Arc::new(rekindle_db::DbHandle::default()),
             identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
-            voice_engine: Arc::new(Mutex::new(None)),
-            call_media: Arc::new(rekindle_calls::signaling::CallMediaOwner::default()),
             shutdown_tx: Arc::new(RwLock::new(None)),
             identity_secret: Mutex::new(None),
             audit_chain: Arc::new(Mutex::new(None)),
@@ -275,8 +237,6 @@ impl Default for AppState {
             held_deep_link: Mutex::new(None),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
-            voice_sender_keys:
-                rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore::default(),
             gossip_rate_limits: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             files: Arc::default(),
@@ -290,8 +250,6 @@ impl Default for AppState {
                 Arc::new(Mutex::new(HashMap::new())),
             )),
             temp_call_muted: Arc::new(Mutex::new(HashMap::new())),
-            voice_packet_drops: rekindle_voice::packet_drops::PacketDrops::default(),
-            voice_packet_rx_staged: parking_lot::Mutex::new(None),
             group_calls: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
             video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
@@ -300,12 +258,8 @@ impl Default for AppState {
             media_key_admission: Mutex::default(),
             control_ingress: Arc::new(ControlIngressQueue::new()),
             native_video: crate::services::native_video::NativeVideoSlot::default(),
-            voice_quality_cache: Mutex::new(
-                crate::services::voice_adapter::event_mapping::VoiceQualityCache::default(),
-            ),
             video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
             channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),
-            gossip_resolve_gate: rekindle_gossip::ResolveGate::new(),
         }
     }
 }
@@ -324,32 +278,6 @@ impl AppState {
             lifecycle: Arc::clone(&self.lifecycle),
             communities: Arc::clone(&self.communities),
             files: Arc::clone(&self.files),
-        }
-    }
-
-    /// Toggle the voice engine's mute state. Returns `Some(new_muted)` if
-    /// the voice engine is active, `None` otherwise. The caller is
-    /// responsible for emitting any UI event tied to the change.
-    pub fn toggle_voice_mute(&self) -> Option<bool> {
-        let mut ve = self.voice_engine.lock();
-        let handle = ve.as_mut()?;
-        let new_muted = !handle.engine.is_muted;
-        handle.engine.set_muted(new_muted);
-        handle
-            .muted_flag
-            .store(new_muted, std::sync::atomic::Ordering::Relaxed);
-        Some(new_muted)
-    }
-
-    /// Force the voice engine into muted=true. Used by the §10.7 stage
-    /// audience auto-mute gate. No-op when no voice engine is active.
-    pub fn force_voice_mute(&self) {
-        let mut ve = self.voice_engine.lock();
-        if let Some(handle) = ve.as_mut() {
-            handle.engine.set_muted(true);
-            handle
-                .muted_flag
-                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
 }

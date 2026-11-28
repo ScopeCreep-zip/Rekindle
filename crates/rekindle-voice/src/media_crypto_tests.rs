@@ -25,6 +25,10 @@ impl Keys {
 }
 
 impl MediaKeySource for Keys {
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        Arc::new(rekindle_utils::SystemClock)
+    }
+
     fn channel_sender_keys(&self, _: &str, _: &str) -> Arc<ChannelSenderKeys> {
         Arc::clone(&self.channel)
     }

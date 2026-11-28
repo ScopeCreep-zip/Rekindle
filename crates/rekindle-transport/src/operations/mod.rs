@@ -20,4 +20,3 @@ pub mod mek;
 pub mod prekeys;
 pub mod relay;
 pub mod typing;
-pub mod voice;

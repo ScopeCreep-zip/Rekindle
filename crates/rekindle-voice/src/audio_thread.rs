@@ -170,6 +170,10 @@ impl AudioThread {
         tracing::info!(direction = self.labels.direction, "audio thread stopped");
     }
 
+    pub(crate) fn format(&self) -> (u32, u16) {
+        (self.sample_rate, self.channels)
+    }
+
     pub(crate) fn is_active(&self) -> bool {
         self.is_active
     }

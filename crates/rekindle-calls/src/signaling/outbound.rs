@@ -44,7 +44,7 @@ pub(super) async fn start_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();
     let initiator_pubkey = deps.owner_key()?;
-    let expires_at_ms = rekindle_utils::timestamp_ms() + RING_DURATION_MS;
+    let expires_at_ms = deps.now_ms() + RING_DURATION_MS;
 
     // State BEFORE send so a fast peer ack finds the entry.
     deps.registry().insert(CallState {
@@ -290,7 +290,7 @@ pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     };
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();
-    let expires_at_ms = rekindle_utils::timestamp_ms() + RING_DURATION_MS;
+    let expires_at_ms = deps.now_ms() + RING_DURATION_MS;
     let call_key = generate_call_key();
 
     let mut all_participants = vec![initiator_pubkey.clone()];

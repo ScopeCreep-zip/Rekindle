@@ -169,15 +169,20 @@ impl InboundHandler for DaemonHandler {
             )
     }
 
-    fn on_media(&self, raw: &[u8], _arrived: std::time::Instant) {
-        tracing::trace!(len = raw.len(), "media datagram without a voice session");
+    fn on_media(&self, raw: &[u8], arrived: std::time::Instant) {
+        if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+            crate::host::adapters::voice::ingest_media(&ctx, raw, arrived, &|_| {});
+        }
     }
 
     async fn on_media_key_call(
         &self,
-        _payload: &rekindle_codec::community::envelope::ControlPayload,
+        payload: &rekindle_codec::community::envelope::ControlPayload,
     ) -> rekindle_transport::subscriptions::media_key::MediaKeyReply {
-        rekindle_transport::subscriptions::media_key::MediaKeyReply::Refused
+        let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+            return rekindle_transport::subscriptions::media_key::MediaKeyReply::Refused;
+        };
+        crate::host::adapters::voice::answer_media_key_call(&ctx, payload).await
     }
 
     async fn on_direct(&self, datagram: &[u8]) {

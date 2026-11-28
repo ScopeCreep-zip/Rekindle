@@ -10,7 +10,7 @@
 //! The Tauri command handlers in `commands/voice.rs` stay as ≤15-LoC
 //! delegations.
 
-use crate::state::{ChannelType, SharedState};
+use crate::state::SharedState;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,82 +106,15 @@ pub async fn persist_input_channels(
     .await
 }
 
-pub fn apply_stage_audience_gate(state: &SharedState, community_id: &str, channel_id: &str) {
-    let (is_stage, my_pseudonym, speakers) = {
-        let communities = state.communities.read();
-        let Some(community) = communities.get(community_id) else {
-            return;
-        };
-        let Some(channel) = community
-            .channels
-            .iter()
-            .find(|channel| channel.id == channel_id)
-        else {
-            return;
-        };
-        (
-            matches!(channel.channel_type, ChannelType::Stage),
-            community.my_pseudonym_key.clone().unwrap_or_default(),
-            channel.stage_speakers.clone(),
-        )
-    };
-
-    if !is_stage || speakers.contains(&my_pseudonym) {
-        return;
-    }
-
-    state.force_voice_mute();
-}
-
-pub fn build_voice_session_deps(
-    app: &tauri::AppHandle,
-    state: &SharedState,
-) -> Result<std::sync::Arc<dyn rekindle_voice::VoiceSessionDeps>, String> {
-    let pool = state.db.current()?;
-    Ok(crate::services::voice_adapter::VoiceAdapter::new(
-        state.clone(),
-        app.clone(),
-        pool,
-    ))
-}
-
 pub fn build_voice_signaling_deps(
-    app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<std::sync::Arc<dyn rekindle_voice::signaling::VoiceSignalingDeps>, String> {
-    Ok(
-        crate::services::voice_signaling_adapter::VoiceSignalingAdapter::new(
-            state.clone(),
-            app.clone(),
-        )?,
-    )
-}
-
-pub async fn join_voice_channel_inner(
-    channel_id: &str,
-    community_id: Option<&str>,
-    app: &tauri::AppHandle,
-    state: &SharedState,
-) -> Result<(), String> {
-    if let Some(cid) = community_id {
-        crate::commands::community::require_permission(
-            state,
-            cid,
-            rekindle_types::permissions::CONNECT,
-        )?;
-    }
-    let deps = build_voice_session_deps(app, state)?;
-    rekindle_voice::session::join_voice_channel(&deps, channel_id, community_id)
-        .await
-        .inspect_err(|error| tracing::warn!(%error, "voice channel join failed"))
-        .map_err(|error| error.notice())?;
-    if let Some(cid) = community_id {
-        apply_stage_audience_gate(state, cid, channel_id);
-        // Our beat says the channel at once, and the voice roster is handed
-        // what the members' beats show (plan E3.4 S8-pre).
-        crate::services::presence_adapter::voice_presence_changed(state, cid);
-    }
-    Ok(())
+    state.db.current()?;
+    state
+        .host
+        .current()
+        .map(|host| host.voice_signaling_deps())
+        .ok_or_else(|| rekindle_types::audio::VoiceFailure::SignInRequired.notice())
 }
 
 /// The refusal of a server mute with no voice channel named.
@@ -200,7 +133,6 @@ pub fn server_mute_member_inner(
     channel_id: Option<String>,
     target_pseudonym: &str,
     muted: bool,
-    app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<(), String> {
     let channel_id = voice_channel_or(channel_id, MUTE_NEEDS_VOICE)?;
@@ -209,7 +141,7 @@ pub fn server_mute_member_inner(
         community_id,
         rekindle_types::permissions::MUTE_MEMBERS,
     )?;
-    let deps = build_voice_signaling_deps(app, state)?;
+    let deps = build_voice_signaling_deps(state)?;
     rekindle_voice::signaling::server_mute_member(
         &deps,
         community_id,

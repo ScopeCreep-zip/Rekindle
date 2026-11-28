@@ -1,7 +1,12 @@
 //! Unit tests for [`super::VoiceTransport`] — extracted via `#[path]`
 //! to keep `mod.rs` under the file-size ceiling.
 
-use super::*;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use super::{is_no_connection, OutboundFrame, VoiceFrameSender, VoiceTransport};
+use crate::error::VoiceError;
 
 /// Fails only for `dead_blob` — mirrors the frame-sender adapter's
 /// wrapping of a veilid `NoConnection` into `VoiceError::Transport`.
@@ -23,7 +28,10 @@ impl VoiceFrameSender for SelectiveSender {
 }
 
 fn test_transport(dead_blob: Vec<u8>) -> VoiceTransport {
-    let mut t = VoiceTransport::new("chan".into());
+    let mut t = VoiceTransport::new(
+        "chan".into(),
+        std::sync::Arc::new(rekindle_utils::SystemClock),
+    );
     t.init(
         Arc::new(SelectiveSender { dead_blob }),
         vec![1, 2, 3],
@@ -80,6 +88,17 @@ async fn a_dead_route_does_not_hold_up_a_live_one() {
     assert_eq!(t.send_counts(), (3, 3));
 }
 
+#[tokio::test]
+async fn a_relayed_local_sender_is_refused_from_the_roster() {
+    let mut transport = test_transport(Vec::new());
+    let sender = hex::encode(transport.sender_key());
+    assert!(
+        !transport.add_peer(&sender, &[4, 5, 6]),
+        "a Host never adds itself as a peer"
+    );
+    assert_eq!(transport.peer_count(), 0);
+}
+
 #[test]
 fn send_needs_a_peer() {
     let t = test_transport(Vec::new());
@@ -94,4 +113,39 @@ async fn removing_a_peer_stops_its_driver_and_forgets_its_allocation() {
     assert!(t.remove_peer("p"));
     assert!(link.is_stopped());
     assert!(t.allocator().route("p").is_none());
+}
+
+/// A clock whose monotonic time moves only when the test says so.
+struct ManualClock(parking_lot::Mutex<std::time::Instant>);
+
+impl rekindle_utils::Clock for ManualClock {
+    fn now_ms(&self) -> u64 {
+        0
+    }
+
+    fn monotonic(&self) -> std::time::Instant {
+        *self.0.lock()
+    }
+}
+
+/// The roster's join-grace ages read the session's clock port, never the
+/// OS clock (plan E4.1, E2.B): the age moves exactly as far as the port.
+#[tokio::test(start_paused = true)]
+async fn a_peer_age_advances_only_with_the_clock_port() {
+    let clock = Arc::new(ManualClock(parking_lot::Mutex::new(
+        std::time::Instant::now(),
+    )));
+    let mut t = VoiceTransport::new("chan".into(), clock.clone());
+    t.init(
+        Arc::new(SelectiveSender {
+            dead_blob: Vec::new(),
+        }),
+        vec![1, 2, 3],
+        rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {})),
+    );
+    t.add_peer("peer", &[4, 5, 6]);
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    assert_eq!(t.peer_views(), vec![("peer".to_string(), 0)]);
+    *clock.0.lock() += std::time::Duration::from_secs(42);
+    assert_eq!(t.peer_views(), vec![("peer".to_string(), 42)]);
 }

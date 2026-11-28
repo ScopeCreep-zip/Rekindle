@@ -48,8 +48,19 @@ pub async fn dispatch(
             format::print_structured(&value, mode)
         }
         VoiceCmd::Status => Err(crate::identity::unimplemented("voice status")),
-        VoiceCmd::Mute | VoiceCmd::Deafen => {
-            Err(crate::identity::unimplemented("voice mute/deafen"))
+        VoiceCmd::Mute { muted } => {
+            let value = helpers::send(client, IpcRequest::VoiceSetMute { muted: *muted }).await?;
+            format::print_structured(&value, mode)
+        }
+        VoiceCmd::Deafen { deafened } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::VoiceSetDeafen {
+                    deafened: *deafened,
+                },
+            )
+            .await?;
+            format::print_structured(&value, mode)
         }
     }
 }

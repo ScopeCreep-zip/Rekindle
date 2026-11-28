@@ -54,7 +54,7 @@ impl AudioTargets {
                 prefs.input_device.as_deref(),
                 &DeviceDirection::Input,
             )?),
-            VoiceSource::Silence => None,
+            VoiceSource::Silence | VoiceSource::Speech => None,
         };
         let output = match prefs.io.sink {
             VoiceSink::Speakers => Some(device(

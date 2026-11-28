@@ -1,16 +1,14 @@
-//! Voice dispatch handlers (until E4.1 brings the daemon's voice engine):
-//! the session a join establishes is the Host's own record
-//! (`host::own_voice`), and every join and leave writes our beat at once
-//! (`adapters::presence::voice_changed`, plan E3.4 "Constant rate"), so
-//! the members' voice rosters list us from it.
+//! Voice requests use the held session in the Host voice adapter.
 
-use crate::daemon::DaemonState;
-use crate::host::adapters::presence::voice_changed;
 use rekindle_ipc::protocol::IpcResponse;
+use rekindle_types::audio::VoiceFailure;
+use rekindle_types::dto::voice::{VoiceJoined, VoiceLeft};
 
 use super::{state_error, DaemonContext};
+use crate::daemon::DaemonState;
+use crate::host::adapters::voice;
 
-pub(crate) fn handle_voice_join(
+pub(crate) async fn handle_voice_join(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -21,57 +19,43 @@ pub(crate) fn handle_voice_join(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
+    let community = match ctx.resolve_community(community) {
+        Ok(membership) => membership.anchor,
+        Err(response) => return response,
     };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-
-    let session = match rekindle_transport::operations::voice::join_voice(
-        &transport,
-        &membership,
-        channel,
-        muted,
-        deafened,
-    ) {
-        Ok(session) => session,
-        Err(e) => return IpcResponse::error(500, format!("voice join failed: {e}")),
-    };
-    let reply = serde_json::json!({
-        "joined": true,
-        "community": session.community_id,
-        "channel": session.channel_id,
-        "muted": session.muted,
-        "deafened": session.deafened,
-    });
-    let joined = session.community_id.clone();
-    // One channel at a time: a session in another community ends, and our
-    // beat there stops naming its channel.
-    if let Some(replaced) = ctx.own_voice.join(session) {
-        if replaced.community_id != joined {
-            voice_changed(ctx, &replaced.community_id);
-        }
+    match voice::join(ctx, &community, channel, muted, deafened).await {
+        Ok((muted, deafened)) => IpcResponse::ok(&VoiceJoined {
+            joined: true,
+            community,
+            channel: channel.to_owned(),
+            muted,
+            deafened,
+        }),
+        Err(notice) => IpcResponse::error(409, notice),
     }
-    voice_changed(ctx, &joined);
-    IpcResponse::ok(&reply)
 }
 
-pub(crate) fn handle_voice_leave(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
+pub(crate) async fn handle_voice_leave(ctx: &DaemonContext) -> IpcResponse {
+    match voice::leave(ctx).await {
+        Some((community, channel)) => IpcResponse::ok(&VoiceLeft {
+            left: true,
+            community,
+            channel,
+        }),
+        None => IpcResponse::error(409, VoiceFailure::NotConnected.notice()),
     }
-    // Answering "left" while in no channel would be a success that did not
-    // happen.
-    let Some(session) = ctx.own_voice.leave() else {
-        return IpcResponse::error(409, "not in a voice channel");
-    };
-    voice_changed(ctx, &session.community_id);
-    IpcResponse::ok(&serde_json::json!({
-        "left": true,
-        "community": session.community_id,
-        "channel": session.channel_id,
-    }))
+}
+
+pub(crate) async fn handle_voice_mute(ctx: &DaemonContext, muted: bool) -> IpcResponse {
+    match voice::set_mute(ctx, muted).await {
+        Some(controls) => IpcResponse::ok(&controls),
+        None => IpcResponse::error(409, VoiceFailure::NotConnected.notice()),
+    }
+}
+
+pub(crate) async fn handle_voice_deafen(ctx: &DaemonContext, deafened: bool) -> IpcResponse {
+    match voice::set_deafen(ctx, deafened).await {
+        Some(controls) => IpcResponse::ok(&controls),
+        None => IpcResponse::error(409, VoiceFailure::NotConnected.notice()),
+    }
 }

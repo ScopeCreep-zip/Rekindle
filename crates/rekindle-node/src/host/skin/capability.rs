@@ -140,6 +140,7 @@ pub(crate) struct SkinWorld {
     /// The joined communities, by id, with their voice channels and game
     /// servers (a community window's capabilities, `super::community`).
     pub community_views: BTreeMap<String, super::community::SkinCommunity>,
+    pub voice_start_refusal: Option<String>,
 }
 
 /// A community window's verdict on `capability` (`community::verdict`):
@@ -160,7 +161,15 @@ fn community_verdict(
         return None;
     };
     let view = world.community_views.get(community);
-    super::community::verdict(capability, inputs, community, view, channel, server)
+    super::community::verdict(
+        capability,
+        inputs,
+        community,
+        view,
+        channel,
+        server,
+        world.voice_start_refusal.as_deref(),
+    )
 }
 
 /// The game can be launched to a server (`launcher::joins_servers`, the

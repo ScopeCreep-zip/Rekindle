@@ -20,9 +20,12 @@ use crate::state_helpers;
 #[async_trait]
 impl CommunityPresenceDeps for PresenceAdapter {
     fn session_presence(&self) -> std::sync::Arc<dyn rekindle_presence::SessionPresence> {
-        std::sync::Arc::new(super::DesktopSessionPresence::new(std::sync::Arc::clone(
-            &self.state,
-        )))
+        match self.state.host.current() {
+            Some(host) => host.voice_presence(),
+            None => std::sync::Arc::new(
+                rekindle_node::host::adapters::voice::HostVoicePresence::default(),
+            ),
+        }
     }
 
     fn now_secs(&self) -> u64 {

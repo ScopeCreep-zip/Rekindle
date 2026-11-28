@@ -197,10 +197,6 @@ pub enum TransportError {
     #[error("friend reject notification to {requester} failed: {reason}")]
     FriendRejectFailed { requester: String, reason: String },
 
-    /// Voice session could not be established.
-    #[error("voice join failed for {channel}: {reason}")]
-    VoiceJoinFailed { channel: String, reason: String },
-
     // ── Internal ─────────────────────────────────────────────────────
     /// An internal invariant was violated. Should never happen in production.
     #[error("internal error: {0}")]

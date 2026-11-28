@@ -5,19 +5,6 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
-pub async fn persist_hand_raise(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    raised: bool,
-) -> Result<(), String> {
-    crate::state_helpers::host_channel(state)
-        .map_err(|e| e.to_string())?
-        .persist_hand_raise(community_id, channel_id, raised)
-        .await
-        .map_err(|e| e.to_string())
-}
-
 pub async fn list_hand_raises(
     state: &Arc<AppState>,
     community_id: &str,

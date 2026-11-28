@@ -62,6 +62,12 @@ impl MediaKeys {
         &self.scope
     }
 
+    /// The clock of the session these keys belong to.
+    #[must_use]
+    pub fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        self.deps.clock()
+    }
+
     fn send_source(&self) -> Option<SendSource> {
         match &self.scope {
             MediaScope::DirectCall { peer } => {
@@ -79,7 +85,7 @@ impl MediaKeys {
                 let key = self
                     .deps
                     .channel_sender_keys(community_id, channel_id)
-                    .send_key(std::time::Instant::now());
+                    .send_key(self.deps.clock().monotonic());
                 Some(SendSource {
                     secret: key.secret,
                     generation: key.index,

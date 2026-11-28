@@ -1,0 +1,6 @@
+speech.pcm is Common Voice English clip common_voice_en_18127094.
+The Common Voice contributors released the recording under CC0 1.0.
+Source https://huggingface.co/datasets/humanify/common_voice_english/viewer/default/train?row=0
+Terms https://commonvoice.mozilla.org/terms/en.html
+License https://creativecommons.org/publicdomain/zero/1.0/
+Converted to 16 kHz mono signed little-endian PCM.

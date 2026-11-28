@@ -55,12 +55,11 @@ pub(crate) async fn select(
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::Login);
             let unsent = unsent(ctx).await?;
-            // The daemon holds no call and uploads nothing until E4.1 and
-            // E5.1 bring those producers: both are true facts today.
-            if unsent > 0 {
+            let in_call = ctx.voice.engine_present();
+            if unsent > 0 || in_call {
                 s.escalations.push(Escalation::PendingWork {
                     unsent,
-                    in_call: false,
+                    in_call,
                     uploading: false,
                 });
             }
@@ -264,6 +263,9 @@ pub(crate) async fn select(
             server,
             source,
         } => game_launch::selection(ctx, *game_id, server.as_ref(), *source, &mut s).await?,
+        IpcRequest::VoiceSetMute { .. } | IpcRequest::VoiceSetDeafen { .. } => {
+            s.subject = unlocked_identity(ctx);
+        }
         IpcRequest::VoiceJoin { channel, .. } => {
             s.subject = Subject::Named {
                 name: channel.clone(),

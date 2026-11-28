@@ -385,6 +385,8 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("InviteRevoke", Some(IntentKind::RevokeCommunityInvite)),
     ("VoiceJoin", Some(IntentKind::JoinVoiceChannel)),
     ("VoiceLeave", Some(IntentKind::LeaveVoice)),
+    ("VoiceSetMute", Some(IntentKind::SetMute)),
+    ("VoiceSetDeafen", Some(IntentKind::SetDeafen)),
     ("NetworkStatus", None),
     ("NetworkPeers", None),
     ("AgentRegister", Some(IntentKind::RegisterAgent)),

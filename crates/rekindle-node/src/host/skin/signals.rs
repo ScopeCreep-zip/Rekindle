@@ -123,8 +123,10 @@ impl Inputs {
                 let ours = self.own.as_deref() == Some(pseudonym.as_str());
                 if ours && self.voice.as_ref() == Some(scope) {
                     self.voice = None;
+                    true
+                } else {
+                    false
                 }
-                false
             }
             SubscriptionEvent::Voice(VoiceEvent::SpeakingChanged {
                 pseudonym,

@@ -1,11 +1,4 @@
-//! Phase 14.r split — pure `VoiceSessionEvent → VoiceEvent` mapping +
-//! the small `emit_local_joined` fan-out.
-//!
-//! Extracted from the trait impl so deps_impl stays under the 500
-//! LoC cap. No state access — pure value mapping; the fan-out takes
-//! `AppHandle` by reference and uses it only for emit calls.
-
-use std::sync::Arc;
+//! Local voice events and the current quality measurements.
 
 use rekindle_calls::signaling::deps::friend_shown_name;
 use rekindle_types::key_format::pseudonym_hex;
@@ -15,8 +8,7 @@ use rekindle_types::subscription_events::{
     LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceQuality, VoiceScope,
 };
 
-use crate::state::AppState;
-use tauri::Manager;
+use super::deps::HostVoiceDeps;
 
 /// Last-known halves of the merged `ConnectionQuality` UI event. The
 /// send loop reports `quality` and the receive loop reports jitter
@@ -68,12 +60,12 @@ fn project_link(stats: &rekindle_voice::session_deps::SendLinkStats) -> LinkMeas
 /// Phase 5 — fold a quality/receive-stats event into the cache and
 /// build the merged UI event. Returns `None` for every other variant.
 pub(super) fn merge_quality_event(
-    state: &Arc<AppState>,
+    deps: &HostVoiceDeps,
     event: &rekindle_voice::VoiceSessionEvent,
     scope: &VoiceScope,
 ) -> Option<VoiceEvent> {
     use rekindle_voice::VoiceSessionEvent as E;
-    let mut cache = state.voice_quality_cache.lock();
+    let mut cache = deps.voice().quality.lock();
     match event {
         E::ConnectionQuality { quality, link } => {
             cache.quality = *quality;
@@ -102,7 +94,7 @@ pub(super) fn merge_quality_event(
         rx_overflow_drops: cache.rx_overflow_drops,
         rx_late_drops: cache.rx_late_drops,
         rx_key_drops: cache.rx_key_drops,
-        ingress_drops: state.voice_packet_drops.total_drops(),
+        ingress_drops: deps.voice().voice_drops(),
         link: cache.link,
     })
 }
@@ -144,8 +136,8 @@ pub(crate) const SELF_STATE: &str = "voice.self";
 /// + UserSpeaking) matching the pre-Phase-14 `emit_join_events` body.
 /// Send/receive loops update each event independently as state
 /// changes.
-pub(super) fn emit_local_joined_impl(
-    app: &tauri::AppHandle,
+pub(super) fn emit_local_joined(
+    deps: &HostVoiceDeps,
     session: &rekindle_voice::session_state::VoiceSessionState,
     channel_id: &str,
     community_id: Option<&str>,
@@ -156,56 +148,37 @@ pub(super) fn emit_local_joined_impl(
     // this fires as the session comes up, so the handle may not be
     // installed yet. `community_id` is exactly what decided the old
     // `active_call_type` string, so the two carry the same fact.
-    let scope = match community_id {
-        Some(community) => VoiceScope::Community {
-            community: community.to_string(),
-            channel: channel_id.to_string(),
-        },
-        None => VoiceScope::Dm {
-            peer_key: channel_id.to_string(),
+    let scope = scope_of(channel_id, community_id);
+    let name = match community_id {
+        Some(community) => {
+            if let Err(error) = pseudonym_hex(public_key) {
+                tracing::warn!(%error, "invalid local community voice participant");
+                return;
+            }
+            deps.governance().member_shown_name(community, public_key)
+        }
+        None => match friend_shown_name(public_key, Some(display_name.to_owned())) {
+            Ok(name) => name,
+            Err(error) => {
+                tracing::warn!(%error, "invalid local DM voice participant");
+                return;
+            }
         },
     };
-
-    // The call we are in and our own place in it are session state (plan
-    // C7.29): a window that subscribes after the join is handed them, then
-    // the roster, then the live changes.
-    if let Some(host) = app
-        .try_state::<crate::state::SharedState>()
-        .and_then(|state| state.host.current())
-    {
-        let display_name = match community_id {
-            Some(community) => {
-                if let Err(error) = pseudonym_hex(public_key) {
-                    tracing::warn!(%error, "invalid local community voice participant");
-                    return;
-                }
-                host.governance().member_shown_name(community, public_key)
-            }
-            None => match friend_shown_name(public_key, Some(display_name.to_owned())) {
-                Ok(name) => name,
-                Err(error) => {
-                    tracing::warn!(%error, "invalid local DM voice participant");
-                    return;
-                }
-            },
-        };
-        session.emit_local_joined(scope.clone(), |event| {
-            host.publish_state(SESSION_STATE, SubscriptionEvent::Voice(event));
-        });
-        host.publish_state(
-            SELF_STATE,
-            SubscriptionEvent::Voice(VoiceEvent::Joined {
-                scope: scope.clone(),
-                pseudonym: public_key.to_string(),
-                display_name,
-                // This is us joining our own call; nobody needs a route to
-                // reach us from this event.
-                route_blob: None,
-            }),
-        );
-    } else {
-        tracing::warn!("voice join not published: the host has not started");
-    }
+    session.emit_local_joined(scope.clone(), |event| {
+        deps.ctx()
+            .journal
+            .publish_state(SESSION_STATE, SubscriptionEvent::Voice(event));
+    });
+    deps.ctx().journal.publish_state(
+        SELF_STATE,
+        SubscriptionEvent::Voice(VoiceEvent::Joined {
+            scope: scope.clone(),
+            pseudonym: public_key.to_owned(),
+            display_name: name,
+            route_blob: None,
+        }),
+    );
     for event in [
         VoiceEvent::ConnectionQuality {
             scope: scope.clone(),
@@ -225,6 +198,62 @@ pub(super) fn emit_local_joined_impl(
             speaking: false,
         },
     ] {
-        crate::event_dispatch::emit_subscription(app, &SubscriptionEvent::Voice(event));
+        deps.publish(event);
     }
+}
+
+pub(super) fn scope_of(channel: &str, community: Option<&str>) -> VoiceScope {
+    match community {
+        Some(community) => VoiceScope::Community {
+            community: community.to_owned(),
+            channel: channel.to_owned(),
+        },
+        None => VoiceScope::Dm {
+            peer_key: channel.to_owned(),
+        },
+    }
+}
+
+pub(super) fn emit(deps: &HostVoiceDeps, scope: VoiceScope, event: VoiceSessionEvent) {
+    if let Some(merged) = merge_quality_event(deps, &event, &scope) {
+        deps.publish(merged);
+        return;
+    }
+    let event = match event {
+        VoiceSessionEvent::UserJoined { peer_pubkey } => {
+            let display_name = match &scope {
+                VoiceScope::Community { community, .. } => {
+                    if let Err(error) = pseudonym_hex(&peer_pubkey) {
+                        tracing::warn!(%error, "invalid community voice participant");
+                        return;
+                    }
+                    deps.governance().member_shown_name(community, &peer_pubkey)
+                }
+                VoiceScope::Dm { .. } => {
+                    let name = deps
+                        .ctx()
+                        .session
+                        .read()
+                        .as_ref()
+                        .and_then(|session| session.friends.get(&peer_pubkey))
+                        .map(|friend| friend.display_name.clone());
+                    match friend_shown_name(&peer_pubkey, name) {
+                        Ok(name) => name,
+                        Err(error) => {
+                            tracing::warn!(%error, "invalid direct voice participant");
+                            return;
+                        }
+                    }
+                }
+            };
+            VoiceEvent::Joined {
+                scope,
+                pseudonym: peer_pubkey,
+                display_name,
+                route_blob: None,
+            }
+        }
+        other => map(other, &scope),
+    };
+    deps.publish(event);
 }
