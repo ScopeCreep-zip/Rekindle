@@ -19,7 +19,7 @@ export interface Undecryptable {
 }
 
 /** Why a post's causal permission check refused it (contract CP1). */
-export type PostRefusal =
+type PostRefusal =
   | "missingCut"
   | "notMember"
   | "timedOut"
@@ -28,7 +28,7 @@ export type PostRefusal =
 
 /** A post the Host holds without its body (contract CP1): its governance cut
  *  is unresolved, or the rebuilt state refused it; each in the Host's words. */
-export type PostAdmission =
+type PostAdmission =
   | { status: "pending"; text: string }
   | { status: "refused"; reason: PostRefusal; reasonText: string };
 
