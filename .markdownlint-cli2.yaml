@@ -45,6 +45,10 @@ config:
   # MD050 — strong style. Asterisks.
   MD050:
     style: asterisk
+  # MD060 — table column style (pipe spacing inside table cells; new in the markdownlint that
+  # markdownlint-cli2-action v25 ships). Off — cell padding is the writer's style, not a defect,
+  # the same reasoning as MD013.
+  MD060: false
 
 globs:
   - "**/*.md"
