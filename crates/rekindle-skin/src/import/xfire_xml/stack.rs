@@ -26,7 +26,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
-use rekindle_types::dto::skin::{Insets, SkinWindow, TileAxis, WindowLayout};
+use rekindle_types::dto::skin::{Insets, SkinWindow, TileAxis, WindowLayout, WindowSizeHints};
 
 use super::super::tree::Node;
 use super::super::views;
@@ -236,7 +236,7 @@ fn build(window: SkinWindow, rows: &[Stacked], content_row: usize) -> Result<Bui
             content,
             min_width: u16_of(&file, min_width)?,
             min_height: u16_of(&file, top + bottom)?,
-            size_hints: Default::default(),
+            size_hints: WindowSizeHints::default(),
             tiles,
             tree: None,
             title: None,

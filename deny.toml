@@ -56,6 +56,17 @@ ignore = [
     # defines it); our only glib use is `Cast` in src-tauri/src/platform.rs.
     # Fixed in glib 0.20, which tauri's GTK 3 stack cannot take.
     { id = "RUSTSEC-2024-0429", reason = "glib: VariantStrIter is never called in our tree; gtk-rs 0.18 is pinned by tauri/wry's GTK 3 stack (review by 2027-02-20)" },
+    # quick-xml 0.28.2 (Linux only, via wayland-scanner 0.30.1 <- wayland-client 0.30.2 <-
+    # gdkwayland 0.18.2 <- rekindle-desktop, the window shape's safe announce_csd, SK0 S3/S5).
+    # Advisories: O(N^2) duplicate-attribute check and unbounded NsReader namespace
+    # allocation on attacker-supplied XML. Not reachable: wayland-scanner is a proc-macro
+    # (`proc-macro = true`), so quick-xml runs only inside rustc at build time, parsing the
+    # protocol XML bundled in wayland-client; `cargo tree -e no-proc-macro -i quick-xml@0.28.2
+    # --target all` prints nothing, i.e. no shipped binary contains it. Fixed in quick-xml
+    # >= 0.41; wayland-scanner 0.30 requires ^0.28 and gdkwayland 0.18.2 (the last GTK 3
+    # release, pinned by tauri's GTK 3 stack) requires wayland-client 0.30.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.28 runs only inside the wayland-scanner proc-macro at build time on wayland-client's bundled protocol XML; not in any shipped binary (cargo tree -e no-proc-macro); gdkwayland 0.18 pins it (review by 2027-02-28)" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.28 NsReader runs only inside the wayland-scanner proc-macro at build time on wayland-client's bundled protocol XML; not in any shipped binary (cargo tree -e no-proc-macro); gdkwayland 0.18 pins it (review by 2027-02-28)" },
     # lru 0.7.8 (via reed-solomon-erasure 6.0.0, the latest release, which
     # pins lru ^0.7.8 <- rekindle-video FEC, in the desktop app). Advisory:
     # `LruCache::pop()` is not panic-safe; UB needs a key whose `Drop`

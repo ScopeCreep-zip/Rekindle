@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::Rgba;
-use rekindle_types::dto::skin::{Insets, WindowLayout};
+use rekindle_types::dto::skin::{Insets, WindowLayout, WindowSizeHints};
 use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{
     Anchor, NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
@@ -25,7 +25,7 @@ pub(super) fn layout(tree: Option<SkinTree>) -> WindowLayout {
         content: z,
         min_width: 200,
         min_height: 300,
-        size_hints: Default::default(),
+        size_hints: WindowSizeHints::default(),
         tiles: Vec::new(),
         title: None,
         tree,
