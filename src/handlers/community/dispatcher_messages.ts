@@ -11,6 +11,7 @@ import type {
 } from "../../ipc/channels/community_subscription_events";
 import type { Message } from "../../stores/chat.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
+import { holdEarlySendState } from "../../stores/early_send.store";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { addToast } from "../../stores/toast.store";
 import { transformHistoryGap } from "../../utils/transformers";
@@ -285,14 +286,7 @@ function applySendStatus(channel: string, messageId: string, state: string, reas
   if (list === null || idx < 0) {
     // Our own reply whose send answer has not come back yet: its row has no
     // server id to match, so the state waits for that answer (either order).
-    earlySendStates.delete(messageId);
-    earlySendStates.set(messageId, { state, reason });
-    // Only our own posts are announced; one never matched (its window closed)
-    // must not be held forever: the oldest goes past a bound.
-    if (earlySendStates.size > EARLY_SEND_STATES_MAX) {
-      const oldest = earlySendStates.keys().next().value;
-      if (oldest !== undefined) earlySendStates.delete(oldest);
-    }
+    holdEarlySendState(messageId, state, reason);
     return;
   }
   if (state === "failed") {
@@ -302,25 +296,6 @@ function applySendStatus(channel: string, messageId: string, state: string, reas
   } else if (state === "sent" || state === "queued" || state === "awaiting_key") {
     setCommunityState(list, channel, idx, "status", state);
   }
-}
-
-/** A `ChannelSendStatus` that came before its row could be matched, by message id (insertion-ordered). */
-const earlySendStates = new Map<string, { state: string; reason?: string }>();
-
-/** How many unmatched send states are held: far above the replies one window has in flight. */
-const EARLY_SEND_STATES_MAX = 256;
-
-/**
- * The newest send state the Host announced for `messageId` before its row
- * knew that id (FT1: `ChannelSendStatus` may beat the send's own answer),
- * taken once; undefined when none came first.
- */
-export function takeEarlySendState(
-  messageId: string
-): { state: string; reason?: string } | undefined {
-  const early = earlySendStates.get(messageId);
-  earlySendStates.delete(messageId);
-  return early;
 }
 
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {

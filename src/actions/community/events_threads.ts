@@ -1,10 +1,10 @@
-import { takeEarlySendState } from "../../handlers/community/dispatcher_messages";
 import type { CreateEventRequest } from "../../ipc/commands";
 import { commands } from "../../ipc/commands";
 import { isCommandError } from "../../ipc/commands/dto";
 import type { SendState } from "../../ipc/commands/types";
 import type { Message } from "../../stores/chat.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
+import { takeEarlySendState } from "../../stores/early_send.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import { transformMessages } from "../../utils/transformers";
