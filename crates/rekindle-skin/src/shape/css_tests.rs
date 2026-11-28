@@ -3,9 +3,11 @@
 //! [`super::super::silhouette`] lays them, at their source size.
 
 use rekindle_types::dto::skin::{SkinManifest, SkinWindow, WindowLayout};
+use rekindle_types::dto::skin_tree::PieceSlot;
 
 use super::*;
 use crate::shape::silhouette::placed;
+use crate::shape::{of_layout, outline_nodes, silhouette, Mask, SCALE_ONE};
 use crate::{builtin, images, manifest, package};
 
 const BASE: &str = "skin://localhost/pkg";
@@ -67,7 +69,7 @@ fn total_chaos_main_golden() {
 }
 
 #[test]
-fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
+fn symbiosis_frame_keeps_its_content_insets_and_info_view_tab_cut() {
     let (m, files) = pack("builtin:symbiosis");
     let css = frame_css(&m, &files, BASE).unwrap();
     assert!(css.starts_with("@layer shape {\n"));
@@ -78,10 +80,52 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
     assert!(css.contains(
         "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 237px 18px 91px 5px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
     ));
-    // The strip is a decoration: drawn after the eight frame pieces, at the
-    // window's right edge (an overhang ignores the outsets).
-    let strip = "  .app-frame[data-skin-window=\"main\"] > .skin-frame > :nth-child(9) {\n    display: block; right: 0px; width: 13px; top: calc(0px + round(down, calc((100% - 115px) / 2), 1px)); height: 115px;";
-    assert!(css.contains(strip), "{css}");
+    // The tree paints the tab flush with the window's right edge.
+    let main = m
+        .windows
+        .get(&SkinWindow::Main)
+        .expect("Symbiosis main layout");
+    assert!(
+        main.tiles
+            .iter()
+            .all(|tile| { !tile.image.ends_with("/decor-maininfoviewbutton.png") }),
+        "Symbiosis's frame still paints the info-view tab"
+    );
+    let tree = main.tree.as_ref().expect("Symbiosis main tree");
+    let (width, height) = (399_u16, 555_u16);
+    let (tab, bounds) = outline_nodes(tree, width.into(), height.into())
+        .into_iter()
+        .find(|(node, _)| node.id == "MainInfoViewButton")
+        .expect("Symbiosis info-view tab in the native outline");
+    assert_eq!(bounds, [386, 220, 13, 115]);
+    let normal = &tab.art.as_ref().expect("info-view tab art").normal;
+    let piece = normal
+        .get(&PieceSlot::Middle)
+        .expect("info-view tab normal piece");
+    let png = files.get(&piece.image).expect("info-view tab image");
+    let mask = Mask::of(&images::decode_png(png).expect("valid info-view tab PNG"));
+    assert_eq!((mask.width(), mask.height()), (13, 115));
+    assert!(
+        (0..115).any(|y| mask.get(12, y)),
+        "tab reaches the outer edge"
+    );
+
+    let masks = of_layout("windows.main", main, &files).expect("Symbiosis native masks");
+    let cut = silhouette(main, &masks, width.into(), height.into(), SCALE_ONE)
+        .expect("Symbiosis native cut");
+    for dy in 0..mask.height() {
+        let y = 220 + dy;
+        for (start, end) in mask.runs(dy) {
+            for x in (386 + start)..(386 + end) {
+                assert!(
+                    cut.iter().any(|r| {
+                        x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+                    }),
+                    "native cut drops info-view tab pixel ({x}, {y})"
+                );
+            }
+        }
+    }
 }
 
 #[test]
