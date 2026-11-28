@@ -43,7 +43,7 @@ shaped the cryptographic choices.
 ### Architecture (`architecture/`)
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [`overview.md`](architecture/overview.md) | System architecture, layer responsibilities, data-flow diagrams |
 | [`communities.md`](architecture/communities.md) | Index for the three-part Communities spec (overview / channels / governance) |
 | [`communities-overview.md`](architecture/communities-overview.md) | Chiral-network model, three-path delivery, SMPL schema, mutual-aid patterns, permissions, design principles |
@@ -71,14 +71,14 @@ shaped the cryptographic choices.
 ### Protocol (`protocol/`)
 
 | Document | Description |
-|----------|-------------|
+| --- | --- |
 | [`overview.md`](protocol/overview.md) | Network protocol, Veilid integration, message lifecycle, gossip mesh, DHT record layouts |
 | [`relay.md`](protocol/relay.md) | Strand Relay forwarding + Mobile Push Relay (3-tier escalation) |
 
 ### Security (`security/`)
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [`overview.md`](security/overview.md) | Five-layer encryption stack, identity model, threat analysis |
 | [`threat-model.md`](security/threat-model.md) | STRIDE/LINDDUN-structured threat model, vulnerable-user posture |
 | [`crypto-primitives.md`](security/crypto-primitives.md) | Per-primitive selection rationale (Ed25519, X25519, AES-256-GCM, XChaCha20-Poly1305, BLAKE3, HKDF-SHA256, Argon2id, Noise IK) |
@@ -90,7 +90,7 @@ MADR 4.0 ADRs documenting why the project made each load-bearing choice.
 Append-only — superseded ADRs stay in place with a "Superseded by" link.
 
 | ADR | Title |
-|-----|-------|
+| ----- | ------- |
 | [0001](decisions/0001-veilid-as-transport.md) | Adopt Veilid as the sole transport substrate |
 | [0002](decisions/0002-signal-protocol-for-1to1.md) | Use the Signal Protocol for 1:1 friend messaging |
 | [0003](decisions/0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model |
@@ -116,7 +116,7 @@ See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 ### Contributor (`contributor/`)
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [`development.md`](contributor/development.md) | Dev environment, build commands, dependency overview |
 | [`testing.md`](contributor/testing.md) | Test strategy (unit / property / netsim / real-app suite) |
 | [`style-guide.md`](contributor/style-guide.md) | Rust + TypeScript + Tailwind conventions |
@@ -125,7 +125,7 @@ See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 ### User (`user/`)
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [`getting-started.md`](user/getting-started.md) | Install, create an identity, send your first message |
 | [`install.md`](user/install.md) | Per-platform install instructions and source-build notes |
 | [`how-to.md`](user/how-to.md) | Common-task walkthroughs (add friend, voice call, file send, pair device, …) |
@@ -134,7 +134,7 @@ See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 ### Top-level
 
 | Document | Description |
-|----------|-------------|
+| --- | --- |
 | [`roadmap.md`](roadmap.md) | Implementation phases and completion status |
 | [`glossary.md`](glossary.md) | Project-specific vocabulary (DHT, SMPL, MEK, Plate Gate, VICE, Schwarzschild principle, etc.) |
 

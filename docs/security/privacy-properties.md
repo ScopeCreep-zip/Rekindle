@@ -45,7 +45,7 @@ identity and the destination. This is Tor-style sender anonymity built
 into Veilid.
 
 | Hop count | Latency | Anonymity | Used by Rekindle |
-|-----------|---------|-----------|------------------|
+| ----------- | --------- | ----------- | ------------------ |
 | 0 (`Unsafe`) | ~50 ms | None — sender's node id visible to the first relay | **Never** (also gated behind veilid-core's `footgun` feature, which we do not enable) |
 | 1 | ~100 ms | One relay links both ends — not real anonymity | No |
 | 2 | ~150 ms | No single node knows both ends | No |
@@ -359,7 +359,7 @@ transports for Veilid are upstream work, not Rekindle's.
 ## 4. Threat-model boundaries at a glance
 
 | Concern | We protect against | We do not promise against |
-|---------|-------------------|--------------------------|
+| --------- | ------------------- | -------------------------- |
 | Reading message content | Network observers, DHT relay nodes, the Veilid network itself, push-relay vendors | Adversaries with live memory access on an unlocked device |
 | Linking the user across communities | Curious peers, network observers, mass surveillance | Voluntary disclosure by the user |
 | Detecting that a Rekindle community exists | Without the DHT key | Operators of relay nodes carrying a known pattern of traffic to the community's records |

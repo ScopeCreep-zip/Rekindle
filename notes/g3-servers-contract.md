@@ -5,7 +5,7 @@
 ## Requests (all through HostApi::call -> intent gate)
 
 | Request (IpcRequest, serde `{"type":..}` as every IpcRequest) | Args | Class | Answer |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ServersView` | none | Query | `ServersView` |
 | `RecentServerRemove` | `gameId: number, server: string` (parsed ServerAddress) | Routine (local) | `ServersView` |
 | existing `FavouriteServerAdd {gameId, server, label}` / `FavouriteServerRemove {gameId, server}` | unchanged | Routine | unchanged (`FavouriteServerView[]`) |

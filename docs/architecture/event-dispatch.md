@@ -27,7 +27,7 @@ emitter ──► event_dispatch::emit / emit_journaled ──► one mpsc queue
   (`rekindle-types/src/subscription_events/scope.rs`):
 
   | Scope / family | Windows |
-  |---|---|
+  | --- | --- |
   | `Notification`, `ConversationFocusRequested` | `buddy-list` (single owner) |
   | `Call(id)` events | `buddy-list`, `call-<id12>`, every `chat-*` |
   | `Device` | every post-login window |

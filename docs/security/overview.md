@@ -65,7 +65,7 @@ private-route path.
 ### Properties
 
 | Property | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | Forward secrecy | Compromise of current keys cannot decrypt past messages |
 | Future secrecy | Session self-heals after key compromise via ratchet advancement |
 | Post-compromise security | Future messages are secured even after temporary key exposure |
@@ -261,7 +261,7 @@ dependency — see [`../decisions/0006-vault-replaces-stronghold.md`](../decisio
 ### Vault Contents
 
 | Secret | Purpose |
-|--------|---------|
+| -------- | --------- |
 | Ed25519 private key | Identity signing |
 | X25519 private key | Diffie-Hellman key agreement (DM MEK derivation) |
 | Per-community / per-channel MEKs | Channel message decryption |
@@ -402,7 +402,7 @@ relevant records itself, and decrypts locally.
 ### Protected Against
 
 | Threat | Protection |
-|--------|------------|
+| -------- | ------------ |
 | Network surveillance | Veilid transport encryption + routing privacy |
 | Message interception (1:1) | Signal Protocol end-to-end encryption |
 | Message interception (channels/DMs) | Per-channel / per-DM MEK encryption |
@@ -418,7 +418,7 @@ relevant records itself, and decrypts locally.
 ### Not Protected Against
 
 | Threat | Rationale |
-|--------|-----------|
+| -------- | ----------- |
 | Compromised device | Full OS compromise defeats all software defenses |
 | Coerced passphrase disclosure | Passphrase unlocks all local secrets |
 | Traffic analysis | Veilid routes reduce but do not fully prevent |

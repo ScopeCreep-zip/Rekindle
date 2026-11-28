@@ -15,7 +15,7 @@ which primitives address which threats.
 ## Summary
 
 | Purpose | Primitive | Library |
-|---------|-----------|---------|
+| --------- | ----------- | --------- |
 | Identity / signing | **Ed25519** | `ed25519-dalek` |
 | Key agreement | **X25519** | `x25519-dalek` (with `static_secrets`) |
 | Post-quantum KEM (PQXDH hybrid) | **ML-KEM-768** (FIPS 203) | `libcrux-ml-kem` (in `rekindle-secrets`) |
@@ -557,7 +557,7 @@ opt-level = 3
 **Pattern.** `Noise_IK_25519_ChaChaPoly_BLAKE2s`:
 
 | Component | Choice |
-|-----------|--------|
+| ----------- | -------- |
 | DH | X25519 |
 | AEAD | ChaCha20-Poly1305 |
 | Hash | BLAKE2s |
@@ -611,7 +611,7 @@ interactive band.
 ## What we do not use
 
 | Primitive | Why not |
-|-----------|---------|
+| ----------- | --------- |
 | **MD5** | Broken. Not used anywhere. |
 | **SHA-1** | Deprecated. Not used anywhere. (`git`-ecosystem dependencies that internally use SHA-1 for object IDs are not security-relevant for us.) |
 | **3DES** | Obsolete. |

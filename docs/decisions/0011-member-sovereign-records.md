@@ -131,7 +131,7 @@ recovery and ownership transfer go through a new community:
 key only that member holds (vault `MemberRecordOwner{community}`).
 
 | Subkey | Content |
-|---|---|
+| --- | --- |
 | 0 | member card |
 | 1 | presence beat |
 | 2 | governance op-log head |

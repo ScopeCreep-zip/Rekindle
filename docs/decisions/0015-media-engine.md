@@ -89,7 +89,7 @@ their own `webrtc::Transport`, with their own encryption (r6 §8; `raw/r6/blogs/
 ### Option A — libwebrtc `webrtc::Call` over a custom transport (the Discord model)
 
 | Aspect | Finding |
-|---|---|
+| --- | --- |
 | Licence | BSD-3-Clause plus Google's patent grant (`raw/r6/webrtc/libwebrtc/LICENSE`, `PATENTS`). Compatible with MIT; binary notices required. |
 | Engine coverage | Everything: GoogCC, `BitrateAllocator`, pacer, NetEQ, video timing, keyframe policy, A/V sync, quality scaler (r6 §1 M1–M15). Encoded-frame E2EE hooks through `api/frame_transformer_interface.h`. |
 | API stability | `call/` is **not** in libwebrtc's public API. `native-api.md` lists only `api/` plus legacy directories, and "in the directories not listed … incompatible changes may happen at any time, and are not announced". `call/call.h:56,73` (`class Call`, `Call::Create(CallConfig)`) sits outside that list. |
@@ -101,7 +101,7 @@ their own `webrtc::Transport`, with their own encryption (r6 §8; `raw/r6/blogs/
 ### Option B — str0m 0.24.1 (Sans-I/O Rust WebRTC, MIT OR Apache-2.0)
 
 | Aspect | Finding |
-|---|---|
+| --- | --- |
 | Coverage | Pacer, TWCC, a GoogCC BWE ported from libwebrtc (trendline, loss, probe controller, ALR, link capacity; `src/bwe/mod.rs:1-13`), NACK, simulcast, packetisation. **No adaptive jitter buffer**, no capture, encode or decode (README feature table, `:548-566`). |
 | Over Veilid | Media cannot flow without DTLS-derived SRTP keys. `session.rs:385` ("Do not make unsendable media … ready before DTLS supplies keys"), `:973` and `:1058` gate on `ready_for_srtp()`. `DirectApi` (`src/change/direct.rs`) skips SDP, not ICE or DTLS. Using the crate means running ICE and a DTLS handshake over multi-hop routes: extra round trips before first media (against R-SES5) and a second encryption layer under SFrame. |
 | Reuse as a library | The BWE and pacer are `pub(crate)` (`src/lib.rs:812-819`). Only event types are public (`src/bwe/api.rs`). Using them without the session means copying the code. |
@@ -115,7 +115,7 @@ current jitter work is still a partial NetEQ that is not NetEQ.
 ### Option D — webrtc-rs `rtc` / `rtc-interceptor` 0.21.0 (MIT/Apache-2.0) as the control engine
 
 | Aspect | Finding |
-|---|---|
+| --- | --- |
 | Coverage | A public, Sans-I/O, transport-agnostic interceptor crate. Its only dependencies are `rtc-rtp`, `rtc-rtcp`, `rtc-shared` and `sansio`; no ICE, DTLS or crypto. It provides GCC following draft-ietf-rmcat-gcc-02: Kalman filter §5.3 (`src/gcc/kalman.rs`), loss controller §5.5 (`src/gcc/loss.rs`), adaptive threshold and AIMD. It also has TWCC and RFC 8888 recorders, a token-bucket pacer, FlexFEC, NACK and an interval-PLI generator. Published 2026-09-19 (crates.io). |
 | Gaps | No probing or ALR, which R-BW5 needs (grep of `src/gcc` finds no probe controller). The pacer is a token bucket with no priority classes (`src/pacing/pacer.rs`). The jitter buffer has a fixed time depth (`DEFAULT_DEPTH` 120 ms, `src/jitterbuffer/receiver.rs`) and is not NetEQ-class. The GCC is a port of Pion's draft-level GCC, not libwebrtc's production GoogCC. It is a weeks-old release line. |
 
@@ -150,7 +150,7 @@ that component's own tests and constants. libwebrtc `Call` and the str0m session
 Component by component:
 
 | Engine (r6 §1) | Source | Licence | Lands in |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | GoogCC estimator (trendline delay, loss, acked rate, probe controller, ALR, link capacity) and leaky-bucket pacer with probe clusters | **Vendored from str0m 0.24.1** `src/bwe/` and `src/pacer/` (≈9.9 k lines; only internal deps are `Bitrate`, `DataSize`, `TwccSendRecord`, `TwccSeq`, `MidRid`), with str0m's copyright notice kept | MIT (of MIT OR Apache-2.0) | new `crates/rekindle-media-bwe`, `#![forbid(unsafe_code)]` |
 | `BitrateAllocator` (one estimate split by priority, min and max across audio 24–64 kbps, video, FEC and screen) and audio accounting at the head of the pacer (`SetAccountForAudioPackets`, r6 I-BW2) | Ported from libwebrtc `call/bitrate_allocator.cc` semantics (r6 §2.1) | BSD-3-Clause | `rekindle-media-bwe` |
 | Transport feedback | RFC 8888-shaped report (begin_seq plus per-packet arrival offsets; send times kept by the sender, per evidence `steps-20-26.md` §25 item 2), as a Cap'n Proto struct (CLAUDE.md wire rule), every 50–200 ms on the same route | — | `schemas/voice.capnp`, `rekindle-codec` |

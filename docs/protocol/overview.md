@@ -55,7 +55,7 @@ receiver's IP in the same manner.
 ## Message Lifecycle (Friend DM)
 
 | Stage | Layer | Operation |
-|-------|-------|-----------|
+| ------- | ------- | ----------- |
 | 1. Compose | Frontend | User types message, invokes `send_message` command |
 | 2. Encode | rekindle-codec | Build the kind's body (`DmText`, ...), wrap it in a `DmContent {contentHint, sentAtMs, payload}` (a `SealedContent` with a random nonce for pre-session kinds) |
 | 3. Seal | rekindle-crypto, rekindle-db, rekindle-secrets | By the kind's carrier (below): step the Double Ratchet in one DB transaction (`rekindle_db::ratchet`), open a session with a PreKeyInit, or HPKE-seal and Ed25519-sign |
@@ -83,7 +83,7 @@ DmFrame {
 The typeId names the kind and its carrier (`DmTypeId::carrier()`):
 
 | Carrier | Body | Kinds |
-|---------|------|-------|
+| --------- | ------ | ------- |
 | Ratchet | `{header {dh, pn, n}, ciphertext}` of a `DmContent` | DMs, edits, reactions, typing, unfriend, rotations, group DM, call signaling, DM video, Strand Relay, status |
 | PreKeyInit | PQXDH init (base key, prekey ids, ML-KEM ciphertext) plus the first ratchet message | opens a session; the first payload is a `FriendAccept` or `SessionResetAccept` (or any ratchet kind) |
 | Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `PreKeyRejected`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
@@ -126,7 +126,7 @@ and the framed DM kinds.
 ### DmFrame Kinds
 
 | Kind (typeId) | Purpose |
-|---------------|---------|
+| --------------- | --------- |
 | `DmText` (0x0100), `DmEdit`/`DmDelete`/`DmReaction` (0x0110-0x0112) | 1:1 chat message (with optional reply and expiry), edits, deletes, reactions |
 | `Typing` (0x0401) | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`) |
 | `FriendRequest` (0x0002) | Initial friend contact, sealed, by `app_call` (or written into an invite's inbox); the reply is its receipt. Carries the requester's reply inbox (RV2) and its `chainRecordKey`, the requester's dm participant record to the addressee, whose `HEAD` is published before each attempt; the accepter adopts it only when it accepts (decision 67 item 2). Never a presence key |
@@ -220,7 +220,7 @@ Every community write follows three parallel paths:
 `rekindle_gossip::mesh::fanout_degree()`:
 
 | Members | D |
-|---------|---|
+| --- | --- |
 | ≤ 20 | N − 1 (direct mesh) |
 | 21 – 60 | 6 |
 | 61 + | 8 |
@@ -267,7 +267,7 @@ Full architecture: [`../architecture/communities.md`](../architecture/communitie
 ## Cap'n Proto Schema Catalog
 
 | Schema File | Top-level structs |
-|-------------|-------------------|
+| ------------- | ------------------- |
 | `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
 | `identity.capnp` | `PrekeyRecordHead`, `OpkSlot`, `PrekeyRecordList` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
@@ -283,7 +283,7 @@ paths resolve.
 ## Veilid Primitives Used
 
 | Primitive | Usage |
-|-----------|-------|
+| ----------- | ------- |
 | `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`: 1:1 statements (`'D'` datagrams the DM chain and outbox acks back up, `rekindle-transport` `Sender::send_direct`), gossip, and voice/video frames (desktop `VeilidVoiceFrameSender`). Call signals still go this way today; D8 (plan E4.2) makes every call signal an `app_call` transaction (RFC 3261 §17 timers, the callee re-sends Accept until acknowledged), not built yet. |
 | `app_call(target, data)` | Request-response delivery: receipted 1:1 frames (`AppCaller::call_direct`: the outbox's `friend_handshake` rows such as `FriendsKey` and `GroupDmInvite`), signed RPCs (`AppCaller::call`), community envelopes (MEK delivery), bootstrap bundles, file chunks. The answer returns over a reply route Veilid picks from the caller's pool to match the question's safety spec (`rpc_processor/destination.rs:487-521`). |
 | DHT record calls (`create`/`open`/`close_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`) | Only through the record pool, `rekindle_protocol::dht::pool::RecordPool` (one per session, both tracks). It holds each record's lease, sticky writer and watch; serializes writes per subkey; re-pushes missed writes of records held writable and saves them as outbox `dht_write` rows at logout (plan E2.5); closes ended sessions' records through the node's `RecordCloser`, after their calls finish, never aborting one mid-commit; and rehydrates community records on a jittered keepalive. A multi-writer read consults an index (one inspect over the writer set) before fetching (plan C7.12). |
@@ -324,7 +324,7 @@ useless and the jitter buffer reorders. The netsim models the loss as
 ### User Profile Record (DFLT, 9 subkeys)
 
 | Subkey | Content |
-|--------|---------|
+| -------- | --------- |
 | 0 | Display name (UTF-8) |
 | 1 | Status message (UTF-8) |
 | 2 | Status enum: `online`, `away`, `busy`, `offline`, `invisible` |

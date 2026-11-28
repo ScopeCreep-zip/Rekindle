@@ -96,7 +96,7 @@ The cross-platform `sysinfo` API does most of the work, but each
 platform has a small specialisation file for richer detection:
 
 | Platform | File | Adds |
-|----------|------|------|
+| ---------- | ------ | ------ |
 | Linux | `platform/linux.rs` | `/proc/<pid>/exe` symlink resolution (more reliable than process name for Wine/Proton games), `/proc/<pid>/cmdline` reading for full argv |
 | macOS | `platform/macos.rs` | Process executable path resolution, `.app` bundle detection (`Name.app/Contents/MacOS/`), bundle-name extraction |
 | Windows | `platform/windows.rs` | Process executable path lookup, list-with-paths helper |
@@ -206,7 +206,7 @@ machine; a command line is read only for an already matched process.
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | `GameDetector` scan API | `crates/rekindle-game-detect/src/scanner.rs` |
 | `GameDatabase` (process-name → entry) | `crates/rekindle-game-detect/src/database.rs` |
 | Bundled game definitions | `crates/rekindle-game-detect/src/default_games.json` |

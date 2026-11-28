@@ -11,7 +11,7 @@ Pick an ADR by filename — they are numbered chronologically. The
 filename is `NNNN-short-title.md`.
 
 | ID | Title | Status |
-|----|-------|--------|
+| ---- | ------- | -------- |
 | [0001](0001-veilid-as-transport.md) | Adopt Veilid as the sole transport substrate | Accepted; boundary sentence superseded by 0014 |
 | [0002](0002-signal-protocol-for-1to1.md) | Use the Signal Protocol for 1:1 friend messaging | Accepted; amended by plan E2.4 (the bundle is a per-device DFLT(101) prekey record named by profile subkey 5) and D3/E2.3 (sessions in the identity database; DR §7.2 CBC+HMAC message encryption) |
 | [0003](0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model | Accepted; write model superseded by 0011 |

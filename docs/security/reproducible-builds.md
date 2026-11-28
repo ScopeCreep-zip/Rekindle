@@ -19,7 +19,7 @@ plan, the pieces in place, and the work still required.
 ## Pieces in place
 
 | Piece | Where |
-|-------|-------|
+| ------- | ------- |
 | Pinned Rust toolchain | [`../../rust-toolchain.toml`](../../rust-toolchain.toml) — `channel = "1.92.0"` |
 | Pinned Cargo lockfile | [`../../Cargo.lock`](../../Cargo.lock) committed |
 | Pinned npm/pnpm lockfile | [`../../pnpm-lock.yaml`](../../pnpm-lock.yaml) committed |
