@@ -22,9 +22,9 @@ use crate::harness::{eventually, Community, Refused, PASSPHRASE};
 
 const LIMIT: Duration = Duration::from_secs(180);
 /// Device A, `p`'s first device.
-const A: usize = 1;
+pub(crate) const A: usize = 1;
 /// Device B, `p`'s second device (node 2's own identity is never used).
-const B: usize = 2;
+pub(crate) const B: usize = 2;
 
 pub(crate) async fn unlock(community: &Community, i: usize) {
     let node = &community.nodes[i];
@@ -144,7 +144,7 @@ pub(crate) async fn lists(
     .await
 }
 
-async fn enrol(community: &Community, i: usize) {
+pub(crate) async fn enrol(community: &Community, i: usize) {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityDeviceEnrol {
@@ -156,18 +156,25 @@ async fn enrol(community: &Community, i: usize) {
 
 /// B: `p`'s data root restored on node 2 without the device vault, the
 /// Host started over it through the production startup path, unlocked.
-async fn second_device(community: &mut Community) {
+pub(crate) async fn second_device(community: &mut Community) {
     community.nodes[B].ok(IpcRequest::Lock).await;
     community.nodes[A].ok(IpcRequest::Lock).await;
     let backup = crate::data_root::snapshot(&community.sim, &community.nodes[A]);
     unlock(community, A).await;
     let p_key = community.nodes[A].public_key.clone().expect("p's identity");
     crate::data_root::restore_as_new_device(&community.sim, &community.nodes[B], &backup, &p_key);
-    let node = community.nodes.pop().expect("node 2");
+    restart_as(community, B, p_key).await;
+    unlock(community, B).await;
+}
+
+/// Node `i`'s Host started over through the production startup path on
+/// the data root just put back, as `p_key`, the identity that root holds
+/// (the node must be locked).
+pub(crate) async fn restart_as(community: &mut Community, i: usize, p_key: String) {
+    let node = community.nodes.remove(i);
     let mut node = node.restart(&community.sim, Duration::from_secs(1)).await;
     node.public_key = Some(p_key);
-    community.nodes.push(node);
-    unlock(community, B).await;
+    community.nodes.insert(i, node);
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
