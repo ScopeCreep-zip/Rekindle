@@ -339,6 +339,13 @@ export interface PresenceSharingPolicy {
   lastSeen: LastSeenPrecision;
 }
 
+/** One Host-owned presence policy edit. */
+export type PresencePolicyField =
+  | { shareOnline: boolean }
+  | { shareLocation: ShareScope }
+  | { shareActivity: ShareScope }
+  | { lastSeen: LastSeenPrecision };
+
 export interface NetworkStatus {
   attachmentState: string;
   isAttached: boolean;

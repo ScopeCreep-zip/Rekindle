@@ -11,10 +11,8 @@
 //! tombstone every reader stores from the merged op (plan E3.3 M4), and
 //! the window hears `ChannelMessageEvent::Deleted` naming us.
 //!
-//! The channel we are in is the store's `my_session_location`, which our
-//! presence row carries; it is republished at once by one presence poll
-//! (the shell's own until presence moves at E3.4, `rekindled`'s presence
-//! adapter otherwise).
+//! The Host holds our focused channel. A change requests a member beat
+//! when our policy shares it.
 
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::validate::validate_write;
@@ -250,7 +248,6 @@ impl HostGovernance {
             community.my_session_location = location;
             community.presence_policy.share_location
         };
-        self.spawn_presence_poll_tick_impl(community_id);
         if share_location == rekindle_types::presence::ShareScope::Members {
             crate::host::adapters::presence::refresh_beat(&self.ctx, community_id);
         }

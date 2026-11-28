@@ -60,6 +60,10 @@ impl BeatSink for Sink {
         Ok(())
     }
 
+    async fn write_refreshed_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
+        self.write_beat(community, state).await
+    }
+
     async fn write_quit_beat(&self, community: &str) -> Result<(), String> {
         self.write_beat(community, BeatState::Offline).await
     }

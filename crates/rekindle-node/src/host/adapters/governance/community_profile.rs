@@ -88,6 +88,7 @@ impl HostGovernance {
         )
         .await?;
         if changed {
+            crate::host::adapters::presence::view::location_policy_changed(&self.ctx, community);
             self.ctx.own_presence.card_game.notify_one();
             crate::host::adapters::presence::refresh_beat(&self.ctx, community);
         }

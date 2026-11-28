@@ -11,6 +11,7 @@ import type {
   EventInfo,
   ExclusionGroupEdit,
   Message,
+  PresencePolicyField,
   PresenceSharingPolicy,
 } from "./types";
 
@@ -51,8 +52,8 @@ export const governanceCommands = {
   // Presence sharing consent (default-deny). Local-only; never published.
   getPresencePolicy: (communityId: string) =>
     invoke<PresenceSharingPolicy>("get_presence_policy", { communityId }),
-  setPresencePolicy: (communityId: string, policy: PresenceSharingPolicy) =>
-    hostInvoke<void>("set_presence_policy", { communityId, policy }),
+  setPresencePolicyField: (communityId: string, field: PresencePolicyField) =>
+    hostInvoke<void>("set_presence_policy_field", { communityId, field }),
 
   // Audit log
   getAuditLog: (communityId: string, beforeTimestamp?: number, limit: number = 50) =>
