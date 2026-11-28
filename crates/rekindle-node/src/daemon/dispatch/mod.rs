@@ -244,6 +244,11 @@ pub struct DaemonContext {
     /// Our own presence, one owner on both hosts (plan E1.1): status,
     /// message, game and idle state, and the unlock's STATUS publisher.
     pub(crate) own_presence: crate::host::own_presence::OwnPresence,
+    /// The voice channel we are in on `rekindled` (plan E3.4 S8-pre,
+    /// toward E4.1): recorded by `VoiceJoin`, taken by `VoiceLeave`, a
+    /// leave of its community and the lock; our beat reads it. A shell's
+    /// voice session is its own until E4.1 (`ShellHooks::session_presence`).
+    pub(crate) own_voice: crate::host::own_voice::OwnVoice,
     /// The dispatch lane (`IpcRequest::lane`): `Write` requests hold it
     /// shared, `Exclusive` ones alone. A lock, unlock or identity change
     /// therefore never overlaps a write that may hold the signing key.
@@ -362,7 +367,6 @@ impl DaemonContext {
     /// Journal one `SubscriptionEvent` for every subscriber (plan D3.2),
     /// through the Host's one journal entry (`host::journal_entry`).
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
-        let event = crate::host::journal_entry::with_voice_names(&self.communities, event);
         crate::host::journal_entry::publish(&self.journal, event);
     }
 

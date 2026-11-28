@@ -4,7 +4,7 @@ import type { LinkMeasurement } from "../ipc/channels/voice_events";
 
 export interface VoiceParticipant {
   publicKey: string;
-  displayName: string | null;
+  displayName: string;
   isMuted: boolean;
   isSpeaking: boolean;
   /** Three-way handshake: this peer sent VoiceJoinConfirmed (it is

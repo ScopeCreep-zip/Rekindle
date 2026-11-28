@@ -26,10 +26,10 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
   // A tile is labelled with its sender's name from the call's served
   // participants (contract VN2): the DM call's peer, or the voice roster in
   // a community call. Never a key.
-  const senderName = (sender: string): string =>
+  const senderName = (sender: string): string | undefined =>
     props.mode === "dm"
       ? props.peerName
-      : (voiceState.participants.find((p) => p.publicKey === sender)?.displayName ?? "");
+      : voiceState.participants.find((p) => p.publicKey === sender)?.displayName;
   const vm = useVideoCallPanel(props);
 
   return (
@@ -77,19 +77,19 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
         </Show>
         <For each={vm.remotes()}>
           {(remote) => (
-            <div class="video-call-tile">
-              <div
-                class="video-call-canvas"
-                ref={(el) => {
-                  // Move the off-DOM canvas into this slot the first time
-                  // it's mounted; subsequent renders keep the same ref.
-                  if (el && remote.canvas.parentElement !== el) {
-                    el.appendChild(remote.canvas);
-                  }
-                }}
-              />
-              <div class="video-call-tile-label">{senderName(remote.senderPseudonym)}</div>
-            </div>
+            <Show when={senderName(remote.senderPseudonym)}>
+              {(name) => (
+                <div class="video-call-tile">
+                  <div
+                    class="video-call-canvas"
+                    ref={(el) => {
+                      if (remote.canvas.parentElement !== el) el.appendChild(remote.canvas);
+                    }}
+                  />
+                  <div class="video-call-tile-label">{name()}</div>
+                </div>
+              )}
+            </Show>
           )}
         </For>
       </div>

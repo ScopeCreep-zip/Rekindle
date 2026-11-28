@@ -20,6 +20,7 @@ use rekindle_types::dht_layout::member_record::CARD;
 use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::permissions;
 use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
@@ -254,17 +255,21 @@ impl HostGovernance {
     }
 }
 
-impl super::HostGovernance {
-    /// The member list's shown name for a community pseudonym.
+impl HostGovernance {
+    /// How the member list names this member from the Host's verified card view.
+    ///
+    /// # Panics
+    /// The caller must pass a validated community pseudonym.
     #[must_use]
-    pub fn member_shown_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> String {
-        resolved_member_name(&self.ctx.communities, community_id, pseudonym)
+    pub fn member_shown_name(&self, community_id: &str, member_hex: &str) -> String {
+        member_shown_name(&self.ctx.communities, community_id, member_hex)
     }
 }
 
 /// The name a community renders for `pseudonym`: its card's, else its
 /// short pseudonym fingerprint; never empty (plan E3.4 S6).
-pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
+#[must_use]
+pub fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
     card_name
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&pseudonym.0))
@@ -279,18 +284,14 @@ pub(crate) fn member_shown_name(
     community_id: &str,
     member_hex: &str,
 ) -> String {
-    let pseudonym = PseudonymKey::from_hex_lossy(member_hex);
-    resolved_member_name(communities, community_id, &pseudonym)
-}
-
-pub(crate) fn resolved_member_name(
-    communities: &CommunityStore,
-    community_id: &str,
-    pseudonym: &PseudonymKey,
-) -> String {
+    let pseudonym = PseudonymKey(
+        pseudonym_hex(member_hex)
+            .expect("validated pseudonym")
+            .to_bytes(),
+    );
     shown_name(
-        communities.member_card_name(community_id, pseudonym),
-        pseudonym,
+        communities.member_card_name(community_id, &pseudonym),
+        &pseudonym,
     )
 }
 

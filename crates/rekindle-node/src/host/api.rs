@@ -35,8 +35,36 @@ impl super::Host {
         key: &str,
         event: rekindle_types::subscription_events::SubscriptionEvent,
     ) -> Cursor {
-        let event = super::journal_entry::with_voice_names(&self.ctx.communities, event);
         self.ctx.journal.publish_state(key, event)
+    }
+
+    /// We joined or left a voice channel in `community_id` (plan E3.4
+    /// S8-pre): the shell calls this when its voice session starts or ends,
+    /// until E4.1 makes voice the Host's.
+    pub fn voice_presence_changed(&self, community_id: &str) {
+        super::adapters::presence::voice_changed(&self.ctx, community_id);
+    }
+
+    /// Our session in `community_id` as the Host holds it (plan E3.4
+    /// S8-pre ruling): status and game from our own presence, the channel
+    /// we are in from the community. The shell's registry row reads it
+    /// until S8a removes the row.
+    #[must_use]
+    pub fn own_community_session(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::MemberSession {
+        super::adapters::presence::own_session(&self.ctx, community_id)
+    }
+
+    /// Our sharing consent in `community_id` (`set_presence_policy`),
+    /// default-deny in a community we do not hold.
+    #[must_use]
+    pub fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        super::adapters::presence::presence_policy(&self.ctx, community_id)
     }
 
     /// The session state `key` ended: no later window is handed it.

@@ -281,7 +281,10 @@ async fn hydration_recovers_the_stored_registry_keypair() {
     let stored = host.ctx.communities.map().read()["c1"]
         .registry_owner_keypair
         .clone();
-    assert_eq!(stored.as_deref(), Some("registry-keypair"));
+    assert_eq!(
+        stored.as_ref().map(|key| key.as_str()),
+        Some("registry-keypair")
+    );
     assert!(governance.list_missing_registry_keypairs().is_empty());
     host.shutdown().await.unwrap();
 }

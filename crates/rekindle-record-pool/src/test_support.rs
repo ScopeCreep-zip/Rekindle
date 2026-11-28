@@ -87,10 +87,10 @@ pub struct MemDht {
 }
 
 fn writer_key(text: &str) -> WriterKey {
-    WriterKey {
-        keypair: text.to_string(),
-        public: text.to_string(),
-    }
+    WriterKey::new(
+        text.to_owned(),
+        rekindle_secrets::record_writer::RecordWriterSecret::from_text(text),
+    )
 }
 
 fn error(kind: DhtErrorKind, message: &str) -> DhtCallError {

@@ -4,9 +4,15 @@ use x25519_dalek::StaticSecret;
 
 use super::mocks::*;
 use crate::group_state::{GroupCallState, GroupCallStatus};
+use crate::signaling::deps::friend_shown_name;
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::registry::GroupCallRegistry;
 use crate::state::CallKind;
+
+#[test]
+fn malformed_dm_participant_is_rejected_even_with_a_name() {
+    assert!(friend_shown_name("invalid-key", Some("River".into())).is_err());
+}
 
 #[tokio::test]
 async fn an_unnamed_caller_is_shown_by_the_sender_fingerprint() {

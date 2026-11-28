@@ -51,10 +51,10 @@ async fn a_255_member_record_holds_4112_bytes_a_subkey() {
     let dht = SimDht::new(0, Arc::clone(&sim.net), Arc::clone(&nodes[0].rng));
     let (schema, member) = member_schema(255);
     let record = dht.create(&schema, None).await.unwrap();
-    let writer = WriterKey {
-        keypair: member.clone(),
-        public: String::new(),
-    };
+    let writer = WriterKey::new(
+        String::new(),
+        rekindle_secrets::record_writer::RecordWriterSecret::from_text(&member),
+    );
     dht.set(&record.key, 0, vec![1; 4_112], Some(&writer))
         .await
         .unwrap();

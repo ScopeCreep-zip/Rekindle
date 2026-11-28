@@ -5,6 +5,7 @@
 
 use rekindle_channel::deps::SentChannelMessageEcho;
 use rekindle_channel::event::ChannelEvent;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SocialEvent, SubscriptionEvent};
 
@@ -42,7 +43,13 @@ impl HostChannel {
     /// (plan E3.3): the member list's name, never the raw key. The echo,
     /// the ingest and history all name it here.
     pub(super) fn forward_name(&self, community_id: &str, author: Option<&str>) -> Option<String> {
-        author.map(|a| member_shown_name(&self.ctx().communities, community_id, a))
+        let author = author?;
+        pseudonym_hex(author).ok()?;
+        Some(member_shown_name(
+            &self.ctx().communities,
+            community_id,
+            author,
+        ))
     }
 
     pub(super) fn delivery_impl(

@@ -378,6 +378,46 @@ pub fn fail_own_post(
     Ok(changed > 0)
 }
 
+/// The lamport range of the stored messages of each channel of
+/// `community_id`: `(channel, oldest, newest)`, a channel with no
+/// lamport-stamped message left out. The ranges our history ad names
+/// (plan E3.4 S7, `M`/5).
+///
+/// # Errors
+/// The query failed or a row is malformed.
+pub fn history_ranges(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+) -> rusqlite::Result<Vec<(String, u64, u64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT conversation_id, MIN(lamport_ts) AS oldest, MAX(lamport_ts) AS newest \
+         FROM messages \
+         WHERE owner_key = ?1 AND conversation_type = 'channel' AND lamport_ts > 0 \
+           AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) \
+         GROUP BY conversation_id ORDER BY conversation_id",
+    )?;
+    let rows = stmt.query_map(params![owner_key, community_id], |row| {
+        let lamport = |name: &str| {
+            get::<i64>(row, name).and_then(|v| {
+                u64::try_from(v).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Integer,
+                        Box::new(e),
+                    )
+                })
+            })
+        };
+        Ok((
+            get::<String>(row, "conversation_id")?,
+            lamport("oldest")?,
+            lamport("newest")?,
+        ))
+    })?;
+    rows.collect()
+}
+
 #[cfg(test)]
 #[path = "channel_tests.rs"]
 mod tests;

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::{id::PseudonymKey, key_format::pseudonym_hex};
+use rekindle_types::key_format::{pseudonym_hex, KeyFormatError};
 use rekindle_video::{VideoDeps, VideoEvent};
 
 use crate::channels::{CommunityEvent, VideoCodecIncompatibleEvent, VideoCodecIncompatiblePeer};
@@ -41,8 +41,8 @@ pub fn rejection_event(
     reason: String,
 ) -> Option<CommunityEvent> {
     let host = state_helpers::host_governance(state).ok()?;
-    let sender = PseudonymKey(pseudonym_hex(&sender_pseudonym).ok()?.to_bytes());
-    let display_name = host.member_shown_name(&community_id, &sender);
+    pseudonym_hex(&sender_pseudonym).ok()?;
+    let display_name = host.member_shown_name(&community_id, &sender_pseudonym);
     Some(CommunityEvent::VideoEnvelopeRejected(
         crate::channels::VideoEnvelopeRejectedEvent {
             community_id,
@@ -64,13 +64,13 @@ pub(crate) fn incompatible_event(
     let peers = peers
         .into_iter()
         .map(|pseudonym_key| {
-            let pseudonym = PseudonymKey(pseudonym_hex(&pseudonym_key)?.to_bytes());
+            pseudonym_hex(&pseudonym_key)?;
             Ok(VideoCodecIncompatiblePeer {
-                display_name: host.member_shown_name(community_id, &pseudonym),
+                display_name: host.member_shown_name(community_id, &pseudonym_key),
                 pseudonym_key,
             })
         })
-        .collect::<Result<_, rekindle_types::key_format::KeyFormatError>>();
+        .collect::<Result<_, KeyFormatError>>();
     match peers {
         Ok(peers) => Some(CommunityEvent::VideoCodecIncompatible(
             VideoCodecIncompatibleEvent {

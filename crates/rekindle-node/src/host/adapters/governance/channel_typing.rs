@@ -34,6 +34,7 @@ use rekindle_transport::operations::friend::FriendHost;
 use rekindle_transport::operations::typing;
 use rekindle_types::channel_keys::current_key;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::subscription_events::TypingContext;
 
 use super::HostGovernance;
@@ -215,6 +216,9 @@ impl HostGovernance {
             return;
         };
         let friends = HostFriends::of(&self.ctx);
+        if pseudonym_hex(sender).is_err() {
+            return;
+        }
         let name = self.typist_name(community_id, sender);
         typing::channel_frame(
             &friends,
@@ -230,7 +234,7 @@ impl HostGovernance {
     /// card, else their key's short fingerprint. Never empty, never a raw
     /// key, never a name the frame carries.
     pub(crate) fn typist_name(&self, community_id: &str, sender: &str) -> String {
-        super::community_profile::member_shown_name(&self.ctx.communities, community_id, sender)
+        self.member_shown_name(community_id, sender)
     }
 
     /// `channel_id`'s tag under the current key of its text scope.

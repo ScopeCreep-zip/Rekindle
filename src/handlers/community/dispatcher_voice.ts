@@ -21,17 +21,20 @@ import { withCommunity } from "./community_reread";
 function mirrorRosterAdd(
   communityId: string,
   channelId: string,
-  entries: { pseudonymKey: string; displayName: string | null }[]
+  entries: { pseudonymKey: string; displayName: string }[]
 ): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
   const self = community?.myPseudonymKey;
+  // Each name is the Host's shown name (contract VN1): rendered as served,
+  // never looked up or made from the key here.
   for (const { pseudonymKey: pk, displayName } of entries) {
     if (pk === self) continue;
     setVoiceState("participants", (prev) => {
       const existing = prev.findIndex((p) => p.publicKey === pk);
       if (existing >= 0) {
-        if (displayName && prev[existing].displayName !== displayName) {
+        // The Host's name for this member changed (a card update): show it.
+        if (prev[existing].displayName !== displayName) {
           return prev.map((p, i) => (i === existing ? { ...p, displayName } : p));
         }
         return prev;
@@ -104,8 +107,7 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
 //
 // Each body is the `{ type, data }` case it replaced. Only the
 // destructuring changed: `communityId`/`channelId` come out of the
-// scope, and the roster's participants carry `displayName: string |
-// null` where the old DTO had `string | undefined`.
+// scope, and the roster's participants carry the Host's shown name.
 
 /// Voice signalling on the daemon vocabulary.
 ///

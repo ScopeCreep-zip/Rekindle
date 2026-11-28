@@ -12,6 +12,11 @@ use crate::deps::PresenceError;
 
 #[async_trait]
 pub trait CommunityPresenceDeps: Send + Sync + 'static {
+    /// The shell's voice state (plan E3.4 S8-pre): the same port the beat
+    /// path reads, so the registry row and the beat say the same voice
+    /// channel until S8a removes the row.
+    fn session_presence(&self) -> std::sync::Arc<dyn super::SessionPresence>;
+
     /// The scope of the session this work belongs to. A poll tick stops
     /// before its next Veilid call once it is closed (plan C4.L1).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
@@ -42,6 +47,19 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// write path doesn't have to juggle six clones inline.
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot;
 
+    /// The local user's session in this community (status, game, focused
+    /// channel, last-active), as the Host holds it (plan E3.4 S8-pre
+    /// ruling: never a shell copy), the same session our beat seals.
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession;
+
+    /// The local user's per-community sharing policy (default-deny), the
+    /// Host's (`set_presence_policy`). Local-only, never published:
+    /// applied before the row is signed.
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy;
+
     /// W11.2 — encrypt the local history ranges with the current
     /// community MEK. Returns `None` when MEK is missing (the caller
     /// gracefully omits the field).
@@ -50,21 +68,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         community_id: &str,
         ranges: &[rekindle_types::presence::HistoryRange],
     ) -> Option<rekindle_types::presence::EncryptedHistoryRanges>;
-
-    /// The local user's current session for this community — typed
-    /// status (mapped from identity `UserStatus`), focused channel
-    /// (`my_session_location`), and last-active. Built under the
-    /// communities lock. The single source of truth the write path
-    /// derives the loose `status` string from.
-    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession;
-
-    /// The local user's per-community presence sharing policy
-    /// (default-deny). Local-only — never published. Applied to the
-    /// session before signing + publishing.
-    fn presence_policy(
-        &self,
-        community_id: &str,
-    ) -> rekindle_types::presence::PresenceSharingPolicy;
 
     /// Encrypt the identity-revealing `SessionExtras` (location +
     /// activity) under the current community MEK so only current
@@ -218,18 +221,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         emit_refreshed: bool,
     );
 
-    /// Voice channel the LOCAL user is currently connected to in this
-    /// community, if any. Rides the MEK-encrypted `SessionExtras` on
-    /// our presence row (MatrixRTC `m.rtc.member` pattern) so the
-    /// channel roster has a durable, heartbeat-renewed backstop.
-    fn active_voice_channel(&self, community_id: &str) -> Option<String>;
-
-    /// Hand the scan's presence-derived voice membership view to the
-    /// voice layer for roster reconciliation (add lost-VoiceJoin
-    /// members, expire ghosts). Fire-and-forget — the add/remove
-    /// DECISIONS live in `rekindle-voice`; the adapter only bridges.
-    fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<VoicePresenceRow>);
-
     /// Architecture §15 A5/P4.3 — admin-side trigger for Plate
     /// Gate segment expansion. Spawns a background task; returns
     /// immediately. No-op when caller lacks `MANAGE_COMMUNITY`
@@ -260,24 +251,6 @@ pub enum RowWrite {
     /// The network held another value at our sequence number or above:
     /// Veilid adopted it and stored it locally (`set_value.rs:620-645`).
     Superseded { seq: u32, data: Vec<u8> },
-}
-
-/// Presence-derived voice membership view of one community member,
-/// handed from the registry scan to the voice roster reconcile
-/// (architecture three-path: the SMPL presence row is the DURABLE
-/// roster; gossip VoiceJoin/VoiceLeave is the fast path).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VoicePresenceRow {
-    pub pseudonym_hex: String,
-    pub display_name: Option<String>,
-    /// The cleartext voice channel claim on the row. The row carries no
-    /// media route (plan C7.15): the reconcile introduces us through the
-    /// call's signaling instead.
-    pub voice_channel_id: Option<String>,
-    /// Row passed the scan's liveness gate (fresh heartbeat +
-    /// non-offline). Stale rows still flow through so the reconcile
-    /// can expire ghosts.
-    pub fresh: bool,
 }
 
 /// In-memory snapshot of one online community member a fresh registry

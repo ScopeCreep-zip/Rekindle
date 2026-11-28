@@ -29,6 +29,7 @@ pub mod mek;
 pub mod mek_ack;
 pub mod member_record;
 pub mod pq_keys;
+pub mod record_writer;
 pub mod rotator;
 pub mod sframe;
 pub mod sign;

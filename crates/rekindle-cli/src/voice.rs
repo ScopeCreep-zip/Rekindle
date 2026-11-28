@@ -84,7 +84,7 @@ async fn watch_voice(
         Some(match voice {
             VoiceEvent::Joined {
                 pseudonym,
-                display_name: Some(name),
+                display_name: name,
                 ..
             } => {
                 let name = sanitize_for_display(name);
@@ -92,15 +92,12 @@ async fn watch_voice(
                 names.insert(pseudonym.clone(), name);
                 line
             }
-            VoiceEvent::Joined { .. } => return None,
             VoiceEvent::RosterUpdated { participants, .. } => {
                 let mut roster = Vec::new();
                 for participant in participants {
-                    if let Some(name) = &participant.display_name {
-                        let name = sanitize_for_display(name);
-                        names.insert(participant.pseudonym_key.clone(), name.clone());
-                        roster.push(name);
-                    }
+                    let name = sanitize_for_display(&participant.display_name);
+                    names.insert(participant.pseudonym_key.clone(), name.clone());
+                    roster.push(name);
                 }
                 format!("Voice roster: {}", roster.join(", "))
             }

@@ -66,8 +66,10 @@ export function useCallStage() {
     const pipe = activePipeline();
     const out: CallTile[] = [];
     const community = communityForActiveCall();
+    const selfServed =
+      voiceState.activeCallType === "community" ? community?.myDisplayName : authState.displayName;
 
-    if (voiceState.isConnected) {
+    if (voiceState.isConnected && selfServed) {
       const camOn = pipe?.cameraOn() ?? false;
       const scrOn = pipe?.screenOn() ?? false;
       // Self view, fed by ONE capture per platform (never a 2nd camera
@@ -85,7 +87,6 @@ export function useCallStage() {
       // been created yet we therefore show the avatar under a DIFFERENT
       // key ("self-avatar"); the key swap forces a fresh row that mounts
       // the canvas the moment it exists.
-      const selfServed = community?.myDisplayName ?? authState.displayName ?? "You";
       const selfName = `${selfServed} (you)`;
       if (pipe && camOn) {
         if (pipe.nativeCapture?.()) {
@@ -145,11 +146,12 @@ export function useCallStage() {
     const withVideo = new Set<string>();
     for (const r of remotes) {
       const p = voiceState.participants.find((x) => x.publicKey === r.senderPseudonym);
-      if (p) withVideo.add(p.publicKey);
+      if (!p) continue;
+      withVideo.add(p.publicKey);
       put(out, `remote-${r.streamId}`, {
         canvas: r.canvas,
-        displayName: p?.displayName ?? "",
-        servedName: p?.displayName ?? "",
+        displayName: p.displayName,
+        servedName: p.displayName,
         publicKey: r.senderPseudonym,
         isLocal: false,
         isScreen: false,
@@ -166,8 +168,8 @@ export function useCallStage() {
       if (selfKey && p.publicKey === selfKey) continue;
       if (withVideo.has(p.publicKey)) continue;
       put(out, `participant-${p.publicKey}`, {
-        displayName: p.displayName ?? "",
-        servedName: p.displayName ?? "",
+        displayName: p.displayName,
+        servedName: p.displayName,
         publicKey: p.publicKey,
         isLocal: false,
         isScreen: false,

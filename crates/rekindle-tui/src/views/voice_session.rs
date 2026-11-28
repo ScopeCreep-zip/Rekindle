@@ -237,7 +237,7 @@ impl View for VoiceSessionView {
             SubscriptionEvent::Voice(VoiceEvent::Joined {
                 scope,
                 pseudonym,
-                display_name: Some(display_name),
+                display_name,
                 ..
             }) if self.is_this_call(scope) => {
                 self.name_participant(pseudonym, display_name);
@@ -247,9 +247,7 @@ impl View for VoiceSessionView {
                 participants,
             }) if self.is_this_call(scope) => {
                 for participant in participants {
-                    if let Some(name) = &participant.display_name {
-                        self.name_participant(&participant.pseudonym_key, name);
-                    }
+                    self.name_participant(&participant.pseudonym_key, &participant.display_name);
                 }
             }
             SubscriptionEvent::Voice(VoiceEvent::Left { scope, pseudonym })

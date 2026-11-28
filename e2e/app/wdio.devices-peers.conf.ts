@@ -19,6 +19,7 @@ export const config: WebdriverIO.MultiRemoteConfig = {
     "./specs/devices/call-end.e2e.ts",
     "./specs/devices/group-call-names.e2e.ts",
     "./specs/devices/video-tile-names.e2e.ts",
+    "./specs/devices/voice-roster-peers.e2e.ts",
   ],
   capabilities: { alice: user, bob: structuredClone(user), carol: structuredClone(user) },
 };

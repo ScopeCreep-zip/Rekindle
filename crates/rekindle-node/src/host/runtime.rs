@@ -351,6 +351,7 @@ impl Host {
             unlock_scope: RwLock::new(None),
             community_scopes: parking_lot::Mutex::new(std::collections::HashMap::new()),
             presence_start_tx,
+            own_voice: super::own_voice::OwnVoice::default(),
             own_presence: super::own_presence::OwnPresence::new(
                 Arc::clone(&stores.session),
                 // Weak: the Host's slot is the node's one owner (R1-16).
@@ -430,7 +431,6 @@ impl Host {
         &self,
         event: rekindle_types::subscription_events::SubscriptionEvent,
     ) -> rekindle_types::subscription_events::Cursor {
-        let event = super::journal_entry::with_voice_names(&self.ctx.communities, event);
         super::journal_entry::publish(&self.ctx.journal, event)
     }
 
