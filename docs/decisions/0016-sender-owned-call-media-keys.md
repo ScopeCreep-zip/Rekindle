@@ -51,7 +51,7 @@ generation (new random key), a join bumps the ratchet step.
 C7.20 as built has four gaps, fixed in plan step **C7.29** before E4.2:
 
 | Gap | As built (code at `27f19f1d`) | Fix |
-|---|---|---|
+| --- | --- | --- |
 | **G1** A joiner can read earlier media | `keyring.rs:125-136` `on_join` shares the current key if younger than `SHARE_GRACE` (10 s); `media_keys.rs` answers `VoiceMediaKeyRequest` with `shareable()` = current + pending, so a joiner gets the key in use since the last rotation | Ratchet forward on join (RFC 9605 §5.1, RingRTC, Jitsi; intent T6). The new state goes only to the joiner; a request is answered with the current state only. `SHARE_GRACE` and `JoinShare` are deleted. |
 | **G2** Key transport is not forward-secret | `media_sender_key/mod.rs` seals with HPKE Auth mode to the member's long-lived community pseudonym (`derive.rs:18`) | Each participant makes an X25519 keypair per channel session, signed by its pseudonym and carried on the join handshake; `VoiceMediaKey` is HPKE Base to that key plus a pseudonym signature; the private half is zeroized at session end. Pre-D1 format change. |
 | **G3** Back-to-back leaves postpone rotation and reuse an index | A leave during a pending rotation replaces the pending key at the same index and restarts the 5 s delay | RingRTC's rule: at most one pending rotation, applied on schedule, then another; every rotation takes a new generation. |

@@ -9,7 +9,7 @@ reference for the full stack as it stands in 2026.
 The configs all live at the repo root (or `.github/`):
 
 | Tool | Config file | Covers |
-|------|-------------|--------|
+| ------ | ------------- | -------- |
 | **rustfmt** | [`../../rustfmt.toml`](../../rustfmt.toml) | Rust code formatting |
 | **clippy** | [`../../clippy.toml`](../../clippy.toml) + workspace lints in `Cargo.toml` | Rust correctness + style |
 | **cargo-deny** | [`../../deny.toml`](../../deny.toml) | Rust dep advisories / licenses / sources / bans |
@@ -98,7 +98,7 @@ capnp compile -o /dev/null --src-prefix=schemas schemas/*.capnp
 Two workflows orchestrate these in CI:
 
 | Workflow | Covers |
-|----------|--------|
+| ---------- | -------- |
 | [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `cargo fmt`, `cargo clippy`, `cargo test`, Tauri build smoke per OS (the real-app UI suite needs a desktop session and runs outside CI) |
 | [`../../.github/workflows/lint.yml`](../../.github/workflows/lint.yml) | Everything else — frontend (Biome / stylelint / knip), TOML, Markdown + lychee, SQL, workflows (actionlint + zizmor), shell, Nix, typos, gitleaks, Cap'n Proto |
 | [`../../.github/workflows/audit.yml`](../../.github/workflows/audit.yml) | RustSec advisories + cargo-deny + pnpm audit (daily + per-PR) |
@@ -286,7 +286,7 @@ Apply once the parallel TS work in flight has settled.
 Most modern editors auto-detect the configs above. Quick references:
 
 | Editor | Recommended extension(s) |
-|--------|--------------------------|
+| -------- | -------------------------- |
 | **VS Code** | `biomejs.biome`, `stylelint.vscode-stylelint`, `tamasfe.even-better-toml`, `DavidAnson.vscode-markdownlint`, `bradlc.vscode-tailwindcss`, `mads-hartmann.bash-ide-vscode`, `tekumara.typos-vscode` |
 | **JetBrains** | Built-in TOML / Markdown / Bash / TypeScript; install Biome plugin; install Stylelint plugin |
 | **Vim / Neovim** | `null-ls.nvim` / `none-ls.nvim` / `conform.nvim` with sources for biome, stylelint, taplo, shfmt, nixfmt, statix, markdownlint |

@@ -41,7 +41,7 @@ governance · Tauri shell security · storage/vault · frontend · daemon/CLI ·
 ## Tier 0 — Security (exploitable or data-exposing)
 
 | # | Finding | Location | Standard |
-|---|---------|----------|----------|
+| --- | --------- | ---------- | ---------- |
 | S1 | `rekindle.db` is plaintext SQLite (0644): DHT/community owner keypairs, call X25519 secrets, slot seeds, pairing codes, all message bodies + FTS | `src-tauri/src/db.rs:111`, `001_init.sql` | OWASP MASVS-STORAGE-1 |
 | S2 ✔ | Daemon sends DMs **unencrypted** (`hex(body)` into a DHT log; signed-only on app_message) | `rekindle-transport/src/broadcast/dm.rs:39-62` | Signal/PQXDH |
 | S3 | Desktop receiver accepts any JSON as plaintext; envelope signature lacks domain/recipient → replay to third parties; call signaling plaintext | `message_service/dispatch/prepare.rs:91-96`, `messaging/sender.rs:41` | RFC 5116 |
@@ -63,7 +63,7 @@ governance · Tauri shell security · storage/vault · frontend · daemon/CLI ·
 ## Tier 1 — Broken features (live)
 
 | # | Finding | Location |
-|---|---------|----------|
+| --- | --------- | ---------- |
 | B1 ✔ | Presence row ~6–7 KB vs 4112 B cap → every heartbeat fails from login (live: `failed schema validation …:2` every 60 s, `online_members=0`); failure logged at debug | `rekindle-types/src/presence.rs`, `rekindle-presence/src/community/registry.rs:154,178` |
 | B2 | Channel message pages assume 30 KB; real cap 4112 B → sends fail once a page passes ~4 KB | `channel_record/write.rs:13` |
 | B3 ✔ | `record not open` (live, 678): channel opens cancelled by our 12 s timeout, never retried; inspect/heal loop only spawned on join, never after login | `dht_hydration.rs:172`, `join/flow.rs:352` |

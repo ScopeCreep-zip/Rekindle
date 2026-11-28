@@ -44,7 +44,7 @@ The memory note that mapped "intentional action" to the W16 delivery queue is su
 - **Classes** (`rekindle-types::intent`, Tier 1, pure data), each with its step 3 proof:
 
   | Class | Use | Proof | CLI without a terminal |
-  |---|---|---|---|
+  | --- | --- | --- | --- |
   | Routine | frequent, undoable, or abandoning a task | none (undo toast where an inverse exists) | runs |
   | Consequential | others see or are affected; self-protective acts | a button named verb + object, no default | `--yes` |
   | TrustChanging | raises exposure or changes key trust (admit a person, unblock, safety-number reset/accept, pairing, first screen share in a call) | tick a box that states the fact (fingerprint, what becomes visible) | `--confirm=<name>` |

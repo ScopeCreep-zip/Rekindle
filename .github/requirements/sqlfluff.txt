@@ -430,9 +430,9 @@ regex==2026.11.9 \
     --hash=sha256:fb91fc79a06d276f7811b840840440c6a35178396bfab288a4814b9a05d08245 \
     --hash=sha256:ff675c20d54564cb2b6c480c2e4b362dcc3ce74887ee2d2e63037658a0f01ab5
     # via sqlfluff
-sqlfluff==4.2.2 \
-    --hash=sha256:0ee2bcd5d704d0bef56bf80b8f0da9b519ab3e9e0bb1d5e6e4b7e3944d3f5606 \
-    --hash=sha256:62dbfbcd33728351043d216767ec017754a24cd8fb624e8321f61a79988b4fa7
+sqlfluff==4.5.0 \
+    --hash=sha256:0b0d5b2cca03e7d138b8d899249fed5fa54083e407bbd161449c0b30f901b7b8 \
+    --hash=sha256:471a9abcad8061e36b69f711a6d89393241e30f9d1e0869f79965c0ae2c889c7
     # via -r sqlfluff.in
 tblib==3.2.2 \
     --hash=sha256:26bdccf339bcce6a88b2b5432c988b266ebbe63a4e593f6b578b1d2e723d2b76 \

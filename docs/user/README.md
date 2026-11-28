@@ -4,7 +4,7 @@ Welcome. This directory holds the user-facing documentation: install
 guides, walkthroughs of common tasks, and the FAQ.
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [`getting-started.md`](getting-started.md) | Install, create an identity, add your first friend |
 | [`install.md`](install.md) | Per-platform install instructions (Windows / macOS / Linux) |
 | [`how-to.md`](how-to.md) | Walkthroughs for common tasks: add a friend, join a community, start a voice call, pair another device |

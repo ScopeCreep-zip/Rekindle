@@ -155,7 +155,7 @@ entry — `cargo deny check sources` will fail otherwise.
 ## Quick reference: when to act outside the quarterly cycle
 
 | Trigger | Action |
-|---------|--------|
+| --------- | -------- |
 | `audit.yml` fails on `main` | Out-of-cycle audit immediately. Fix in private branch if RCE / key compromise. |
 | `kev-check.yml` opens an issue | P1 incident per [`../security/incident-response.md`](../security/incident-response.md). |
 | `dependency-review.yml` blocks a PR | Block the PR until resolved — usually the contributor needs to bump or remove the offending dep. |

@@ -22,7 +22,7 @@ source-compatible.
 ## The nine states
 
 | State | Meaning | `can_query` | `can_write` | `can_unlock` |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `Stopped` | Process starting; no Veilid node attached, no vault loaded | no | no | no |
 | `Starting` | Veilid bootstrapping; vault file may or may not exist | no | no | no |
 | `Locked` | Network ready, vault locked (waiting for passphrase) | no | no | **yes** |
@@ -145,7 +145,7 @@ verify the check actually ran.
 ## Where transitions fire
 
 | Transition | Fired by |
-|---|---|
+| --- | --- |
 | `Stopped → Starting` | `setup::run` at app startup |
 | `Starting → Locked` | `services/veilid/lifecycle/network.rs` on `Attachment::AttachedGood` |
 | `Locked → Resuming` | `commands/auth.rs::login` after vault unlock |
@@ -166,7 +166,7 @@ it is shut down (the tracker alone would not), names each task, and
 reports a panicking task to its owner once.
 
 | Scope | Created | Shut down | On a task panic |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Desktop `AppState.login_scope` | `services::session::begin`, before the identity loads (`auth_runtime::{login_inner, create_identity_inner}`) | first step of `services::session::end_session` (logout, delete identity, app exit); `stop_scope` after a failed login | `SystemAlert` + `logout_inner`; the app stays up |
 | Desktop per-community child (`CommunityState.tasks`) | first spawn for the community (`state_helpers::community_scope`) | leaving the community; with the login scope | as the login scope |
 | Desktop voice children (`VoiceEngineHandle.{loops, monitor, mcu}`) | voice session setup | `shutdown_voice`; with the login scope | as the login scope |

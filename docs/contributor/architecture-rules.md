@@ -70,7 +70,7 @@ Daemon / CLI track:
 ### Backend rules
 
 | # | Rule | Gate | Status |
-|---|------|------|--------|
+| --- | ------ | ------ | -------- |
 | B1 | Only `rekindle-secrets` may import `ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `chacha20poly1305`, `hkdf` | `cargo xtask check-boundaries` (warn) + `cargo deny [bans]` (pending — blocked by cleanup sweep) | Warn-only, see [§5 in ai-assisted-contributions.md](ai-assisted-contributions.md#5-pending-enforcement-being-rolled-out) |
 | B2 | The Veilid boundary is **transitive linkage** ([ADR 0014](../decisions/0014-veilid-boundary-is-transitive.md)): only `rekindle-protocol`, `rekindle-transport`, `rekindle-node` and `rekindle-desktop` (until F1) may link `veilid-core`, directly or through another crate. Wire types come from `rekindle-codec` / `rekindle-types`, never from `rekindle-protocol`. `rekindle-transport` depends on `rekindle-protocol`, never the reverse. | `cargo xtask check-boundaries` (resolved-graph reachability from `cargo metadata`; mutation-tested) | Active (plan C8) |
 | B3 | Pure-logic crates carry `#![forbid(unsafe_code)]` | Per-crate `lib.rs` directive | Active for `rekindle-cli`, `rekindle-node`, `rekindle-transport`, `rekindle-calls`, `rekindle-secrets`. Pending: `rekindle-types`, `rekindle-codec`, `rekindle-records`, `rekindle-gossip`, `rekindle-governance`, `rekindle-route`, `rekindle-files`, `rekindle-link-preview`, `rekindle-video`, `rekindle-dm` |
@@ -100,7 +100,7 @@ Daemon / CLI track:
 ### Backend file-size ceiling
 
 | Surface | Hard ceiling |
-|---------|--------------|
+| --- | --- |
 | Any single Rust file | **600 lines** |
 
 The ceiling is unconditional — `cargo xtask check-file-sizes` (run in
@@ -138,7 +138,7 @@ deliberate future exception would require editing the check in
 ### Frontend rules
 
 | # | Rule | Gate | Status |
-|---|------|------|--------|
+| --- | ------ | ------ | -------- |
 | F1 | `src/components/**` may only import from `src/ipc/`, `src/stores/`, `src/utils/`, other `src/components/`, `src/icons.ts` | `dependency-cruiser.cjs` `components-no-handlers` rule | Active |
 | F2 | `src/handlers/**` may only import from `src/stores/`, `src/ipc/`, `src/utils/` — never `src/components/` or `src/windows/` | `dependency-cruiser.cjs` `handlers-no-presentation` | Active |
 | F3 | `src/stores/**` may only import from `src/ipc/`, `src/utils/`, types — never `src/components/` or `src/windows/` | `dependency-cruiser.cjs` `stores-no-presentation` | Active |
@@ -164,7 +164,7 @@ deliberate future exception would require editing the check in
 ### Frontend file-size ceiling
 
 | Surface | Hard ceiling |
-|---------|--------------|
+| --- | --- |
 | Any single `.ts` or `.tsx` file | **600 lines** |
 
 Same unconditional gate as the backend: `cargo xtask check-file-sizes`
@@ -186,7 +186,7 @@ plugin permissions that window uses. See
 for the threat-model framing.
 
 | # | Rule | Gate | Status |
-|---|------|------|--------|
+| --- | ------ | ------ | -------- |
 | T1 | Per-window allow-list (e.g., `chat-*` cannot inherit a `community-*` permission) | `windows: [...]` in each `capabilities/app-*.json`; `tests/capability_policy.rs` | Active |
 | T2 | No `core:default`, `core:webview:*` or plugin `*:default` bundles — explicit permissions only | `tests/capability_policy.rs` | Active |
 | T2a | A new `#[tauri::command]` goes in `src/invoke.rs` (the ACL manifest is derived from it) plus one grant in the right `app-*.json`; debug-only commands are `#[cfg(debug_assertions)]` and granted from `capabilities-dev/` | `tests/capability_policy.rs` | Active |
@@ -201,7 +201,7 @@ The current `.github/CODEOWNERS` assigns the project owner to
 everything. The intended mature state is per-tier ownership:
 
 | Path | Reviewer(s) — recommendation |
-|------|------------------------------|
+| ------ | ------------------------------ |
 | `crates/rekindle-secrets/**` | crypto reviewer + maintainer |
 | `crates/rekindle-governance/**` | CRDT reviewer + maintainer |
 | `crates/rekindle-transport/**`, `crates/rekindle-protocol/**` | network/Veilid reviewer |
@@ -219,7 +219,7 @@ owner. As maintainers are added, the file will expand.
 ## 5. Pull-request guardrails
 
 | # | Guardrail | Gate | Status |
-|---|-----------|------|--------|
+| --- | ----------- | ------ | -------- |
 | P1 | CI green required before review | GitHub branch protection | Active (org-level setting) |
 | P2 | At least one human reviewer | `CODEOWNERS` + branch protection | Active |
 | P3 | PR template completed | `.github/PULL_REQUEST_TEMPLATE.md` | Active |
@@ -263,7 +263,7 @@ enforced, follow this checklist:
 ## 7. Glossary of gates
 
 | Gate | What it does | Where to add a rule |
-|------|--------------|---------------------|
+| ------ | -------------- | --------------------- |
 | **Workspace `[workspace.lints.*]`** | rustc / clippy lints applied to every workspace crate | `Cargo.toml` |
 | **`clippy.toml`** | configurable clippy thresholds + disallowed-methods/types | `clippy.toml` |
 | **`deny.toml` `[bans]`** | crate / version / wrapper bans | `deny.toml` |

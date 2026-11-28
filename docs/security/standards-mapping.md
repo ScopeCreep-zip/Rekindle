@@ -39,7 +39,7 @@ V13 API/Web Service) are scoped out where they assume a HTTP server.
 DASVS (below) covers the desktop-specific concerns ASVS does not.
 
 | Chapter | Control area | Status | Where |
-|---------|--------------|--------|-------|
+| --------- | -------------- | -------- | ------- |
 | V1 — Architecture, Design & Threat Modeling | Documented threat model | **Met** | [`threat-model.md`](threat-model.md) (STRIDE + LINDDUN) |
 | V1 | Security architecture documented | **Met** | [`../architecture/communities.md`](../architecture/communities.md), [`overview.md`](overview.md), [`crypto-primitives.md`](crypto-primitives.md) |
 | V1 | ADRs for architectural decisions | **Met** | [`../decisions/`](../decisions/) (5 ADRs published; format MADR 4.0) |
@@ -74,7 +74,7 @@ DASVS is the desktop-app-specific complement to ASVS, addressing
 controls ASVS skips because it assumes a web context.
 
 | Chapter | Control area | Status | Where |
-|---------|--------------|--------|-------|
+| --------- | -------------- | -------- | ------- |
 | Bootstrapping | Window decorations / chrome | **Met** | Frameless transparent windows, custom Xfire titlebar. [`../architecture/ui-skin.md`](../architecture/ui-skin.md). |
 | Local storage | At-rest encryption of secrets | **Met** | Vault (`rekindle-vault`, SQLCipher AES-256-CBC + per-entry AES-256-GCM + Argon2id). |
 | Local storage | At-rest encryption of message data | **Open** | SQLite is not encrypted by default; users get coverage from OS-level FDE. Documented gap in [`threat-model.md`](threat-model.md) §I6. |
@@ -91,7 +91,7 @@ controls ASVS skips because it assumes a web context.
 Software Component Verification Standard. Three levels (L1, L2, L3).
 
 | Control | Status | Where |
-|---------|--------|-------|
+| --------- | -------- | ------- |
 | Component inventory (SBOM) | **Met** | CycloneDX SBOMs generated on tag push by `.github/workflows/sbom.yml`; published with each release. |
 | Component-origin verification | **Met** | `deny.toml` `[sources]` restricts to crates.io + explicitly-named git remotes. `cargo-vet` config in [`/supply-chain/`](../../supply-chain/). |
 | Vulnerability scanning | **Met** | `cargo-deny check advisories` (RustSec advisory-db, one policy in `deny.toml`) in `audit.yml`; `pnpm audit` for the JS side. |
@@ -110,7 +110,7 @@ Most categories are web-app-centric. The two that map cleanly onto a
 P2P desktop are listed.
 
 | Category | Status | Where |
-|----------|--------|-------|
+| ---------- | -------- | ------- |
 | A02 — Cryptographic Failures | **Met** | Five-layer encryption stack ([`overview.md`](overview.md)); approved primitives ([`crypto-primitives.md`](crypto-primitives.md)); reader-validates governance ([`../architecture/communities.md`](../architecture/communities.md)). |
 | A03 — Software Supply Chain Failures | **Met** | `cargo-deny`, `cargo-vet`, `dependabot`, SBOM, KEV monitoring. [`supply-chain-policy.md`](supply-chain-policy.md). |
 | A06 — Vulnerable & Outdated Components | **Met** | Same as A03 plus weekly Dependabot bumps. |
@@ -126,7 +126,7 @@ The high-value subset for an OSS project: PW.2/.3/.4/.6 and RV.1/.2.
 Other practices apply when targeting federal procurement.
 
 | Practice | Status | Where |
-|----------|--------|-------|
+| ---------- | -------- | ------- |
 | PO.1 — Define security requirements | **Met** | [`threat-model.md`](threat-model.md), [`crypto-primitives.md`](crypto-primitives.md), [`privacy-properties.md`](privacy-properties.md). |
 | PO.5 — Implement and maintain secure environments for software development | **Met** | Konductor Nix flake provides a reproducible dev environment. CI in `.github/workflows/`. |
 | PS.1 — Protect all forms of code from unauthorized access and tampering | **Partial** | Branch protection + signed commits/tags are documented as prerequisites in [`supply-chain-policy.md`](supply-chain-policy.md); GitHub-org configuration is the user's responsibility. |
@@ -156,7 +156,7 @@ The new **Govern** function added in CSF 2.0 maps directly onto our
 supply-chain and policy gaps.
 
 | Function | Categories addressed | Status | Where |
-|----------|---------------------|--------|-------|
+| ---------- | --------------------- | -------- | ------- |
 | Govern (GV) | Cybersecurity strategy, policy, supply-chain risk | **Met** | [`supply-chain-policy.md`](supply-chain-policy.md), [`incident-response.md`](incident-response.md), this doc. |
 | Identify (ID) | Asset inventory, data classification | **Met** | SBOM + [`threat-model.md`](threat-model.md) §2 (asset list). |
 | Identify | Supply-chain risk | **Met** | [`supply-chain-policy.md`](supply-chain-policy.md). |
@@ -174,7 +174,7 @@ OSS projects do not formally conform to 800-53; we cherry-pick the
 high-value families and document where each is addressed.
 
 | Family | Relevance | Where |
-|--------|-----------|-------|
+| -------- | ----------- | ------- |
 | AC — Access Control | Daemon IPC bus (Noise IK, UCred); per-community permissions (CRDT bitfield). | [`../architecture/daemon-cli.md`](../architecture/daemon-cli.md), [`../architecture/communities.md`](../architecture/communities.md) §9 |
 | AU — Audit & Accountability | Structured `tracing` logging; governance entries are signed/durable; post-mortem template captures incident audit. | [`incident-response.md`](incident-response.md) |
 | CM — Configuration Management | `Cargo.lock` / `pnpm-lock.yaml` / `flake.lock` pinned; `rust-toolchain.toml`; CI enforces fmt and lint. | repo root |
@@ -195,7 +195,7 @@ projects.
 ## NIST 800-161 Rev. 1 (SCRM)
 
 | Control area | Status | Where |
-|--------------|--------|-------|
+| -------------- | -------- | ------- |
 | Supplier risk strategy | **Met** | [`supply-chain-policy.md`](supply-chain-policy.md) §"Dependency selection". |
 | Component identification (SBOM) | **Met** | `.github/workflows/sbom.yml`. |
 | Vulnerability monitoring | **Met** | `audit.yml` daily + `kev-check.yml` weekly + Dependabot. |
@@ -211,7 +211,7 @@ principles. See [`cisa-secure-by-design.md`](cisa-secure-by-design.md)
 for our principle-by-principle alignment.
 
 | Principle | Status |
-|-----------|--------|
+| ----------- | -------- |
 | 1. Memory-safe languages | **Met** (Rust workspace; pure-logic crates `#![forbid(unsafe_code)]`) |
 | 2. Eliminate vulnerability classes via secure defaults | **Met** (no SQL injection surface, no eval, no plaintext fallback) |
 | 3. Secure by default | **Met** (E2E on, no telemetry, no plaintext fallback) |
@@ -228,7 +228,7 @@ Four objectives; we map against the two that apply to OSS publishers
 (visibility and ecosystem hardening).
 
 | Objective | Status | Where |
-|-----------|--------|-------|
+| --- | --- | --- |
 | 2 — Drive visibility | **Met** | Public SBOMs, public CHANGELOG, public security advisories via GitHub. |
 | 4 — Harden the OSS ecosystem | **Partial** | 2FA + branch protection are user-applied org settings (documented as prerequisites). Code signing pending v0.1.0. |
 
@@ -237,7 +237,7 @@ Four objectives; we map against the two that apply to OSS publishers
 ## Summary
 
 | Standard | Status |
-|----------|--------|
+| ---------- | -------- |
 | OWASP ASVS 5.0 (L2) | Mostly met; PQC migration is the main open item |
 | OWASP DASVS 1.0 | Mostly met; SQLite at-rest encryption + signed updates are open |
 | OWASP SCVS (L2) | Met |

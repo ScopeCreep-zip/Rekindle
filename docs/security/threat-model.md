@@ -35,7 +35,7 @@ as load-bearing.
 ## 1. Adversaries
 
 | # | Adversary | Capabilities | Realistic for Rekindle? |
-|---|-----------|--------------|-------------------------|
+| --- | ----------- | -------------- | ------------------------- |
 | A1 | Passive network observer (ISP, transit) | See all packets in transit; correlate timing and volume | Yes — assumed |
 | A2 | Active network observer | Drop, inject, replay, MITM transit packets; tamper with TLS where used | Yes — assumed |
 | A3 | Curious peer (community member) | See everything available to a community member: gossip, SMPL writes, registry, presence routes | Yes — by design |
@@ -63,7 +63,7 @@ We **do not** defend against:
 ## 2. Assets
 
 | # | Asset | Sensitivity | Where it lives |
-|---|-------|-------------|----------------|
+| --- | ------- | ------------- | ---------------- |
 | Z1 | Identity keypair (Ed25519) | Critical — root of all derived keys | Vault (`rekindle-vault`) on disk |
 | Z2 | Per-community pseudonym (Ed25519) | Critical for unlinkability | Derived per-session via HKDF; cached in memory |
 | Z3 | Signal Protocol session state | High | Per-identity SQLCipher DB, `ratchet_sessions` (one `SessionRecord` per peer device, plan E2.3) |
@@ -86,7 +86,7 @@ We **do not** defend against:
 ### S — Spoofing
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | S1 | Active attacker impersonates a friend in a 1:1 chat | Signal Protocol X3DH binds session to identity-key signatures; trust-on-first-use (TOFU) is the default with optional out-of-band verification. Identity-key changes surface a re-verification prompt, never auto-accept. |
 | S2 | Banned member writes to their SMPL subkey claiming to be admin | Reader-validates: every reader recomputes `effective_permissions(writer, channel)` from the merged CRDT state. A writer without `MANAGE_*` permission has their entry silently dropped. (See [`../architecture/communities.md` §9](../architecture/communities.md#9-permissions).) |
 | S3 | Attacker sends gossip envelopes claiming to be from another sender | Every envelope is Ed25519-signed by the sender's pseudonym. Recipients verify before processing. Forged signatures fail verification and are dropped. |
@@ -97,7 +97,7 @@ We **do not** defend against:
 ### T — Tampering
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | T1 | Network adversary modifies a message in transit | Layer 1 Veilid transport encryption (XChaCha20-Poly1305) provides AEAD; tampering breaks decryption. Layer 3 Ed25519 signature on every envelope detects sender-end tampering. Layer 4 AES-256-GCM AEAD with content-bound AAD detects ciphertext tampering before decryption. |
 | T2 | Curious peer modifies a stored chunk in their cache and serves the modified version | Layer 4 per-chunk SHA-256 verification on receive. Mismatches are dropped and the chunk is re-fetched from a different peer (swarm fetch). |
 | T3 | Attacker modifies an `AttachmentOffer` in transit | Offer is signed by sender. Recipients additionally recompute the flat-list Merkle root over `chunk_hashes` and compare against the announced `merkle_root` to defend against serialization-confusion attacks. |
@@ -110,7 +110,7 @@ We **do not** defend against:
 ### R — Repudiation
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| --- | --- | --- |
 | R1 | A peer denies having sent a message | Every gossip envelope is signed by the sender's pseudonym key. Within a community, signatures are non-repudiable to that pseudonym. |
 | R2 | A peer claims someone else sent a message they actually sent | Same as R1 — signature verifies against the sender's pseudonym, which is bound to a specific subkey by the SMPL schema. A peer cannot forge a signature claiming to be another peer. |
 
@@ -121,7 +121,7 @@ would create cross-community linkability.
 ### I — Information Disclosure
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | I1 | Network adversary reads message content | Layer 4 (per-channel MEK / Signal Protocol). Content is never sent in plaintext. |
 | I2 | Curious community member decrypts a channel they don't have access to | Channel MEK is wrapped per-recipient at distribution. A peer who never received the wrap cannot decrypt. |
 | I3 | Banned member decrypts post-ban messages | MEK rotation on member departure. New MEK is wrapped only for remaining members. From plan E3.5 the rotation is a write-once ballot used only after a strict majority of eligible rotators confirm it (ADR 0018); until it is confirmed, the removed member can still read new text under the old key. |
@@ -147,7 +147,7 @@ encrypted. This list is kept current: a step that adds a plaintext file adds its
 Paths are under `DataRoot` (`crates/rekindle-utils/src/paths.rs`); `state/` is `DataRoot.data/state`.
 
 | What | Readable before unlock | Why it is plaintext |
-|------|------------------------|---------------------|
+| ------ | ------------------------ | --------------------- |
 | `state/identities.json` | Public key, display name and creation time of every identity on the device | The login picker and `IdentityList` list identities before any unlock (`rekindle-db/src/registry.rs`) |
 | `state/layout-version` | The `SCHEMA_VERSION` the root was laid out for | The reset trigger must be read before any SQLCipher database can be (`rekindle-db/src/reset.rs`) |
 | `state/{pk}.vault.hdr` | Magic, version, Argon2id parameters and salt | Needed to derive the vault key; none of it is secret, only unique per vault (`rekindle-vault/src/header.rs`) |
@@ -168,7 +168,7 @@ Paths are under `DataRoot` (`crates/rekindle-utils/src/paths.rs`); `state/` is `
 ### D — Denial of Service
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | D1 | Spammer floods a community channel with messages | Per-sender rate limit (token bucket, default 10 msg/s). Excess messages are dropped at the gossip stage and not re-broadcast. Governance can adjust the threshold via `AutoModRule`. |
 | D2 | Banned member continues writing to their subkey | The CRDT merge drops their entries. The wasted bytes are local-only (their subkey storage, not anyone else's). |
 | D3 | Attacker floods the daemon's IPC bus | Per-connection rate limit on `rekindle-node` (100 req/s, refill bucket). Handshake DoS protection (5 s timeout). |
@@ -182,7 +182,7 @@ Paths are under `DataRoot` (`crates/rekindle-utils/src/paths.rs`); `state/` is `
 ### E — Elevation of Privilege
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | E1 | Member without `MANAGE_CHANNELS` creates a channel | Reader-validates: the entry is in the writer's subkey but readers drop it. The writer's view is corrupted only locally. |
 | E2 | Member without `BAN_MEMBERS` issues a ban | Same as E1. |
 | E3 | Compromised admin issues mass bans / channel deletions | Limited mitigation: an admin with `BAN_MEMBERS` legitimately can ban anyone. Audit log records every governance change with author pseudonym and `lamport`. Other admins can `Unban` if they have higher role position. There is no "undo all" because that would itself be an `ADMINISTRATOR`-class action. |
@@ -196,7 +196,7 @@ Paths are under `DataRoot` (`crates/rekindle-utils/src/paths.rs`); `state/` is `
 ### L — Linkability
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | L1 | Linking the user across communities | Per-community pseudonym derivation; no shared identifier between communities. |
 | L2 | Linking the user to their Veilid network identity | Veilid safety routes provide sender anonymity (3 hops, `ANONYMITY_HOP_FLOOR`). Veilid private routes provide receiver anonymity; their depth is the **inbound route depth**. **Target and code (plan RV1, owner decision 2026-11-22, lead decision 65): 3 hops on both inbound route classes (General and Media) with bounded exposure of the hop next to us.** `default_route_hop_count` is `ANONYMITY_HOP_FLOOR` (3), so Veilid's tested route pool holds routes of the hop count every send asks for (Veilid 0.5.8 fork `private_route_management.rs:7,146`, `route_select.rs:119-124`); every send rides a pool safety route and its reply route is chosen by Veilid symmetrically from the same pool (`rpc_processor/destination.rs:485-525`, `route_compile.rs:436-447`): there is no pinned `Sending` route and no Rekindle-held send route whose blob a callee learns. Every hop of a private route sees the route key and the hop next to us delivers to our node (`rpc_route.rs`), so that hop knows our IP; an adversary that can kill our routes, or forge the signals that rotate them, can make us redraw it until it holds it (Øverlier & Syverson 2006, "Locating Hidden Servers", IEEE S&P). Tor answers with long-lived entry guards (Tor `guard-spec.txt`; proposal 271) and pinned second and third layers for onion services (vanguards spec; proposal 333, vanguards-lite). Veilid 0.5.8 offers no guard pinning on receive routes (`AllocateRouteParams` has only `avoid_nodes`) and, after a route killed by loopback failures or lost-destination evidence, puts all its hops, the one next to us included, on an avoid list for new allocations (`route_stats.rs:716-787`, `dead_route_hops_to_avoid` `:785`, `route_allocate.rs:110-136`). Rekindle changes no Veilid code (ADR 0017 Policy 6), so it bounds how often that hop is redrawn instead: (1) **a persisted per-identity new-route budget** (`rekindle_route::budget`, table `route_budget`): every allocation of a route whose blob leaves the device (General, Media, a relay offer's route, the routes an unlock publishes) and so every rotation trigger (Veilid's `RouteChange.dead_routes`, inbound silence while a peer should answer, a peer's `'L'` report, a friend's DM chain running ahead of its hints) spends a token from a bucket with a small daily refill and a weekly cap (provisional constants set from the measured natural death rate); **when it is empty the class stays down** and every frontend shows "inbound route paused after repeated failures: possible attack" (`NetworkEvent::RoutePaused`, `StatusSnapshot.route_paused`): never a silent redraw, never a lower hop count; Veilid's own pool refills of safety routes are not budgeted (their blobs never leave the device), only counted; (2) **no time-based rotation** of any distributed route (RH1r-b's 10-minute `Sending` rotation is deleted); (3) **a smaller blob audience**: the member routes subkey's audience gap (Z13) closes at plan E3.2 S7c.8 (4); (4) **per-class route-death counts** in the Host with an above-baseline warning (`NetworkEvent::RouteDeathsAboveBaseline`), with no automatic reaction. **Residual (needs upstream Veilid):** real guards, a hop next to us that survives a route's death and is exempt from `dead_route_hops_to_avoid`, need a Veilid change; it is recorded as an upstream request on the fork's `rekindle/findings` branch (`df86da9d`, `REKINDLE_FINDINGS.md` F4), never patched here. Within the budget an adversary still gets up to the weekly cap of redraws of the hop next to us. **Documented limit:** a statement lost on a pool route is not charged to any route of ours; the outbox's acks and retries and the DM chain carry it. **Community route blobs (`M`/6, Z13):** a member's general route blob is readable by anyone who holds its member record key (past, kicked and banned members included); at 3 hops a blob names no hop that knows our IP, and each new route it names is a budgeted one. |
 | L3 | Linking presence updates to a stable identifier | Presence is published to the per-community member registry under the community pseudonym, not the master identity. |
@@ -205,7 +205,7 @@ Paths are under `DataRoot` (`crates/rekindle-utils/src/paths.rs`); `state/` is `
 ### I — Identifiability
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | I-priv1 | A non-friend identifies the user from public DHT records | Profile records are encrypted; only the owner key (held by the user) and friends with explicit access can decrypt the friend list / mailbox / presence. |
 | I-priv2 | A community member identifies the user across communities | Pseudonym separation (L1). |
 | I-priv3 | A network adversary identifies the user from packet timing | Veilid safety routes (sender side) and private routes (receiver side, L2) on every path. The hop count is a 3-hop Tor-class floor (`ANONYMITY_HOP_FLOOR`) that no class, setting or admin policy can lower (config may raise it) — voice and video get the same anonymity as text, never a lower-hop fast path, and there is no direct peer-to-peer media path, by default or per call. The private side is 3 hops too (`default_route_hop_count` = `ANONYMITY_HOP_FLOOR`, plan RV1, L2). |
@@ -221,7 +221,7 @@ non-repudiation from leaking globally.
 ### D — Detectability
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | D-priv1 | An observer detects that the user is online | Direct gossip and presence updates make this visible to friends/community members by design. To non-members, route metadata leaks "some Veilid traffic" but not "Rekindle traffic" specifically. |
 | D-priv2 | An observer detects that a community exists | Communities are addressed by DHT key. Without the key, there is no global directory to enumerate. Discovery is opt-in. |
 | D-priv3 | Push-relay platform vendor detects "this device is using Rekindle" | Yes — any push notification reveals app installation. Mitigation: opt-in; users with this concern run Tier 2 only. |
@@ -239,7 +239,7 @@ The DM chains (plan E2.5, D23) put each direction of a conversation on the DHT: 
 ### U — Unawareness
 
 | ID | Threat | Mitigation |
-|----|--------|------------|
+| ---- | -------- | ------------ |
 | U1 | User does not realise their game-detect data is shared | Opt-in per identity; off by default until the user enables it. |
 | U2 | User does not realise their presence is visible to community members | UI shows the presence status next to the user's avatar in every community window. Presence is a fundamental feature, not hidden. |
 | U3 | User does not realise their banner / nickname / avatar is visible community-wide | Profile editing UI is the same place the values are displayed. |
@@ -314,7 +314,7 @@ names, message bodies, link-preview titles/descriptions, custom
 emoji names, embed fields, governance entry metadata.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | SolidJS escapes `{value}` interpolation by default | **Met** |
 | `innerHTML` allowed only for SVG generated by trusted Rust IPC | **Met** — one site (`AddDeviceModal.tsx:296`), audited |
 | Markdown / link-preview / custom-emoji rendering uses DOMPurify | **Open** — features pending; gate documented in [`frontend-rendering.md`](frontend-rendering.md) |
@@ -330,7 +330,7 @@ A link must never act without the user's consent, never reach the DOM
 raw, and never reveal its secrets to the webview.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | Strict Rust parsing: `rekindle_types::invite::{InviteLink, DeepLink}` (exact shape, ≤ 256 B invites, ≤ 16 KiB friend invites); hostile corpus unit-tested there | **Met** |
 | Friend invites decoded, signature- and recency-checked locally before anything is shown | **Met** — `src-tauri/src/deep_links.rs` |
 | Consent before any network access: the backend holds the link; the buddy list shows a 64-bit key fingerprint and acts only on Confirm | **Met** — `DeepLinkConsentDialog.tsx` |
@@ -345,7 +345,7 @@ declared CSP in `src-tauri/tauri.conf.json` `app.security.csp` is the
 load-bearing defence.
 
 | Directive | Value | Reasoning |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | `default-src` | `'self'` | Whitelist baseline. |
 | `script-src` | `'self'` | No `'unsafe-inline'`, no `'unsafe-eval'`. |
 | `style-src` | `'self' 'unsafe-inline'` | Tailwind 4 + SolidJS need it. Trade-off documented. |
@@ -362,7 +362,7 @@ load-bearing defence.
 | `worker-src` | `'self'` | Service / Web Workers, if any future code uses them. |
 
 | Mitigation | Status |
-|------------|--------|
+| --- | --- |
 | CSP enforcement verified at runtime | **Open** — the browser check was removed in plan E7.14 S8; plan E7.14 S6 checks it in the real app (`pnpm test:app`), which enforces `tauri.conf.json`'s CSP. The declared policy is tested by `src-tauri/tests/csp_policy.rs` |
 | Semgrep `rekindle-no-eval`, `rekindle-no-inner-html` | **Met** |
 
@@ -375,7 +375,7 @@ into invoking sensitive Rust commands or spawning a window under a
 privileged label.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | App-command ACL manifest exists | **Met** — `build.rs` derives the command list from `src/invoke.rs`, so `tauri-build` emits one `allow-*`/`deny-*` per command and Tauri enforces the per-window grants |
 | Per-window allow-list rather than global grants | **Met** — one `app-*.json` per window family; `app-login.json` is pinned to the 7 pre-auth commands |
 | `default.json` limited to window chrome | **Met** — only the `core:window:*` actions the titlebar/drag region use; no `core:event` (events arrive on each window's own channel, ADR 0013) |
@@ -396,7 +396,7 @@ any `JSON.parse` of data coming from a peer (link-preview body,
 external embed) is a vector.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | Cap'n Proto decode for all peer-content envelopes | **Met** |
 | `app.security.freezePrototype: true` — `Object.prototype` frozen before any app script | **Met** — `tests/csp_policy.rs` |
 | Semgrep `rekindle-no-prototype-pollution-merge` rule | **Met** |
@@ -408,7 +408,7 @@ Direct assignment to `window.location` from variable input lets
 attackers redirect users to phishing pages.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | Every window's navigation is limited to the app origin (`on_navigation`), and `window.open` / `target=_blank` are denied (`on_new_window`) | **Met** — `src-tauri/src/windows/navigation.rs` |
 | External links open only through the backend `open_external_url`: https-only, ≤ 2048 B, after a native confirm naming the host (punycode for IDNs); the opener plugin's JS link interception is off and no window holds an opener grant | **Met** |
 | Semgrep `rekindle-no-unchecked-href-assignment` rule | **Met** |
@@ -419,7 +419,7 @@ The WebView engine is an inherited dependency. CVEs in WebKit /
 WebView2 / WebKitGTK / libsoup affect Rekindle directly.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | Weekly query of GitHub Advisory DB for WebView-engine CVEs | **Met** — `.github/workflows/webview-cve-check.yml` |
 | Auto-issue on high/critical advisory match | **Met** |
 | `docs/user/install.md` documents minimum platform versions | **Met** |
@@ -432,7 +432,7 @@ up `console.log` output. Logging a key, MEK, or passphrase exposes
 it.
 
 | Mitigation | Status |
-|------------|--------|
+| ------------ | -------- |
 | Rust-side `Debug` impls redact sensitive fields | **Met** |
 | Log files carry no identifiers (S16): every line from every target, including `veilid_core`/`veilid_api`, passes through `rekindle_utils::log_scrub` at the sink — Veilid keys, record keys, hex identity/pseudonym/channel/call ids, UUIDs and IP addresses become per-process keyed-hash tags (Signal-Android `Scrubber` design); panic output is scrubbed the same way | **Met** — tested against real veilid-core `Display`/`Debug` output (`rekindle-protocol/tests/log_scrub_veilid.rs`) |
 | Frontend convention: never `console.log` secret-bearing fields | **Convention** |
@@ -447,7 +447,7 @@ property breaks. A subtle-bug in the JS impl wouldn't be caught by
 Rust audits.
 
 | Mitigation | Status |
-|------------|--------|
+| --- | --- |
 | All crypto via Rust IPC commands | **Met** |
 | Semgrep `rekindle-no-frontend-crypto-primitives` rule | **Met** — bans `crypto.subtle.*` in `src/**` |
 

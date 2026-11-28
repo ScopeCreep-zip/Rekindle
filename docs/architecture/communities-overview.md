@@ -95,7 +95,7 @@ provide durability, speed, and consistency without any coordinating
 node.
 
 | Path | Mechanism | Latency | Durability | Available When |
-|------|-----------|---------|------------|----------------|
+| ------ | ----------- | --------- | ------------ | ---------------- |
 | 1. **SMPL Write** | `set_dht_value()` to own subkey | 200–500 ms | Permanent (DHT) | DHT reachable |
 | 2. **Gossip** | `app_message()` epidemic fan-out | 50–150 ms | Ephemeral | Online peers reachable |
 | 3. **Watch / Inspect** | `watch_dht_values()` + 60 s `inspect_dht_record` | 1–60 s | N/A — reads Path 1 | DHT reachable |
@@ -180,7 +180,7 @@ member registry (SMPL), and one SMPL record per channel.
 Each subkey holds up to ~32 KiB. Three strategies prevent overflow:
 
 | Record type | Growth | Mitigation |
-|---|---|---|
+| --- | --- | --- |
 | Governance | LWW entries supersede earlier ones | Compaction before write — keep only the latest entry per `entity_id`. Active admins compact to <8 KiB. |
 | Registry | Single struct overwritten per heartbeat | Never grows. |
 | Channel | Append-only message log | **Continuation chain** — when a subkey approaches 28 KiB, the member writes a `continuation_record_key` pointer and starts a new SMPL channel record. Readers cache the chain locally and skip cold records. |
@@ -217,7 +217,7 @@ Privacy properties:
 ### Mutual-Aid Infrastructure
 
 | Pattern | Purpose | Mechanism |
-|---------|---------|-----------|
+| --------- | --------- | ----------- |
 | **Record warming** | Keep DHT records cached in network nodes | Idle clients cycle every 5 minutes, performing `get_value` on subkey 0 of all community records. Refreshes TTL without payload. |
 | **History advertisements** | Newcomers find peers who hold the messages they need | Members advertise `history_ranges: Vec<(channel_id, from_lamport, to_lamport)>` in `MemberPresence`. |
 | **Watch relay** | Extend Veilid's limited per-record watch slots | Members with watch slots relay `ValueChange` notifications via gossip to watchless peers. |
@@ -237,7 +237,7 @@ evaluated client-side from the merged CRDT state.
 ### Bitfield Layout
 
 | Bits | Group | Examples |
-|------|-------|----------|
+| ------ | ------- | ---------- |
 | 0–15 | General | `VIEW_CHANNELS`, `MANAGE_CHANNELS`, `MANAGE_ROLES`, `MANAGE_COMMUNITY`, `CREATE_INVITES`, `KICK_MEMBERS`, `BAN_MEMBERS`, `TIMEOUT_MEMBERS` |
 | 16–31 | Text | `SEND_MESSAGES`, `EMBED_LINKS`, `ATTACH_FILES`, `ADD_REACTIONS`, `MENTION_EVERYONE`, `MANAGE_MESSAGES`, `READ_HISTORY`, `PIN_MESSAGES` |
 | 32–43 | Voice | `CONNECT`, `SPEAK`, `MUTE_MEMBERS`, `DEAFEN_MEMBERS`, `MOVE_MEMBERS`, `USE_VOICE_ACTIVITY`, `PRIORITY_SPEAKER`, `STREAM` |
@@ -272,7 +272,7 @@ different — peer-to-peer, end-to-end encrypted, no central server —
 and that imposes real constraints.
 
 | Feature | Rekindle | Discord | Tradeoff |
-|---------|----------|---------|----------|
+| --------- | ---------- | --------- | ---------- |
 | Delivery latency | 50–350 ms | 20–50 ms | Comparable for chat; voice rides the same 3-hop Tor-class `Safe` route (ITU-T G.114 interactive band) — anonymity is not traded for latency |
 | Search | Local FTS5 from join date | Server-side full history | Privacy: cannot search what you cannot decrypt |
 | File availability | Peer-cached (≥1 online peer) | CDN | Dead community + no online peers = unreachable; local pinning mitigates |
@@ -351,7 +351,7 @@ priority. When principles conflict, lower-numbered principles win.
 ## Where this is implemented
 
 | Concern | Location |
-|---|---|
+| --- | --- |
 | Pure CRDT merge engine | `crates/rekindle-governance/` — Tier 6, no I/O, no async |
 | Async governance lifecycle | `crates/rekindle-governance-runtime/` — Tier 6 |
 | SMPL record lifecycle, retry queue | `crates/rekindle-records/` — Tier 3 |

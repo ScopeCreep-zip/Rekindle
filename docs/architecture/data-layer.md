@@ -10,7 +10,7 @@ storage for profile data, presence, and community state.
 ## Storage Backend Summary
 
 | Backend | Scope | Contents |
-|---------|-------|----------|
+| --------- | ------- | ---------- |
 | SQLite | Local device | Identity, friends, messages, communities, ratchet sessions and prekeys, DMs, sync state, audit chain, analytics, pending messages |
 | Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, MEKs, audit MAC key, slot keypairs |
 | Veilid DHT | Distributed | Profile, presence, mailbox, friend list, community governance / registry / channels, account record, personal sync record |
@@ -31,7 +31,7 @@ uses, so the desktop, `rekindled`, the CLI and the TUI all resolve the
 same folders:
 
 | Field | Location | Holds |
-|---|---|---|
+| --- | --- | --- |
 | `data` | `dirs::data_dir()/com.rekindle.app` | the node lock (`node.lock`); `file_cache/` only for community avatars until plan E3.1 |
 | `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`, `{pk}.files/` (the file cache); the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`) |
 | `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer) |
@@ -320,7 +320,7 @@ uses. Each function takes `&rusqlite::Connection` and runs inside a
 `Db::call` closure, so several share one transaction:
 
 | Module | Table |
-|---|---|
+| --- | --- |
 | `identity` | `identity` |
 | `friends` | `friends` (also read by `SqliteFriendStore`) |
 | `pending_requests` | `pending_friend_requests` |
@@ -388,7 +388,7 @@ secret, so every host stores them the same way (the desktop's
 re-exports them):
 
 | Module | Namespace / key pattern | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `typed::community_keys` | `communities` / `slot_keypair_{community_id}`, `slot_seed_{community_id}`, `registry_keypair_{community_id}` | Per-community slot / registry keypairs and slot seed |
 | `typed::mek` | `communities` / `mek_{community}`, `community_mek_{community}_{generation}`, `community_mek_generations_{community}`, `mek_{community}_{channel}`, `mek_{community}_{channel}_{generation}`, `mek_generations_{community}_{channel}` | Every MEK generation per scope, the scope's latest key, and the generations index that leaving a community erases |
 | `typed::audit` | `audit` / `mac_key`, `tail` | BLAKE3-keyed MAC key + tail anchor for the audit chain |
@@ -406,7 +406,7 @@ for the migration rationale and the threat-model implications.
 ### User Profile Record (DFLT, 9 subkeys)
 
 | Subkey | Content | Format |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | 0 | Display name | UTF-8 |
 | 1 | Status message | UTF-8 |
 | 2 | Status enum | UTF-8 (`online`, `away`, `busy`, `offline`, `invisible`) |
@@ -427,7 +427,7 @@ an identity rotation: `rotate_identity` publishes the new identity's full
 set into the same record.
 
 | Subkey | Content | Format |
-|--------|---------|--------|
+| --- | --- | --- |
 | 0 | Head: signed prekey and ML-KEM-768 last-resort key, their ids, signatures and `issuedAt` | Cap'n Proto `PrekeyRecordHead` |
 | 1..=100 | One slot each: a one-time X25519 prekey and a one-time ML-KEM-768 key, ids and signatures | Cap'n Proto `OpkSlot` |
 
@@ -551,7 +551,7 @@ included at the protocol crate root via
 paths resolve.
 
 | Schema | Top-level structs |
-|--------|-------------------|
+| -------- | ------------------- |
 | `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
 | `identity.capnp` | `PrekeyRecordHead`, `OpkSlot`, `PrekeyRecordList` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
