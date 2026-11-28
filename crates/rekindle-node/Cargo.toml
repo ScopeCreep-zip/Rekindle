@@ -158,8 +158,10 @@ webdriver-test = ["rekindle-ipc/webdriver-test"]
 
 [dev-dependencies]
 rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
-# Itself, for the `netsim-entry` feature the netsim scenarios call.
-rekindle-node = { path = ".", features = [ "netsim-entry" ] }
+# Itself, for the `netsim-entry` feature the netsim scenarios call. Use a
+# distinct alias so Cargo resolves `rekindle-node/webdriver-test` to the
+# selected package in multi-package builds, rather than to this dev edge.
+rekindle-node-netsim = { package = "rekindle-node", path = ".", features = [ "netsim-entry" ] }
 # The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
