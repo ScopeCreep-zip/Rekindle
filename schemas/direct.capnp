@@ -370,6 +370,7 @@ struct StatusRequest {
 struct GameInvite {
   gameId @0 :UInt32;
   server @1 :Text;
+  expiresAtMs @2 :Int64;
 }
 
 # 0x0171 (E7.2), inside the ratchet: our bio, on change and to a newly

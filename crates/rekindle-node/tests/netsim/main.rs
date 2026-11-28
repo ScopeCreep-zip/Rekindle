@@ -86,6 +86,7 @@ mod group_lobby;
 mod handshake_head_of_line;
 mod handshake_question_leg_lost;
 mod handshake_receipt_lost;
+mod handshake_versions;
 mod harness;
 mod history_for_joiners;
 mod host_shutdown;

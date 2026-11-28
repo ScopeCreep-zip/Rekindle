@@ -151,6 +151,7 @@ async fn an_invite_from_a_stranger_is_dropped() {
     let body = DirectBody::GameInvite(GameInvite {
         game_id: CS2,
         server: ServerAddress::parse("203.0.113.7:27015").unwrap(),
+        expires_at_ms: 123,
     });
     pending(&host, owner, stranger, 1, &body).await;
     replay_unprocessed(&HostFriends::of(&host.ctx)).await;

@@ -16,6 +16,8 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 use super::{state, FriendError, FriendHost};
 use crate::operations::dm;
 
+const INVITE_LIFETIME_MS: i64 = 120_000;
+
 /// Invite `peer`, an accepted friend, to join us on `server` in `game_id`.
 /// The outbox id of the committed frame.
 ///
@@ -52,8 +54,13 @@ pub async fn send(
     if hidden {
         return Err(FriendError::Invalid(format!("game {game_id} is hidden")));
     }
-    let body = DirectBody::GameInvite(GameInvite { game_id, server });
-    dm::handshake::enqueue(host, peer, &body).await
+    let expires_at_ms = host.clock().now_ms_i64() + INVITE_LIFETIME_MS;
+    let body = DirectBody::GameInvite(GameInvite {
+        game_id,
+        server,
+        expires_at_ms,
+    });
+    dm::handshake::enqueue_until(host, peer, &body, expires_at_ms).await
 }
 
 /// A friend's `GameInvite`: shown only from an accepted friend; anyone
@@ -61,6 +68,10 @@ pub async fn send(
 pub(crate) fn on_game_invite(host: &dyn FriendHost, sender: &str, body: &GameInvite) -> bool {
     if state::friend(host, sender).map(|f| f.friendship_state) != Some(FriendshipState::Accepted) {
         tracing::debug!(from = %sender, "GameInvite from a non-friend dropped");
+        return true;
+    }
+    if body.expires_at_ms <= host.clock().now_ms_i64() {
+        tracing::debug!(from = %sender, "expired GameInvite dropped");
         return true;
     }
     host.publish(SubscriptionEvent::Friend(FriendEvent::GameInvite {

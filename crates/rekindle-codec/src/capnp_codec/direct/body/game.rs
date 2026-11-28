@@ -12,12 +12,14 @@ use rekindle_types::game_server::ServerAddress;
 pub struct GameInvite {
     pub game_id: u32,
     pub server: ServerAddress,
+    pub expires_at_ms: i64,
 }
 
 impl GameInvite {
     pub(super) fn write(&self, mut b: game_invite::Builder<'_>) {
         b.set_game_id(self.game_id);
         b.set_server(self.server.as_str());
+        b.set_expires_at_ms(self.expires_at_ms);
     }
 
     pub(super) fn read(r: game_invite::Reader<'_>) -> Result<Self, CodecError> {
@@ -34,7 +36,11 @@ impl GameInvite {
             .map_err(|e| CodecError::Deserialization(format!("GameInvite: {e}")))?;
         let server = ServerAddress::parse(text)
             .map_err(|e| CodecError::Deserialization(format!("GameInvite server: {e}")))?;
-        Ok(Self { game_id, server })
+        Ok(Self {
+            game_id,
+            server,
+            expires_at_ms: r.get_expires_at_ms(),
+        })
     }
 }
 
@@ -128,6 +134,7 @@ pub(crate) fn invite_sample() -> GameInvite {
     GameInvite {
         game_id: 4181,
         server: ServerAddress::parse("203.0.113.7:27015").unwrap(),
+        expires_at_ms: 123,
     }
 }
 

@@ -28,6 +28,7 @@ fn bad_game_invites_are_refused() {
         crate::capnp_codec::direct::encode_root::<game_invite::Owned>(|mut b| {
             b.set_game_id(game_id);
             b.set_server(server);
+            b.set_expires_at_ms(123);
             Ok(())
         })
     };
@@ -44,6 +45,7 @@ fn bad_game_invites_are_refused() {
         DirectBody::GameInvite(GameInvite {
             game_id: 7,
             server: ServerAddress::parse("1.2.3.4:27015").unwrap(),
+            expires_at_ms: 123,
         })
     );
 }

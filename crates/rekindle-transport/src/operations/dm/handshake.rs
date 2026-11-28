@@ -367,6 +367,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
             | DmTypeId::CallEnd
+            | DmTypeId::GameInvite
     )
 }
 
