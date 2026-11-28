@@ -25,7 +25,7 @@ mod transfer;
 mod typing;
 mod voice;
 
-pub use call::{CallEvent, DirectCallInfo};
+pub use call::{CallEvent, CallParticipant, DirectCallInfo};
 pub use channel::{ChannelMessageEvent, ConversationContext};
 pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;

@@ -20,7 +20,6 @@ async fn invite(deps: &MockDeps, sender: &str, call_id: &str) {
             sender_hex: sender,
             call_id,
             offer_kind: 0,
-            initiator_pubkey: sender,
             initiator_x25519_pub: &x,
             expires_at_ms: 9_999_999_999_999,
             video_decode_codecs: &[],

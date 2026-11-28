@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct IdentitySummary {
     pub public_key: String,
+    pub fingerprint: String,
     pub display_name: String,
     /// Creation time, ms since the epoch.
     pub created_at: i64,
@@ -18,6 +19,7 @@ pub struct IdentitySummary {
 #[serde(rename_all = "camelCase")]
 pub struct IdentityView {
     pub public_key: String,
+    pub fingerprint: String,
     pub display_name: String,
 }
 
@@ -27,6 +29,7 @@ pub struct IdentityView {
 #[serde(rename_all = "camelCase")]
 pub struct IdentityShown {
     pub public_key: String,
+    pub fingerprint: String,
     pub display_name: String,
     /// Our records' keys, `None` while not yet held: the own-records stage
     /// names each once its record is held, after unlock.

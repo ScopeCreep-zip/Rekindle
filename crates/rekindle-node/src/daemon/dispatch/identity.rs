@@ -78,17 +78,21 @@ pub(crate) async fn handle_create(
 /// Handle IdentityList: the registry, oldest first, in any state (it holds
 /// no secret).
 pub(crate) fn handle_list(ctx: &DaemonContext) -> IpcResponse {
-    match host_identity::list(&ctx.root) {
-        Ok(entries) => IpcResponse::ok(
-            &entries
-                .into_iter()
-                .map(|entry| IdentitySummary {
+    let rows = host_identity::list(&ctx.root).and_then(|entries| {
+        entries
+            .into_iter()
+            .map(|entry| {
+                Ok(IdentitySummary {
+                    fingerprint: host_identity::fingerprint(&entry.public_key)?,
                     public_key: entry.public_key,
                     display_name: entry.display_name,
                     created_at: entry.created_at,
                 })
-                .collect::<Vec<_>>(),
-        ),
+            })
+            .collect::<Result<Vec<_>, _>>()
+    });
+    match rows {
+        Ok(rows) => IpcResponse::ok(&rows),
         Err(e) => identity_error(&e),
     }
 }
@@ -96,15 +100,24 @@ pub(crate) fn handle_list(ctx: &DaemonContext) -> IpcResponse {
 /// Handle IdentityShow — the unlocked identity's public data, `None` while
 /// locked.
 pub(crate) fn handle_show(ctx: &DaemonContext) -> IpcResponse {
-    let shown = ctx.session.read().as_ref().map(|session| IdentityShown {
-        public_key: session.identity.public_key_hex.clone(),
-        display_name: session.identity.display_name.clone(),
-        profile_dht_key: held(&session.identity.profile_dht_key),
-        mailbox_dht_key: held(&session.identity.mailbox_dht_key),
-        friend_list_dht_key: held(&session.identity.friend_list_dht_key),
+    let session = ctx.session.read();
+    let Some(session) = session.as_ref() else {
+        return IpcResponse::ok(&Option::<IdentityShown>::None);
+    };
+    let identity = &session.identity;
+    let fingerprint = match host_identity::fingerprint(&identity.public_key_hex) {
+        Ok(fingerprint) => fingerprint,
+        Err(e) => return identity_error(&e),
+    };
+    IpcResponse::ok(&Some(IdentityShown {
+        fingerprint,
+        public_key: identity.public_key_hex.clone(),
+        display_name: identity.display_name.clone(),
+        profile_dht_key: held(&identity.profile_dht_key),
+        mailbox_dht_key: held(&identity.mailbox_dht_key),
+        friend_list_dht_key: held(&identity.friend_list_dht_key),
         communities: session.communities.len(),
-    });
-    IpcResponse::ok(&shown)
+    }))
 }
 
 /// A record key the session names, `None` while the own-records stage has

@@ -24,6 +24,8 @@ const ParticipantTile: Component<{
     props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false)
   );
   const name = createMemo(() => participant()?.displayName ?? props.tile.displayName);
+  // The initials read the served name, never the "(you)" label.
+  const served = createMemo(() => participant()?.displayName ?? props.tile.servedName);
 
   return (
     <div
@@ -45,7 +47,7 @@ const ParticipantTile: Component<{
             fallback={
               <div class="call-stage-tile-avatar">
                 <Avatar
-                  displayName={name()}
+                  displayName={served()}
                   avatarUrl={props.tile.avatarUrl}
                   size={props.spotlighted ? 128 : 72}
                 />

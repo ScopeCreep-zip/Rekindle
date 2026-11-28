@@ -131,13 +131,14 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOut
         if video_payload_channel_from_bytes(&signed.envelope_bytes)
             .is_some_and(|ch| local_in_channel(state, community_id, &ch))
         {
-            return IngestOutcome::event(WebviewEvent::Community(
-                crate::services::video_adapter::rejection_event(
-                    community_id.clone(),
-                    signed.sender_pseudonym.clone(),
-                    reason,
-                ),
-            ));
+            if let Some(event) = crate::services::video_adapter::rejection_event(
+                state,
+                community_id.clone(),
+                signed.sender_pseudonym.clone(),
+                reason,
+            ) {
+                return IngestOutcome::event(WebviewEvent::Community(event));
+            }
         }
         return IngestOutcome::default();
     }

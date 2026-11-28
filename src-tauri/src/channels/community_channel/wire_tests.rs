@@ -1,17 +1,30 @@
 //! Wire-format snapshot tests for the video cluster of `CommunityEvent`.
-//!
-//! These assert the EXACT JSON each variant serializes to. They were
-//! written against the original struct-variant shapes BEFORE the
-//! newtype-payload conversion, and pass unchanged after it — the proof
-//! that `X { fields… }` → `X(XEvent { fields… })` under
-//! `serde(tag = "type", content = "data")` is wire-identical, and that
-//! the frontend TS contract (`src/ipc/channels.ts`) is untouched.
-
+use rekindle_governance_runtime::{deps::GovernanceRuntimeDeps, CardText};
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::video::{Codec, ScalabilityMode};
 use rekindle_video::{DecoderConstraints, EncoderConstraints, SessionVideoConfig};
 use serde_json::json;
 
 use super::*;
+use crate::services::video_adapter::{incompatible_event, rejection_event};
+use crate::test_support::TestHost;
+
+const NAMED_PEER: PseudonymKey = PseudonymKey([0xab; 32]);
+const UNNAMED_PEER: PseudonymKey = PseudonymKey([0xcd; 32]);
+
+async fn host_with_card() -> TestHost {
+    let test = TestHost::start().await;
+    test.host.governance().note_member_card(
+        "c1",
+        &NAMED_PEER,
+        CardText {
+            display_name: Some("Kit".into()),
+            custom_status: None,
+            game: None,
+        },
+    );
+    test
+}
 
 #[test]
 fn video_keyframe_request_wire() {
@@ -67,13 +80,18 @@ fn video_session_config_wire() {
     );
 }
 
-#[test]
-fn video_codec_incompatible_wire() {
-    let ev = CommunityEvent::VideoCodecIncompatible(VideoCodecIncompatibleEvent {
-        community_id: "c1".into(),
-        channel_id: "ch1".into(),
-        peers: vec!["p1".into(), "p2".into()],
-    });
+#[tokio::test]
+async fn video_codec_incompatible_wire() {
+    let test = host_with_card().await;
+    let named = NAMED_PEER.to_hex();
+    let unnamed = UNNAMED_PEER.to_hex();
+    let ev = incompatible_event(
+        &test.state,
+        "c1",
+        "ch1",
+        vec![named.clone(), unnamed.clone()],
+    )
+    .expect("video incompatibility event");
     assert_eq!(
         serde_json::to_value(&ev).unwrap(),
         json!({
@@ -81,10 +99,14 @@ fn video_codec_incompatible_wire() {
             "data": {
                 "communityId": "c1",
                 "channelId": "ch1",
-                "peers": ["p1", "p2"]
+                "peers": [
+                    {"pseudonymKey": named, "displayName": "Kit"},
+                    {"pseudonymKey": unnamed, "displayName": "cdcd cdcd"}
+                ]
             }
         })
     );
+    test.shutdown().await;
 }
 
 #[test]
@@ -123,24 +145,32 @@ fn native_video_error_wire() {
     );
 }
 
-#[test]
-fn video_envelope_rejected_wire() {
-    let ev = CommunityEvent::VideoEnvelopeRejected(VideoEnvelopeRejectedEvent {
-        community_id: "c1".into(),
-        sender_pseudonym: "<unknown>".into(),
-        reason: "bad signature".into(),
-    });
-    assert_eq!(
-        serde_json::to_value(&ev).unwrap(),
-        json!({
-            "type": "videoEnvelopeRejected",
-            "data": {
-                "communityId": "c1",
-                "senderPseudonym": "<unknown>",
-                "reason": "bad signature"
-            }
-        })
-    );
+#[tokio::test]
+async fn video_envelope_rejected_wire() {
+    let test = host_with_card().await;
+    for (peer, name) in [(NAMED_PEER, "Kit"), (UNNAMED_PEER, "cdcd cdcd")] {
+        let pseudonym = peer.to_hex();
+        let ev = rejection_event(
+            &test.state,
+            "c1".into(),
+            pseudonym.clone(),
+            "bad signature".into(),
+        )
+        .expect("video rejection event");
+        assert_eq!(
+            serde_json::to_value(&ev).unwrap(),
+            json!({
+                "type": "videoEnvelopeRejected",
+                "data": {
+                    "communityId": "c1",
+                    "senderPseudonym": pseudonym,
+                    "displayName": name,
+                    "reason": "bad signature"
+                }
+            })
+        );
+    }
+    test.shutdown().await;
 }
 
 #[test]

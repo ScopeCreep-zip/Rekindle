@@ -40,15 +40,11 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       });
     } else if ("joined" in event) {
       const { pseudonym, displayName } = event.joined;
-      setVoiceState("participants", (prev) => [
-        ...prev.filter((p) => p.publicKey !== pseudonym),
-        {
-          publicKey: pseudonym,
-          displayName,
-          isMuted: false,
-          isSpeaking: false,
-        },
-      ]);
+      setVoiceState("participants", (prev) =>
+        prev.some((p) => p.publicKey === pseudonym)
+          ? prev.map((p) => (p.publicKey === pseudonym ? { ...p, displayName } : p))
+          : [...prev, { publicKey: pseudonym, displayName, isMuted: false, isSpeaking: false }]
+      );
     } else if ("left" in event) {
       const { pseudonym } = event.left;
       setVoiceState("participants", (prev) => prev.filter((p) => p.publicKey !== pseudonym));

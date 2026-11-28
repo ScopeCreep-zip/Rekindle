@@ -9,7 +9,6 @@ import { commands, type IdentitySummary } from "../ipc/commands";
 import { isCancelled } from "../ipc/commands/dto";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { errorMessage } from "../utils/error";
-import { truncateKey } from "../utils/formatting";
 import { setWindowKind } from "../utils/window_kind";
 
 type Mode = "picker" | "login" | "create";
@@ -208,7 +207,7 @@ const LoginWindow: Component = () => {
             <Avatar displayName={selected()!.displayName} size={96} />
           </div>
           <div class="lock-name">{selected()!.displayName}</div>
-          <div class="account-card-key">{truncateKey(selected()!.publicKey)}</div>
+          <div class="account-card-key">{selected()!.fingerprint}</div>
           <input
             class="form-input"
             type="password"

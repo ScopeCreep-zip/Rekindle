@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+use rekindle_calls::signaling::deps::friend_shown_name;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_voice::VoiceSessionEvent;
 
 use rekindle_types::subscription_events::{
@@ -186,11 +188,20 @@ pub(super) fn emit_local_joined_impl(
         .and_then(|state| state.host.current())
     {
         let display_name = match community_id {
-            Some(community) => host.governance().member_shown_name(community, public_key),
-            None => rekindle_node::host::adapters::governance::shown_name(
-                Some(display_name.to_string()),
-                &rekindle_types::id::PseudonymKey::from_hex_lossy(public_key),
-            ),
+            Some(community) => {
+                if let Err(error) = pseudonym_hex(public_key) {
+                    tracing::warn!(%error, "invalid local community voice participant");
+                    return;
+                }
+                host.governance().member_shown_name(community, public_key)
+            }
+            None => match friend_shown_name(public_key, Some(display_name.to_owned())) {
+                Ok(name) => name,
+                Err(error) => {
+                    tracing::warn!(%error, "invalid local DM voice participant");
+                    return;
+                }
+            },
         };
         session.emit_local_joined(scope.clone(), |event| {
             host.publish_state(SESSION_STATE, SubscriptionEvent::Voice(event));

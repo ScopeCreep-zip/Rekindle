@@ -1,20 +1,12 @@
 import { type Component, Show } from "solid-js";
 import type { UserStatus } from "../../stores/auth.store";
+import { initials } from "../../utils/initials";
 
 interface AvatarProps {
   displayName: string;
   status?: UserStatus;
   size?: number;
   avatarUrl?: string;
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 }
 
 const Avatar: Component<AvatarProps> = (props) => {
@@ -32,7 +24,7 @@ const Avatar: Component<AvatarProps> = (props) => {
             "font-size": `${Math.floor(size() * 0.4)}px`,
           }}
         >
-          {getInitials(props.displayName)}
+          {initials(props.displayName)}
         </div>
       }
     >

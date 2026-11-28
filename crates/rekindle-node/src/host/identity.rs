@@ -84,6 +84,27 @@ pub fn list(root: &DataRoot) -> Result<Vec<IdentityEntry>, IdentityError> {
     Ok(registry::load(&root.registry())?.identities)
 }
 
+/// The short fingerprint served beside a local identity's public key.
+pub(crate) fn fingerprint(public_key: &str) -> Result<String, IdentityError> {
+    let key = rekindle_types::key_format::public_key_hex(public_key)
+        .map_err(|e| IdentityError::Corrupt(format!("invalid public key: {e}")))?;
+    Ok(rekindle_crypto::identity::short_key_fingerprint(
+        &key.to_bytes(),
+    ))
+}
+
+/// The public identity returned by create, unlock and attach.
+pub(crate) fn view(
+    public_key: String,
+    display_name: String,
+) -> Result<rekindle_types::dto::identity::IdentityView, IdentityError> {
+    Ok(rekindle_types::dto::identity::IdentityView {
+        fingerprint: fingerprint(&public_key)?,
+        public_key,
+        display_name,
+    })
+}
+
 fn map_open(e: rekindle_vault::VaultError) -> IdentityError {
     match e {
         rekindle_vault::VaultError::WrongPassphrase => IdentityError::WrongPassphrase,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use rekindle_codec::capnp_codec::direct::DirectBody;
-use rekindle_types::group_dm::GroupCallRoster;
+use rekindle_types::group_dm::{GroupCallRoster, GroupDmRosterMember};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CallError;
@@ -162,10 +162,12 @@ pub(super) struct MockDeps {
     pub(super) group_registry: Arc<MockGroupRegistry>,
     /// Which call's media runs (plan CE2), as the desktop adapter keeps it.
     pub(super) media: crate::signaling::CallMediaOwner,
+    pub(super) friend_names: Mutex<HashMap<String, String>>,
     owner_key: String,
+    pub(super) own_name: Mutex<String>,
     identity_secret: [u8; 32],
     /// Our group DMs' rosters, by group id (`group_roster`).
-    pub(super) group_rosters: Mutex<HashMap<String, Vec<String>>>,
+    pub(super) group_rosters: Mutex<HashMap<String, Vec<GroupDmRosterMember>>>,
     /// Groups we hold only an unanswered invite to.
     pub(super) invited_groups: Mutex<HashSet<String>>,
 }
@@ -185,7 +187,9 @@ impl MockDeps {
                 inner: Mutex::new(HashMap::new()),
             }),
             media: crate::signaling::CallMediaOwner::default(),
+            friend_names: Mutex::new(HashMap::new()),
             owner_key: "aa".repeat(32),
+            own_name: Mutex::new("My profile".into()),
             group_rosters: Mutex::new(HashMap::new()),
             invited_groups: Mutex::new(HashSet::new()),
             identity_secret: [0xCC; 32],
@@ -218,6 +222,9 @@ impl CallSignalingDeps for MockDeps {
     fn owner_key(&self) -> Result<String, CallError> {
         Ok(self.owner_key.clone())
     }
+    fn own_display_name(&self) -> Result<String, CallError> {
+        Ok(self.own_name.lock().clone())
+    }
     fn identity_secret(&self) -> Result<[u8; 32], CallError> {
         Ok(self.identity_secret)
     }
@@ -239,8 +246,8 @@ impl CallSignalingDeps for MockDeps {
     fn is_peer_temp_muted(&self, _peer: &str) -> bool {
         false
     }
-    fn friend_display_name(&self, _peer: &str) -> String {
-        "Mock Friend".into()
+    fn friend_display_name(&self, peer: &str) -> Option<String> {
+        self.friend_names.lock().get(peer).cloned()
     }
     fn local_video_decode_codecs(&self) -> Vec<String> {
         vec!["vp9".to_string()]

@@ -9,9 +9,10 @@ use std::sync::Arc;
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_types::key_format::{pseudonym_hex, KeyFormatError};
 use rekindle_video::{VideoDeps, VideoEvent};
 
-use crate::channels::CommunityEvent;
+use crate::channels::{CommunityEvent, VideoCodecIncompatibleEvent, VideoCodecIncompatiblePeer};
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -34,15 +35,55 @@ impl VideoAdapter {
 /// maps the pipeline's own `VideoEvent::EnvelopeRejected` through it.
 #[must_use]
 pub fn rejection_event(
+    state: &AppState,
     community_id: String,
     sender_pseudonym: String,
     reason: String,
-) -> CommunityEvent {
-    CommunityEvent::VideoEnvelopeRejected(crate::channels::VideoEnvelopeRejectedEvent {
-        community_id,
-        sender_pseudonym,
-        reason,
-    })
+) -> Option<CommunityEvent> {
+    let host = state_helpers::host_governance(state).ok()?;
+    pseudonym_hex(&sender_pseudonym).ok()?;
+    let display_name = host.member_shown_name(&community_id, &sender_pseudonym);
+    Some(CommunityEvent::VideoEnvelopeRejected(
+        crate::channels::VideoEnvelopeRejectedEvent {
+            community_id,
+            sender_pseudonym,
+            display_name,
+            reason,
+        },
+    ))
+}
+
+/// Build the incompatibility event with the names served by the community.
+pub(crate) fn incompatible_event(
+    state: &AppState,
+    community_id: &str,
+    channel_id: &str,
+    peers: Vec<String>,
+) -> Option<CommunityEvent> {
+    let host = state_helpers::host_governance(state).ok()?;
+    let peers = peers
+        .into_iter()
+        .map(|pseudonym_key| {
+            pseudonym_hex(&pseudonym_key)?;
+            Ok(VideoCodecIncompatiblePeer {
+                display_name: host.member_shown_name(community_id, &pseudonym_key),
+                pseudonym_key,
+            })
+        })
+        .collect::<Result<_, KeyFormatError>>();
+    match peers {
+        Ok(peers) => Some(CommunityEvent::VideoCodecIncompatible(
+            VideoCodecIncompatibleEvent {
+                community_id: community_id.to_owned(),
+                channel_id: channel_id.to_owned(),
+                peers,
+            },
+        )),
+        Err(error) => {
+            tracing::warn!(%error, "invalid video capability peer");
+            None
+        }
+    }
 }
 
 impl VideoDeps for VideoAdapter {
@@ -176,7 +217,7 @@ impl VideoDeps for VideoAdapter {
         }
         // `None` for receiver feedback the backend consumed above
         // (`on_peer_caps_received`). See `map_video_event`.
-        if let Some(mapped) = map_video_event(event) {
+        if let Some(mapped) = map_video_event(&self.state, event) {
             crate::event_dispatch::emit_community(&self.app_handle, mapped);
         }
     }
@@ -209,7 +250,7 @@ impl VideoDeps for VideoAdapter {
 /// This is the rule the architecture already applies to audio: feedback
 /// plumbing stays inside whichever process owns the codec. See
 /// `docs/plans/video-media-engine.md`.
-fn map_video_event(event: VideoEvent) -> Option<CommunityEvent> {
+fn map_video_event(state: &AppState, event: VideoEvent) -> Option<CommunityEvent> {
     Some(match event {
         // Phase 11 Tier 1 — frames are routed to the per-community
         // `ipc::Channel` in `emit_event` before this mapper runs, so a
@@ -257,7 +298,7 @@ fn map_video_event(event: VideoEvent) -> Option<CommunityEvent> {
             community_id,
             sender_pseudonym,
             reason,
-        } => rejection_event(community_id, sender_pseudonym, reason),
+        } => return rejection_event(state, community_id, sender_pseudonym, reason),
     })
 }
 

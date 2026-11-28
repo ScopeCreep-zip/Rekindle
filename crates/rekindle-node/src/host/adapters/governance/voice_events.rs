@@ -1,6 +1,7 @@
 //! Project daemon voice gossip with names from the Host's verified card view.
 
 use rekindle_codec::community::envelope::ControlPayload;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::subscription_events::{
     SubscriptionEvent, VoiceEvent, VoiceParticipant, VoiceScope,
 };
@@ -23,12 +24,15 @@ impl HostGovernance {
                 channel_id,
                 route_blob,
                 ..
-            } => VoiceEvent::Joined {
-                scope: scope(channel_id),
-                pseudonym: sender.to_owned(),
-                display_name: self.member_shown_name(community, sender),
-                route_blob: Some(route_blob.clone()),
-            },
+            } => {
+                pseudonym_hex(sender).ok()?;
+                VoiceEvent::Joined {
+                    scope: scope(channel_id),
+                    pseudonym: sender.to_owned(),
+                    display_name: self.member_shown_name(community, sender),
+                    route_blob: Some(route_blob.clone()),
+                }
+            }
             ControlPayload::VoiceRoster {
                 channel_id,
                 participants,
@@ -36,9 +40,12 @@ impl HostGovernance {
                 scope: scope(channel_id),
                 participants: participants
                     .iter()
-                    .map(|peer| VoiceParticipant {
-                        display_name: self.member_shown_name(community, &peer.pseudonym_key),
-                        pseudonym_key: peer.pseudonym_key.clone(),
+                    .filter_map(|peer| {
+                        pseudonym_hex(&peer.pseudonym_key).ok()?;
+                        Some(VoiceParticipant {
+                            display_name: self.member_shown_name(community, &peer.pseudonym_key),
+                            pseudonym_key: peer.pseudonym_key.clone(),
+                        })
                     })
                     .collect(),
             },

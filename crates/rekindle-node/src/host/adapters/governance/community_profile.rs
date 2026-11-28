@@ -20,6 +20,7 @@ use rekindle_types::dht_layout::member_record::CARD;
 use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::permissions;
 use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
@@ -253,6 +254,9 @@ impl HostGovernance {
 
 impl HostGovernance {
     /// How the member list names this member from the Host's verified card view.
+    ///
+    /// # Panics
+    /// The caller must pass a validated community pseudonym.
     #[must_use]
     pub fn member_shown_name(&self, community_id: &str, member_hex: &str) -> String {
         member_shown_name(&self.ctx.communities, community_id, member_hex)
@@ -277,7 +281,11 @@ pub(crate) fn member_shown_name(
     community_id: &str,
     member_hex: &str,
 ) -> String {
-    let pseudonym = PseudonymKey::from_hex_lossy(member_hex);
+    let pseudonym = PseudonymKey(
+        pseudonym_hex(member_hex)
+            .expect("validated pseudonym")
+            .to_bytes(),
+    );
     shown_name(
         communities.member_card_name(community_id, &pseudonym),
         &pseudonym,
