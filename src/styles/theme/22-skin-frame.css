@@ -57,9 +57,12 @@
     block-size: 100vh;
   }
 
+  /* The page scrolls beneath the strip rather than clipping: a tree whose
+   * foot no longer fits keeps its bottom bar and composer reachable. */
   :root:not([data-skin-opening]) body:has(> .skin-load-error) > #root {
     flex: 1;
     min-block-size: 0;
     block-size: auto;
+    overflow: auto;
   }
 }
