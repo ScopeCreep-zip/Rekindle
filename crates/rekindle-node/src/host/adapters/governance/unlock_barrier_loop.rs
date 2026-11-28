@@ -234,15 +234,14 @@ impl HostGovernance {
             community,
             "ring author",
         )?;
-        let route = noted(
-            self.member_route(community, &peer).await,
-            community,
-            "member route",
-        )?;
         let answer = noted(
-            frontier_exchange::request_frontier(self, &route, community, signer)
-                .await
-                .ok(),
+            frontier_exchange::request_frontier(self, community, signer, |payload| async {
+                self.call_member_route(community, &peer, payload)
+                    .await
+                    .map_err(|error| GovernanceRuntimeError::Adapter(error.to_string()))
+            })
+            .await
+            .ok(),
             community,
             "frontier request",
         )?;
@@ -258,6 +257,13 @@ impl HostGovernance {
                 .map(|op| op.seq)
                 .max(),
         )
+    }
+
+    /// Run one barrier round against the simulator's network.
+    #[cfg(feature = "netsim-entry")]
+    pub async fn netsim_barrier_round(&self, community: &str) -> Option<BarrierPhase> {
+        self.barrier_round(community, &mut RoundCounts::default())
+            .await
     }
 
     /// The highest seq this copy signed under `device_key` in

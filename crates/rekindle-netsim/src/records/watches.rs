@@ -545,6 +545,10 @@ impl Network {
                     if !online(inner, node)
                         || super::outbound::asleep(inner, node)
                         || !reaches(&inner.faults, node, home)
+                        || inner
+                            .faults
+                            .drop_value_changes
+                            .contains(&(node, key.clone()))
                     {
                         continue;
                     }

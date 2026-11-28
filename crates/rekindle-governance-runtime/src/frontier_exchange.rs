@@ -10,6 +10,8 @@
 //! up: frontiers are tips, and the barrier walks from them
 //! (`op_log::walk`) for the highest seq of its device key.
 
+use std::future::Future;
+
 use rekindle_codec::capnp_envelope::{encode_community_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_codec::frontier_request::{
@@ -127,20 +129,25 @@ pub async fn verify_frontier_heads<D: GovernanceRuntimeDeps>(
     Ok(PeerFrontier { frontier, heads })
 }
 
-/// Ask the ring peer at `route` for its frontier of `community`, as `me`
+/// Ask the ring peer through `call` for its frontier of `community`, as `me`
 /// (our pseudonym there), and check every head it names
 /// ([`verify_frontier_heads`]). The unlock barrier (plan E3.2 S7d-keys.8)
-/// calls this per known ring peer, one `app_call` timeout per round.
+/// calls this once per known ring peer. The call may recover the transport
+/// route before returning a reply for verification.
 ///
 /// # Errors
 /// Encoding failed, the call failed, the reply is not a frontier response
 /// (a refusal is a NAK), or a head does not hold.
-pub async fn request_frontier<D: GovernanceRuntimeDeps>(
+pub async fn request_frontier<D, F>(
     deps: &D,
-    route: &[u8],
     community: &str,
     me: &SigningKey,
-) -> Result<PeerFrontier, GovernanceRuntimeError> {
+    call: impl FnOnce(Vec<u8>) -> F,
+) -> Result<PeerFrontier, GovernanceRuntimeError>
+where
+    D: GovernanceRuntimeDeps,
+    F: Future<Output = Result<Vec<u8>, GovernanceRuntimeError>>,
+{
     let request = FrontierRequest {
         community: community.to_owned(),
         requester: me.verifying_key().to_bytes(),
@@ -151,7 +158,7 @@ pub async fn request_frontier<D: GovernanceRuntimeDeps>(
         ControlPayload::FrontierRequest { request },
     ))
     .map_err(|e| encoding("frontier envelope", e))?;
-    let reply = deps.app_call_peer(route, envelope).await?;
+    let reply = call(envelope).await?;
     let frontier = match try_decode_community_envelope(&reply)
         .ok()
         .flatten()
