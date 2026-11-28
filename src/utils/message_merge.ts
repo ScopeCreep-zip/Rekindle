@@ -34,5 +34,17 @@ export function mergeRead(
       .map((m) => [m.serverMessageId, m])
   );
   const fresh = read.map((m) => newer.get(m.serverMessageId) ?? m);
-  return [...earlier, ...fresh, ...later];
+  // A first hold can arrive inside the time window of a read that had no
+  // row for it yet. Keep that event's row with the read's rows in time order.
+  const inserted = unread.filter(
+    (m) =>
+      m.serverMessageId !== undefined &&
+      m.timestamp >= oldest &&
+      m.timestamp <= newest &&
+      newer.has(m.serverMessageId)
+  );
+  const covered = inserted.length
+    ? [...fresh, ...inserted].sort((a, b) => a.timestamp - b.timestamp)
+    : fresh;
+  return [...earlier, ...covered, ...later];
 }

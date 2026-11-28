@@ -130,6 +130,7 @@ export async function handleLoadOlderMessages(
 export async function handleLoadChannelMessages(channelId: string, limit: number): Promise<void> {
   try {
     const mark = readMark();
+    setCommunityState("channelMessages", channelId, (rows) => rows ?? []);
     const messages = await commands.getChannelMessages(channelId, limit);
     const mapped = transformMessages(messages);
     setCommunityState("channelMessages", channelId, (existing) =>

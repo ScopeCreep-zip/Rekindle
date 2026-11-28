@@ -276,6 +276,7 @@ export async function handleLoadThreadMessages(
 ): Promise<void> {
   try {
     const mark = readMark();
+    setCommunityState("threadMessages", threadId, (rows) => rows ?? []);
     const messages = await commands.getThreadMessages(communityId, threadId, limit);
     const mapped = transformMessages(messages);
     // The page may answer after a reply was sent or received (walk 14,
