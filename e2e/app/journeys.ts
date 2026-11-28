@@ -5,7 +5,7 @@ import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { CHANNEL_COMPOSER, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, communityWindowLabel, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, chooseSetting, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, settingShown, submitJoin, underTree } from "../walk/nav.ts";
-import { showSkinView, skinViewShown } from "./journeys_skins.ts";
+import { servedSkinShown, showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
 
 export { type User, newUser } from "./user.ts";
@@ -331,6 +331,9 @@ export async function openCommunity(b: Browser, name: string): Promise<void> {
   await doubleClick(b, await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS));
   await switchTo(b, label, NET_WAIT_MS);
   await shown(b, ".community-sidebar", NET_WAIT_MS);
+  // The window draws its own layout until its skin links: no step or shot
+  // may prove that (plan E7.14 (b)).
+  await servedSkinShown(b);
 }
 
 /** How many channel rows in the open community window show `name`. */
