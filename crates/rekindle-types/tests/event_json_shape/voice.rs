@@ -1,7 +1,8 @@
 //! `VoiceEvent` samples, covering both `VoiceScope`s.
 
 use rekindle_types::subscription_events::{
-    LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceParticipant, VoiceScope,
+    JoinHandshake, LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceMediaReady,
+    VoiceParticipant, VoiceScope,
 };
 
 use crate::{community, id, pk, text, Sample};
@@ -109,7 +110,7 @@ fn joined(suffix: &str, scope: VoiceScope) -> Sample {
         VoiceEvent::Joined {
             scope,
             pseudonym: pk('e'),
-            display_name: Some(text("Eve")),
+            display_name: text("Eve"),
             route_blob: Some(vec![1, 2, 3, 4]),
         },
     )
@@ -138,17 +139,23 @@ fn roster() -> Vec<Sample> {
             "rosterUpdated",
             VoiceEvent::RosterUpdated {
                 scope: room(),
-                participants: vec![VoiceParticipant {
-                    pseudonym_key: pk('e'),
-                    display_name: Some(text("Eve")),
-                }],
+                participants: vec![
+                    VoiceParticipant {
+                        pseudonym_key: pk('e'),
+                        display_name: text("Eve"),
+                    },
+                    VoiceParticipant {
+                        pseudonym_key: pk('a'),
+                        display_name: text("aaaa aaaa"),
+                    },
+                ],
             },
         ),
         ev(
             "joinHandshake",
             VoiceEvent::JoinHandshake {
                 scope: room(),
-                state: text("offerSent"),
+                state: JoinHandshake::Seen,
                 peer: Some(pk('a')),
                 display_name: Some(text("Alice")),
             },
@@ -244,9 +251,26 @@ fn local_session() -> Vec<Sample> {
     vec![
         ev(
             "localJoined.community",
-            VoiceEvent::LocalJoined { scope: room() },
+            VoiceEvent::LocalJoined {
+                scope: room(),
+                join_handshake: JoinHandshake::Connected,
+                media_ready: VoiceMediaReady {
+                    ready: true,
+                    reason: "ready".into(),
+                },
+            },
         ),
-        ev("localJoined.dm", VoiceEvent::LocalJoined { scope: dm() }),
+        ev(
+            "localJoined.dm",
+            VoiceEvent::LocalJoined {
+                scope: dm(),
+                join_handshake: JoinHandshake::Announced,
+                media_ready: VoiceMediaReady {
+                    ready: false,
+                    reason: "handshake-announced".into(),
+                },
+            },
+        ),
         ev(
             "speakingChanged",
             VoiceEvent::SpeakingChanged {

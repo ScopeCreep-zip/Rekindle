@@ -61,8 +61,8 @@ async fn a_dead_route_does_not_hold_up_a_live_one() {
     let dead = vec![9u8, 9, 9];
     let live = vec![1u8, 1, 1];
     let mut t = test_transport(dead.clone());
-    t.add_peer("dead_peer", &dead, None);
-    t.add_peer("live_peer", &live, None);
+    t.add_peer("dead_peer", &dead);
+    t.add_peer("live_peer", &live);
     for _ in 0..3 {
         t.send(&frame()).unwrap();
     }
@@ -89,7 +89,7 @@ fn send_needs_a_peer() {
 #[tokio::test]
 async fn removing_a_peer_stops_its_driver_and_forgets_its_allocation() {
     let mut t = test_transport(Vec::new());
-    t.add_peer("p", &[1], None);
+    t.add_peer("p", &[1]);
     let link = Arc::clone(&t.peers["p"].link);
     assert!(t.remove_peer("p"));
     assert!(link.is_stopped());

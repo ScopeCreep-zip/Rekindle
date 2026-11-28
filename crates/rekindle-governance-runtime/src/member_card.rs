@@ -22,7 +22,7 @@ use std::future::Future;
 
 use rekindle_codec::member_record::{
     beat::decode_presence_beat, beat_number_at, card::decode_member_card, BeatState, MemberCard,
-    PresenceBeat, RecordScope, SignedMemberCard,
+    PresenceBeat, RecordScope, SealedExtras, SignedMemberCard,
 };
 use rekindle_records::port::{RecordPort, SetOutcome};
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -200,6 +200,8 @@ pub async fn write_beat(
         seq: profile.beat_seq,
         state: profile.status.into(),
         now_ms: profile.now_ms,
+        voice_channel: None,
+        extras: None,
     };
     write_own_beat(port, own, &beat).await.map(drop)
 }
@@ -211,9 +213,13 @@ pub struct OwnBeat {
     pub state: BeatState,
     /// Now, on the host's clock (ms): the beat number's time.
     pub now_ms: u64,
+    /// The voice channel we are in (plan E3.4 S8-pre).
+    pub voice_channel: Option<String>,
+    /// Our extras, sealed under the community text key.
+    pub extras: Option<SealedExtras>,
 }
 
-/// Write `beat` to our `M`/1, without extras (padded by its encoder); the
+/// Write `beat` to our `M`/1 (padded by its encoder to its fixed size); the
 /// subkey's DHT seq it left.
 ///
 /// # Errors
@@ -226,9 +232,9 @@ pub async fn write_own_beat(
     let beat = PresenceBeat {
         seq: beat.seq,
         state: beat.state,
-        voice_channel: None,
+        voice_channel: beat.voice_channel.clone(),
         beat_number: beat_number_at(beat.now_ms),
-        extras: None,
+        extras: beat.extras.clone(),
     };
     let bytes = beat
         .encode(own.scope(), own.pseudonym)
@@ -279,7 +285,7 @@ pub struct MemberRecordRef<'a> {
 
 /// Read `subkey` of `member.record`, refusing a record whose descriptor
 /// owner is not `member.owner`.
-async fn read_pinned(
+pub(crate) async fn read_pinned(
     port: &dyn RecordPort,
     member: &MemberRecordRef<'_>,
     subkey: u32,

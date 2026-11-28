@@ -51,8 +51,9 @@ struct VoiceMediaKeyCarrier(Arc<AppState>);
 #[async_trait]
 impl MediaKeyCarrier for VoiceMediaKeyCarrier {
     async fn deliver(&self, payload: &[u8]) -> MediaKeyDelivery {
-        let Ok(adapter) = crate::services::build_adapter(&self.0, VoiceSignalingAdapter::new)
-        else {
+        let Ok(Ok(adapter)) = crate::services::build_adapter(&self.0, |state, app, _| {
+            VoiceSignalingAdapter::new(state, app)
+        }) else {
             return MediaKeyDelivery::Unacknowledged;
         };
         let deps: Arc<dyn VoiceSignalingDeps> = adapter;
