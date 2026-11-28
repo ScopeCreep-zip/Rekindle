@@ -345,6 +345,15 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await shot("inbox-after-review-escape");
     await browser.keys("Escape");
     await gone(browser, ".notification-panel");
+    // Until device pairing (plan E5.3) gives each device of one identity its
+    // own route, the original and the copy both write Ari's profile route
+    // subkey, and a friend's 1:1 frame goes to whichever route the network
+    // holds (dre17: the copy's write won, so Dee's reset reached the copy).
+    // This step is about the original's held reviews, not that race: the
+    // copy stays offline from here to the ring-peer step below, and the
+    // original's unlock publishes its route over the copy's (a set after a
+    // Superseded answer is written above the newer value it learned).
+    await copy.pause();
     await unlockAgain();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
 
@@ -369,7 +378,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await waitUntil(
       async () => /\+\d+ms event /.test(await pageLog(browser)),
       NET_WAIT_MS,
-      "the Host did not hold Dee's session reset while re-enrolment was still open"
+      "the Host did not hold Dee's session reset while re-enrolment was still open (if Ari's published route was still the copy's, the reset went to the copy: plan E5.3)"
     );
     // The probe really saw the channel (a wrapper on invoke once saw nothing):
     // every delivery it logged before the gate, by kind.
@@ -429,10 +438,10 @@ describe("a restored copy re-enrols the device: the original is told and offered
     // host/adapters/governance/unlock_barrier_loop.rs:1-12, :134), and a
     // write is held while it has not passed (rekindle-governance-runtime
     // unlock_barrier.rs:156-159, apply.rs:265-290). With both ring peers
-    // (Dee and the copy) paused, Ari's third unlock raises the review again
-    // and its commit is held until they resume.
+    // paused (Dee now; the copy since the session-reset step above), Ari's
+    // third unlock raises the review again and its commit is held until
+    // they resume.
     await dee.pause();
-    await copy.pause();
     await unlockAgain();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     expect(await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS })).toBe(
