@@ -252,7 +252,7 @@ pub async fn roster_name(
 pub struct NewMembership {
     pub membership: CommunityMembership,
     /// The registry's owner keypair (the vault's `RegistryKeypair`).
-    pub registry_keypair: Option<String>,
+    pub registry_keypair: Option<zeroize::Zeroizing<String>>,
     /// Our member record's owner keypair `K_M(p)` (the vault's
     /// `MemberRecordOwner`, plan E3.2).
     pub member_record_owner: Option<zeroize::Zeroizing<String>>,
@@ -339,7 +339,10 @@ pub fn record_membership(
             .map_err(|e| format!("member hpke secret: {e}"))?;
         }
     }
-    communities.install_membership(&membership, registry_keypair.as_deref());
+    communities.install_membership(
+        &membership,
+        registry_keypair.as_ref().map(|key| key.as_str()),
+    );
     // The pinned cert every op of ours is built and published under.
     if let Some(decoded) = cert {
         communities.set_genesis_cert(&community, decoded.signed.cert);

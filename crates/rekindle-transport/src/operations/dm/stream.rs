@@ -29,7 +29,7 @@ use crate::operations::friend::{state, FriendError, FriendHost};
 pub struct ParticipantWriter {
     pub record_key: String,
     /// The record's owner keypair.
-    pub writer: String,
+    pub writer: zeroize::Zeroizing<String>,
     /// Created by this call: its key still has to reach the peer.
     pub created: bool,
 }

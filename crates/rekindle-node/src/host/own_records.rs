@@ -157,11 +157,8 @@ impl OwnRecords {
         let name = display_name.as_str();
         let mut keys = OwnRecordKeys::default();
         let mut owners = (
-            stored.profile.matching_keypair().map(ToString::to_string),
-            stored
-                .friend_list
-                .matching_keypair()
-                .map(ToString::to_string),
+            stored.profile.matching_keypair().cloned(),
+            stored.friend_list.matching_keypair().cloned(),
         );
 
         // The prekey maintenance may start once our record is held,
@@ -318,7 +315,7 @@ impl OwnRecords {
         stored: &Stored,
         route_blob: &[u8],
         display_name: &str,
-    ) -> Option<(String, String)> {
+    ) -> Option<(String, zeroize::Zeroizing<String>)> {
         let status_message = self.presence.view().status_message;
         let fields = profile::ProfileFields {
             display_name,
@@ -380,7 +377,7 @@ impl OwnRecords {
         &self,
         pool: &dyn RecordPort,
         stored: &Stored,
-    ) -> Option<(String, String)> {
+    ) -> Option<(String, zeroize::Zeroizing<String>)> {
         let held = self
             .owner()
             .hold(
@@ -462,7 +459,10 @@ impl OwnRecords {
     fn project(
         &self,
         keys: &OwnRecordKeys,
-        (profile_owner, friend_list_owner): (Option<String>, Option<String>),
+        (profile_owner, friend_list_owner): (
+            Option<zeroize::Zeroizing<String>>,
+            Option<zeroize::Zeroizing<String>>,
+        ),
     ) {
         let mut guard = self.session.write();
         let Some(session) = guard.as_mut() else {
