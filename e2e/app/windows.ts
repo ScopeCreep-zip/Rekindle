@@ -11,7 +11,7 @@ import path from "node:path";
 import type { Browser } from "webdriverio";
 import { WAIT_MS, sleep, waitUntil } from "../walk/helpers.ts";
 import { type Findings, checkGeometry, treeFitIn } from "./geometry.ts";
-import { APP_CAPABILITY, type AppCapability } from "./launcher.ts";
+import { type AppCapability, DISPLAY_CAPABILITY } from "./launcher.ts";
 import type { TreeFit } from "./geometry-page.ts";
 
 export interface Size {
@@ -202,10 +202,15 @@ export async function treeMinimum(b: Browser): Promise<Size | undefined> {
  * size the window cannot take. The size it was given is returned.
  */
 export async function sizeWindowServed(b: Browser, size: Size): Promise<Size> {
-  const min = await treeMinimum(b);
-  const want = min ? { width: Math.max(size.width, min.width), height: Math.max(size.height, min.height) } : size;
+  const want = await servedSize(b, size);
   await sizeWindow(b, want);
   return want;
+}
+
+/** `size` raised on each axis to the minimum the window's skin serves (`treeMinimum`). */
+export async function servedSize(b: Browser, size: Size): Promise<Size> {
+  const min = await treeMinimum(b);
+  return min ? { width: Math.max(size.width, min.width), height: Math.max(size.height, min.height) } : size;
 }
 
 /**
@@ -274,8 +279,9 @@ const OFF_SCREEN = { x: -16_000, y: -16_000 };
 function waylandHint(b: Browser): string {
   if (process.platform !== "linux" || !process.env.WAYLAND_DISPLAY) return "";
   const caps = (b as unknown as { requestedCapabilities?: Record<string, unknown> }).requestedCapabilities ?? {};
-  const app = caps[APP_CAPABILITY] as AppCapability | undefined;
-  if (app?.display === "x11") return "";
+  // `rekindle:app` is consumed by the launcher; it keeps the display here.
+  const display = caps[DISPLAY_CAPABILITY] as AppCapability["display"] | undefined;
+  if (display === "x11") return "";
   return ' (a Wayland session: a native Wayland client cannot resize its own window, xdg-shell; give this spec\'s config `display: "x11"`)';
 }
 

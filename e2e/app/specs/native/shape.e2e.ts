@@ -48,7 +48,7 @@ import { decodePng, encodePng, over, type Rgba } from "../../png.ts";
 import { type Box, type Cut, disagreements, silhouette } from "../../silhouette.ts";
 import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
-import { BUDDY_LIST, sizeWindow, sizeWindowServed } from "../../windows.ts";
+import { BUDDY_LIST, servedSize, sizeWindow, sizeWindowServed } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "shape");
 // The accessible variant (plan SK14) re-lays only Symbiosis's controls: its
@@ -227,8 +227,10 @@ describe("a skinned window is the skin's shape", function () {
       Object.assign(found, await measure(pack, "main", "buddy-list", href));
       Object.assign(found, await titleStrip("buddy-list"));
       if (!NATIVE_WAYLAND) {
-        // A resize queues a fresh native allocation pass for the cut.
-        await sizeWindow(browser, { width: BUDDY_LIST.def.width + 60, height: BUDDY_LIST.def.height + 80 });
+        // A resize queues a fresh native allocation pass for the cut: grown
+        // from the app default, or the pack's served minimum where wider.
+        const base = await servedSize(browser, BUDDY_LIST.def);
+        await sizeWindow(browser, { width: base.width + 60, height: base.height + 80 });
         Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
         // Back to the app default, or the pack's served minimum where it is wider.
         await sizeWindowServed(browser, BUDDY_LIST.def);

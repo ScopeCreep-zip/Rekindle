@@ -43,6 +43,9 @@ async function stopAndKeepLog(app: App, failed?: string): Promise<void> {
 /** The capability key a spec's config sets to ask for an app. */
 export const APP_CAPABILITY = "rekindle:app";
 
+/** The session's display (`AppCapability.display`), set by the launcher. */
+export const DISPLAY_CAPABILITY = "rekindle:display";
+
 export interface AppCapability {
   /** The window the session starts in (the driver's `wdio:tauriServiceOptions.windowLabel`). */
   window: string;
@@ -111,6 +114,10 @@ function connect(where: string, caps: AppCaps, conn: Connection, app: App): void
   const wanted = caps[APP_CAPABILITY];
   if (!wanted) throw new Error(`${where}: capability "${APP_CAPABILITY}" is missing`);
   delete caps[APP_CAPABILITY];
+  // The display the app runs on (`AppCapability.display`), kept for the
+  // session as an extension capability: `rekindle:app` itself is consumed
+  // here, so a helper that words a refused resize reads this one.
+  (caps as Record<string, unknown>)[DISPLAY_CAPABILITY] = wanted.display;
   caps.browserName = "webkit";
   caps["wdio:enforceWebDriverClassic"] = true;
   (caps as Record<string, unknown>)["wdio:tauriServiceOptions"] = { windowLabel: wanted.window };
