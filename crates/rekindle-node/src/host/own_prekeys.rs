@@ -252,13 +252,13 @@ pub(crate) async fn replace_for_re_enrol(
         .as_ref()
         .ok_or("the vault is locked")
         .and_then(|vault| {
-            use zeroize::Zeroize as _;
-            let mut entry = rekindle_vault::typed::owner_keys::OwnerEntry {
-                record_key: key.clone(),
-                keypair: keypair.to_string(),
+            let result = {
+                let entry = rekindle_vault::typed::owner_keys::OwnerEntry {
+                    record_key: key.clone(),
+                    keypair: zeroize::Zeroizing::new(keypair.to_string()),
+                };
+                rekindle_vault::typed::owner_keys::stage_prekey_owner(vault, &entry)
             };
-            let result = rekindle_vault::typed::owner_keys::stage_prekey_owner(vault, &entry);
-            entry.keypair.zeroize();
             result.map_err(|error| {
                 tracing::warn!(%error, "replacement prekey owner not saved");
                 "the replacement prekey owner could not be saved"

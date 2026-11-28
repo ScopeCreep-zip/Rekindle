@@ -123,7 +123,7 @@ impl super::Host {
             vault,
             &rekindle_vault::typed::owner_keys::OwnerEntry {
                 record_key: "simulated-provisional-record".to_owned(),
-                keypair: "simulated-provisional-owner".to_owned(),
+                keypair: zeroize::Zeroizing::new("simulated-provisional-owner".to_owned()),
             },
         )
         .expect("stage the replacement owner");
