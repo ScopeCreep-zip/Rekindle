@@ -38,7 +38,7 @@ pub(super) async fn start(
     if started.is_err() {
         state.call_media.release(call_id);
     }
-    started.map_err(|e| CallError::Session(format!("voice session start: {e}")))
+    started.map_err(CallError::Session)
 }
 
 /// Stop `call_id`'s media; a no-op when another call's media runs, or none:

@@ -30,6 +30,7 @@ pub mod codec;
 pub mod device;
 pub mod election; // Phase 14 — deterministic MCU host election (pure logic).
 pub mod error;
+pub mod ingress;
 pub mod jitter;
 pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
@@ -54,6 +55,7 @@ pub mod transport;
 pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
 pub use liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
+pub use rekindle_types::audio::{AudioIo, VoiceSink, VoiceSource};
 pub use session_deps::{
     AudioPrefs, CallMediaKeys, MediaKeySource, VoiceIdentity, VoiceLoopScopes, VoicePeer,
     VoiceSessionDeps, VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownOpts,
@@ -66,7 +68,7 @@ use crate::capture::AudioCapture;
 use crate::codec::OpusCodec;
 use crate::jitter::JitterBuffer;
 use crate::mixer::AudioMixer;
-use crate::playback::AudioPlayback;
+use crate::playback::{AudioPlayback, PlaybackOutput};
 
 /// Configuration for the voice engine.
 pub struct VoiceConfig {
@@ -92,11 +94,12 @@ pub struct VoiceConfig {
     /// indices, plan C7.24b). A device without an entry averages all its
     /// channels.
     pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    pub io: AudioIo,
 }
 
 /// Returns recommended voice settings based on group size (9E: Adaptive Codec).
 ///
-/// Smaller groups get higher bitrate and lower jitter for clarity.
+/// Smaller groups use a lower jitter target for clarity.
 /// Larger groups grow the jitter target so MCU mixing can absorb
 /// per-source desynchronisation; the latency cost is acceptable
 /// because large-group calls are typically meeting-style rather than
@@ -151,6 +154,7 @@ impl Default for VoiceConfig {
             input_volume: 1.0,
             output_volume: 1.0,
             input_channels: std::collections::BTreeMap::new(),
+            io: AudioIo::DEVICES,
         }
     }
 }
@@ -166,8 +170,8 @@ impl Default for VoiceConfig {
 /// Speaker ◀──cpal── playback_tx ◀── Opus decode + mix ◀── Jitter buffer ◀─┘
 /// ```
 ///
-/// `start_capture` and `start_playback` open real audio devices via cpal and
-/// create the mpsc channels that connect them to the encode/decode pipeline.
+/// The engine opens the configured endpoints for the encode/decode
+/// pipeline. Physical streams use cpal on dedicated audio threads.
 /// The full processing loop (chunking into Opus frames, encoding, transport,
 /// jitter buffering, decoding, mixing) is driven externally once transport
 /// is available.
@@ -185,9 +189,8 @@ pub struct VoiceEngine {
     /// `frame_size` blocks, and encode with `codec.encode()`.
     capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
 
-    /// Sender end of the playback channel — decoded PCM chunks to the speaker.
-    /// A processing loop should decode incoming packets and send mixed audio here.
-    playback_tx: Option<mpsc::Sender<Vec<f32>>>,
+    /// Destination for the receive loop’s decoded and mixed PCM.
+    playback_output: Option<PlaybackOutput>,
 
     /// Audio queued in the playback ring, ms — set by the output callback,
     /// read by the receive loop's stats. Survives playback restarts.
@@ -210,6 +213,29 @@ pub struct VoiceEngine {
 }
 
 impl VoiceEngine {
+    /// Build the engine and open the selected audio endpoints before publishing a session.
+    pub fn open(prefs: &AudioPrefs) -> Result<Self, VoiceError> {
+        let mut engine = Self::new(VoiceConfig {
+            input_device: prefs.input_device.clone(),
+            output_device: prefs.output_device.clone(),
+            input_volume: prefs.input_volume,
+            output_volume: prefs.output_volume,
+            noise_suppression: prefs.noise_suppression,
+            echo_cancellation: prefs.echo_cancellation,
+            input_channels: prefs.input_channels.clone(),
+            io: prefs.io,
+            ..VoiceConfig::default()
+        })?;
+        engine.start_audio()?;
+        Ok(engine)
+    }
+
+    /// Open both audio endpoints. If playback fails, release capture too.
+    pub fn start_audio(&mut self) -> Result<(), VoiceError> {
+        self.start_capture()?;
+        self.start_playback().inspect_err(|_| self.stop_capture())
+    }
+
     /// Create a new voice engine with the given configuration.
     pub fn new(config: VoiceConfig) -> Result<Self, VoiceError> {
         let codec = OpusCodec::new(config.sample_rate, config.channels, config.frame_size)?;
@@ -224,7 +250,7 @@ impl VoiceEngine {
             is_muted: false,
             is_deafened: false,
             capture_rx: None,
-            playback_tx: None,
+            playback_output: None,
             playback_depth_ms: std::sync::Arc::default(),
             device_error_rx: Some(device_error_rx),
             device_error_tx: Some(device_error_tx),
@@ -242,7 +268,11 @@ impl VoiceEngine {
         // Channel capacity: ~100 frames ≈ 2 seconds of audio at 20ms per frame.
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels);
+        let mut capture = AudioCapture::new(
+            self.config.sample_rate,
+            self.config.channels,
+            self.config.io.source,
+        );
         let picked = self
             .config
             .input_device
@@ -274,8 +304,12 @@ impl VoiceEngine {
     /// Start audio playback to the speaker.
     ///
     /// Opens the selected (or default) output device via cpal. Decoded/mixed PCM
-    /// chunks should be sent to the sender returned by `take_playback_tx()`.
+    /// chunks go to the endpoint returned by `take_playback_output()`.
     pub fn start_playback(&mut self) -> Result<(), VoiceError> {
+        if self.config.io.sink == VoiceSink::Null {
+            self.playback_output = Some(PlaybackOutput::Null);
+            return Ok(());
+        }
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
         let mut pb = AudioPlayback::new(self.config.sample_rate, self.config.channels);
@@ -287,7 +321,7 @@ impl VoiceEngine {
         )?;
 
         self.playback = Some(pb);
-        self.playback_tx = Some(tx);
+        self.playback_output = Some(PlaybackOutput::Speakers(tx));
         tracing::info!("voice playback pipeline started");
         Ok(())
     }
@@ -304,7 +338,7 @@ impl VoiceEngine {
             pb.stop();
         }
         self.playback = None;
-        self.playback_tx = None;
+        self.playback_output = None;
     }
 
     /// Take the capture receiver to use in a processing task.
@@ -312,9 +346,9 @@ impl VoiceEngine {
         self.capture_rx.take()
     }
 
-    /// Take the playback sender to use in a processing task.
-    pub fn take_playback_tx(&mut self) -> Option<mpsc::Sender<Vec<f32>>> {
-        self.playback_tx.take()
+    /// Take the selected playback endpoint for the receive loop.
+    pub fn take_playback_output(&mut self) -> Option<PlaybackOutput> {
+        self.playback_output.take()
     }
 
     /// Queue an opened inbound frame for playout.
@@ -370,3 +404,6 @@ impl VoiceEngine {
         rx
     }
 }
+
+#[cfg(test)]
+mod engine_tests;

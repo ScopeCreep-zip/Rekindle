@@ -1,5 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait};
 
+use rekindle_types::audio::AudioDeviceKind;
+
 use crate::VoiceError;
 
 /// Whether to search for an input or output device.
@@ -9,12 +11,16 @@ pub enum DeviceDirection {
 }
 
 impl DeviceDirection {
+    fn kind(&self) -> AudioDeviceKind {
+        match self {
+            Self::Input => AudioDeviceKind::Input,
+            Self::Output => AudioDeviceKind::Output,
+        }
+    }
+
     /// "input" or "output" — for error messages and tracing.
     fn label(&self) -> &'static str {
-        match self {
-            Self::Input => "input",
-            Self::Output => "output",
-        }
+        self.kind().code()
     }
 
     /// List all devices for this direction from the host.
@@ -128,28 +134,44 @@ pub fn select_device(
     saved: Option<&str>,
     direction: &DeviceDirection,
 ) -> Result<SelectedDevice, VoiceError> {
-    if let Some(id) = saved {
-        if let Some(device) = direction
+    let connected_label = saved.and_then(|id| {
+        direction
             .devices(host)
             .iter()
             .find(|device| device_id(device).as_deref() == Some(id))
-        {
-            return Ok(SelectedDevice {
-                id: id.to_string(),
-                label: device_label(device),
-                saved_missing: None,
-            });
-        }
+            .map(device_label)
+    });
+    choose_device(saved, connected_label, || {
+        let default = direction
+            .default_device(host)
+            .ok_or_else(|| VoiceError::NoAudioDevice(direction.kind()))?;
+        let id = device_id(&default).ok_or_else(|| {
+            VoiceError::AudioDevice(format!("{} default device has no id", direction.label()))
+        })?;
+        Ok((id, device_label(&default)))
+    })
+}
+
+/// [`select_device`]'s decision: the saved device when it is connected
+/// (`connected_label` is its label then), else the system `default`
+/// standing in with the saved choice kept, else no device at all, which
+/// is an error the user sees (plan C7.24), never a silent substitute.
+fn choose_device(
+    saved: Option<&str>,
+    connected_label: Option<String>,
+    default: impl FnOnce() -> Result<(String, String), VoiceError>,
+) -> Result<SelectedDevice, VoiceError> {
+    if let (Some(id), Some(label)) = (saved, connected_label) {
+        return Ok(SelectedDevice {
+            id: id.to_string(),
+            label,
+            saved_missing: None,
+        });
     }
-    let default = direction.default_device(host).ok_or_else(|| {
-        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
-    })?;
-    let id = device_id(&default).ok_or_else(|| {
-        VoiceError::AudioDevice(format!("{} default device has no id", direction.label()))
-    })?;
+    let (id, label) = default()?;
     Ok(SelectedDevice {
         id,
-        label: device_label(&default),
+        label,
         saved_missing: saved.map(str::to_string),
     })
 }
@@ -224,3 +246,7 @@ pub fn enumerate_audio_devices() -> EnumeratedDevices {
             .collect(),
     }
 }
+
+#[cfg(test)]
+#[path = "device_tests.rs"]
+mod tests;

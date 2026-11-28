@@ -11,6 +11,7 @@ use rekindle_codec::capnp_codec::SignedWire;
 pub use rekindle_types::subscription_events::JoinHandshake;
 
 pub mod allocation;
+pub mod allocation_follower;
 pub mod egress;
 pub mod feedback_stats;
 pub mod link;

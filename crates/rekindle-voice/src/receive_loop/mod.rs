@@ -24,6 +24,7 @@ use crate::jitter::{JitterBuffer, JitterFrame};
 use crate::liveness::MediaLiveness;
 use crate::media_crypto::{FrameOpener, MediaKeys, OpenError};
 use crate::mixer::AudioMixer;
+use crate::playback::PlaybackOutput;
 use crate::receiver_report::SenderEcho;
 use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::VoicePacket;
@@ -31,7 +32,7 @@ use rekindle_types::media::MediaScope;
 
 pub struct VoiceReceiveParams {
     pub packet_rx: mpsc::Receiver<VoicePacket>,
-    pub playback_tx: Option<mpsc::Sender<Vec<f32>>>,
+    pub playback: Option<PlaybackOutput>,
     /// Cancelled when the loop's session scope shuts down.
     pub stop: tokio_util::sync::CancellationToken,
     pub deps: Arc<dyn VoiceSessionDeps>,
@@ -101,7 +102,7 @@ pub(super) struct PlayoutCounters {
 
 struct VoiceReceiveLoop {
     packet_rx: mpsc::Receiver<VoicePacket>,
-    playback_tx: mpsc::Sender<Vec<f32>>,
+    playback: PlaybackOutput,
     stop: tokio_util::sync::CancellationToken,
     deps: Arc<dyn VoiceSessionDeps>,
     our_key_bytes: Vec<u8>,
@@ -165,8 +166,8 @@ pub async fn run(params: VoiceReceiveParams) {
 
 impl VoiceReceiveLoop {
     fn new(params: VoiceReceiveParams) -> Option<Self> {
-        let Some(playback_tx) = params.playback_tx else {
-            tracing::warn!("voice receive loop started without playback_tx — exiting");
+        let Some(playback) = params.playback else {
+            tracing::warn!("voice receive loop started without a playback endpoint — exiting");
             return None;
         };
 
@@ -185,7 +186,7 @@ impl VoiceReceiveLoop {
         Some(Self {
             opener: FrameOpener::new(keys),
             packet_rx: params.packet_rx,
-            playback_tx,
+            playback,
             stop: params.stop,
             deps: params.deps,
             our_key_bytes: hex::decode(&params.our_public_key).unwrap_or_default(),
@@ -475,10 +476,10 @@ impl VoiceReceiveLoop {
         let mixed = self.mixer.mix(&refs);
 
         if !mixed.is_empty() {
-            // Broadcast mixed audio as speaker reference for AEC
-            // (before applying deafen — AEC needs what speakers
-            // actually output).
-            let _ = self.speaker_ref_tx.send(mixed.clone());
+            // A discard sink produces no speaker reference for AEC.
+            if matches!(self.playback, PlaybackOutput::Speakers(_)) {
+                let _ = self.speaker_ref_tx.send(mixed.clone());
+            }
 
             let deafened = self.deafened_flag.load(Ordering::Relaxed);
             let peak = mixed.iter().fold(0.0f32, |m, s| m.max(s.abs()));
@@ -492,7 +493,7 @@ impl VoiceReceiveLoop {
             } else {
                 mixed
             };
-            if self.playback_tx.try_send(output).is_err() {
+            if !self.playback.play(output) {
                 self.playout.handoff_failures += 1;
                 tracing::trace!("playback channel full — dropping mixed frame");
             }

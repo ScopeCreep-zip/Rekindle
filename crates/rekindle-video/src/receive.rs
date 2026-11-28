@@ -15,8 +15,9 @@
 //! compliant sender only ever addresses the channel roster, so this
 //! gate is defense-in-depth against non-compliant or stale senders.
 
+use rekindle_codec::capnp_envelope::try_decode_community_envelope;
 use rekindle_codec::community::envelope::{
-    ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
+    CommunityEnvelope, ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 
@@ -39,6 +40,16 @@ pub fn video_payload_channel(payload: &ControlPayload) -> Option<&str> {
         | ControlPayload::MediaCapabilities { channel_id, .. } => Some(channel_id),
         _ => None,
     }
+}
+
+/// The addressed video channel of a decodable community envelope.
+#[must_use]
+pub fn video_payload_channel_from_bytes(envelope_bytes: &[u8]) -> Option<String> {
+    let payload = try_decode_community_envelope(envelope_bytes)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)?;
+    video_payload_channel(&payload).map(str::to_string)
 }
 
 /// Dispatch entry point — routed from the src-tauri Veilid control

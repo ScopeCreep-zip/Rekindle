@@ -5,7 +5,7 @@
 // `rekindle_utils::text::{prefix, abbreviate}` instead (plan C2).
 #![deny(clippy::string_slice)]
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -56,6 +56,11 @@ async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
         root,
         stores: HostStores::default(),
         transport: TransportSource::Start(host::user_transport_config()?),
+        audio: if std::io::stdin().is_terminal() {
+            rekindle_types::audio::AudioIo::DEVICES
+        } else {
+            rekindle_types::audio::AudioIo::HEADLESS
+        },
         serve_bus: true,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),

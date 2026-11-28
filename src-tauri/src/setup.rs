@@ -244,6 +244,7 @@ async fn start_host(
         root: claimed,
         stores: state.host_stores(),
         transport: rekindle_node::host::TransportSource::Adopted(node),
+        audio: rekindle_voice::AudioIo::DEVICES,
         serve_bus: true,
         clock: Arc::clone(&state.clock),
         rng: Arc::clone(&state.rng),

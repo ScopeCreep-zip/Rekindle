@@ -1,6 +1,7 @@
 use std::sync::mpsc as std_mpsc;
 
 use cpal::traits::DeviceTrait;
+use rekindle_types::audio::VoiceSource;
 use tokio::sync::mpsc;
 
 use crate::audio_thread::{AudioThread, AudioThreadLabels};
@@ -25,13 +26,19 @@ const CAPTURE_LABELS: AudioThreadLabels = AudioThreadLabels {
 /// `AudioCapture` itself is `Send` and can be stored in shared state.
 pub struct AudioCapture {
     thread: AudioThread,
+    source: VoiceSource,
+    /// Under [`VoiceSource::Silence`], the pipeline's sender, held open
+    /// and never written, so the send loop sees a live, silent source.
+    silence: Option<mpsc::Sender<Vec<f32>>>,
 }
 
 impl AudioCapture {
-    /// Create a new audio capture instance.
-    pub fn new(sample_rate: u32, channels: u16) -> Self {
+    /// Create a new audio capture instance for `source`.
+    pub fn new(sample_rate: u32, channels: u16, source: VoiceSource) -> Self {
         Self {
             thread: AudioThread::new(sample_rate, channels, CAPTURE_LABELS),
+            source,
+            silence: None,
         }
     }
 
@@ -46,6 +53,10 @@ impl AudioCapture {
         picked: Option<Vec<u16>>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
+        if self.source == VoiceSource::Silence {
+            self.silence = Some(tx);
+            return Ok(());
+        }
         self.thread.start(
             device_name,
             device_error_tx,
@@ -64,11 +75,12 @@ impl AudioCapture {
 
     /// Stop capturing audio.
     pub fn stop(&mut self) {
+        self.silence = None;
         self.thread.stop();
     }
 
     pub fn is_active(&self) -> bool {
-        self.thread.is_active()
+        self.silence.is_some() || self.thread.is_active()
     }
 }
 

@@ -36,7 +36,7 @@ pub use fragment::{
 pub use policy::negotiate_session_config;
 pub use reassembler::{ReassembledFrame, Reassembler, ReassemblerError};
 pub use reassembly_state::VideoReassemblyState;
-pub use receive::{handle_video_payload, video_payload_channel};
+pub use receive::{handle_video_payload, video_payload_channel, video_payload_channel_from_bytes};
 pub use rekindle_types::video::{
     Codec, DecoderConstraints, EncoderConstraints, MediaCapabilities, ScalabilityMode,
     SessionVideoConfig,

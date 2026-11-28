@@ -35,6 +35,7 @@ pub(super) async fn started_with(
         root: claim(root).unwrap(),
         stores: HostStores::default(),
         transport: TransportSource::Offline,
+        audio: rekindle_types::audio::AudioIo::HEADLESS,
         serve_bus: false,
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),

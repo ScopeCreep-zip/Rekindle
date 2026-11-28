@@ -74,6 +74,7 @@ pub async fn host_on(
         root: claim(root).expect("claim the data root"),
         stores,
         transport,
+        audio: rekindle_types::audio::AudioIo::HEADLESS,
         serve_bus: false,
         clock,
         rng,

@@ -24,6 +24,7 @@ pub(crate) async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::A
         root: claim(temp_root(dir)).unwrap(),
         stores: HostStores::default(),
         transport: TransportSource::Offline,
+        audio: rekindle_types::audio::AudioIo::HEADLESS,
         serve_bus: false,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),

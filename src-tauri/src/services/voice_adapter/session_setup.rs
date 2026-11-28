@@ -22,7 +22,7 @@ use rekindle_db::Db;
 /// `spawn_voice_loops_impl`.
 struct LoopBundle {
     capture_rx: Option<tokio::sync::mpsc::Receiver<Vec<f32>>>,
-    playback_tx: Option<tokio::sync::mpsc::Sender<Vec<f32>>>,
+    playback: Option<rekindle_voice::playback::PlaybackOutput>,
     noise_suppression: bool,
     echo_cancellation: bool,
     /// Config-preset jitter base (ms) — the floor the adaptive receive
@@ -32,10 +32,8 @@ struct LoopBundle {
 
 /// Body of `VoiceSessionDeps::init_voice_session` — extracted as a
 /// free fn so deps_impl stays under the file-size cap. Builds the
-/// VoiceEngine, installs the handle on AppState, starts cpal devices,
-/// constructs the real VoiceTransport with full signing-key + AEAD
-/// wiring, and returns the muted/deafened flags + transport for the
-/// crate's session orchestrator to thread into the loops.
+/// VoiceEngine with its selected audio endpoints, binds the network
+/// transport, and installs the resulting handle on AppState.
 pub(super) fn init_voice_session_impl(
     state: &Arc<AppState>,
     prefs: &rekindle_voice::AudioPrefs,
@@ -45,19 +43,6 @@ pub(super) fn init_voice_session_impl(
 ) -> Result<VoiceSessionStartup, VoiceError> {
     let muted_flag = Arc::new(AtomicBool::new(false));
     let deafened_flag = Arc::new(AtomicBool::new(false));
-
-    let config = rekindle_voice::VoiceConfig {
-        input_device: prefs.input_device.clone(),
-        output_device: prefs.output_device.clone(),
-        input_volume: prefs.input_volume,
-        output_volume: prefs.output_volume,
-        noise_suppression: prefs.noise_suppression,
-        echo_cancellation: prefs.echo_cancellation,
-        input_channels: prefs.input_channels.clone(),
-        ..rekindle_voice::VoiceConfig::default()
-    };
-    let engine = rekindle_voice::VoiceEngine::new(config)
-        .map_err(|e| VoiceError::Session(format!("failed to create voice engine: {e}")))?;
 
     // Build the session transport with full signing-key + AEAD wiring
     // (Veilid routing context init, ed25519 signing key for
@@ -69,6 +54,7 @@ pub(super) fn init_voice_session_impl(
     if self_voice_id.is_empty() {
         return Err(VoiceError::IdentityNotLoaded);
     }
+    let engine = rekindle_voice::VoiceEngine::open(prefs)?;
     let (transport, egress) = create_transport_impl(
         state,
         &self_voice_id,
@@ -95,34 +81,6 @@ pub(super) fn init_voice_session_impl(
         deafened_flag: Arc::clone(&deafened_flag),
         media_liveness: Arc::new(rekindle_voice::liveness::MediaLiveness::default()),
     });
-
-    // Now that the engine is on state, start the cpal devices. Device
-    // bring-up is NON-FATAL: a member must be able to enter a voice channel
-    // even when their mic or speakers can't open — listen-only when capture
-    // fails, present-only when both fail — the way Discord and Mumble behave.
-    // On Linux especially, cpal's ALSA backend can error or time out opening a
-    // device held by PipeWire/PulseAudio. We log the failure but keep the
-    // engine installed so the session still comes up; the send/receive loops
-    // already tolerate an absent capture_rx / playback_tx. The engine now
-    // corresponds to a real (possibly degraded) session, so leave/teardown
-    // clears it normally and check_not_in_call stays correct.
-    {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            if let Err(e) = handle.engine.start_capture() {
-                tracing::warn!(
-                    error = %e,
-                    "voice capture device unavailable — joining without mic (listen-only)"
-                );
-            }
-            if let Err(e) = handle.engine.start_playback() {
-                tracing::warn!(
-                    error = %e,
-                    "voice playback device unavailable — joining without speaker output"
-                );
-            }
-        }
-    }
 
     Ok(VoiceSessionStartup {
         muted_flag,
@@ -245,7 +203,7 @@ fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {
     let jitter_base_ms = handle.engine.config().jitter_buffer_ms;
     Ok(LoopBundle {
         capture_rx: handle.engine.take_capture_rx(),
-        playback_tx: handle.engine.take_playback_tx(),
+        playback: handle.engine.take_playback_output(),
         noise_suppression: ns,
         echo_cancellation: ec,
         jitter_base_ms,
@@ -392,7 +350,7 @@ pub(super) fn spawn_voice_loops_impl(
 
     let recv_params = move |stop| rekindle_voice::receive_loop::VoiceReceiveParams {
         packet_rx: voice_packet_rx,
-        playback_tx: bundle.playback_tx,
+        playback: bundle.playback,
         stop,
         deps: adapter_for_recv,
         our_public_key: public_key.to_string(),
@@ -456,9 +414,13 @@ pub(super) fn spawn_voice_loops_impl(
     // keyframes a route asks for after dropping or pausing video (plan
     // E4.3.3). DM video is 1:1 over its own path.
     if let Some((community_id, channel_id)) = follower_scope {
-        let follower = super::video_allocation::VideoAllocationFollower {
-            state: Arc::clone(state),
-            app: app.clone(),
+        let follower = rekindle_voice::transport::allocation_follower::VideoAllocationFollower {
+            encoders: super::video_allocation::DesktopVideoEncoders {
+                state: Arc::clone(state),
+                app: app.clone(),
+                community_id: community_id.clone(),
+                channel_id: channel_id.clone(),
+            },
             allocator: Arc::clone(media.allocator()),
             community_id,
             channel_id,

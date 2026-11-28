@@ -20,6 +20,22 @@ const PLAYBACK_LABELS: AudioThreadLabels = AudioThreadLabels {
     direction: "playback",
 };
 
+/// The receive loop's output, either a bounded device queue or a discard sink.
+pub enum PlaybackOutput {
+    Speakers(mpsc::Sender<Vec<f32>>),
+    Null,
+}
+
+impl PlaybackOutput {
+    /// Return whether the playback endpoint accepted the mixed frame.
+    pub(crate) fn play(&self, frame: Vec<f32>) -> bool {
+        match self {
+            Self::Speakers(sender) => sender.try_send(frame).is_ok(),
+            Self::Null => true,
+        }
+    }
+}
+
 /// Audio playback to the speaker via cpal.
 ///
 /// Opens the system's default output device on a dedicated audio thread and

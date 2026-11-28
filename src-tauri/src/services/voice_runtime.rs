@@ -173,7 +173,8 @@ pub async fn join_voice_channel_inner(
     let deps = build_voice_session_deps(app, state)?;
     rekindle_voice::session::join_voice_channel(&deps, channel_id, community_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .inspect_err(|error| tracing::warn!(%error, "voice channel join failed"))
+        .map_err(|error| error.notice())?;
     if let Some(cid) = community_id {
         apply_stage_audience_gate(state, cid, channel_id);
         // Our beat says the channel at once, and the voice roster is handed

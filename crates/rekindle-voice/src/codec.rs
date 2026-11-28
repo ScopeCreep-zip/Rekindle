@@ -1,9 +1,8 @@
 use crate::error::VoiceError;
 
 /// Starting Opus bitrate, matching the per-channel default the major
-/// voice services ship. The send loop's group ladder scales down from
-/// here as the mesh grows and a struggling link backs off further, but
-/// never below [`MIN_BITRATE_BPS`].
+/// voice services ship. The route allocator sets the rate from
+/// [`MIN_BITRATE_BPS`] up to this ceiling, with audio taking priority.
 pub const DEFAULT_BITRATE_BPS: i32 = 64_000;
 
 /// Floor for every bitrate decision.
@@ -65,8 +64,7 @@ impl OpusCodec {
         // Configure encoder for anonymous voice over Veilid.
         //
         // 64 kbps matches the default other major services use for a
-        // voice channel; the send loop's group ladder scales it down
-        // from here as the mesh grows.
+        // voice channel. The route allocator lowers the rate when bandwidth is limited.
         encoder
             .set_bitrate(opus::Bitrate::Bits(DEFAULT_BITRATE_BPS))
             .map_err(|e| VoiceError::Codec(format!("set bitrate failed: {e}")))?;
@@ -93,7 +91,7 @@ impl OpusCodec {
         // CBR "can cause noticeable quality degradation" for LPC/hybrid
         // modes *at very low bit-rate*. Raising the rate is what makes
         // CBR cheap here, which is why the two land together and why
-        // the ladder's floor is kept well clear of that region.
+        // the allocator's floor is kept well clear of that region.
         encoder
             .set_vbr(false)
             .map_err(|e| VoiceError::Codec(format!("set CBR failed: {e}")))?;
@@ -221,12 +219,7 @@ impl OpusCodec {
         self.frame_size
     }
 
-    /// Update the encoder bitrate for adaptive quality based on group size.
-    ///
-    /// Recommended values:
-    /// - 2-3 participants: 32000 bps (default)
-    /// - 4-8 participants: 24000 bps
-    /// - 9+  participants: 16000 bps
+    /// Apply the audio target from the route allocator.
     pub fn set_bitrate(&mut self, bps: i32) -> Result<(), VoiceError> {
         self.encoder
             .set_bitrate(opus::Bitrate::Bits(bps))

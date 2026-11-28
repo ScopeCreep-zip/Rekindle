@@ -60,6 +60,9 @@ pub struct AudioPrefs {
     pub output_device: Option<String>,
     /// Input-channel choice per input device name (0-based, plan C7.24b).
     pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    /// The audio ends this host runs with (plan E4.1): devices for the GUI,
+    /// none for the netsim and a headless daemon.
+    pub io: crate::AudioIo,
 }
 
 /// Identity snapshot returned by the adapter for `start_session`
@@ -296,7 +299,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     fn check_not_in_call(&self, channel_id: &str) -> Result<(), VoiceError>;
 
     /// Read audio preferences from the Tauri store.
-    fn audio_prefs(&self) -> AudioPrefs;
+    fn audio_prefs(&self) -> Result<AudioPrefs, VoiceError>;
 
     /// Coarse step 1: build the `VoiceEngine` with `prefs`, install
     /// it on `VoiceEngineHandle` with `channel_id` / `community_id`,

@@ -97,22 +97,12 @@ pub async fn answer_media_key_call(
         return MediaKeyReply::Refused;
     };
     let deps: Arc<dyn VoiceSignalingDeps> = adapter;
-    match payload {
-        ControlPayload::VoiceMediaKey { .. } => {
-            rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
-                .await
-                .map_or(MediaKeyReply::Refused, |ack| {
-                    MediaKeyReply::Installed(Box::new(ack))
-                })
-        }
-        ControlPayload::VoiceMediaKeyRequest { .. } => {
-            if rekindle_voice::signaling::handle_voice_media_key_request(&deps, payload).await {
-                MediaKeyReply::Requested
-            } else {
-                MediaKeyReply::Refused
-            }
-        }
-        _ => MediaKeyReply::Refused,
+    use rekindle_voice::signaling::{answer_media_key_call, MediaKeyAnswer};
+
+    match answer_media_key_call(&deps, payload).await {
+        MediaKeyAnswer::Installed(ack) => MediaKeyReply::Installed(ack),
+        MediaKeyAnswer::Requested => MediaKeyReply::Requested,
+        MediaKeyAnswer::Refused => MediaKeyReply::Refused,
     }
 }
 

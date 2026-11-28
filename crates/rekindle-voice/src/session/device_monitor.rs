@@ -23,58 +23,77 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use rekindle_types::audio::{AudioDeviceChange, AudioDeviceKind, AudioNotice};
 use tokio::sync::mpsc;
 
 use crate::device::{select_device, DeviceDirection, SelectedDevice};
 use crate::session_deps::{AudioPrefs, VoiceSessionDeps, VoiceShutdownOpts};
-use crate::VoiceError;
+use crate::{VoiceError, VoiceSink, VoiceSource};
 
 /// The concrete devices a call should have open right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AudioTargets {
-    pub input: SelectedDevice,
-    pub output: SelectedDevice,
+    input: Option<SelectedDevice>,
+    output: Option<SelectedDevice>,
 }
 
 impl AudioTargets {
-    /// Resolve the saved choices in `prefs` against the connected devices.
+    /// Resolve the saved choices for the ends that open a device.
     pub(crate) fn select(prefs: &AudioPrefs) -> Result<Self, VoiceError> {
-        let host = cpal::default_host();
-        Ok(Self {
-            input: select_device(
-                &host,
-                prefs.input_device.as_deref(),
-                &DeviceDirection::Input,
-            )?,
-            output: select_device(
-                &host,
-                prefs.output_device.as_deref(),
-                &DeviceDirection::Output,
-            )?,
+        Self::select_with(prefs, |saved, direction| {
+            select_device(&cpal::default_host(), saved, direction)
         })
     }
 
-    /// Whether these are the devices already open.
-    fn match_open(&self, open: &(Option<String>, Option<String>)) -> bool {
-        open.0.as_deref() == Some(self.input.id.as_str())
-            && open.1.as_deref() == Some(self.output.id.as_str())
+    fn select_with(
+        prefs: &AudioPrefs,
+        device: impl Fn(Option<&str>, &DeviceDirection) -> Result<SelectedDevice, VoiceError>,
+    ) -> Result<Self, VoiceError> {
+        let input = match prefs.io.source {
+            VoiceSource::Mic => Some(device(
+                prefs.input_device.as_deref(),
+                &DeviceDirection::Input,
+            )?),
+            VoiceSource::Silence => None,
+        };
+        let output = match prefs.io.sink {
+            VoiceSink::Speakers => Some(device(
+                prefs.output_device.as_deref(),
+                &DeviceDirection::Output,
+            )?),
+            VoiceSink::Null => None,
+        };
+        Ok(Self { input, output })
     }
 
-    /// Tell the user about each stand-in for a saved device that is not
-    /// connected.
+    pub(crate) fn ids(&self) -> (Option<String>, Option<String>) {
+        (
+            self.input.as_ref().map(|device| device.id.clone()),
+            self.output.as_ref().map(|device| device.id.clone()),
+        )
+    }
+
+    fn match_open(&self, open: &(Option<String>, Option<String>)) -> bool {
+        self.input.as_ref().map(|device| device.id.as_str()) == open.0.as_deref()
+            && self.output.as_ref().map(|device| device.id.as_str()) == open.1.as_deref()
+    }
+
+    /// Tell the user which system default is standing in for a saved device.
     pub(crate) fn announce_missing<D: VoiceSessionDeps + ?Sized>(&self, deps: &Arc<D>) {
-        for (kind, selected) in [("microphone", &self.input), ("speaker", &self.output)] {
+        for (kind, selected) in [
+            (AudioDeviceKind::Input, &self.input),
+            (AudioDeviceKind::Output, &self.output),
+        ] {
+            let Some(selected) = selected else { continue };
             if let Some(saved) = &selected.saved_missing {
-                tracing::warn!(kind, saved = %saved, using = %selected.label,
+                tracing::warn!(?kind, saved = %saved, using = %selected.label,
                     "saved audio device not connected; using the system default");
-                deps.emit_system_alert(
-                    format!("Your {kind} isn't connected"),
-                    format!(
-                        "Your chosen {kind} isn't connected, so Rekindle is using \"{}\". It \
-                         switches back when it is plugged in.",
-                        selected.label
-                    ),
-                );
+                let (title, body) = AudioNotice::SavedDeviceMissing {
+                    kind,
+                    selected: &selected.label,
+                }
+                .notice();
+                deps.emit_system_alert(title, body);
             }
         }
     }
@@ -138,12 +157,8 @@ pub(crate) fn report_reopen_failure<D: VoiceSessionDeps + ?Sized>(
     error: &VoiceError,
 ) {
     tracing::error!(%error, "audio devices not reopened after a device change; the call has no audio");
-    deps.emit_system_alert(
-        "Audio couldn't restart".to_string(),
-        format!(
-            "Rekindle couldn't reopen your audio devices ({error}). Leave and rejoin the call."
-        ),
-    );
+    let (title, body) = AudioNotice::RestartFailed.notice();
+    deps.emit_system_alert(title, body);
 }
 
 /// Reopen on the devices the call should use if they differ from the open
@@ -157,7 +172,7 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
     if !deps.voice_engine_present() {
         return Ok(false);
     }
-    let prefs = deps.audio_prefs();
+    let prefs = deps.audio_prefs()?;
     let targets = AudioTargets::select(&prefs)?;
     let open = deps.voice_engine_device_config();
     if !force && targets.match_open(&open) {
@@ -168,36 +183,56 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
     // our own JoinHandle would deadlock.
     crate::session::shutdown::shutdown_voice(deps, &VoiceShutdownOpts::LOOPS_ONLY).await;
     deps.stop_audio_devices();
-    deps.set_voice_engine_devices(
-        Some(targets.input.id.clone()),
-        Some(targets.output.id.clone()),
-    );
+    let (input, output) = targets.ids();
+    deps.set_voice_engine_devices(input, output);
     deps.set_voice_engine_input_channels(prefs.input_channels.clone());
     crate::session::restart::restart_loops(deps).inspect_err(|e| report_reopen_failure(deps, e))?;
 
     for (kind, selected, was, saved) in [
-        ("input", &targets.input, &open.0, &prefs.input_device),
-        ("output", &targets.output, &open.1, &prefs.output_device),
+        (
+            AudioDeviceKind::Input,
+            &targets.input,
+            &open.0,
+            &prefs.input_device,
+        ),
+        (
+            AudioDeviceKind::Output,
+            &targets.output,
+            &open.1,
+            &prefs.output_device,
+        ),
     ] {
+        let Some(selected) = selected else { continue };
         if was.as_deref() == Some(selected.id.as_str()) {
             continue;
         }
         let reason = if selected.saved_missing.is_some() {
-            "saved device disconnected"
+            AudioDeviceChange::SavedDisconnected
         } else if saved.as_deref() == Some(selected.id.as_str()) {
-            "saved device reconnected"
+            AudioDeviceChange::SavedReconnected
         } else {
-            "system default changed"
+            AudioDeviceChange::DefaultChanged
         };
-        tracing::info!(kind, device = %selected.label, reason, "device monitor: switched device");
-        deps.emit_device_changed(kind.to_string(), selected.label.clone(), reason.to_string());
+        tracing::info!(?kind, device = %selected.label, ?reason, "device monitor: switched device");
+        deps.emit_device_changed(
+            kind.code().into(),
+            selected.label.clone(),
+            reason.notice().into(),
+        );
         if selected.saved_missing.is_none() {
-            deps.emit_system_alert(
-                "Audio device switched".to_string(),
-                format!("Now using \"{}\" for {kind} ({reason}).", selected.label),
-            );
+            let (title, body) = AudioNotice::DeviceSwitched {
+                kind,
+                selected: &selected.label,
+                change: reason,
+            }
+            .notice();
+            deps.emit_system_alert(title, body);
         }
     }
     targets.announce_missing(deps);
     Ok(true)
 }
+
+#[cfg(test)]
+#[path = "device_monitor_tests.rs"]
+mod tests;

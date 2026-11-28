@@ -242,10 +242,12 @@ impl VoiceSessionDeps for VoiceAdapter {
         }
     }
 
-    fn audio_prefs(&self) -> AudioPrefs {
+    fn audio_prefs(&self) -> Result<AudioPrefs, VoiceError> {
         // The unlocked identity's saved preferences (plan C7.23, D1).
         let prefs = crate::services::preferences::current(&self.state);
-        AudioPrefs {
+        let audio = self.state.host.current().map(|host| host.audio_io());
+        Ok(AudioPrefs {
+            io: audio.ok_or(VoiceError::IdentityNotLoaded)?,
             noise_suppression: prefs.noise_suppression,
             echo_cancellation: prefs.echo_cancellation,
             input_volume: prefs.input_volume,
@@ -253,7 +255,7 @@ impl VoiceSessionDeps for VoiceAdapter {
             input_device: prefs.input_device,
             output_device: prefs.output_device,
             input_channels: prefs.input_channels,
-        }
+        })
     }
 
     fn init_voice_session(
@@ -325,7 +327,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn restart_audio_devices(&self) -> Result<(), VoiceError> {
-        io_helpers::restart_audio_devices_impl(&self.state).map_err(VoiceError::Session)
+        io_helpers::restart_audio_devices_impl(&self.state)
     }
 
     fn current_shared_transport(

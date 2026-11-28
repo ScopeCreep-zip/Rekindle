@@ -136,6 +136,8 @@ pub enum HostMode {
 pub struct HostConfig {
     pub root: ClaimedRoot,
     pub stores: HostStores,
+    /// The audio endpoints selected for this Host.
+    pub audio: rekindle_types::audio::AudioIo,
     pub transport: TransportSource,
     /// Bind the IPC bus, so the TUI and CLI attach to this process.
     pub serve_bus: bool,
@@ -167,6 +169,7 @@ pub(super) struct Bus {
 pub struct Host {
     pub(crate) ctx: Arc<DaemonContext>,
     mode: HostMode,
+    audio: rekindle_types::audio::AudioIo,
     workers: tokio_util::task::TaskTracker,
     bus: Option<Bus>,
     /// Held for the life of the host.
@@ -187,6 +190,7 @@ impl Host {
         let HostConfig {
             root: claimed,
             stores,
+            audio,
             transport,
             serve_bus,
             clock,
@@ -416,6 +420,7 @@ impl Host {
         Ok(Arc::new(Self {
             ctx,
             mode,
+            audio,
             workers,
             bus,
             claimed,
@@ -427,6 +432,12 @@ impl Host {
     #[must_use]
     pub fn mode(&self) -> HostMode {
         self.mode
+    }
+
+    /// The selected audio endpoints for voice sessions on this Host.
+    #[must_use]
+    pub fn audio_io(&self) -> rekindle_types::audio::AudioIo {
+        self.audio
     }
 
     /// Journal `event` for every subscriber (plan D3.2): the GUI's emitters

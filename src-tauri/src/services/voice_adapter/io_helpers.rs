@@ -9,19 +9,12 @@ use std::sync::Arc;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
+use rekindle_voice::VoiceError;
 
-pub(super) fn restart_audio_devices_impl(state: &AppState) -> Result<(), String> {
+pub(super) fn restart_audio_devices_impl(state: &AppState) -> Result<(), VoiceError> {
     let mut ve = state.voice_engine.lock();
-    let handle = ve.as_mut().ok_or("no active voice engine")?;
-    handle
-        .engine
-        .start_capture()
-        .map_err(|e| format!("failed to restart capture: {e}"))?;
-    handle
-        .engine
-        .start_playback()
-        .map_err(|e| format!("failed to restart playback: {e}"))?;
-    Ok(())
+    let handle = ve.as_mut().ok_or(VoiceError::NotConnected)?;
+    handle.engine.start_audio()
 }
 
 pub(super) async fn resolve_peer_route_impl(

@@ -1,4 +1,7 @@
-use super::*;
+use rekindle_media_bwe::Bitrate;
+
+use super::{OpusCodec, DEFAULT_BITRATE_BPS, MIN_BITRATE_BPS};
+use crate::transport::{allocation::allocate, egress::MediaShare};
 
 /// Hard CBR is a security property, so it is pinned behaviourally
 /// rather than by asserting we called a setter.
@@ -61,34 +64,16 @@ fn cbr_makes_packet_size_independent_of_content() {
     );
 }
 
-/// The ladder must never drive the encoder into the region where
-/// libopus documents CBR as costing noticeable quality.
-///
-/// `const` blocks, so lowering a constant fails the **build** rather
-/// than a test run — this guards a security setting, and the whole
-/// point is that it cannot be relaxed quietly.
+/// Pin the range the allocator can actually give the CBR encoder.
 #[test]
 fn the_bitrate_floor_stays_clear_of_the_low_rate_cbr_penalty() {
-    const { assert!(MIN_BITRATE_BPS >= 24_000) };
-    const { assert!(DEFAULT_BITRATE_BPS >= MIN_BITRATE_BPS) };
-    // Pin the worst bitrate the system can ever emit: the smallest
-    // group rung (8+ peers) with a Poor-link backoff on top. The
-    // ladder's own arithmetic lands under the floor there, so the
-    // clamp in `report_quality_if_due` is load-bearing rather than
-    // decorative — worth stating, because deleting it as redundant
-    // would silently reopen the low-rate CBR quality hole.
-    const {
-        let worst_rung = DEFAULT_BITRATE_BPS / 2;
-        assert!(
-            worst_rung * 2 / 3 < MIN_BITRATE_BPS,
-            "clamp is load-bearing"
-        );
+    let audio = |estimate| {
+        i32::try_from(allocate(Bitrate::bps(estimate), MediaShare::default(), true).audio_bps)
+            .unwrap()
     };
-    // So the floor is what the system actually emits at its worst.
-    // (`Ord::max` is not const-callable yet, hence the runtime
-    // assertion for the clamped result.)
-    let worst_rung = DEFAULT_BITRATE_BPS / 2;
-    assert_eq!((worst_rung * 2 / 3).max(MIN_BITRATE_BPS), MIN_BITRATE_BPS);
+    assert_eq!(audio(0), 24_000);
+    assert_eq!(audio(0), MIN_BITRATE_BPS);
+    assert_eq!(audio(100_000_000), DEFAULT_BITRATE_BPS);
 }
 
 #[test]

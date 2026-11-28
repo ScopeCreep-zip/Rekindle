@@ -12,6 +12,7 @@ compile_error!("the webdriver-test feature is for debug builds only");
 pub mod activity;
 pub mod analytics;
 pub mod attachment;
+pub mod audio;
 pub mod base64_bytes;
 pub mod channel;
 pub mod channel_keys;

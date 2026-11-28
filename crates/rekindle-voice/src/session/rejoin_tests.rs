@@ -137,7 +137,7 @@ impl VoiceSessionDeps for Joiner {
     fn check_not_in_call(&self, _: &str) -> Result<(), VoiceError> {
         unreachable!("not on the leave path")
     }
-    fn audio_prefs(&self) -> AudioPrefs {
+    fn audio_prefs(&self) -> Result<AudioPrefs, VoiceError> {
         unreachable!("not on the leave path")
     }
     fn init_voice_session(

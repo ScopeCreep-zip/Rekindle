@@ -19,21 +19,18 @@ use crate::session_deps::VoiceSessionDeps;
 ///
 /// 1. Verify we're not already in a different voice channel.
 /// 2. Read identity (public_key + display_name) for join events.
-/// 3. Load audio preferences from the Tauri store.
+/// 3. Read the Host-selected audio endpoints and resolve device preferences.
 /// 4. For 1:1 calls (community_id == None): resolve the peer's
 ///    route via the W13.12 fallback chain (cache → DHT subkey 6 →
 ///    mailbox). Fail closed if all three empty.
-/// 5. `deps.init_voice_session(...)`: build the VoiceEngine, start
-///    cpal devices, build the transport, install the call_key for
-///    1:1, store the engine handle on AppState. Returns the
-///    (muted_flag, deafened_flag, transport) tuple.
-/// 6. Load community member display names from SQLite (empty map
-///    for 1:1 calls).
-/// 7. `deps.spawn_voice_loops(...)`: spawn send / receive / device
+/// 5. `deps.init_voice_session(...)`: open the selected audio endpoints,
+///    build the transport, install the 1:1 call key, and store the
+///    running session. Return its flags and transport for the loops.
+/// 6. `deps.spawn_voice_loops(...)`: spawn send / receive / device
 ///    monitor loops, register handles on the engine for shutdown.
-/// 8. Emit `VoiceEvent::LocalJoined` so frontends transition to
+/// 7. Emit `VoiceEvent::LocalJoined` so frontends transition to
 ///    in-call UI.
-/// 9. For community channels: broadcast `MediaCapabilities` so
+/// 8. For community channels: broadcast `MediaCapabilities` so
 ///    other senders cap their VP9 bitrate at the lowest common
 ///    denominator (§10.6).
 pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
@@ -47,11 +44,10 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     // Plan C7.24 — open concrete devices: the saved ones when connected,
     // else the system default, said out loud. The device monitor keeps
     // them current from here on.
-    let mut prefs = deps.audio_prefs();
+    let mut prefs = deps.audio_prefs()?;
     let targets = crate::session::device_monitor::AudioTargets::select(&prefs)?;
     targets.announce_missing(deps);
-    prefs.input_device = Some(targets.input.id);
-    prefs.output_device = Some(targets.output.id);
+    (prefs.input_device, prefs.output_device) = targets.ids();
 
     // Self-identity on the voice wire: the per-community pseudonym for
     // community voice (so our signed packets verify against the
@@ -86,7 +82,7 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     let session = startup.transport.lock().await.session_state();
 
     // init_voice_session installed the engine handle and started the
-    // cpal devices. If loop spawn fails now, tear that down — leaving
+    // audio endpoints. If loop spawn fails now, tear that down — leaving
     // it would block the next join with "already in a different voice
     // channel".
     if let Err(e) = deps.spawn_voice_loops(

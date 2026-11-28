@@ -24,6 +24,7 @@ async fn test_env(dir: &std::path::Path) -> (DataRoot, SharedState) {
         root: rekindle_node::host::claim(root.clone()).unwrap(),
         stores: state.host_stores(),
         transport: rekindle_node::host::TransportSource::Offline,
+        audio: rekindle_voice::AudioIo::HEADLESS,
         serve_bus: false,
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),

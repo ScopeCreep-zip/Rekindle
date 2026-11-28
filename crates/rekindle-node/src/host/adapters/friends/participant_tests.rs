@@ -24,6 +24,7 @@ async fn host_on_sim(dir: &tempfile::TempDir, peer: &str) -> (rekindle_netsim::N
             ports: node.ports,
             events: node.events,
         },
+        audio: rekindle_types::audio::AudioIo::HEADLESS,
         serve_bus: false,
         clock: Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>,
         rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,

@@ -102,6 +102,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
         root: claim(temp_root(&dir)).unwrap(),
         stores,
         transport: TransportSource::Offline,
+        audio: rekindle_types::audio::AudioIo::HEADLESS,
         serve_bus: false,
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),

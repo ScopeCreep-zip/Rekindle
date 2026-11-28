@@ -16,6 +16,7 @@ use rekindle_codec::ingress::{classify, Ingress};
 use rekindle_transport::subscriptions::lanes::IngressItem;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::key_format::pseudonym_hex;
+use rekindle_video::video_payload_channel_from_bytes;
 
 // Fully synchronous: the voice fast path is a `try_send` and
 // everything else is a queue push — the dispatch loop never blocks on
@@ -277,26 +278,6 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
             _ => "control",
         },
     }
-}
-
-/// Phase F + §10.6 — if the decoded envelope carries a video control
-/// payload (fragment, parity, capabilities, keyframe req, bandwidth,
-/// topology, ack), the channel it is addressed to. Used at the
-/// verify-failure boundary (toast gating), the §20.2 rate floor
-/// (in-channel media exemption), and the forward branch (video is
-/// directed, never gossip-relayed). The variant set lives in
-/// `rekindle_video::video_payload_channel` so the classification has
-/// one definition.
-///
-/// If decoding fails (which is itself a wire-shape issue) we
-/// conservatively return `None` — the rejection is logged via tracing
-/// and a video-specific UI toast would be a guess.
-fn video_payload_channel_from_bytes(envelope_bytes: &[u8]) -> Option<String> {
-    let payload = try_decode_community_envelope(envelope_bytes)
-        .ok()
-        .flatten()
-        .and_then(CommunityEnvelope::into_control)?;
-    rekindle_video::video_payload_channel(&payload).map(str::to_string)
 }
 
 /// True when the local user's active voice/video session is bound to

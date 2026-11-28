@@ -69,9 +69,7 @@ impl VoiceAdapter {
 // (shutdown_voice on CallEnd), cleanup.rs (shutdown on detach),
 // and calls_adapter.rs (start_session / shutdown).
 
-/// Bring up a voice session. Wraps adapter construction + crate
-/// call. Returns the same `Err` shape as the legacy
-/// `services::voice::session::start_session` for caller compat.
+/// Bring up a voice session and return the Host notice on failure.
 pub async fn start_session(
     channel_id: &str,
     community_id: Option<&str>,
@@ -83,7 +81,8 @@ pub async fn start_session(
     let deps: Arc<dyn VoiceSessionDeps> = adapter;
     rekindle_voice::session::start_session(&deps, channel_id, community_id)
         .await
-        .map_err(|e| e.to_string())
+        .inspect_err(|error| tracing::warn!(%error, "voice session did not start"))
+        .map_err(|error| error.notice())
 }
 
 /// Architecture §10.6 — directed advertise of our `MediaCapabilities`

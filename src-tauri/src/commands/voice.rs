@@ -96,7 +96,8 @@ pub async fn set_audio_devices(
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::change_audio_devices(&deps, input_device, output_device)
         .await
-        .map_err(|e| e.to_string())
+        .inspect_err(|error| tracing::warn!(%error, "audio device change failed"))
+        .map_err(|error| error.notice())
 }
 
 /// Save the input-channel choice for input `device` (0-based channel
@@ -115,7 +116,8 @@ pub async fn set_input_channels(
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::change_audio_devices(&deps, prefs.input_device, prefs.output_device)
         .await
-        .map_err(|e| e.to_string())
+        .inspect_err(|error| tracing::warn!(%error, "audio device change failed"))
+        .map_err(|error| error.notice())
 }
 
 /// Switch voice mode between mesh and MCU.

@@ -1,3 +1,4 @@
+use rekindle_types::audio::{AudioDeviceKind, VoiceFailure};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -8,6 +9,9 @@ pub enum VoiceError {
 
     #[error("audio device error: {0}")]
     AudioDevice(String),
+
+    #[error("no audio device available ({0:?})")]
+    NoAudioDevice(AudioDeviceKind),
 
     #[error("codec error: {0}")]
     Codec(String),
@@ -30,4 +34,20 @@ pub enum VoiceError {
     /// (plan C7.9c: no fallback); the window shows the media route's state.
     #[error("media route unavailable")]
     MediaRouteUnavailable,
+}
+
+impl VoiceError {
+    /// Render a shared notice at a frontend boundary.
+    #[must_use]
+    pub fn notice(&self) -> String {
+        let failure = match self {
+            Self::NoAudioDevice(kind) => VoiceFailure::NoDevice(*kind),
+            Self::AudioDevice(_) => VoiceFailure::AudioDevice,
+            Self::IdentityNotLoaded => VoiceFailure::SignInRequired,
+            Self::NotConnected => VoiceFailure::NotConnected,
+            Self::MediaRouteUnavailable => VoiceFailure::MediaRouteUnavailable,
+            _ => VoiceFailure::Session,
+        };
+        failure.notice()
+    }
 }
