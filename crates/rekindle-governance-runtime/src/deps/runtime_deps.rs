@@ -111,6 +111,16 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
         record: &str,
         owner: &str,
     ) -> Result<(), GovernanceRuntimeError>;
+    /// Atomically install a successor binding and stage its signed retirement
+    /// carrier for the existing durable publisher.
+    fn commit_device_re_enrolment(
+        &self,
+        community: &str,
+        retired: [u8; 32],
+        secret: &[u8; 32],
+        owner: &str,
+        carrier: &crate::op_log::HeldOp,
+    ) -> Result<(), GovernanceRuntimeError>;
     fn identity_status(&self) -> UserStatusKind;
     fn our_route_blob(&self) -> Vec<u8>;
 

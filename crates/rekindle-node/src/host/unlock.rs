@@ -242,6 +242,16 @@ pub(crate) async fn run(
     {
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
+    if let Err(e) = crate::daemon::dispatch::adapter(ctx)
+        .resume_retirement_carriers()
+        .await
+    {
+        return fail(
+            ctx,
+            IpcResponse::error(500, format!("retirement carriers: {e}")),
+        )
+        .await;
+    }
     // 3e'. The stored MEKs of those communities and their channels (plan
     // E3.1 C2c), so a post or a read after a restart has its key.
     crate::daemon::dispatch::adapter(ctx)

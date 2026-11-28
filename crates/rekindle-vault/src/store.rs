@@ -232,10 +232,33 @@ impl VaultStore {
     /// Insert-or-replace the entry addressed by `vault_key`. The value is
     /// sealed with AES-256-GCM under the per-entry key before being stored.
     pub fn put(&self, vault_key: &VaultKey, value: &[u8]) -> Result<(), VaultError> {
+        self.put_entry(&self.conn.lock(), vault_key, value)
+    }
+
+    /// Store the new device binding and its signed retirement handoff together.
+    pub(crate) fn put_pair(
+        &self,
+        first: (&VaultKey, &[u8]),
+        second: (&VaultKey, &[u8]),
+    ) -> Result<(), VaultError> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        self.put_entry(&tx, first.0, first.1)?;
+        self.put_entry(&tx, second.0, second.1)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn put_entry(
+        &self,
+        conn: &Connection,
+        vault_key: &VaultKey,
+        value: &[u8],
+    ) -> Result<(), VaultError> {
         let namespace = vault_key.namespace();
         let key = vault_key.key();
         let (nonce, ct) = seal_aes_gcm(self.entry_key.expose(), &aad(namespace, &key), value)?;
-        self.conn.lock().execute(
+        conn.execute(
             "INSERT OR REPLACE INTO entries (namespace, key, nonce, ciphertext) VALUES (?1, ?2, ?3, ?4)",
             params![namespace, key.as_ref(), nonce, ct],
         )?;

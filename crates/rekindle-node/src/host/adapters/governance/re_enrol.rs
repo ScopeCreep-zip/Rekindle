@@ -124,10 +124,7 @@ impl HostGovernance {
                 .own_op_record_writer(&community)
                 .ok()
                 .map(|(record, _)| record);
-            let outcome = match self.stage_retirement_owner(&community) {
-                Ok(()) => Box::pin(device_re_enrol::re_enrol(self, &community)).await,
-                Err(error) => Err(error),
-            };
+            let outcome = Box::pin(device_re_enrol::re_enrol(self, &community)).await;
             if outcome.is_ok() {
                 if let Some(record) = previous_record {
                     self.stop_member_record_republishes(&record);

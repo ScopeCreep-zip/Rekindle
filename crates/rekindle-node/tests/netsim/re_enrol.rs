@@ -440,3 +440,73 @@ async fn re_enrol_reopens_the_old_prekey_owner_if_cutover_stops_before_commit() 
     assert_eq!(after["recordKey"], before["recordKey"]);
     assert_eq!(after["deviceId"], before["deviceId"]);
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn re_enrol_recovers_a_carrier_after_cutover_before_the_outbox() {
+    let (mut community, _backup) = solo_creator_and_restored_copy(7033).await;
+    let held = wait_for_review(&community, 1).await;
+    let old_record = wait_for_own_record_watch(&community).await;
+    let original_head = community.sim.network_get(&old_record, GOV_HEAD).unwrap();
+    let old_key = community_key(&community, 1);
+    let db = community.nodes[1].db.current().expect("unlocked database");
+    // Stop immediately after the device-vault transaction. A database
+    // failure at this seam leaves no signed-op or outbox row to replay.
+    db.call(|conn| {
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER interrupt_carrier BEFORE INSERT ON governance_ops
+         WHEN NEW.signed_here = 1 AND NEW.device_seq = 0
+         BEGIN SELECT RAISE(FAIL, 'interrupted retirement carrier'); END;",
+        )
+    })
+    .await
+    .unwrap();
+    let answer = community.nodes[1]
+        .ok(IpcRequest::IntentCommit {
+            intent_id: held.review.intent_id,
+            proof: IntentProof::Acknowledged,
+        })
+        .await;
+    assert!(
+        answer["reEnrolled"][0]["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("interrupted retirement carrier")),
+        "{answer:?}"
+    );
+    let successor = community_key(&community, 1);
+    assert_ne!(old_key, successor);
+    assert_eq!(
+        community
+            .sim
+            .network_get(&old_record, GOV_HEAD)
+            .unwrap()
+            .seq,
+        original_head.seq
+    );
+    db.call(|conn| conn.execute_batch("DROP TRIGGER interrupt_carrier"))
+        .await
+        .unwrap();
+    drop(db);
+
+    let stopped = community.nodes.remove(1);
+    let restarted = stopped
+        .restart(&community.sim, Duration::from_secs(1))
+        .await;
+    community.nodes.insert(1, restarted);
+    crate::devices::unlock(&community, 1).await;
+    assert_eq!(
+        community_key(&community, 1),
+        successor,
+        "the vault kept the same binding"
+    );
+    wait_for_review(&community, 0).await;
+    let port = community.nodes[0].host.governance().record_port().unwrap();
+    let (_, pointer) = rekindle_records::chain::read_log_with_retirement(&*port, &old_record, 0)
+        .await
+        .unwrap();
+    assert_eq!(
+        pointer
+            .expect("the resumed carrier published its locator")
+            .successor_key,
+        successor
+    );
+}

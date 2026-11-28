@@ -450,7 +450,7 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
 /// Every reader drops an entry outside its value bounds (plan E3.0), so the
 /// writer refuses it by name before validating permission, instead of
 /// writing what no peer applies or reporting `PermissionDenied`.
-fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntimeError> {
+pub(crate) fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntimeError> {
     match validate::bounds::out_of_bounds_field(entry) {
         Some(field) => Err(GovernanceRuntimeError::OutOfBounds { field }),
         None => Ok(()),
@@ -532,7 +532,7 @@ pub(crate) fn invite_timed_out() -> GovernanceRuntimeError {
 /// applies an entry, so the writer runs it before writing: a malformed
 /// entry is `Malformed` (400), a missing permission `PermissionDenied`
 /// (403), and neither is written or applied.
-fn refuse_invalid(
+pub(crate) fn refuse_invalid(
     writer: &PseudonymKey,
     entry: &GovernanceEntry,
     state: &rekindle_governance::state::GovernanceState,

@@ -7,14 +7,17 @@
 //! the copied key at `lastSeq` and endorses the new one. Nothing here runs
 //! without that commit (rule 9: no automatic recovery).
 
+use rekindle_governance::merge;
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::display_catch_up::PendingGovKind;
 use rekindle_types::governance::{DeviceReEnrol, GovernanceEntry};
 
 use crate::apply::{self, BuiltOn};
-use crate::deps::{GovernanceRuntimeDeps, OpOutcome};
+use crate::deps::{GovernanceRuntimeDeps, OpLanding, OpOutcome};
 use crate::device_ops;
+use crate::device_signer::OpSigner;
 use crate::error::GovernanceRuntimeError;
+use crate::event::GovernanceRuntimeEvent;
+use crate::op_log::{self, Deps, OpFate};
 use crate::unlock_barrier::BarrierPhase;
 
 /// Whether this device must re-enrol in `community`: the barrier found a
@@ -76,9 +79,8 @@ pub async fn last_seq<D: GovernanceRuntimeDeps>(
     Ok(head.unwrap_or(0))
 }
 
-/// Re-enrol this device in `community`: mint a fresh key and record, store
-/// the key (the old one never signs again), pass the barrier for it, and
-/// write the `DeviceReEnrol` built under the rebuild lock.
+/// Re-enrol this device in `community`: mint and sign with a fresh binding,
+/// commit it with its carrier, then queue that carrier and pass the barrier.
 ///
 /// # Errors
 /// [`GovernanceRuntimeError::DeviceActRefused`] when the held set does not
@@ -99,22 +101,78 @@ pub async fn re_enrol<D: GovernanceRuntimeDeps>(
             "this device's key is not endorsed here",
         ));
     }
+    let (secret, record, owner) = device_ops::mint_device(deps).await?;
+    let bound = record.record.clone();
+    // Serialize with ordinary signing and rebuilds. Held writes may be
+    // waiting on this cutover to pass the barrier.
+    let lock = deps.rebuild_lock(community);
+    let installing = lock.lock().await;
+    let state = deps
+        .governance_state(community)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community.to_owned()))?;
+    let cert = deps
+        .genesis_cert(community)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community.to_owned()))?;
+    let held = deps.op_store().governance_ops(community).await?;
+    let mut set = op_log::verify_held_with(deps, community, &held);
+    let on = BuiltOn {
+        state: &state,
+        set: &set,
+        author: &author,
+    };
     let last_seq = last_seq(deps, community).await?;
-    let (secret, record, owner_keypair) = device_ops::mint_device(deps).await?;
-    deps.store_device_op_key(community, &secret)?;
-    deps.unlock_barrier(community).re_keyed();
-    let anchor = community.to_owned();
-    let build: apply::Build<D> = Box::new(move |deps: &D, on: &BuiltOn<'_>| {
-        let bound = record.record.clone();
-        let retired = device_ops::p_retirement(deps, &anchor, on, old, last_seq)?;
-        let endorsement = device_ops::new_endorsement(deps, &anchor, on, record, &secret)?;
-        deps.store_device_record(&anchor, &bound, &owner_keypair)?;
-        Ok(GovernanceEntry::DeviceReEnrol(DeviceReEnrol {
-            retired,
-            endorsement,
-        }))
+    let retired = device_ops::p_retirement(deps, community, &on, old, last_seq)?;
+    let endorsement = device_ops::new_endorsement(deps, community, &on, record, &secret)?;
+    let entry = GovernanceEntry::DeviceReEnrol(DeviceReEnrol {
+        retired,
+        endorsement,
     });
-    apply::write_built(deps, community, build, PendingGovKind::DeviceReEnrol).await
+    apply::refuse_out_of_bounds(&entry)?;
+    apply::refuse_invalid(&author, &entry, &state)?;
+    let (op, encoded) = {
+        let device = SigningKey::from_bytes(&secret);
+        let signer = OpSigner::checked(community, &state, author, &device)?;
+        op_log::build_op(
+            community,
+            &cert,
+            &state,
+            &set,
+            signer,
+            entry.clone(),
+            Deps::Frontier,
+            deps.clock().now_secs(),
+        )?
+    };
+    let carrier = op_log::held(&op, bound, encoded, OpFate::Applied);
+    deps.commit_device_re_enrolment(community, old, &secret, &owner, &carrier)?;
+    drop(secret);
+    drop(owner);
+    deps.op_store()
+        .store_signed_governance_op(community, &carrier)
+        .await?;
+    let barrier = deps.unlock_barrier(community);
+    let id = hex::encode(carrier.hash.0);
+    barrier.signed(&id);
+    let publication = match deps
+        .publish_governance_op(community, carrier.encoded.clone(), OpLanding::FirstAttempt)
+        .await
+    {
+        Ok(publication) => publication,
+        Err(error) => {
+            barrier.settled(&id);
+            return Err(error);
+        }
+    };
+    deps.gossip_governance_op(community, &carrier.encoded);
+    set.ops.push(op);
+    deps.set_governance_state(community, merge::merge(&cert, &set.ops));
+    barrier.re_keyed();
+    drop(installing);
+    deps.emit_event(GovernanceRuntimeEvent::GovernanceEntryApplied {
+        community_id: community.to_owned(),
+        entry: Box::new(entry),
+    });
+    publication.landed().await
 }
 
 /// Our held device key's public half in `community`.
