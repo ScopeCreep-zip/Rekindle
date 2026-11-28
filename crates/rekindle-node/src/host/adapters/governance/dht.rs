@@ -175,10 +175,10 @@ impl HostGovernance {
         lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
-        writer: Option<String>,
+        writer: Option<&str>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
         let node = self.transport()?;
-        dht_writes::set_leased_str(&node, lease, subkey, value, writer.as_deref())
+        dht_writes::set_leased_str(&node, lease, subkey, value, writer)
             .await
             .map(|newer| newer.map(|n| n.data))
             .map_err(|e| dht_err("set_dht_value", e))

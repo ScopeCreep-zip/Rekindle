@@ -25,6 +25,12 @@ fn keypair_text_is_veilids() {
     let text = rekindle_crypto::keypair_text::keypair_text(&public, &secret);
     assert_eq!(veilid.to_string(), text);
     assert_eq!(parse_keypair(&text).unwrap(), veilid);
+    let protected = super::writer_key(&veilid);
+    assert!(
+        protected.keypair().expose() == text,
+        "protected keypair spelling"
+    );
+    assert_eq!(protected.public, veilid.key().to_string());
     assert_eq!(
         rekindle_crypto::keypair_text::keypair_text_from_signing(&signing),
         text
