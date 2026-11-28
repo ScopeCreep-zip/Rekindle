@@ -9,7 +9,7 @@ use std::time::Instant;
 use gtk::cairo::{RectangleInt, Region};
 use gtk::gdk::{FrameClock, Window, WindowState};
 use gtk::glib::{self, Propagation, SignalHandlerId, SourceId};
-use gtk::prelude::*;
+use gtk::prelude::{Cast, ContainerExt, GtkWindowExt, ObjectExt, WidgetExt};
 use tauri::{LogicalSize, Manager, WebviewWindow};
 
 use crate::windows::skin_load;
@@ -70,6 +70,7 @@ pub(super) struct Controller {
     csd_ready: Cell<bool>,
     next_paint: Cell<Option<Stamp>>,
     paint_handler: RefCell<Option<(FrameClock, SignalHandlerId)>>,
+    layout_queued: Cell<bool>,
 }
 
 fn fixed(state: WindowState) -> bool {
@@ -113,6 +114,7 @@ impl Controller {
             csd_ready: Cell::new(!wayland),
             next_paint: Cell::default(),
             paint_handler: RefCell::default(),
+            layout_queued: Cell::default(),
         }
     }
 
@@ -132,6 +134,14 @@ impl Controller {
         widget.connect_realize(move |widget| state.realize(widget));
         let state = Rc::clone(self);
         widget.connect_size_allocate(move |widget, allocation| state.allocate(widget, allocation));
+        if self.wayland {
+            let state = Rc::clone(self);
+            widget.connect_configure_event(move |widget, _| {
+                // Let GtkWindow handle the configure before running layout.
+                state.queue_layout(widget);
+                false
+            });
+        }
         let state = Rc::clone(self);
         widget.connect_map(move |widget| {
             state.applied.set(None);
@@ -262,7 +272,7 @@ impl Controller {
                 self.request(widget, size);
             }
         }
-        widget.queue_allocate();
+        self.queue_layout(widget);
     }
 
     fn request(self: &Rc<Self>, widget: &gtk::ApplicationWindow, size: Canvas) {
@@ -270,10 +280,31 @@ impl Controller {
             self.freeze(widget, &root);
         }
         widget.resize(size.0, size.1);
+        let controller = Rc::downgrade(self);
         let widget = widget.downgrade();
         glib::timeout_add_local_once(SIZE_WAIT, move || {
-            if let Some(widget) = widget.upgrade() {
-                widget.queue_allocate();
+            if let (Some(controller), Some(widget)) = (controller.upgrade(), widget.upgrade()) {
+                controller.queue_layout(&widget);
+            }
+        });
+    }
+
+    fn queue_layout(self: &Rc<Self>, widget: &gtk::ApplicationWindow) {
+        widget.queue_allocate();
+        if !self.wayland || !widget.is_mapped() || self.layout_queued.replace(true) {
+            return;
+        }
+        // GTK normally runs check_resize in the frame clock's layout phase.
+        // An occluded Wayland surface can be waiting for wl_surface.frame.
+        // Run the same GTK layout from the main loop without waiting for paint.
+        let widget = widget.downgrade();
+        let controller = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            if let Some(controller) = controller.upgrade() {
+                controller.layout_queued.set(false);
+                if let Some(widget) = widget.upgrade().filter(WidgetExt::is_mapped) {
+                    widget.check_resize();
+                }
             }
         });
     }
@@ -433,7 +464,7 @@ impl Controller {
                     if let Some(size) = restore.filter(|size| *size != measured) {
                         root.resize(size.0, size.1);
                     }
-                    widget.queue_allocate();
+                    self.queue_layout(widget);
                     return;
                 }
                 Err(reason) => {

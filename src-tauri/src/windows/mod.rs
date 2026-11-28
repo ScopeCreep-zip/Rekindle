@@ -91,32 +91,6 @@ const fn size(kind: WindowKind) -> Size {
     Size { inner, min }
 }
 
-/// The builder every window starts from: frameless transparent chrome,
-/// the navigation guard, no new windows, the media-permission policy for
-/// `kind`, background throttling, and the data root's webview store.
-///
-/// No OS shadow (plan SK0 S2/S3, research §5): the window is cut to its
-/// skin's silhouette ([`shape`]), and a shadow is drawn around the window
-/// **rectangle**, not the silhouette. On Windows `shadow(true)` also adds a
-/// 1px white border and Windows 11's rounded corners (tauri 2.12.1
-/// `window/mod.rs:2124-2132`), which a region window cannot have anyway;
-/// Linux does not support it; on macOS AppKit's shape-derived shadow is
-/// unreliable over WKWebView's layer tree. Classic Xfire drew none.
-///
-/// Background throttling is `Throttle` (plan A1.5, finding E7.14 F5): a
-/// hidden or covered window limits its timers but keeps running, so the
-/// buddy list in the tray and a covered chat window still take events,
-/// countdowns and badges. Without a policy, macOS WKWebView's inactive
-/// scheduling suspends a hidden view's tasks entirely; Signal and Element
-/// Desktop keep Electron's throttle-not-suspend default. wry maps it to
-/// WKPreferences `inactiveSchedulingPolicy` (macOS 14+, the E7.10 floor);
-/// WebKitGTK and WebView2 ignore it. `cargo xtask
-/// check-background-throttling` holds every window to this builder.
-///
-/// # Errors
-/// No data root is managed yet (`setup::run` manages it before the first
-/// window): a window is never built on the platform's default store when
-/// the root names another.
 /// Whether a window of `kind` acts on the click that activates it (macOS
 /// otherwise only focuses an inactive window, so a skin's close or chat
 /// button needed two clicks): every window drawn from a skin tree, as
@@ -129,12 +103,12 @@ const fn accepts_first_mouse(kind: WindowKind) -> bool {
     )
 }
 
-/// How a window of `kind`'s page runs while it is in the background
-/// (Tauri's `BackgroundThrottlingPolicy`, macOS 14+; Linux and Windows
-/// ignore it). A window that can carry live media (a call window, a chat
-/// window's video call, a community window's voice and video) decodes and
-/// answers keyframe and consent requests in its page, so it is never
-/// throttled; every other window is throttled, not suspended (lead ruling).
+/// `Throttle` keeps a background page processing Host state with limited
+/// scheduling (plan A1.5, finding E7.14 F5). Windows carrying live media
+/// use `Disabled` to answer keyframe and consent requests in real time.
+/// wry applies this to WKWebView's inactive scheduling on macOS 14+.
+/// WebKitGTK and WebView2 ignore the policy. Wayland native layout must
+/// advance independently of the compositor's paint callbacks.
 const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
     match kind {
         WindowKind::Call | WindowKind::Chat | WindowKind::Community => {
@@ -144,6 +118,17 @@ const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
     }
 }
 
+/// The builder every window starts from: frameless transparent chrome,
+/// navigation and media permissions, background scheduling, and the webview store.
+///
+/// No OS shadow (plan SK0 S2/S3, research §5): it would follow the window's
+/// rectangle while the window is cut to its skin's silhouette ([`shape`]).
+/// On Windows `shadow(true)` also adds a 1px white border and Windows 11's
+/// rounded corners (tauri 2.12.1 `window/mod.rs:2124-2132`). Linux lacks
+/// support and AppKit's shape-derived shadow is unreliable over WKWebView.
+///
+/// # Errors
+/// The data root is not yet managed (`setup::run` manages it before the first window).
 fn base_builder<'a>(
     app: &'a AppHandle,
     kind: WindowKind,
