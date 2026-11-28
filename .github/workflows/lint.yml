@@ -98,6 +98,13 @@ jobs:
       - name: TypeScript — typecheck (src + e2e + configs)
         run: pnpm typecheck
 
+      # Frontend unit fixtures (scripts/tests/*.mjs): a hook driven with
+      # controlled native and stylesheet events, where a real-app run cannot
+      # hold one asset's decode open (useSkin's per-window preloads and its
+      # failed-switch alert, PR #54).
+      - name: Frontend unit fixtures
+        run: pnpm test:unit
+
   # ──────────────────────────────────────────────────────────────────
   # Frontend tier boundaries — .dependency-cruiser.cjs encodes the
   # import rules in docs/contributor/architecture-rules.md §2. Its
