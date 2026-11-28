@@ -103,6 +103,8 @@ export const governanceCommands = {
         tagColours: { dark: number; light: number };
         permissions: number;
         position: number;
+        /** The position as the Host presents it (contract PN1). */
+        positionLabel: string;
         hoist: boolean;
         mentionable: boolean;
         selfAssignable: boolean;
