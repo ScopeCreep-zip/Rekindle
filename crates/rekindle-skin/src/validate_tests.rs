@@ -17,7 +17,12 @@ fn an_import_trial_refuses_the_same_bad_png_as_the_final_validator() {
         .collect();
     let (name, png) = files
         .iter_mut()
-        .find(|(name, _)| name.starts_with("assets/") && name.ends_with(".png"))
+        .find(|(name, _)| {
+            name.starts_with("assets/")
+                && std::path::Path::new(name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+        })
         .unwrap();
     let name = name.clone();
     png.truncate(8);
