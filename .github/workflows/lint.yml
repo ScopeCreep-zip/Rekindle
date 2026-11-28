@@ -41,10 +41,32 @@ permissions:
   contents: read
 
 jobs:
+  classify:
+    name: Lint plan
+    runs-on: ubuntu-24.04
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          MQ_BASE: ${{ github.event.merge_group.base_sha }}
+          MQ_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/classify-ci.sh
+
   # ──────────────────────────────────────────────────────────────────
   # Frontend — Biome + Stylelint + knip.
   # ──────────────────────────────────────────────────────────────────
   frontend:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Frontend (biome / stylelint / knip)
     runs-on: ubuntu-24.04
     env:
@@ -85,6 +107,8 @@ jobs:
   # entire run on the first one, so the gate would have stayed inert).
   # ──────────────────────────────────────────────────────────────────
   frontend-arch:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Frontend tiers (dependency-cruiser)
     runs-on: ubuntu-24.04
     steps:
@@ -135,6 +159,8 @@ jobs:
   # excuse. Every line in it is a real duplicate, no gate's severity was
   # lowered to create it, and anything NOT listed fails the build.
   xtask:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Guardrails (cargo xtask check)
     runs-on: ubuntu-24.04
     steps:
@@ -164,6 +190,8 @@ jobs:
   # TOML — taplo format-check.
   # ──────────────────────────────────────────────────────────────────
   toml:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: TOML (taplo)
     runs-on: ubuntu-24.04
     steps:
@@ -179,6 +207,8 @@ jobs:
   # Markdown — markdownlint-cli2 + lychee link check.
   # ──────────────────────────────────────────────────────────────────
   markdown:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-') || needs.classify.outputs.plan == 'docs'
     name: Markdown (markdownlint / lychee)
     runs-on: ubuntu-24.04
     steps:
@@ -206,6 +236,8 @@ jobs:
   # SQL — sqlfluff against the SQLite schema (crates/rekindle-db/schema).
   # ──────────────────────────────────────────────────────────────────
   sql:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: SQL (sqlfluff)
     runs-on: ubuntu-24.04
     steps:
@@ -227,6 +259,8 @@ jobs:
   # Workflows — actionlint + zizmor (security audit).
   # ──────────────────────────────────────────────────────────────────
   workflows:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Workflows (actionlint / zizmor)
     runs-on: ubuntu-24.04
     steps:
@@ -249,6 +283,8 @@ jobs:
   # Shell — shellcheck + shfmt against scripts/.
   # ──────────────────────────────────────────────────────────────────
   shell:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Shell (shellcheck / shfmt)
     runs-on: ubuntu-24.04
     steps:
@@ -277,6 +313,8 @@ jobs:
   # Nix — nixfmt + statix + deadnix + flake check.
   # ──────────────────────────────────────────────────────────────────
   nix:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Nix (nixfmt / statix / deadnix / flake check)
     runs-on: ubuntu-24.04
     steps:
@@ -346,7 +384,7 @@ jobs:
       # No agent attribution (owner 2026-11-28): GitHub lists a commit's author and every
       # Co-Authored-By email that maps to a GitHub account as a repository contributor, so a commit
       # authored or co-authored as an agent account puts that agent in the repo's Contributors.
-      # Checks only this event's own commits (the PR, the merge group, or the push).
+      # Checks only this event's own commits (the PR or the merge group).
       - name: No agent attribution in the new commits
         env:
           EVENT: ${{ github.event_name }}
@@ -354,18 +392,11 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           MQ_BASE: ${{ github.event.merge_group.base_sha }}
           MQ_HEAD: ${{ github.event.merge_group.head_sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_AFTER: ${{ github.event.after }}
         run: |
           case "$EVENT" in
             pull_request) range="$PR_BASE..$PR_HEAD" ;;
             merge_group) range="$MQ_BASE..$MQ_HEAD" ;;
-            push)
-              if [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ]; then
-                echo "new branch: no prior commit to compare"; exit 0
-              fi
-              range="$PUSH_BEFORE..$PUSH_AFTER" ;;
-            *) echo "no commit range for $EVENT"; exit 0 ;;
+            *) echo "::error::Unsupported commit attribution event"; exit 1 ;;
           esac
           agents='noreply@anthropic\.com|codex@openai\.com'
           found=$(git log --format='%h %ae %ce%n%(trailers:key=Co-authored-by,valueonly,separator=%x20)' "$range" \
@@ -384,6 +415,8 @@ jobs:
   # in .semgrep.yml.
   # ──────────────────────────────────────────────────────────────────
   semgrep:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Semgrep (SAST)
     runs-on: ubuntu-24.04
     container:
@@ -413,6 +446,8 @@ jobs:
   # Cap'n Proto schemas — capnp compile validation.
   # ──────────────────────────────────────────────────────────────────
   capnp:
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     name: Cap'n Proto (capnp compile)
     runs-on: ubuntu-24.04
     steps:
