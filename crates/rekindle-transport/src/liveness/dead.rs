@@ -45,6 +45,11 @@ impl Liveness {
         self.dead.lock().is_dead(blob, Instant::now())
     }
 
+    /// Claim a delayed profile re-read at the dead blob's first probe gap.
+    pub(crate) fn schedule_route_probe(&self, blob: &[u8]) -> Option<Instant> {
+        self.dead.lock().schedule_probe(blob, Instant::now())
+    }
+
     /// A call into `blob` was answered: it delivers, so it is not dead.
     pub fn route_proven(&self, blob: &[u8]) {
         if self.dead.lock().proven(blob) {

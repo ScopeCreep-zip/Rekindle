@@ -6,6 +6,7 @@
 //! one (S6).
 
 use rekindle_codec::capnp_codec::direct::DmTypeId;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_route::liveness::Fetched;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
@@ -78,31 +79,31 @@ async fn suspect_round(host: &dyn FriendHost, node: &TransportNode, to: &str) {
     if live.begin_round(to, held.clone()) {
         reachability(host, to, false);
     }
-    let Some((blob, seq)) = route::read_profile_route(host, to).await else {
+    let Some((record, blob, seq)) = route::read_profile_route(host, to).await else {
         tracing::debug!(to = %to, "suspect route: no route record to re-read");
         return;
     };
     let fetched = live.observe(to, seq);
     let same = held.as_deref() == Some(blob.as_slice());
-    // A re-read of a blob Veilid declared dead is suspect, never "the peer
-    // republished": it takes the probe path, where the import refuses it;
-    // a strictly higher seq than the first read after its death revives it
-    // (plan RV1g B1, B3; `rekindle_route::dead_routes`).
-    // A probe it asks for is this round's own probe below.
-    live.route_read_at(&blob, u64::from(seq));
-    let dead = live.route_declared_dead(&blob);
-    match fetched {
-        Fetched::Newer if !same && !dead => {
-            tracing::info!(to = %to, seq, "suspect route: the peer republished; using it");
-            route::cache(node, to, blob);
-        }
-        Fetched::Stale => tracing::debug!(to = %to, seq, "suspect route: stale record ignored"),
-        Fetched::Newer | Fetched::Same => {
-            if dead {
-                tracing::debug!(to = %to, seq, "suspect route: the re-read route was declared dead");
-            }
+    if fetched == Fetched::Stale {
+        tracing::debug!(to = %to, seq, "suspect route: stale record ignored");
+        return;
+    }
+    // Share the dead blob's probe slot with inline profile refreshes
+    // (plan RV1g B1/B3, RH1r-c S2/S3).
+    match live.route_read_on(&record, &blob, u64::from(seq)) {
+        DeadRouteVerdict::Held => return,
+        DeadRouteVerdict::Probe => {
             probe_beside(host, to, blob);
+            return;
         }
+        DeadRouteVerdict::NotDead | DeadRouteVerdict::Cleared => {}
+    }
+    if fetched == Fetched::Newer && !same {
+        tracing::info!(to = %to, seq, "suspect route: the peer republished; using it");
+        route::cache(node, to, blob);
+    } else {
+        probe_beside(host, to, blob);
     }
 }
 

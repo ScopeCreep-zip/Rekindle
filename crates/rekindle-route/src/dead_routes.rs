@@ -43,6 +43,8 @@ struct Dead {
     seen_seq: HashMap<String, u64>,
     /// When it was last handed out for a probe.
     probed: Option<Instant>,
+    /// A sender already arranged a re-read when the first probe is due.
+    scheduled: bool,
 }
 
 /// What a read of a peer's record that returned a blob means for the dead
@@ -78,6 +80,7 @@ impl DeadRoutes {
                     at: now,
                     seen_seq: HashMap::new(),
                     probed: None,
+                    scheduled: false,
                 },
             );
         }
@@ -101,6 +104,21 @@ impl DeadRoutes {
     /// delivers, so it leaves. `true` when it was dead.
     pub fn proven(&mut self, blob: &[u8]) -> bool {
         self.dead.remove(blob).is_some()
+    }
+
+    /// Claim one delayed re-read for this death. The re-read still has to
+    /// claim a probe through `observe_at`, like any send that reaches it.
+    pub fn schedule_probe(&mut self, blob: &[u8], now: Instant) -> Option<Instant> {
+        if !self.is_dead(blob, now) {
+            return None;
+        }
+        let dead = self.dead.get_mut(blob)?;
+        let due = dead.at + REFETCH_GAP;
+        if dead.scheduled || dead.probed.is_some() || now >= due {
+            return None;
+        }
+        dead.scheduled = true;
+        Some(due)
     }
 
     /// A read of the peer's record returned `blob` at `seq` at `now`: the
