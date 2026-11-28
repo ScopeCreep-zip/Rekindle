@@ -132,6 +132,9 @@ export interface Role {
   /** Serialized as a string from Rust to avoid JavaScript Number precision loss on u64. */
   permissions: string;
   position: number;
+  /** The position as the Host presents it (contract PN1: the owner role reads
+   *  "Always first", never the raw sentinel). */
+  positionLabel: string;
   hoist: boolean;
   mentionable: boolean;
   selfAssignable?: boolean;

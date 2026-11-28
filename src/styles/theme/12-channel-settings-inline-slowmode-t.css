@@ -117,6 +117,21 @@
     cursor: pointer;
   }
 
+  /* @everyone / @here where the Host denies them: listed and reachable by
+   * the arrow keys (the active row's accent ground too), in the theme's dim
+   * text, a step below the enabled rows (never a fade, ST1), with the Host's
+   * reason beside in secondary text: the reason is information, so both meet
+   * 1.4.3 on both grounds (regions.toml). */
+  .mention-popover-row-denied {
+    color: var(--color-xfire-text-dim);
+    cursor: not-allowed;
+  }
+  .mention-popover-reason {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+  }
+
   .mention-popover-row-active {
     background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
   }

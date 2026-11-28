@@ -148,6 +148,7 @@ macro_rules! community_commands {
         commands::community::get_co_creation,
         commands::community::get_community_members,
         commands::community::remove_community_member,
+        commands::community::get_permission_catalogue,
         commands::community::get_roles,
         commands::community::create_role,
         commands::community::edit_role,

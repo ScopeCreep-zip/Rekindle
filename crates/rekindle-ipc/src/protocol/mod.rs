@@ -542,6 +542,10 @@ pub enum IpcRequest {
     AgentRevoke { name: String },
     /// Reload authorization policy from disk.
     PolicyReload,
+
+    /// The static role-editor permission catalogue, available in any state.
+    PermissionCatalogue,
+
     /// This unlocked identity's current backend-held reviews (plan S7d-keys.10).
     IntentListHeld,
 }

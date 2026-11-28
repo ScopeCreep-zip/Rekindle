@@ -5,7 +5,7 @@ use axum::extract::{Path, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
-use tauri::{Manager, Runtime};
+use tauri::{Listener, Manager, Runtime};
 
 use crate::platform::prelude::*;
 use crate::platform::{apply_window_change, WindowRect};
@@ -80,16 +80,29 @@ pub async fn close_window<R: Runtime>(
         return Err(WebDriverErrorResponse::no_such_window());
     };
 
+    // Closed means THIS window's instance was destroyed: an app can re-create a window under the
+    // same label at once (the Settings window does), so "no window has the label" may never hold
+    // and the wait would run out its timeout.
+    let destroyed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let destroyed_listener = window.listen("tauri://destroyed", {
+        let destroyed = Arc::clone(&destroyed);
+        move |_| destroyed.store(true, std::sync::atomic::Ordering::SeqCst)
+    });
     // Unlike destroy(), close() runs the app's CloseRequested handlers, which can prevent it.
-    apply_window_change(
+    let closed = apply_window_change(
         &window,
         "tauri://destroyed",
         "close the window",
         CLOSE_WINDOW_TIMEOUT,
         || window.close(),
-        || state.app.get_webview_window(&current_window).is_none(),
+        || {
+            destroyed.load(std::sync::atomic::Ordering::SeqCst)
+                || state.app.get_webview_window(&current_window).is_none()
+        },
     )
-    .await?;
+    .await;
+    window.unlisten(destroyed_listener);
+    closed?;
 
     let handles = state.app.webview_windows().into_keys().collect();
     Ok(WebDriverResponse::success(kept_window_first(
