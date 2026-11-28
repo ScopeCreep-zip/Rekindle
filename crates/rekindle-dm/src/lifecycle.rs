@@ -26,9 +26,9 @@ pub use grow::{grow, on_roster_grow, Grown};
 
 /// A frame and the members to send it to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Outbound<F> {
+pub struct Outbound<F, Recipient = String> {
     pub frame: F,
-    pub to: Vec<String>,
+    pub to: Vec<Recipient>,
 }
 
 /// A group we created, and the invite to send to each other member, one
@@ -258,15 +258,14 @@ pub async fn accept<D: GroupDmDeps + ?Sized>(
     })
 }
 
-/// Decline the pending invite to `group_id`; the decline goes to its
-/// creator.
+/// Decline the pending invite to `group_id` and notify its signed roster.
 ///
 /// # Errors
 /// No such invite, or storage.
 pub async fn decline<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
-) -> Result<Outbound<GroupDmDecline>, DmError> {
+) -> Result<Outbound<GroupDmDecline, GroupDmRosterMember>, DmError> {
     let _membership = deps.membership_gate().lock().await;
     let pending = deps
         .take_invite(group_id)
@@ -285,7 +284,12 @@ pub async fn decline<D: GroupDmDeps + ?Sized>(
             group_id: *group_id,
             membership_generation,
         },
-        to: vec![pending.from],
+        to: pending
+            .invite
+            .roster
+            .into_iter()
+            .filter(|m| m.identity != me)
+            .collect(),
     })
 }
 
@@ -297,7 +301,7 @@ pub async fn decline<D: GroupDmDeps + ?Sized>(
 pub async fn leave<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
-) -> Result<Outbound<GroupDmLeave>, DmError> {
+) -> Result<Outbound<GroupDmLeave, GroupDmRosterMember>, DmError> {
     let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, group_id).await?;
     let me = deps.own_identity();
@@ -317,7 +321,12 @@ pub async fn leave<D: GroupDmDeps + ?Sized>(
             epoch: group.epoch,
             membership_generation,
         },
-        to: group.roster.others(&me),
+        to: group
+            .roster
+            .into_members()
+            .into_iter()
+            .filter(|m| m.identity != me)
+            .collect(),
     })
 }
 

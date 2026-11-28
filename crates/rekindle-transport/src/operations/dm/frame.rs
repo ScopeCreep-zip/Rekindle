@@ -185,6 +185,18 @@ pub async fn ratchet_frame_at(
     at: Position,
     sent_at_ms: u64,
 ) -> Result<DmFrame, FriendError> {
+    ratchet_frame_using(host, to, body, hint, at, sent_at_ms, None).await
+}
+
+pub(super) async fn ratchet_frame_using(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    hint: ContentHint,
+    at: Position,
+    sent_at_ms: u64,
+    profile: Option<&str>,
+) -> Result<DmFrame, FriendError> {
     let type_id = body.type_id();
     let local = host.local_party()?;
     let peer = peer_address(to)?;
@@ -230,9 +242,12 @@ pub async fn ratchet_frame_at(
             // A roster member who is not our friend (plan E2.6): the
             // session opens from the prekey record their roster profile
             // names, with this group frame as the init's first payload.
-            let bundle = crate::operations::group_dm::member_bundle(host, to).await?;
+            let bundle = match profile {
+                Some(profile) => crate::operations::prekeys::pick_bundle(host, to, profile).await?,
+                None => crate::operations::group_dm::member_bundle(host, to).await?,
+            };
             let (frame, initiated) = open_frame(host, to, bundle, body, at).await?;
-            if initiated {
+            if initiated && profile.is_none() {
                 crate::operations::group_dm::first_contact::began(host, to, body);
             }
             return Ok(frame);

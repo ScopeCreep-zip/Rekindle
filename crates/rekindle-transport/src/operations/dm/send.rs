@@ -86,6 +86,21 @@ pub enum Framed {
         #[serde(with = "rekindle_types::base64_bytes")]
         body: Vec<u8>,
     },
+    /// A local departure's body and the recipient's signed profile,
+    /// retained after we discard the roster.
+    Departure {
+        type_id: u16,
+        #[serde(with = "rekindle_types::base64_bytes")]
+        body: Vec<u8>,
+        profile_record_key: String,
+    },
+    /// The same departure after framing. Retries reuse the ciphertext
+    /// and resolve the route from the saved profile.
+    DepartureWire {
+        #[serde(with = "rekindle_types::base64_bytes")]
+        datagram: Vec<u8>,
+        profile_record_key: String,
+    },
 }
 
 /// The D24 content hint of a kind: a text message may be resent from the
@@ -397,6 +412,15 @@ pub(super) async fn call_datagram_answer(
     to: &str,
     datagram: Vec<u8>,
 ) -> Result<CallAnswer, FriendError> {
+    call_datagram_with_profile(host, to, datagram, None).await
+}
+
+pub(super) async fn call_datagram_with_profile(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+    profile: Option<&str>,
+) -> Result<CallAnswer, FriendError> {
     let node = host.node()?;
     let cached = route::cached(&node, to);
     let reply = match route::cached_target(&node, to) {
@@ -409,11 +433,11 @@ pub(super) async fn call_datagram_answer(
             // replaced only by the one they publish; a peer with no profile
             // we can read (a removal ack after the unfriend) keeps the
             // captured one for the next attempt (L-FR2, finding 62).
-            Err(e) => call_refreshed(host, to, datagram, cached.as_deref())
+            Err(e) => call_refreshed(host, to, datagram, cached.as_deref(), profile)
                 .await
                 .ok_or_else(|| FriendError::Failed(format!("app_call: {e}")))??,
         },
-        None => call_refreshed(host, to, datagram, None)
+        None => call_refreshed(host, to, datagram, None, profile)
             .await
             .ok_or_else(|| FriendError::NotReady(format!("no usable route for peer {to}")))??,
     };
@@ -436,8 +460,12 @@ async fn call_refreshed(
     to: &str,
     datagram: Vec<u8>,
     stale: Option<&[u8]>,
+    profile: Option<&str>,
 ) -> Option<Result<Vec<u8>, FriendError>> {
-    let blob = route::fetch_from_profile(host, to).await?;
+    let blob = match profile {
+        Some(profile) => route::fetch_from_profile_key(host, to, profile).await?,
+        None => route::fetch_from_profile(host, to).await?,
+    };
     if stale == Some(blob.as_slice()) {
         return None;
     }
@@ -514,7 +542,8 @@ pub(super) fn datagram_of(
     match framed {
         Framed::Wire { datagram }
         | Framed::FirstContactDurable { datagram, .. }
-        | Framed::GroupFirstContact { datagram, .. } => {
+        | Framed::GroupFirstContact { datagram, .. }
+        | Framed::DepartureWire { datagram, .. } => {
             let frame = super::unwire(datagram)
                 .and_then(|bytes| DmFrame::decode(bytes).ok())
                 .ok_or_else(|| FriendError::Invalid("stored frame does not decode".into()))?;
@@ -536,11 +565,12 @@ pub(super) fn datagram_of(
             let datagram = frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)?;
             Ok((datagram, type_id))
         }
-        Framed::Inbox { .. } | Framed::FirstContact { .. } | Framed::Pending { .. } => {
-            Err(FriendError::Invalid(
-                "an inbox write or a frame waiting for its session is not sent over a route".into(),
-            ))
-        }
+        Framed::Inbox { .. }
+        | Framed::FirstContact { .. }
+        | Framed::Pending { .. }
+        | Framed::Departure { .. } => Err(FriendError::Invalid(
+            "an inbox write or a frame waiting for its session is not sent over a route".into(),
+        )),
     }
 }
 

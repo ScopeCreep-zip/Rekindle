@@ -70,12 +70,20 @@ pub(crate) fn cached_route(node: &TransportNode, peer: &str) -> Option<(Vec<u8>,
 /// friend's, or a group member's from the roster we hold; and
 /// cache it.
 pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec<u8>> {
-    let node = host.node().ok()?;
     let profile_key = profile_key(host, peer).await?;
+    fetch_from_profile_key(host, peer, &profile_key).await
+}
+
+pub(super) async fn fetch_from_profile_key(
+    host: &dyn FriendHost,
+    peer: &str,
+    profile_key: &str,
+) -> Option<Vec<u8>> {
+    let node = host.node().ok()?;
     let records = node.require_records().ok()?;
     let blob = rekindle_protocol::dht::profile::read_profile_subkey(
         records.as_ref(),
-        &profile_key,
+        profile_key,
         rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
         true,
     )

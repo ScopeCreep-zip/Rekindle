@@ -24,6 +24,8 @@ fn requests_first_contacts_presence_keys_and_removal_acks_wait_for_their_receipt
     assert!(receipted(DmTypeId::FriendsKey));
     assert!(receipted(DmTypeId::GroupDmAccept));
     assert!(receipted(DmTypeId::GroupDmInvite));
+    assert!(receipted(DmTypeId::GroupDmLeave));
+    assert!(receipted(DmTypeId::GroupDmDecline));
     assert!(receipted(DmTypeId::UnfriendedAck));
 }
 

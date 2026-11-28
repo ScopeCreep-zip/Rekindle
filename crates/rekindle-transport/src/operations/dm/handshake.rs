@@ -1,22 +1,9 @@
-//! The `friend_handshake` stream on the outbox (plan E2.5, D22), as the
-//! transport sees it: a friend request, accept or reject, a removal and
-//! its ack, a session reset, a presence key or a rotation notice to one
-//! peer is framed once, committed as a row of `friend_handshake:<peer>`,
-//! and sent by the outbox until it settles. These are control frames no
-//! `DmAck` answers: a row settles `sent` when its frame leaves, a request,
-//! a first contact (the PreKeyInit carrying our `FriendAccept` or
-//! `SessionResetAccept`) and a presence key to a peer not yet accepted
-//! (`FriendsKey`, live A/B finding 36; an accepted friend's rides the DM
-//! chain, plan RV2c) and the ack of a removal (`UnfriendedAck`: a lost one left the
-//! remover re-sending `Unfriended` into a session we had deleted, and its
-//! removal never ended, live A/B finding 62) only on its `app_call` receipt
-//! (`delivered`: an
-//! app message has no delivery guarantee, and a request or an accept lost
-//! on the way would leave the row settled and the peer never asked, or
-//! pending for ever; live A/B finding 27), and the `Unfriended` row waits
-//! for the peer's `UnfriendedAck` (or fails at its deadline), which ends
-//! the removal. An invite's redemption is a request row too, whose send
-//! is the write into the invite's inbox ([`enqueue_inbox`]).
+//! The `friend_handshake:<peer>` outbox stream (plan E2.5, D22). It
+//! stores pairwise controls such as friend requests, session resets and
+//! group membership changes. A row settles on send, on its call receipt
+//! ([`receipted`]), or on a peer response ([`awaits_answer`]), according to
+//! its kind. An invite's redemption writes to the invite's request inbox
+//! ([`enqueue_inbox`]).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmFrame, DmTypeId};
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
@@ -25,6 +12,9 @@ use super::outbox::Attempt;
 use super::send::{self, Framed};
 use crate::operations::friend::{FriendError, FriendHost};
 use crate::operations::prekeys::Rejection;
+
+mod departure;
+pub(crate) use departure::enqueue_departure;
 
 pub use super::handshake_order::{
     restore_first_contacts, settle_first_contact, takes_over, waits_for,
@@ -342,6 +332,7 @@ async fn commit(
 /// this stream is a first contact ([`enqueue_frame`]'s callers), and the
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
+/// Departures by non-friends are receipted and retried on this stream.
 /// A group member's key (`GroupDmAccept`) and the creator's
 /// `GroupDmInvite` are receipted too (plan E2.6; Linux run 2: one lost
 /// left a member without the key and chain or the signed roster). A
@@ -366,6 +357,8 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::UnfriendedAck
             | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
+            | DmTypeId::GroupDmLeave
+            | DmTypeId::GroupDmDecline
             | DmTypeId::CallEnd
     )
 }
@@ -474,7 +467,14 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Framed::Pending { type_id, body } => {
             return super::group_first_contact::attempt_pending(host, to, *type_id, body).await;
         }
-        Framed::Wire { .. } | Framed::Sealed { .. } => {}
+        Framed::Departure {
+            type_id,
+            body,
+            profile_record_key,
+        } => {
+            return departure::frame_departure(host, to, *type_id, body, profile_record_key).await;
+        }
+        Framed::Wire { .. } | Framed::Sealed { .. } | Framed::DepartureWire { .. } => {}
     }
     let (datagram, kind) = match send::datagram_of(host, to, &framed) {
         Ok(sent) => sent,
@@ -493,7 +493,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         return stopped;
     }
     if receipted(kind) {
-        return attempt_call(host, to, datagram, kind).await;
+        return departure::attempt_receipted(host, to, datagram, kind, &framed).await;
     }
     match send::route_send_datagram(host, to, &datagram, kind).await {
         Ok(true) if awaits_answer(kind) => Attempt::Awaiting,
@@ -518,7 +518,17 @@ pub(super) async fn attempt_call(
     datagram: Vec<u8>,
     kind: DmTypeId,
 ) -> Attempt {
-    let answer = send::call_datagram_answer(host, to, datagram).await;
+    attempt_call_using(host, to, datagram, kind, None).await
+}
+
+async fn attempt_call_using(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+    kind: DmTypeId,
+    profile: Option<&str>,
+) -> Attempt {
+    let answer = send::call_datagram_with_profile(host, to, datagram, profile).await;
     let applied = match &answer {
         Ok(send::CallAnswer::Reply(reply)) if kind != DmTypeId::FriendRequest => {
             crate::operations::direct::on_first_contact_reply(host, to, reply).await

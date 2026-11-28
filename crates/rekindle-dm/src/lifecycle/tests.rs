@@ -360,7 +360,14 @@ async fn invites_are_refused_when_forged_or_not_ours_and_decline_rotates() {
         .await
         .expect("invite");
     let declined = decline(&bea, &gid).await.expect("decline");
-    assert_eq!(declined.to, vec![ann.id()]);
+    assert_eq!(
+        declined
+            .to
+            .iter()
+            .map(|m| m.identity.clone())
+            .collect::<Vec<_>>(),
+        vec![ann.id(), cy.id()]
+    );
     assert!(accept(&bea, &gid, &bea.chain()).await.is_err());
     let out = on_decline(&ann, &bea.id(), &declined.frame)
         .await

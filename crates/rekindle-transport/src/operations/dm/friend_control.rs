@@ -53,7 +53,7 @@ pub fn on_chain(kind: DmTypeId) -> bool {
 /// Commit `body` to `to` as a control row of our DM stream when it is an
 /// [`on_chain`] kind and `to` is an accepted friend; its client id, or
 /// `None` when it goes by the handshake stream.
-async fn to_chain(
+pub(super) async fn to_chain(
     host: &dyn FriendHost,
     to: &str,
     body: &DirectBody,

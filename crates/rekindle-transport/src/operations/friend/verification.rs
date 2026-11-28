@@ -162,6 +162,8 @@ pub(crate) fn is_protective(kind: rekindle_codec::capnp_codec::direct::DmTypeId)
             | DmTypeId::UnfriendedAck
             | DmTypeId::SessionResetDecline
             | DmTypeId::PreKeyRejected
+            | DmTypeId::GroupDmLeave
+            | DmTypeId::GroupDmDecline
     )
 }
 

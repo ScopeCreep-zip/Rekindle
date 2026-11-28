@@ -32,7 +32,7 @@ pub use inbound::apply;
 pub(crate) use inbound::on_stream_record;
 pub(crate) use pairwise::member_profile;
 pub use pairwise::GroupFirstContact;
-pub(crate) use pairwise::{member_bundle, opens_member_session};
+pub(crate) use pairwise::{drop_sessions, member_bundle, opens_member_session};
 pub use review::{key_changes, send_reviewed};
 pub use view::{find, list, mark_read, messages};
 #[path = "mod_first_contact.rs"]
@@ -299,23 +299,38 @@ pub async fn accept(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendE
     send_pairwise(host, out, DirectBody::GroupDmAccept).await
 }
 
-/// Decline the pending invite to `group_id`; the decline goes to its
-/// creator.
+async fn send_departure(
+    host: &dyn FriendHost,
+    members: Vec<GroupDmRosterMember>,
+    body: &DirectBody,
+) -> Result<(), FriendError> {
+    let mut first_error = None;
+    for member in members {
+        if let Err(e) =
+            crate::operations::dm::handshake::enqueue_departure(host, member, body).await
+        {
+            tracing::warn!(kind = ?body.type_id(), error = %e, "group departure not committed");
+            first_error.get_or_insert(e);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+/// Decline the pending invite to `group_id` and queue notice to the roster.
 ///
 /// # Errors
-/// No such invite, storage, or the creator's row.
+/// No such invite, storage, or a recipient's row.
 pub async fn decline(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendError> {
     let deps = host.group_dm()?;
     let out = rekindle_dm::decline(deps.as_ref(), &parse_group_id(group_id)?)
         .await
         .map_err(|e| friend_error(&e))?;
-    send_pairwise(host, out, DirectBody::GroupDmDecline).await
+    send_departure(host, out.to, &DirectBody::GroupDmDecline(out.frame)).await
 }
 
 /// Leave `group_id`: our state of it is deleted and the leave goes to
-/// every other member, who each rotate their own key. Each leave is framed
-/// when its row is committed, so the pairwise session with a member who
-/// is not our friend (and in no other group we hold) then ends.
+/// every other member, who each rotate their own key. The outbox frames
+/// each departure independently of the local deletion.
 ///
 /// # Errors
 /// No such group, storage, or a member's row.
@@ -326,11 +341,13 @@ pub async fn leave(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendEr
         .map_err(|e| friend_error(&e))?;
     // The group is gone: our column's watch goes with its row, and, as its
     // creator, the writers we minted (plan decision 67 item 3).
-    host.sync_group_rendezvous().await;
+    let sent = send_departure(host, out.to, &DirectBody::GroupDmLeave(out.frame)).await;
     let forgot = host.forget_group_rendezvous(group_id);
-    let members = out.to.clone();
-    let sent = send_pairwise(host, out, DirectBody::GroupDmLeave).await;
-    pairwise::drop_sessions(host, &members).await;
+    let owned = host.owned();
+    host.scope()
+        .spawn_or_drop("release departed group rendezvous", async move {
+            owned.sync_group_rendezvous().await;
+        });
     sent.and(forgot)
 }
 

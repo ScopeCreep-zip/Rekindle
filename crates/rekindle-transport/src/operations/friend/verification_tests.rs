@@ -8,6 +8,8 @@ fn only_withdrawals_skip_the_key_change_hold() {
         DmTypeId::UnfriendedAck,
         DmTypeId::SessionResetDecline,
         DmTypeId::PreKeyRejected,
+        DmTypeId::GroupDmLeave,
+        DmTypeId::GroupDmDecline,
     ] {
         assert!(super::is_protective(kind), "{kind:?}");
     }

@@ -55,7 +55,12 @@ pub async fn apply(host: &dyn FriendHost, sender: &str, body: &DirectBody) -> bo
             return false;
         }
     };
-    if matches!(reply, Ok(Some(_))) && matches!(body, DirectBody::GroupDmLeave(_)) {
+    if matches!(reply, Ok(Some(_)))
+        && matches!(
+            body,
+            DirectBody::GroupDmLeave(_) | DirectBody::GroupDmDecline(_)
+        )
+    {
         // The leaver is off the roster: their session ends unless they
         // are our friend or share another group with us.
         super::pairwise::drop_sessions(host, &[sender.to_string()]).await;
