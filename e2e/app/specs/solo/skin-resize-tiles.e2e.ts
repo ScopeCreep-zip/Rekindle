@@ -436,7 +436,11 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
         await switchTo(browser, BUDDY);
         await browser.setWindowSize(200, 300);
         const squeezed = await settledSize();
-        await openSettings(browser, "Appearance");
+        // Settings stays open from builtinPacks: an apply never closes it (the
+        // Host destroys only login, call and popup windows, windows/mod.rs), and
+        // applySkin switches to it and selects Appearance itself. Reopening it
+        // through the pack's menu failed for every pack after StealthX, which
+        // has no File menu (Linux srt8): the walk never goes through a pack's chrome.
         const href = await applySkin(browser, ada, pack.name);
         await switchTo(browser, BUDDY);
         await skinShown(browser, href);
