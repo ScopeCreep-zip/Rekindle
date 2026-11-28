@@ -80,6 +80,7 @@ pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;
 mod own_records;
+pub(crate) mod own_voice;
 mod owned_record;
 pub mod policy;
 #[cfg(test)]

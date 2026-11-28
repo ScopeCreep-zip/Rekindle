@@ -13,7 +13,7 @@
 //! keypair is lost can no longer be written.
 
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{VaultError, VaultKey, VaultStore};
 
@@ -44,7 +44,8 @@ impl OwnerKey {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnerEntry {
     pub record_key: String,
-    pub keypair: String,
+    #[serde(with = "owner_text")]
+    pub keypair: Zeroizing<String>,
 }
 
 impl std::fmt::Debug for OwnerEntry {
@@ -55,6 +56,9 @@ impl std::fmt::Debug for OwnerEntry {
             .finish()
     }
 }
+
+#[path = "owner_keys_owner_text.rs"]
+mod owner_text;
 
 /// Store `record`'s key and owner keypair, replacing the entry before.
 ///

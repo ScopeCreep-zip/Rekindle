@@ -131,9 +131,9 @@ pub(crate) async fn mint_device<D: GovernanceRuntimeDeps>(
     deps.rng().fill(secret.as_mut_slice());
     let info = deps.create_record(&schema::member_record()).await?;
     deps.release_record(info.lease).await;
-    let owner_keypair = Zeroizing::new(info.owner_keypair.ok_or_else(|| {
+    let owner_keypair = info.owner_keypair.ok_or_else(|| {
         GovernanceRuntimeError::Adapter("enrol: the device record has no owner keypair".into())
-    })?);
+    })?;
     let (public, _) = keypair_text::parse_keypair_text(&owner_keypair)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("device record owner: {e}")))?;
     let record = DeviceRecord {

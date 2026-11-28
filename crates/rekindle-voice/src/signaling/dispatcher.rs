@@ -47,7 +47,7 @@ pub async fn handle_voice_signaling(
         ControlPayload::VoiceJoin {
             channel_id,
             route_blob,
-            display_name,
+            display_name: _,
             session_key,
         } => {
             media_keys::learn_session_key(
@@ -63,13 +63,12 @@ pub async fn handle_voice_signaling(
                 sender_pseudonym,
                 channel_id,
                 route_blob,
-                display_name,
             );
         }
         ControlPayload::VoiceJoinAck {
             channel_id,
             joiner_pseudonym,
-            display_name,
+            display_name: _,
             route_blob,
             session_key,
         } => {
@@ -86,7 +85,6 @@ pub async fn handle_voice_signaling(
                 sender_pseudonym,
                 channel_id,
                 &joiner_pseudonym,
-                display_name,
                 route_blob,
             );
         }

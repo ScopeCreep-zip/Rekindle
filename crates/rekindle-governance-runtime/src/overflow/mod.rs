@@ -140,7 +140,14 @@ impl<D: GovernanceRuntimeDeps> OverflowIo for D {
         value: Vec<u8>,
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::set_dht_value(self, lease, subkey, value, writer).await
+        GovernanceRuntimeDeps::set_dht_value(
+            self,
+            lease,
+            subkey,
+            value,
+            writer.map(zeroize::Zeroizing::new),
+        )
+        .await
     }
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         GovernanceRuntimeDeps::format_writer_keypair(self, ed_public, ed_secret)

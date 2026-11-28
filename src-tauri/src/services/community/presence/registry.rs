@@ -9,6 +9,7 @@
 
 use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 use crate::services::presence_adapter::build_adapter;
 use crate::state::AppState;
@@ -34,14 +35,22 @@ pub(crate) async fn ensure_registry_open(
         let c = communities.get(community_id).ok_or("community not found")?;
         (
             c.leases.registry.is_some(),
-            c.registry_owner_keypair.clone().or(c.slot_keypair.clone()),
+            c.registry_owner_keypair
+                .as_ref()
+                .map(|key| key.as_str())
+                .or(c.slot_keypair.as_deref())
+                .map(|key| Zeroizing::new(key.to_owned())),
         )
     };
     if held {
         return Ok(());
     }
     let lease = state_helpers::record_pool(state)?
-        .acquire(registry_key, writer.as_deref(), OpenIntent::Hold)
+        .acquire(
+            registry_key,
+            writer.as_ref().map(|key| key.as_str()),
+            OpenIntent::Hold,
+        )
         .await
         .map_err(|e| format!("presence_poll: failed to open registry: {e}"))?;
     if let Some(cs) = state.communities.write().get_mut(community_id) {

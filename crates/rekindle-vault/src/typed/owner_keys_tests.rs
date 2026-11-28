@@ -3,7 +3,7 @@ use super::*;
 fn entry(key: &str, keypair: &str) -> OwnerEntry {
     OwnerEntry {
         record_key: key.into(),
-        keypair: keypair.into(),
+        keypair: Zeroizing::new(keypair.to_owned()),
     }
 }
 

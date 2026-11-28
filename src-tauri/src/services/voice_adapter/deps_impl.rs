@@ -6,7 +6,7 @@
 //! `io_helpers`) for bodies that would otherwise blow the file-size
 //! cap.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -178,10 +178,31 @@ impl VoiceSessionDeps for VoiceAdapter {
             );
             return;
         }
-        crate::event_dispatch::emit_subscription(
-            &self.app_handle,
-            &SubscriptionEvent::Voice(event_mapping::map(event, &scope)),
-        );
+        let event = match event {
+            VoiceSessionEvent::UserJoined { peer_pubkey } => {
+                let display_name = match &scope {
+                    VoiceScope::Community { community, .. } => {
+                        let Ok(host) = state_helpers::host_governance(&self.state) else {
+                            return;
+                        };
+                        host.member_shown_name(community, &peer_pubkey)
+                    }
+                    VoiceScope::Dm { .. } => {
+                        let name = state_helpers::friend_display_name(&self.state, &peer_pubkey);
+                        let key = rekindle_types::id::PseudonymKey::from_hex_lossy(&peer_pubkey);
+                        rekindle_node::host::adapters::governance::shown_name(name, &key)
+                    }
+                };
+                VoiceEvent::Joined {
+                    scope,
+                    pseudonym: peer_pubkey,
+                    display_name,
+                    route_blob: None,
+                }
+            }
+            event => event_mapping::map(event, &scope),
+        };
+        crate::event_dispatch::emit_voice(&self.app_handle, event);
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
@@ -244,13 +265,6 @@ impl VoiceSessionDeps for VoiceAdapter {
         io_helpers::resolve_peer_route_impl(&self.state, peer_pubkey_hex).await
     }
 
-    async fn load_member_names(
-        &self,
-        community_id: Option<&str>,
-    ) -> std::collections::HashMap<String, String> {
-        io_helpers::load_community_member_names_impl(&self.state, community_id).await
-    }
-
     fn broadcast_media_capabilities(&self, community_id: &str, channel_id: &str) {
         if let Err(e) =
             io_helpers::broadcast_media_capabilities_impl(&self.state, community_id, channel_id)
@@ -261,6 +275,7 @@ impl VoiceSessionDeps for VoiceAdapter {
 
     fn emit_local_joined(
         &self,
+        session: &rekindle_voice::session_state::VoiceSessionState,
         channel_id: &str,
         community_id: Option<&str>,
         public_key: &str,
@@ -268,6 +283,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     ) {
         event_mapping::emit_local_joined_impl(
             &self.app_handle,
+            session,
             channel_id,
             community_id,
             public_key,
@@ -284,7 +300,6 @@ impl VoiceSessionDeps for VoiceAdapter {
         transport: Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
         muted_flag: Arc<std::sync::atomic::AtomicBool>,
         deafened_flag: Arc<std::sync::atomic::AtomicBool>,
-        member_names: std::collections::HashMap<String, String>,
     ) -> Result<(), VoiceError> {
         session_setup::spawn_voice_loops_impl(
             &self.state,
@@ -294,7 +309,6 @@ impl VoiceSessionDeps for VoiceAdapter {
             &transport,
             &muted_flag,
             &deafened_flag,
-            member_names,
         )
         .map_err(VoiceError::Session)
     }
@@ -425,13 +439,22 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn stop_devices_and_clear_engine(&self) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
+        let handle = {
+            let mut ve = self.state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            ve.take()
+        };
+        if let Some(handle) = handle {
+            crate::services::community::media_ready_runtime::end(
+                &self.state,
+                &handle.session_state,
+                handle.community_id.as_deref(),
+                &handle.channel_id,
+            );
         }
-        *ve = None;
-        drop(ve);
         // The call ended: a window that opens from now on is not shown it.
         if let Some(host) = self.state.host.current() {
             for key in [
@@ -448,6 +471,8 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     async fn end_channel_session(&self, community_id: &str, channel_id: &str) {
+        // Our beat says we left at once (plan E3.4 S8-pre).
+        crate::services::presence_adapter::voice_presence_changed(&self.state, community_id);
         // The media-ready gate flips not-ready for the session that ended.
         crate::services::community::media_ready_runtime::clear_media_ready(
             &self.state,
