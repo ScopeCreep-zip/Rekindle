@@ -349,6 +349,40 @@ jobs:
       - name: gitleaks detect
         run: gitleaks detect --source . --config .gitleaks.toml --redact --no-banner -v
 
+      # No agent attribution (owner 2026-11-28): GitHub lists a commit's author and every
+      # Co-Authored-By email that maps to a GitHub account as a repository contributor, so a commit
+      # authored or co-authored as an agent account puts that agent in the repo's Contributors.
+      # Checks only this event's own commits (the PR, the merge group, or the push).
+      - name: No agent attribution in the new commits
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          MQ_BASE: ${{ github.event.merge_group.base_sha }}
+          MQ_HEAD: ${{ github.event.merge_group.head_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          case "$EVENT" in
+            pull_request) range="$PR_BASE..$PR_HEAD" ;;
+            merge_group) range="$MQ_BASE..$MQ_HEAD" ;;
+            push)
+              if [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ]; then
+                echo "new branch: no prior commit to compare"; exit 0
+              fi
+              range="$PUSH_BEFORE..$PUSH_AFTER" ;;
+            *) echo "no commit range for $EVENT"; exit 0 ;;
+          esac
+          agents='noreply@anthropic\.com|codex@openai\.com'
+          found=$(git log --format='%h %ae %ce%n%(trailers:key=Co-authored-by,valueonly,separator=%x20)' "$range" \
+            | grep -iE "$agents" || true)
+          if [ -n "$found" ]; then
+            echo "::error::Commits in $range are authored, committed or co-authored as an agent account:"
+            echo "$found"
+            exit 1
+          fi
+          echo "no agent attribution in $range"
+
   # ──────────────────────────────────────────────────────────────────
   # Semgrep — SAST that covers the DAST patterns Tauri webview exposes:
   # innerHTML, eval, prototype pollution, deep-link sinks, crypto
