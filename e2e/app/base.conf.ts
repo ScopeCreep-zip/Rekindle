@@ -94,7 +94,13 @@ export const base = {
   // pass as on a failure (shots.ts: a green assertion alone validates nothing).
   async afterTest(test: { title: string }, _context: unknown, result: { passed: boolean }) {
     await shotAllWindows();
-    if (!result.passed) await recordFailure(test.title);
+    if (!result.passed) {
+      // The machine as the test failed: a session that locked after the
+      // start and beforeTest checks shows here, beside the shots, instead of
+      // passing for a product fault (best effort: machineState never throws).
+      console.log(`[machine] at failure of "${test.title}": ${machineState()}`);
+      await recordFailure(test.title);
+    }
   },
   // A failed before/after hook leaves evidence too: every window each user
   // has open, as a shot under the hook's own name, and the failure record
@@ -108,6 +114,7 @@ export const base = {
     const title = test?.title ?? "hook";
     shotsFor(test?.file ?? "hook", test?.parent ?? "hook", title);
     await shotAllWindows();
+    console.log(`[machine] at failure of "${title}": ${machineState()}`);
     await recordFailure(title);
   },
 } satisfies Partial<WebdriverIO.Config>;
