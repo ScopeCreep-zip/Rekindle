@@ -19,12 +19,7 @@ export interface Undecryptable {
 }
 
 /** Why a post's causal permission check refused it (contract CP1). */
-type PostRefusal =
-  | "missingCut"
-  | "notMember"
-  | "timedOut"
-  | "unknownStream"
-  | "missingPermission";
+type PostRefusal = "missingCut" | "notMember" | "timedOut" | "unknownStream" | "missingPermission";
 
 /** A post the Host holds without its body (contract CP1): its governance cut
  *  is unresolved, or the rebuilt state refused it; each in the Host's words. */
