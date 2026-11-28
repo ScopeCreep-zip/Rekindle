@@ -32,17 +32,7 @@ pub(super) fn selection(
         ChannelMessageRequest::ChannelMessageEdit { channel, .. }
         | ChannelMessageRequest::ChannelMessageDelete { channel, .. }
         | ChannelMessageRequest::ChannelMessageSend { channel, .. } => {
-            let target = crate::host::adapters::governance::channel_messages::community_of_channel(
-                ctx, channel,
-            )
-            .ok_or_else(|| IpcResponse::error(404, format!("channel '{channel}' not found")))?;
-            let (id, community_name) = community(ctx, &target)?;
-            s.subject = Subject::Channel {
-                name: channel_name(ctx, &id, channel),
-                community_name,
-                id: channel.clone(),
-            };
-            s.notifies = members(ctx, &id);
+            select_channel_post(ctx, channel, s)?;
         }
         ChannelMessageRequest::ChannelMessageForward { .. }
         | ChannelMessageRequest::ChannelMessageAdminDelete { .. }
@@ -51,5 +41,23 @@ pub(super) fn selection(
         }
         _ => {}
     }
+    Ok(())
+}
+
+pub(in crate::host::intent_select) fn select_channel_post(
+    ctx: &DaemonContext,
+    channel: &str,
+    s: &mut Selection,
+) -> Result<(), IpcResponse> {
+    let target =
+        crate::host::adapters::governance::channel_messages::community_of_channel(ctx, channel)
+            .ok_or_else(|| IpcResponse::error(404, format!("channel '{channel}' not found")))?;
+    let (id, community_name) = community(ctx, &target)?;
+    s.subject = Subject::Channel {
+        name: channel_name(ctx, &id, channel),
+        community_name,
+        id: channel.to_owned(),
+    };
+    s.notifies = members(ctx, &id);
     Ok(())
 }

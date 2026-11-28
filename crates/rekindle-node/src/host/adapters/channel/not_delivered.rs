@@ -41,7 +41,7 @@ pub(crate) async fn fail_not_delivered(
     posts: &[OwnPost],
     reason: &str,
 ) -> usize {
-    let channel = HostChannel { gov: gov.clone() };
+    let channel = HostChannel::of_governance(gov);
     let mut failed = 0;
     for post in posts {
         if channel.store_failure_reason(&post.message, reason).await {

@@ -201,7 +201,7 @@ impl HostGovernance {
     /// Store `op` and advance its device key's head when it is newer;
     /// `signed_here` only from the local signer
     /// (`GovernanceOpStore::store_signed_governance_op`).
-    pub(super) async fn store_governance_op_impl(
+    pub(in crate::host) async fn store_governance_op_impl(
         &self,
         community_id: &str,
         op: &HeldOp,

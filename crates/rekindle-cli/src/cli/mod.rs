@@ -152,6 +152,14 @@ pub enum Command {
     /// Community lifecycle.
     #[command(subcommand)]
     Community(CommunityCmd),
+    /// Send one test post with the author-side permission check skipped.
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverPostSkippingLocalPermission {
+        channel: String,
+        body: String,
+        #[arg(long)]
+        reply_to: Option<String>,
+    },
 
     /// Channel operations.
     #[command(subcommand)]

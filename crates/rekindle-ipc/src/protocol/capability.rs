@@ -143,6 +143,10 @@ impl IpcRequest {
             | Self::IdentityRotationAccept { .. }
             | Self::IdentityRotationDecline { .. }
             | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            Self::WebdriverPostSkippingLocalPermission { .. }
+            | Self::WebdriverHoldGovernanceOps { .. }
+            | Self::WebdriverReleaseGovernanceOps { .. } => None,
             Self::Community(request) => request.agent_capability(),
             Self::Transfer(request) => request.agent_capability(),
             Self::Servers(request) => request.agent_capability(),

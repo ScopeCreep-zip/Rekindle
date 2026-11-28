@@ -29,6 +29,21 @@ impl GovernanceOpStore for HostGovernance {
         community_id: &str,
         op: &HeldOp,
     ) -> Result<(), GovernanceRuntimeError> {
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        let hold = self
+            .context()
+            .communities
+            .governance_ingest_holds
+            .for_community(community_id);
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        let mut queue = hold.lock().await;
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        if let Some(queued) = queue.as_mut() {
+            if !queued.iter().any(|held| held.hash == op.hash) {
+                queued.push_back(op.clone());
+            }
+            return Ok(());
+        }
         self.store_governance_op_impl(community_id, op, false).await
     }
 

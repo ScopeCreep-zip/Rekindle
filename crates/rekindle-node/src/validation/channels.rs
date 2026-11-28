@@ -107,13 +107,7 @@ pub(super) fn check_messages(request: &ChannelMessageRequest) -> Checked {
             channel: ch,
             body,
             reply_to,
-        } => {
-            channel(ch)?;
-            opt(reply_to.as_deref(), |r| {
-                text(r, MAX_MESSAGE_ID_LEN, "reply id")
-            })?;
-            message_body(body)
-        }
+        } => check_post(ch, body, reply_to.as_deref()),
         ChannelMessageRequest::ChannelMessageDelete {
             channel: ch,
             message_id,
@@ -187,4 +181,10 @@ pub(super) fn check_messages(request: &ChannelMessageRequest) -> Checked {
         }
         other => unreachable!("{} is not a channel message request", other.name()),
     }
+}
+
+pub(super) fn check_post(ch: &str, body: &str, reply_to: Option<&str>) -> Checked {
+    channel(ch)?;
+    opt(reply_to, |r| text(r, MAX_MESSAGE_ID_LEN, "reply id"))?;
+    message_body(body)
 }
