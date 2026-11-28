@@ -61,7 +61,8 @@ async function membersShow(b: Browser, name: string): Promise<void> {
  * bug), in whatever group the list puts them (roles group first); and
  * CHANNEL's presence badge counts other members whose location is visible.
  * The default policy shares no location, so the badge is absent. It reads
- * "1 here" once both members share their locations with each other.
+ * "1 member here" once both members share their locations with each other
+ * (ChannelList.tsx membersHere: the count in words, never an unread number).
  */
 async function presenceRight(b: Browser, otherB: Browser, self: string, other: string, here: string | null = null): Promise<void> {
   let last = "";
@@ -220,8 +221,8 @@ describe("a community post reaches the other member live", () => {
     await setLocationSharing(a, alice, true);
     await setLocationSharing(b, bob, true);
     // One at a time: each reads both sessions' own status lines.
-    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "1 here");
-    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "1 here");
+    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "1 member here");
+    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "1 member here");
     await shot("location-shared");
     await setLocationSharing(b, bob, false);
     await presenceRight(a, b, ALICE_NAME, BOB_NAME);
