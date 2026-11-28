@@ -22,7 +22,7 @@ import { type Peer, peerAcceptGroup, peerSendDm, peerSendGroup, startFleet, stop
 import { communitiesView, createCommunity, createGroup, createIdentity, createTextChannel, friendRow, friendsView, newUser, openChat, openCommunity, openGroup, postMessage, seesMessage, selectChannel, type User } from "../../journeys.ts";
 import { type SkinPack, baseDefaults, builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
-import { BUDDY_LIST, CHAT_DM, CHAT_GROUP, COMMUNITY, PROFILE, SETTINGS_APPEARANCE, SETTINGS_PROFILE, type WindowCase, sizeWindow } from "../../windows.ts";
+import { BUDDY_LIST, CHAT_DM, CHAT_GROUP, COMMUNITY, PROFILE, SETTINGS_APPEARANCE, SETTINGS_PROFILE, type WindowCase, sizeWindowServed } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "skins");
 const PACKS = builtinPacks();
@@ -195,7 +195,6 @@ describe("every built-in skin, applied for real", function () {
     report.push(`== ${pack.name} (${pack.file}.rkskin, ${variant.base}): ${colours.length} colours declared, ${changed.length} change the base [${changed.join(" ")}]; sheet ${settingsNow.href}`);
 
     const check = async (file: string, w: WindowCase): Promise<void> => {
-      await sizeWindow(browser, w.def);
       let now = await windowShows(browser, colours);
       // Each window applies SkinChanged itself; wait for this one to show the chosen sheet.
       await waitUntil(
@@ -206,6 +205,10 @@ describe("every built-in skin, applied for real", function () {
         WAIT_MS,
         "",
       ).catch(() => undefined);
+      // Sized once the window shows the chosen skin, to the app default or
+      // the minimum that skin serves where it is wider (a window never goes
+      // below its pack's minimum).
+      await sizeWindowServed(browser, w.def);
       await browser.saveScreenshot(path.join(dir, `${file}.png`));
       const applied = now.href === settingsNow.href && now.loaded;
       const wrong = Object.keys(now.mismatches).length;

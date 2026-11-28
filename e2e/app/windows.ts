@@ -11,6 +11,7 @@ import path from "node:path";
 import type { Browser } from "webdriverio";
 import { WAIT_MS, sleep, waitUntil } from "../walk/helpers.ts";
 import { type Findings, checkGeometry, treeFitIn } from "./geometry.ts";
+import { APP_CAPABILITY, type AppCapability } from "./launcher.ts";
 import type { TreeFit } from "./geometry-page.ts";
 
 export interface Size {
@@ -194,6 +195,20 @@ export async function treeMinimum(b: Browser): Promise<Size | undefined> {
 }
 
 /**
+ * Size the window `b` is in to `size`, raised on each axis to the minimum its
+ * skin serves (`treeMinimum`). A window never goes below its pack's minimum
+ * (the desktop sets it as the native min-size hint and the window manager
+ * honours it), so restoring an app default narrower than the pack asks a
+ * size the window cannot take. The size it was given is returned.
+ */
+export async function sizeWindowServed(b: Browser, size: Size): Promise<Size> {
+  const min = await treeMinimum(b);
+  const want = min ? { width: Math.max(size.width, min.width), height: Math.max(size.height, min.height) } : size;
+  await sizeWindow(b, want);
+  return want;
+}
+
+/**
  * `w`'s sizes for the window `b` is in: a tree-laid window is measured from
  * the minimum its skin serves upward (no axis below it; a size equal to an
  * earlier one is measured once), any other at its kind's sizes.
@@ -250,14 +265,19 @@ async function innerSize(b: Browser): Promise<Size> {
 const OFF_SCREEN = { x: -16_000, y: -16_000 };
 
 /**
- * Added to a resize that never lands on a Wayland session: there a native
- * client cannot resize or place its own window (xdg-shell), so a spec that
- * sizes windows runs its app on X11 (`display: "x11"`, launcher.ts).
+ * Added to a resize that never lands when the app runs as a native Wayland
+ * client: it cannot resize or place its own window (xdg-shell), so a spec
+ * that sizes windows runs its app on X11 (`display: "x11"`, launcher.ts).
+ * Nothing is added when the session's app already runs on X11 (XWayland):
+ * there a refused size is the window's own minimum, not the protocol.
  */
-const WAYLAND_HINT =
-  process.platform === "linux" && process.env.WAYLAND_DISPLAY
-    ? ' (a Wayland session: a native Wayland client cannot resize its own window, xdg-shell; give this spec\'s config `display: "x11"`)'
-    : "";
+function waylandHint(b: Browser): string {
+  if (process.platform !== "linux" || !process.env.WAYLAND_DISPLAY) return "";
+  const caps = (b as unknown as { requestedCapabilities?: Record<string, unknown> }).requestedCapabilities ?? {};
+  const app = caps[APP_CAPABILITY] as AppCapability | undefined;
+  if (app?.display === "x11") return "";
+  return ' (a Wayland session: a native Wayland client cannot resize its own window, xdg-shell; give this spec\'s config `display: "x11"`)';
+}
 
 /**
  * Give the current window the inner (CSS viewport) size `size`, off
@@ -283,7 +303,7 @@ export async function sizeWindow(b: Browser, size: Size): Promise<void> {
       return inner.width === size.width && inner.height === size.height;
     },
     WAIT_MS,
-    `window viewport stayed ${JSON.stringify(inner)}, wanted ${JSON.stringify(size)}${WAYLAND_HINT}`,
+    `window viewport stayed ${JSON.stringify(inner)}, wanted ${JSON.stringify(size)}${waylandHint(b)}`,
   );
   // Let layout and any ResizeObserver work land (E7.12 waited 300 ms after
   // its window's IPC settled; a window behind others renders no frames, so
