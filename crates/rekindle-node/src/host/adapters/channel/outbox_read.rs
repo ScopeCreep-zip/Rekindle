@@ -414,7 +414,7 @@ impl HostChannel {
             || (read.departed && read.departure_head.is_none())
             || !self.we_may_view(&state, community_id, viewed_channel)
         {
-            self.set_post_admission(&post, read.member_record, None, parent.is_some())
+            self.discard_post_admission(&post, read.member_record)
                 .await?;
             return Ok(Held::Stored);
         }
@@ -424,7 +424,7 @@ impl HostChannel {
                 &author,
                 &decoded.governance_cut,
                 read.member_record,
-                parent.is_some(),
+                parent.as_deref(),
             )
             .await?;
         if let Some(held) = status {
@@ -432,7 +432,7 @@ impl HostChannel {
         }
         if let Some(parent) = parent {
             if self
-                .set_post_admission(&post, read.member_record, None, true)
+                .set_post_admission(&post, &author, read.member_record, None, Some(&parent))
                 .await?
             {
                 self.publish_admitted_reply(&post, &parent).await;
@@ -440,8 +440,6 @@ impl HostChannel {
             return Ok(Held::Stored);
         }
         let ingested = self.ingest_authorized(post.clone(), read.backfill).await?;
-        self.set_post_admission(&post, read.member_record, None, false)
-            .await?;
         match ingested {
             // The gate judged the author departed while this read took it
             // as a member: its departure merged after the standing was
@@ -471,7 +469,7 @@ impl HostChannel {
                 return Ok(Held::Pending);
             }
             Ingested::Undecryptable => {
-                if !self.store_undecryptable(post).await? {
+                if !self.store_undecryptable(post.clone()).await? {
                     tracing::debug!(
                         community_id,
                         channel_id,
@@ -484,6 +482,8 @@ impl HostChannel {
             // (`governance/view_gain.rs`).
             _ => {}
         }
+        self.set_post_admission(&post, &author, read.member_record, None, None)
+            .await?;
         Ok(Held::Stored)
     }
 

@@ -1,7 +1,7 @@
 //! Reader-side channel post placeholders.
 
 use rekindle_types::dto::channel_message::PostRefusal;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
 /// A stored verdict. The Host adds the user-facing text when it serves history.
@@ -82,19 +82,38 @@ pub fn page(
            AND (?4 IS NULL OR timestamp < ?4)
          ORDER BY timestamp DESC, message_id DESC LIMIT ?5",
     )?;
-    let rows = query.query_map(params![owner, community, stream, before, limit], |row| {
-        let text: String = row.get(3)?;
-        let status = serde_json::from_str(&text).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
-        })?;
-        Ok(Placeholder {
-            sender: row.get(0)?,
-            message_id: row.get(1)?,
-            timestamp: row.get(2)?,
-            status,
-        })
-    })?;
+    let rows = query.query_map(
+        params![owner, community, stream, before, limit],
+        decode_placeholder,
+    )?;
     rows.collect()
+}
+
+/// The stored placeholder for one post.
+///
+/// # Errors
+/// The query failed or the stored status did not decode.
+pub fn get(conn: &Connection, post: Post<'_>) -> rusqlite::Result<Option<Placeholder>> {
+    conn.query_row(
+        "SELECT sender, message_id, timestamp, status FROM channel_post_admission
+         WHERE owner_key = ?1 AND community_id = ?2 AND stream_id = ?3 AND sender = ?4 AND message_id = ?5",
+        params![post.owner, post.community, post.stream, post.sender, post.message],
+        decode_placeholder,
+    )
+    .optional()
+}
+
+fn decode_placeholder(row: &Row<'_>) -> rusqlite::Result<Placeholder> {
+    let text: String = row.get(3)?;
+    let status = serde_json::from_str(&text).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    Ok(Placeholder {
+        sender: row.get(0)?,
+        message_id: row.get(1)?,
+        timestamp: row.get(2)?,
+        status,
+    })
 }
 
 /// Member records with an unresolved cut. Their cursor still covers the entry.

@@ -66,7 +66,7 @@ pub(crate) fn thread_snapshot(info: ThreadInfo) -> ThreadInfoSnapshot {
     }
 }
 
-fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView {
+pub(super) fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView {
     let server_message_id = view
         .server_message_id
         .map(|message_id| thread_reply_key(&view.sender_pseudonym, &message_id));

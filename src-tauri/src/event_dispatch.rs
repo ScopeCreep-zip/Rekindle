@@ -21,6 +21,7 @@
 //! history through `hydrateState()`.
 
 use rekindle_types::dto::infoview::InfoviewEvent;
+use rekindle_types::key_format::record_key;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
@@ -232,6 +233,15 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         | SubscriptionEvent::Membership(
             rekindle_types::subscription_events::MembershipEvent::Forgotten { .. },
         ) => communities(),
+        // Admission carries a history row. The Host checks the stream's read
+        // permission, and its community window owns that history.
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::PostAdmissionChanged {
+            community,
+            ..
+        }) => match record_key(community) {
+            Ok(community) => Audience::labels([labels::community_label(Some(&community))]),
+            Err(_) => Audience::default(),
+        },
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
