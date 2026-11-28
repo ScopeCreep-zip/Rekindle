@@ -153,6 +153,7 @@ struct RetryRequest {
 # 0x0105.
 struct ProfileKeyRotated {
   newProfileDhtKey @0 :Text;
+  version @1 :Int64;
 }
 
 # 0x0106 (E2.5), inside the ratchet: our friend-presence key. Profile

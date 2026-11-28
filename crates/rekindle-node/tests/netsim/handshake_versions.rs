@@ -195,3 +195,79 @@ async fn creator_invite_ignores_a_withdrawal_of_an_unseen_invite() {
         .expect("read invite")
         .is_none());
 }
+
+async fn profile(node: &SimNode) -> String {
+    node.ok(IpcRequest::IdentityShow).await["profileDhtKey"]
+        .as_str()
+        .expect("own profile")
+        .to_owned()
+}
+
+async fn rotate(node: &SimNode) -> String {
+    rekindle_transport::operations::friend::rotate_profile_key(node.host.friend_host().as_ref())
+        .await
+        .expect("rotate profile and queue notices");
+    profile(node).await
+}
+
+fn profile_seen(events: &Events, profile: &str) -> bool {
+    events.friend().iter().any(|event| {
+        matches!(event, FriendEvent::ProfileKeyRotated { new_profile_dht_key, .. }
+            if new_profile_dht_key == profile)
+    })
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn friend_profile_rotation_retries_after_route_death() {
+    let (sim, nodes) = friends(296).await;
+    let (ann, bea) = (&nodes[0], &nodes[1]);
+    let seen = bea.events().await;
+    outside_dead(&sim, bea);
+    let new = rotate(ann).await;
+    attempted(&sim, ann, bea, DmTypeId::ProfileKeyRotated).await;
+    assert!(!profile_seen(&seen, &new));
+    sim.fault(Fault::RouteDeath { node: bea.index });
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            sim.watched_by(bea.index).contains_key(&new)
+        })
+        .await,
+        "the retried rotation moves the receiver's watch"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn friend_profile_rotation_ignores_an_older_record() {
+    use rekindle_codec::capnp_codec::direct::ProfileKeyRotated;
+
+    let (sim, nodes) = friends(297).await;
+    let (ann, bea) = (&nodes[0], &nodes[1]);
+    let old = profile(ann).await;
+    let new = rotate(ann).await;
+    assert_ne!(old, new);
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            sim.watched_by(bea.index).contains_key(&new)
+        })
+        .await
+    );
+    let seen = bea.events().await;
+    send_again(
+        ann,
+        bea,
+        &DirectBody::ProfileKeyRotated(ProfileKeyRotated {
+            new_profile_dht_key: old.clone(),
+            version: 1,
+        }),
+    )
+    .await;
+    assert!(
+        !eventually(&sim, Duration::from_secs(10), || async {
+            profile_seen(&seen, &old)
+        })
+        .await,
+        "an older rotation was applied"
+    );
+    assert!(sim.watched_by(bea.index).contains_key(&new));
+    assert!(!sim.watched_by(bea.index).contains_key(&old));
+}

@@ -271,16 +271,25 @@ impl SessionResetDecline {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileKeyRotated {
     pub new_profile_dht_key: String,
+    pub version: i64,
 }
 
 impl ProfileKeyRotated {
     pub(super) fn write(&self, mut b: profile_key_rotated::Builder<'_>) {
         b.set_new_profile_dht_key(&self.new_profile_dht_key);
+        b.set_version(self.version);
     }
 
     pub(super) fn read(r: profile_key_rotated::Reader<'_>) -> Result<Self, CodecError> {
+        let version = r.get_version();
+        if version <= 0 {
+            return Err(CodecError::Deserialization(
+                "ProfileKeyRotated needs a positive version".into(),
+            ));
+        }
         Ok(Self {
             new_profile_dht_key: record_key(r.get_new_profile_dht_key(), "profile key")?,
+            version,
         })
     }
 }

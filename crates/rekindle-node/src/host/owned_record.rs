@@ -124,7 +124,7 @@ impl Owner<'_> {
         record: OwnedRecord,
         key: &str,
         keypair: &str,
-    ) -> Result<(), String> {
+    ) -> Result<Option<i64>, String> {
         let previous = {
             let guard = self.vault.lock();
             let vault = guard.as_ref().ok_or("the vault is locked")?;
@@ -137,8 +137,9 @@ impl Owner<'_> {
                 .map_err(|e| format!("owner keypair not saved: {e}"))?;
             previous
         };
-        let Err(e) = self.set_key(record, key).await else {
-            return Ok(());
+        let e = match self.set_key(record, key).await {
+            Ok(version) => return Ok(version),
+            Err(e) => e,
         };
         let guard = self.vault.lock();
         if let Some(vault) = guard.as_ref() {
@@ -154,7 +155,7 @@ impl Owner<'_> {
         Err(format!("record key not saved: {e}"))
     }
 
-    async fn set_key(&self, record: OwnedRecord, key: &str) -> Result<(), String> {
+    async fn set_key(&self, record: OwnedRecord, key: &str) -> Result<Option<i64>, String> {
         let db = self.db.current().map_err(|e| e.to_string())?;
         let (pk, key) = (self.public_key.to_string(), key.to_string());
         db.call(move |conn| rekindle_db::repo::identity::set_owned_record(conn, &pk, record, &key))

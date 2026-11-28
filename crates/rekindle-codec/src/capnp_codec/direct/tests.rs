@@ -102,6 +102,7 @@ fn samples() -> Vec<DirectBody> {
         DirectBody::UnfriendedAck,
         DirectBody::ProfileKeyRotated(ProfileKeyRotated {
             new_profile_dht_key: dht_key(),
+            version: 2,
         }),
         DirectBody::FriendsKey(FriendsKey {
             epoch: 7,
@@ -544,6 +545,7 @@ fn bodies_a_peer_could_abuse_are_refused() {
         }),
         DirectBody::ProfileKeyRotated(ProfileKeyRotated {
             new_profile_dht_key: s("VLD0:short"),
+            version: 2,
         }),
         DirectBody::StatusResponse(StatusResponse {
             target_pubkey: s("Bob"),

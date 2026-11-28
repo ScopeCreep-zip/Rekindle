@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS identity (
     -- The owned records' keys. Their owner keypairs are in the vault
     -- (`rekindle_vault::typed::owner_keys`, plan D1).
     dht_record_key TEXT,
+    profile_version INTEGER NOT NULL DEFAULT 0 CHECK (profile_version >= 0),
     friend_list_dht_key TEXT,
     avatar_webp BLOB,
     account_dht_key TEXT,
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS friends (
     group_id INTEGER REFERENCES friend_groups (id) ON DELETE SET NULL,
     added_at INTEGER NOT NULL,
     dht_record_key TEXT,
+    profile_version INTEGER NOT NULL DEFAULT 0 CHECK (profile_version >= 0),
     last_seen_at INTEGER,
     avatar_webp BLOB,
     mailbox_dht_key TEXT,

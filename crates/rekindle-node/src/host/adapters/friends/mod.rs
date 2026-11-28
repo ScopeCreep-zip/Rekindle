@@ -453,7 +453,7 @@ impl FriendHost for HostFriends {
         self.ctx.own_presence.reseal().await;
     }
 
-    async fn rotate_own_profile(&self) -> Result<String, FriendError> {
+    async fn rotate_own_profile(&self) -> Result<(String, i64), FriendError> {
         crate::host::own_records::rotate_profile(&self.ctx)
             .await
             .map_err(FriendError::Failed)

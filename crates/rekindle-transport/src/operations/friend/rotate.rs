@@ -11,7 +11,11 @@ use crate::operations::dm;
 
 /// Tell every friend not being removed that our profile is now at
 /// `profile_dht_key`; how many the notice reached.
-pub async fn notify_profile_key_rotated(host: &dyn FriendHost, profile_dht_key: &str) -> usize {
+async fn notify_profile_key_rotated(
+    host: &dyn FriendHost,
+    profile_dht_key: &str,
+    version: i64,
+) -> usize {
     let friends: Vec<String> = state::friends(host)
         .into_iter()
         .filter(|f| f.friendship_state != FriendshipState::Removing)
@@ -19,6 +23,7 @@ pub async fn notify_profile_key_rotated(host: &dyn FriendHost, profile_dht_key: 
         .collect();
     let notice = DirectBody::ProfileKeyRotated(ProfileKeyRotated {
         new_profile_dht_key: profile_dht_key.to_string(),
+        version,
     });
     let mut notified = 0;
     for friend in &friends {
@@ -37,8 +42,9 @@ pub async fn notify_profile_key_rotated(host: &dyn FriendHost, profile_dht_key: 
 /// The new record could not be created or stored, or the new profile's
 /// code slot could not be published (plan RV2e).
 pub async fn rotate_profile_key(host: &dyn FriendHost) -> Result<(), FriendError> {
-    let new_key = host.rotate_own_profile().await?;
-    let notified = notify_profile_key_rotated(host, &new_key).await;
+    let _rotation = host.stores().own_profile_rotation.lock().await;
+    let (new_key, version) = host.rotate_own_profile().await?;
+    let notified = notify_profile_key_rotated(host, &new_key, version).await;
     // The new profile publishes a fresh code slot (plan RV2e): the old
     // profile, and its slot, are no longer ours to write.
     super::code_inbox::roll(host).await?;

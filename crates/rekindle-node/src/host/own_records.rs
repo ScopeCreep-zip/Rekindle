@@ -496,7 +496,7 @@ impl OwnRecords {
 /// (the new record is released and nothing changes).
 pub(crate) async fn rotate_profile(
     ctx: &crate::daemon::dispatch::DaemonContext,
-) -> Result<String, String> {
+) -> Result<(String, i64), String> {
     let transport = ctx
         .transport
         .read()
@@ -538,10 +538,13 @@ pub(crate) async fn rotate_profile(
     }
     .save(OwnedRecord::Profile, &key, &keypair)
     .await;
-    if let Err(e) = saved {
-        pool.release(lease).await;
-        return Err(e);
-    }
+    let version = match saved.and_then(|v| v.ok_or_else(|| "profile version missing".into())) {
+        Ok(version) => version,
+        Err(e) => {
+            pool.release(lease).await;
+            return Err(e);
+        }
+    };
     if let Some(session) = ctx.session.write().as_mut() {
         session.identity.profile_dht_key.clone_from(&key);
         session.identity.profile_owner_keypair = Some(keypair);
@@ -552,5 +555,5 @@ pub(crate) async fn rotate_profile(
         pool.release(old).await;
     }
     ctx.own_presence.republish();
-    Ok(key)
+    Ok((key, version))
 }

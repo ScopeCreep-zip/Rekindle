@@ -32,6 +32,26 @@ pub use reply::{
     take_peer_reply,
 };
 
+/// Advance a friend's profile record and its revision together. Whether
+/// the notice was newer and the friend is still accepted.
+///
+/// # Errors
+/// The write failed.
+pub fn advance_profile(
+    conn: &Connection,
+    owner: &str,
+    peer: &str,
+    key: &str,
+    version: i64,
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE friends SET dht_record_key = ?3, profile_version = ?4 \
+         WHERE owner_key = ?1 AND public_key = ?2 AND friendship_state = 'accepted' \
+         AND profile_version < ?4",
+        params![owner, peer, key, version],
+    )? > 0)
+}
+
 /// A friend as the buddy list loads it, with its group's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FriendRow {
@@ -257,7 +277,6 @@ pub fn avatar(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     DisplayName,
-    DhtRecordKey,
     MailboxDhtKey,
     LastSeenAt,
     GroupId,
@@ -267,7 +286,6 @@ impl Column {
     fn name(self) -> &'static str {
         match self {
             Self::DisplayName => "display_name",
-            Self::DhtRecordKey => "dht_record_key",
             Self::MailboxDhtKey => "mailbox_dht_key",
             Self::LastSeenAt => "last_seen_at",
             Self::GroupId => "group_id",

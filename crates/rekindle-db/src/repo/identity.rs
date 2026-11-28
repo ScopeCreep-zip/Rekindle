@@ -192,6 +192,7 @@ pub fn avatar(conn: &Connection, public_key: &str) -> rusqlite::Result<Option<Ve
 }
 
 /// Set an owned record's key (its keypair is stored in the vault first).
+/// For a profile, return its revision, advanced whenever the key changes.
 ///
 /// # Errors
 /// The write failed.
@@ -200,13 +201,24 @@ pub fn set_owned_record(
     public_key: &str,
     record: OwnedRecord,
     key: &str,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Option<i64>> {
+    if matches!(record, OwnedRecord::Profile) {
+        return conn
+            .query_row(
+                "UPDATE identity SET dht_record_key = ?1, \
+             profile_version = profile_version + (dht_record_key IS NOT ?1) \
+             WHERE public_key = ?2 RETURNING profile_version",
+                params![key, public_key],
+                |row| row.get(0),
+            )
+            .map(Some);
+    }
     let key_col = record.key_column();
     conn.execute(
         &format!("UPDATE identity SET {key_col} = ?1 WHERE public_key = ?2"),
         params![key, public_key],
     )?;
-    Ok(())
+    Ok(None)
 }
 
 /// Set the mailbox record's key (the mailbox's keypair is the identity's

@@ -118,7 +118,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
             applied = inbound::on_friend_accept(host, &accept).await;
         }
         DirectBody::ProfileKeyRotated(p) => {
-            applied = inbound::on_profile_key_rotated(host, sender, &p.new_profile_dht_key).await;
+            applied = inbound::on_profile_key_rotated(host, sender, p).await;
         }
         DirectBody::FriendsKey(k) => {
             applied = presence_key::on_friends_key(host, sender, k).await;

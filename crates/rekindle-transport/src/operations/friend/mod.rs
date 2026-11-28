@@ -54,5 +54,5 @@ pub use invites::{
 pub use list::{friends, pending};
 pub use list_record::write as write_friend_list;
 pub use remove::{forget_removed, remove};
-pub use rotate::{notify_profile_key_rotated, rotate_profile_key};
+pub use rotate::rotate_profile_key;
 pub use state::{label, relationship_name, short_key};

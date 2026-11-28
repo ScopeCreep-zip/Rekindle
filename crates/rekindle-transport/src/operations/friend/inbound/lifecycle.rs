@@ -2,8 +2,8 @@
 //! unfriended (and the ack of our own unfriend), a friend's profile moving,
 //! and the crossing-request auto-accept.
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
-use rekindle_db::repo::friends::Column;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, ProfileKeyRotated};
+use rekindle_db::repo::friends;
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
@@ -16,29 +16,34 @@ use crate::operations::friend::{list_record, presence_key, state, FriendHost};
 pub(crate) async fn on_profile_key_rotated(
     host: &dyn FriendHost,
     sender: &str,
-    new_key: &str,
+    notice: &ProfileKeyRotated,
 ) -> bool {
-    if !state::is_accepted(host, sender) {
-        return true;
-    }
-    if !state::write_set(
-        host,
-        sender,
-        Column::DhtRecordKey,
-        Some(new_key.to_string()),
-    )
-    .await
-    {
+    let _rotation = host.stores().peer_profile_rotation.lock().await;
+    let Ok(owner) = state::owner(host) else {
         return false;
+    };
+    let new_key = &notice.new_profile_dht_key;
+    let (peer, key, version) = (sender.to_owned(), new_key.clone(), notice.version);
+    let stored = state::db_call!(host, "advance the friend's profile record", move |conn| {
+        friends::advance_profile(conn, &owner, &peer, &key, version)
+    })
+    .await;
+    match stored {
+        Ok(true) => {}
+        Ok(false) => return true,
+        Err(e) => {
+            tracing::warn!(error = %e, from = %sender, "friend's profile rotation not stored");
+            return false;
+        }
     }
     state::update(host, sender, |f| {
-        f.dht_record_key = Some(new_key.to_string());
+        f.dht_record_key = Some(new_key.clone());
     });
     host.unwatch_friend(sender).await;
     host.watch_friend(sender, new_key).await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::ProfileKeyRotated {
         peer_key: sender.to_string(),
-        new_profile_dht_key: new_key.to_string(),
+        new_profile_dht_key: new_key.clone(),
     }));
     tracing::info!(from = %sender, new_key = %new_key, "friend rotated their profile DHT key");
     true

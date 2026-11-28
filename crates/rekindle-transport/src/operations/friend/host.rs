@@ -47,6 +47,10 @@ pub struct FriendStores {
     /// for a verified accept, `None` for a decline. Memory only, like the
     /// anchor's one-time key the round finishes with (ADR 0011).
     pub creator_answers: Mutex<HashMap<String, HashMap<String, CreatorAnswer>>>,
+    /// Serialize our profile replacement through publication and notification.
+    pub(super) own_profile_rotation: tokio::sync::Mutex<()>,
+    /// Keep a received rotation's stored revision, projection and watch in order.
+    pub(super) peer_profile_rotation: tokio::sync::Mutex<()>,
     /// Pre-session frames already accepted, so a replayed copy is dropped.
     pub replay: Mutex<ReplayGuard>,
     /// Each friend's pending reset request, until the user answers it (one
@@ -359,7 +363,7 @@ pub trait FriendHost: Send + Sync {
     ///
     /// # Errors
     /// The new record could not be created or stored.
-    async fn rotate_own_profile(&self) -> Result<String, FriendError>;
+    async fn rotate_own_profile(&self) -> Result<(String, i64), FriendError>;
     /// Rewrite our STATUS and GAME_INFO under the session's current
     /// friend-presence key (after a rotation, plan E2.5).
     async fn reseal_own_presence(&self);

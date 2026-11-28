@@ -370,6 +370,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::GameInvite
             | DmTypeId::CreatorInvite
             | DmTypeId::CreatorWithdrawn
+            | DmTypeId::ProfileKeyRotated
     )
 }
 

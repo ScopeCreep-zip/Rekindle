@@ -202,26 +202,6 @@ pub(crate) fn require_public_key(public_key: &str) -> Result<(), FriendError> {
         })
 }
 
-/// Write one column of a friend's row and wait for it (D1: the store
-/// first, then the projection); whether it was stored (logged otherwise).
-pub(crate) async fn write_set(
-    host: &dyn FriendHost,
-    public_key: &str,
-    column: rekindle_db::repo::friends::Column,
-    value: Option<String>,
-) -> bool {
-    let Ok(owner) = owner(host) else {
-        return false;
-    };
-    let pk = public_key.to_string();
-    stored(
-        db_call!(host, "update friend", move |conn| {
-            rekindle_db::repo::friends::set(conn, &owner, &pk, column, value)
-        })
-        .await,
-    )
-}
-
 /// Whether an awaited write landed; a failure is logged.
 fn stored(result: Result<(), FriendError>) -> bool {
     match result {
