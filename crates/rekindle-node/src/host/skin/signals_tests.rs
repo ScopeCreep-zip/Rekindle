@@ -419,6 +419,11 @@ fn show_call_takes_the_call_then_the_voice_session() {
     assert_eq!(inputs.show_call(), None);
     inputs.fold(&voice(VoiceEvent::LocalJoined {
         scope: community_scope(),
+        join_handshake: rekindle_types::subscription_events::JoinHandshake::Announced,
+        media_ready: rekindle_types::subscription_events::VoiceMediaReady {
+            ready: false,
+            reason: "handshake-announced".into(),
+        },
     }));
     let session = Some(CallTarget::Voice {
         community: "VLD0:community".into(),
@@ -454,6 +459,11 @@ fn show_call_takes_the_call_then_the_voice_session() {
     inputs.fold(&voice(VoiceEvent::LocalJoined {
         scope: VoiceScope::Dm {
             peer_key: "peerkey".into(),
+        },
+        join_handshake: rekindle_types::subscription_events::JoinHandshake::Announced,
+        media_ready: rekindle_types::subscription_events::VoiceMediaReady {
+            ready: false,
+            reason: "handshake-announced".into(),
         },
     }));
     assert_eq!(inputs.show_call(), None);

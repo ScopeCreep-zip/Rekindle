@@ -7645,6 +7645,7 @@ dependencies = [
  "rekindle-utils",
  "tokio",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -7783,6 +7784,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "veilid-core",
+ "zeroize",
 ]
 
 [[package]]
@@ -7794,10 +7796,12 @@ dependencies = [
  "parking_lot 0.12.5",
  "rekindle-lifecycle",
  "rekindle-records",
+ "rekindle-secrets",
  "rekindle-utils",
  "tokio",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -7808,11 +7812,13 @@ dependencies = [
  "parking_lot 0.12.5",
  "proptest",
  "rekindle-codec",
+ "rekindle-secrets",
  "rekindle-types",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

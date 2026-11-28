@@ -56,7 +56,7 @@ async fn writes_come_back_in_the_next_projection() {
         &communities,
         NewMembership {
             membership: membership(),
-            registry_keypair: Some("reg-kp".into()),
+            registry_keypair: Some(zeroize::Zeroizing::new("reg-kp".into())),
             member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
             member_record: None,
             member_hpke_secret: Some(zeroize::Zeroizing::new([7; 32])),
@@ -91,7 +91,13 @@ async fn writes_come_back_in_the_next_projection() {
         assert_eq!(stored.my_subkey_index, Some(3));
         assert_eq!(stored.my_segment_index, Some(1));
         assert_eq!(stored.slot_seed.as_deref(), Some("09".repeat(32).as_str()));
-        assert_eq!(stored.registry_owner_keypair.as_deref(), Some("reg-kp"));
+        assert_eq!(
+            stored
+                .registry_owner_keypair
+                .as_ref()
+                .map(|key| key.as_str()),
+            Some("reg-kp")
+        );
     }
     let o = owner.clone();
     db.call(move |conn| {

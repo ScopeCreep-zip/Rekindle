@@ -28,11 +28,15 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       //
       // `activeCallType` is now derived from the scope rather than sent
       // as its own string, so the two can no longer disagree.
-      const { scope } = event.localJoined;
+      const { scope, joinHandshake, mediaReady } = event.localJoined;
+      // The handshake and media readiness as the Host had them when the
+      // session started (VN3), never assumed here.
       setVoiceState({
         isConnected: true,
         channelId: sessionKey(scope),
         activeCallType: callType(scope),
+        joinHandshake,
+        mediaReady,
       });
     } else if ("joined" in event) {
       const { pseudonym, displayName } = event.joined;
@@ -40,7 +44,7 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
         ...prev.filter((p) => p.publicKey !== pseudonym),
         {
           publicKey: pseudonym,
-          displayName: displayName ?? pseudonym,
+          displayName,
           isMuted: false,
           isSpeaking: false,
         },
@@ -100,15 +104,9 @@ export async function handleJoinVoice(channelId: string, communityId?: string): 
       voiceEventUnlisten = await initVoiceEventListener();
     }
     await commands.joinVoiceChannel(channelId, communityId);
-    // Community joins start the three-way handshake: VoiceJoin is out,
-    // nobody has seen us yet. The backend's voiceJoinHandshake events
-    // advance this to "seen"/"connected".
-    if (communityId) {
-      setVoiceState("joinHandshake", "announced");
-      // Media-ready resets with the new session; the backend emits the
-      // first voiceMediaReady transition once the slot is seeded.
-      setVoiceState("mediaReady", null);
-    }
+    // The handshake and media readiness come with localJoined (VN3) and
+    // advance on the Host's events; nothing is set here after the join
+    // returns (that overwrote a "connected" that had already arrived).
     // Backend emits VoiceEvent::LocalJoined which the listener mirrors into
     // voiceState (isConnected + channelId + activeCallType). No manual set
     // here — that was the C1 bug: prior code set isConnected/channelId but

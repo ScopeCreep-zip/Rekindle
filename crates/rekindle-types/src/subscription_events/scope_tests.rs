@@ -58,6 +58,11 @@ fn joins_calls_voice_and_notifications() {
         scope: VoiceScope::Dm {
             peer_key: "pk".into(),
         },
+        join_handshake: crate::subscription_events::JoinHandshake::Announced,
+        media_ready: crate::subscription_events::VoiceMediaReady {
+            ready: false,
+            reason: "handshake-announced".into(),
+        },
     });
     assert_eq!(dm_voice.scope(), EventScope::Peer("pk".into()));
     let alert = SubscriptionEvent::Notification(NotificationEvent::SystemAlert {

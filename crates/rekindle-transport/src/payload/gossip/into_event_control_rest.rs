@@ -73,24 +73,6 @@ pub fn control_into_event_rest(
         }
 
         // ── Voice signaling ─────────────────────────────────
-        ControlPayload::VoiceJoin {
-            channel_id,
-            route_blob,
-            display_name,
-            ..
-        } => {
-            // Both were being discarded here, under a comment claiming
-            // gossip carried neither. `VoiceJoin` has always had them:
-            // the display name rides the handshake so a roster never
-            // waits on registry-scan timing, and the route blob is how
-            // a peer is reached at all.
-            SubscriptionEvent::Voice(VoiceEvent::Joined {
-                scope: scope(c(), channel_id),
-                pseudonym: s(),
-                display_name,
-                route_blob: Some(route_blob),
-            })
-        }
         ControlPayload::VoiceLeave { channel_id } => SubscriptionEvent::Voice(VoiceEvent::Left {
             scope: scope(c(), channel_id),
             pseudonym: s(),
@@ -122,23 +104,6 @@ pub fn control_into_event_rest(
             target_pseudonym,
             deafened,
         }),
-        ControlPayload::VoiceRoster {
-            channel_id,
-            participants,
-        } => SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
-            scope: scope(c(), channel_id),
-            // The roster's whole purpose is telling a joiner *who* is
-            // already present, so the members travel with it rather
-            // than a count that cannot seed anything.
-            participants: participants
-                .into_iter()
-                .map(|p| rekindle_types::subscription_events::VoiceParticipant {
-                    pseudonym_key: p.pseudonym_key,
-                    display_name: p.display_name,
-                })
-                .collect(),
-        }),
-
         // ── Stage signalling ────────────────────────────────
         ControlPayload::StageUpdate {
             channel_id,

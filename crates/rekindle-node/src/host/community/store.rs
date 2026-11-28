@@ -397,7 +397,11 @@ impl CommunityStore {
 
     /// Set a joined community's registry owner keypair; a community not in
     /// the store is left absent.
-    pub fn set_registry_owner_keypair(&self, community_id: &str, keypair: String) {
+    pub fn set_registry_owner_keypair(
+        &self,
+        community_id: &str,
+        keypair: zeroize::Zeroizing<String>,
+    ) {
         if let Some(c) = self.map.write().get_mut(community_id) {
             c.registry_owner_keypair = Some(keypair);
         }
@@ -476,7 +480,7 @@ impl CommunityStore {
             c.slot_seed = membership.slot_seed.as_ref().map(hex::encode);
             c.mek_generation = membership.mek_generation;
             if let Some(keypair) = registry_owner_keypair {
-                c.registry_owner_keypair = Some(keypair.to_string());
+                c.registry_owner_keypair = Some(zeroize::Zeroizing::new(keypair.to_owned()));
             }
         });
     }
