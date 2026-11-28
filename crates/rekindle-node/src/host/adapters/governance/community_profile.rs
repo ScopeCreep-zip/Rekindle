@@ -26,6 +26,7 @@ use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
     GameActivity, MembershipEvent, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
 };
+use rekindle_vault::typed::community_keys::{load_member_hpke_secret, persist_member_hpke_secret};
 
 use super::HostGovernance;
 use crate::host::community::CommunityStore;
@@ -136,23 +137,29 @@ impl HostGovernance {
             });
     }
 
-    /// Replace this device's member card secret after re-enrolment and
-    /// publish the card signed by the re-enrolled device.
-    pub(super) async fn replace_card_secret(&self, community: &str) -> Result<(), String> {
+    /// Replace the copied HPKE secret at the device cutover, including
+    /// when the replacement must still be readmitted under rule 7.
+    pub(super) fn replace_card_secret(
+        &self,
+        community: &str,
+        secret: &[u8; 32],
+    ) -> Result<(), String> {
+        let guard = self.ctx.vault.lock();
+        let vault = guard.as_ref().ok_or("the identity is locked")?;
+        persist_member_hpke_secret(vault, community, secret)
+            .map_err(|e| format!("member card secret not saved: {e}"))
+    }
+
+    /// An inert replacement publishes its card when readmission makes its
+    /// binding effective, through `refresh_bound_device_card`.
+    pub(super) async fn publish_re_enrolled_card(&self, community: &str) -> Result<(), String> {
         let lock = self.ctx.communities.profile_write_lock(community);
         let _held = lock.lock().await;
-        let mut secret = zeroize::Zeroizing::new([0; 32]);
-        self.ctx.rng.fill(secret.as_mut());
-        {
-            let guard = self.ctx.vault.lock();
-            let vault = guard.as_ref().ok_or("the identity is locked")?;
-            rekindle_vault::typed::community_keys::persist_member_hpke_secret(
-                vault, community, &secret,
-            )
-            .map_err(|e| format!("member card secret not saved: {e}"))?;
+        if self.own_record_keys(community).is_ok() {
+            self.publish_own_card(community, &self.own_card_text(community))
+                .await?;
         }
-        self.publish_own_card(community, &self.own_card_text(community))
-            .await
+        Ok(())
     }
 
     /// Write `text` to our card, then read it back into the card cache.
@@ -165,7 +172,7 @@ impl HostGovernance {
         let hpke = {
             let guard = self.ctx.vault.lock();
             let vault = guard.as_ref().ok_or("no identity is unlocked")?;
-            rekindle_vault::typed::community_keys::load_member_hpke_secret(vault, community)
+            load_member_hpke_secret(vault, community)
                 .map_err(|e| format!("member hpke secret: {e}"))?
                 .ok_or("no member hpke secret is stored")?
         };

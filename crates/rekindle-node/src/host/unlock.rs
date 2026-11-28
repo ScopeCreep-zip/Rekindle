@@ -241,13 +241,18 @@ pub(crate) async fn run(
     {
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
-    if let Err(e) = crate::daemon::dispatch::adapter(ctx)
-        .resume_retirement_carriers()
-        .await
-    {
+    let governance = crate::daemon::dispatch::adapter(ctx);
+    if let Err(e) = governance.resume_retirement_carriers().await {
         return fail(
             ctx,
             IpcResponse::error(500, format!("retirement carriers: {e}")),
+        )
+        .await;
+    }
+    if let Err(e) = governance.resume_held_re_enrol() {
+        return fail(
+            ctx,
+            IpcResponse::error(500, format!("held device re-enrolment: {e}")),
         )
         .await;
     }

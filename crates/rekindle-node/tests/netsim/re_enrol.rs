@@ -282,6 +282,24 @@ async fn re_enrolment_replaces_every_per_device_secret_in_every_community() {
         results.iter().all(|row| row.get("error").is_none()),
         "{reply:?}"
     );
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            [first.as_str(), second]
+                .into_iter()
+                .enumerate()
+                .all(|(i, anchor)| {
+                    device_key(&community, 0, anchor) != old_keys[i]
+                        && community.nodes[0]
+                            .host
+                            .governance()
+                            .unlock_barrier(anchor)
+                            .view()
+                            .is_none()
+                })
+        })
+        .await,
+        "both communities complete their post-unlock re-enrolment"
+    );
 
     let fresh = community.nodes[0].ok(IpcRequest::PrekeyStatus).await;
     for field in ["deviceId", "recordKey", "spkId", "pqLrId"] {

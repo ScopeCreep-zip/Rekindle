@@ -2,6 +2,7 @@
 //! until the governance outbox has published the locator on that record.
 
 use rekindle_governance_runtime::deps::GovernanceOpStore;
+use rekindle_governance_runtime::member_card::new_hpke_secret;
 use rekindle_governance_runtime::op_log::HeldOp;
 use rekindle_governance_runtime::{GovernanceRuntimeDeps, GovernanceRuntimeError};
 use rekindle_records::chain::{publish_device_retirement, DeviceRetirementPointer};
@@ -20,9 +21,20 @@ fn owner_key(community: &str, device: &[u8; 32]) -> VaultKey {
     }
 }
 
-/// The staged handoff: the retired record, its writer and the signed carrier
-/// (`commit_retirement_carrier`, its only writer, always stores all three).
-fn split_handoff(bytes: &[u8]) -> Result<(&str, &str, &[u8]), String> {
+/// The staged handoff. The versioned format carries the successor card
+/// secret so a restart can install it before resuming the signed carrier.
+struct RetirementHandoff<'a> {
+    record: &'a str,
+    writer: &'a str,
+    card_secret: Option<&'a [u8; 32]>,
+    carrier: &'a [u8],
+}
+
+const HANDOFF_V2: &[u8] = b"v2\n";
+
+fn split_handoff(bytes: &[u8]) -> Result<RetirementHandoff<'_>, String> {
+    let versioned = bytes.strip_prefix(HANDOFF_V2);
+    let bytes = versioned.unwrap_or(bytes);
     let mut fields = bytes.splitn(3, |byte| *byte == b'\n');
     let record = fields
         .next()
@@ -30,12 +42,29 @@ fn split_handoff(bytes: &[u8]) -> Result<(&str, &str, &[u8]), String> {
     let writer = fields
         .next()
         .and_then(|field| std::str::from_utf8(field).ok());
-    match (record, writer, fields.next()) {
-        (Some(record), Some(writer), Some(carrier)) if !carrier.is_empty() => {
-            Ok((record, writer, carrier))
-        }
-        _ => Err("malformed staged retirement handoff".into()),
+    let invalid = || "malformed staged retirement handoff".to_owned();
+    let (record, writer, payload) = (
+        record.ok_or_else(invalid)?,
+        writer.ok_or_else(invalid)?,
+        fields.next().ok_or_else(invalid)?,
+    );
+    // Previously staged handoffs contained only the carrier after the
+    // writer. They keep the card secret already stored for the community.
+    let (card_secret, carrier) = if versioned.is_some() {
+        let (secret, carrier) = payload.split_first_chunk().ok_or_else(invalid)?;
+        (Some(secret), carrier)
+    } else {
+        (None, payload)
+    };
+    if carrier.is_empty() {
+        return Err(invalid());
     }
+    Ok(RetirementHandoff {
+        record,
+        writer,
+        card_secret,
+        carrier,
+    })
 }
 
 fn adapter(error: impl std::fmt::Display) -> GovernanceRuntimeError {
@@ -52,7 +81,13 @@ impl HostGovernance {
         carrier: &HeldOp,
     ) -> Result<(), GovernanceRuntimeError> {
         let (record, writer) = self.own_op_record_writer(community).map_err(adapter)?;
-        let mut handoff = Zeroizing::new(format!("{record}\n{}\n", writer.as_str()).into_bytes());
+        let card_secret = new_hpke_secret(&*self.ctx.rng);
+        let mut handoff = Zeroizing::new(HANDOFF_V2.to_vec());
+        handoff.extend_from_slice(record.as_bytes());
+        handoff.push(b'\n');
+        handoff.extend_from_slice(writer.as_bytes());
+        handoff.push(b'\n');
+        handoff.extend_from_slice(card_secret.as_ref());
         handoff.extend_from_slice(&carrier.encoded);
         let guard = self.ctx.device_vault.lock();
         let vault = guard
@@ -69,6 +104,9 @@ impl HostGovernance {
             owner: Zeroizing::new(owner.to_owned()),
         };
         device_keys::commit_re_enrolment(vault, community, retired, secret, &binding, &handoff)
+            .map_err(adapter)?;
+        drop(guard);
+        self.replace_card_secret(community, &card_secret)
             .map_err(adapter)
     }
 
@@ -101,7 +139,8 @@ impl HostGovernance {
                 continue;
             }
             let Some(bytes) = bytes else { continue };
-            let (_, _, encoded) = split_handoff(&bytes)?;
+            let handoff = split_handoff(&bytes)?;
+            let encoded = handoff.carrier;
             let decoded = rekindle_codec::governance_op::decode_op(encoded)
                 .map_err(|error| format!("read retirement carrier: {error}"))?;
             let GovernanceEntry::DeviceReEnrol(re_enrol) = &decoded.op.body else {
@@ -112,6 +151,9 @@ impl HostGovernance {
             let carrier =
                 rekindle_governance_runtime::op_receive::held_at(hash, record, encoded.to_vec())
                     .ok_or("staged retirement carrier is invalid")?;
+            if let Some(secret) = handoff.card_secret {
+                self.replace_card_secret(&community, secret)?;
+            }
             GovernanceOpStore::store_signed_governance_op(self, &community, &carrier)
                 .await
                 .map_err(|error| error.to_string())?;
@@ -172,14 +214,14 @@ impl HostGovernance {
         let Some(bytes) = bytes else {
             return Ok(());
         };
-        let (record, writer, _) = split_handoff(&bytes)?;
+        let handoff = split_handoff(&bytes)?;
         let pointer = DeviceRetirementPointer {
             op_hash: rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig).0,
             successor_key: decoded.op.device_key,
             successor_record: re_enrol.endorsement.device_record.clone(),
         };
         let port = GovernanceRuntimeDeps::record_port(self).map_err(|error| error.to_string())?;
-        publish_device_retirement(&*port, record, writer, &pointer)
+        publish_device_retirement(&*port, handoff.record, handoff.writer, &pointer)
             .await
             .map_err(|error| format!("publish retirement pointer: {error}"))?;
         let guard = self.ctx.device_vault.lock();

@@ -95,6 +95,8 @@ pub enum VaultKey {
         community: String,
         device: String,
     },
+    /// A committed re-enrolment waiting for its unlock barriers.
+    PendingDeviceReEnrol,
 
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
@@ -170,7 +172,9 @@ impl VaultKey {
             | Self::MemberRecordOwner { .. }
             | Self::MemberHpkeSecret { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
-            Self::DeviceOpKey { .. } | Self::PendingRetirementOwner { .. } => "device",
+            Self::DeviceOpKey { .. }
+            | Self::PendingRetirementOwner { .. }
+            | Self::PendingDeviceReEnrol => "device",
             Self::ClientKey { .. } => "clients",
         }
     }
@@ -187,6 +191,7 @@ impl VaultKey {
             Self::DeviceVaultSecret
                 | Self::DeviceOpKey { .. }
                 | Self::PendingRetirementOwner { .. }
+                | Self::PendingDeviceReEnrol
                 | Self::PendingPrekeyOwner
         )
     }
@@ -246,6 +251,7 @@ impl VaultKey {
             Self::PendingRetirementOwner { community, device } => {
                 ("pending_retirement_owner", vec![s(community), s(device)])
             }
+            Self::PendingDeviceReEnrol => ("pending_device_re_enrol", vec![]),
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
@@ -337,6 +343,7 @@ impl VaultKey {
                 community: c.clone(),
                 device: d.clone(),
             },
+            ("pending_device_re_enrol", []) => Self::PendingDeviceReEnrol,
             ("mac_key", []) => Self::AuditMacKey,
             ("tail", []) => Self::AuditTail,
             ("client", [k]) => Self::ClientKey {

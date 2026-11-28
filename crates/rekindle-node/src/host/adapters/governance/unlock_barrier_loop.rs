@@ -106,7 +106,7 @@ impl HostGovernance {
                         .await;
                 }
                 BarrierPhase::Passed => {
-                    self.wake_device_publication(community);
+                    self.update_publication_binding(community, None);
                     return;
                 }
                 BarrierPhase::Restored(fact) => {
@@ -130,12 +130,8 @@ impl HostGovernance {
         counts: &mut RoundCounts,
     ) -> Option<BarrierPhase> {
         let state = noted(self.governance_state_impl(community), community, "state")?;
-        // No device key held: nothing was ever signed under a `d` of ours.
-        let Some(secret) = noted(self.device_op_key(community).ok(), community, "device key")?
-        else {
-            return Some(BarrierPhase::Passed);
-        };
-        let d = SigningKey::from_bytes(&secret).verifying_key().to_bytes();
+        let device = noted(self.device_op_key(community).ok(), community, "device key")?
+            .map(|secret| SigningKey::from_bytes(&secret).verifying_key().to_bytes());
         let store = GovernanceRuntimeDeps::op_store(self);
         let held = noted(
             store.governance_ops(community).await.ok(),
@@ -144,18 +140,25 @@ impl HostGovernance {
         )?;
         // This copy's signed head, never the highest held op of `d` (the
         // sweep stores our own ops that peers echo back).
-        let local_head = noted(
-            unlock_barrier::local_head(&*store, community, &d)
-                .await
-                .ok(),
-            community,
-            "local head",
-        )?;
-        let dht_head = noted(
-            self.own_dht_head(community, &state, &d, local_head).await,
-            community,
-            "dht head",
-        )?;
+        let (local_head, dht_head) = if let Some(device) = &device {
+            let local_head = noted(
+                unlock_barrier::local_head(&*store, community, device)
+                    .await
+                    .ok(),
+                community,
+                "local head",
+            )?;
+            let dht_head = noted(
+                self.own_dht_head(community, &state, device, local_head)
+                    .await,
+                community,
+                "dht head",
+            )?;
+            (local_head, dht_head)
+        } else {
+            // A device awaiting its first enrolment has no old log.
+            (None, None)
+        };
         let (me, _) = noted(
             op_log::own_pseudonym(self, community).ok(),
             community,
@@ -167,7 +170,7 @@ impl HostGovernance {
         let signer = derive_community_pseudonym(&secret, community);
         let asks = ring
             .iter()
-            .map(|record| self.peer_seq(community, record, &signer, &d, &held));
+            .map(|record| self.peer_seq(community, record, &signer, device.as_ref(), &held));
         let answers: Vec<Option<u64>> = join_all(asks).await.into_iter().flatten().collect();
         counts.answers = answers.len();
         judge_round(&BarrierRound {
@@ -229,7 +232,7 @@ impl HostGovernance {
         community: &str,
         record: &str,
         signer: &SigningKey,
-        d: &[u8; 32],
+        d: Option<&[u8; 32]>,
         held: &[HeldOp],
     ) -> Option<Option<u64>> {
         let peer = noted(
@@ -248,6 +251,9 @@ impl HostGovernance {
             community,
             "frontier request",
         )?;
+        let Some(d) = d else {
+            return Some(None);
+        };
         let mut seed = held.to_vec();
         seed.extend(answer.heads);
         let walked = op_walk::walk_seeded(self, community, &answer.frontier.heads, seed)

@@ -90,6 +90,10 @@ pub async fn re_enrol<D: GovernanceRuntimeDeps>(
     deps: &D,
     community: &str,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
+    let barrier = deps.unlock_barrier(community);
+    barrier.wait_for_verdict().await;
+    let signing = barrier.turn().await;
+    barrier.landed().await;
     let old = held_public(deps, community)?;
     let (author, _) = crate::op_log::own_pseudonym(deps, community)?;
     let endorsed = deps.governance_state(community).is_some_and(|state| {
@@ -103,8 +107,7 @@ pub async fn re_enrol<D: GovernanceRuntimeDeps>(
     }
     let (secret, record, owner) = device_ops::mint_device(deps).await?;
     let bound = record.record.clone();
-    // Serialize with ordinary signing and rebuilds. Held writes may be
-    // waiting on this cutover to pass the barrier.
+    // Keep the op-set read and projection serialized with rebuilds.
     let lock = deps.rebuild_lock(community);
     let installing = lock.lock().await;
     let state = deps
@@ -150,7 +153,6 @@ pub async fn re_enrol<D: GovernanceRuntimeDeps>(
     deps.op_store()
         .store_signed_governance_op(community, &carrier)
         .await?;
-    let barrier = deps.unlock_barrier(community);
     let id = hex::encode(carrier.hash.0);
     barrier.signed(&id);
     let publication = match deps
@@ -168,6 +170,7 @@ pub async fn re_enrol<D: GovernanceRuntimeDeps>(
     deps.set_governance_state(community, merge::merge(&cert, &set.ops));
     barrier.re_keyed();
     drop(installing);
+    drop(signing);
     deps.emit_event(GovernanceRuntimeEvent::GovernanceEntryApplied {
         community_id: community.to_owned(),
         entry: Box::new(entry),

@@ -258,6 +258,12 @@ async fn held_writes_queue_in_arrival_order_behind_the_barrier() {
 #[test]
 fn a_restored_barrier_passes_only_once_re_keyed() {
     let barrier = UnlockBarrier::default();
+    barrier.re_keyed();
+    assert_eq!(
+        barrier.phase(),
+        BarrierPhase::CatchingUp,
+        "re-keying cannot substitute for a completed round"
+    );
     let fact = RestoreDetected {
         last_seq: 4,
         local_head: Some(2),

@@ -263,6 +263,9 @@ impl HostGovernance {
     }
 
     pub(super) fn wake_device_publication(&self, community: &str) {
+        if self.own_record_keys(community).is_err() {
+            return;
+        }
         self.ctx.communities.member_routes_changed.notify_one();
         self.ctx.communities.member_history_changed.notify_one();
         let Some(engine) = self.ctx.own_presence.beats.read().clone() else {

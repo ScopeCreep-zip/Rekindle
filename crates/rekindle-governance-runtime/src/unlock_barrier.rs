@@ -277,7 +277,13 @@ impl UnlockBarrier {
     /// signed under it elsewhere and the barrier passes for it, a restore
     /// included. Called only once the new key is stored.
     pub fn re_keyed(&self) {
-        self.phase.send_replace(BarrierPhase::Passed);
+        self.phase.send_if_modified(|phase| {
+            if matches!(phase, BarrierPhase::Restored(_)) {
+                *phase = BarrierPhase::Passed;
+                return true;
+            }
+            false
+        });
     }
 
     /// `invite_id`'s revoke is held: it is no longer listed or handed out
@@ -350,6 +356,16 @@ impl UnlockBarrier {
             catching_up,
             pending,
         })
+    }
+
+    /// Wait for a completed round. A restore is a verdict that permits
+    /// re-enrolment with a fresh key.
+    pub async fn wait_for_verdict(&self) {
+        let mut rx = self.phase.subscribe();
+        // The sender lives in self for the duration of this wait.
+        let _verdict = rx
+            .wait_for(|phase| *phase != BarrierPhase::CatchingUp)
+            .await;
     }
 
     /// Wait until the barrier passed: `Ok` to sign, `Err` with the restore
