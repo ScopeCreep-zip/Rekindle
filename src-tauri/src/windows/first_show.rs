@@ -76,6 +76,16 @@ pub(super) fn open<B: Build>(
     Ok(window)
 }
 
+/// The Host's local skin read and preparation precede construction, where
+/// the native and document reveal deadline starts.
+pub(super) async fn after_skin<T>(
+    prepare: impl std::future::Future<Output = Result<(), String>>,
+    build: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    prepare.await?;
+    build()
+}
+
 #[cfg(test)]
 #[path = "first_show_tests.rs"]
 mod tests;

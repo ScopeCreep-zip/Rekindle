@@ -180,30 +180,43 @@ pub fn refresh(app: &AppHandle, announced: Option<SkinApplied>) {
     let generation = super::begin_fetch(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let fetched = async {
-            let skin = if let Some(skin) = announced {
-                skin
-            } else {
-                crate::host_call::call::<SkinApplied>(&state, IpcRequest::SkinGet { id: None })
-                    .await
-                    .map_err(|e| format!("{e:?}"))?
-                    .value
-            };
-            let frames = crate::host_call::call::<SkinFrames>(&state, IpcRequest::SkinFrames)
-                .await
-                .map_err(|e| format!("{e:?}"))?
-                .value;
-            if frames.id != skin.id || frames.tokens_href != skin.tokens_href {
-                return Err("Host skin frames were superseded during fetch".to_owned());
-            }
-            Ok((decode(frames)?, skin))
-        }
-        .await;
-        match fetched {
-            Ok((frames, skin)) => super::set_frames(&app, generation, frames, skin),
-            Err(error) => tracing::debug!(%error, generation, "skin presentation not staged"),
+        if let Err(error) = stage(&app, &state, generation, announced).await {
+            tracing::debug!(%error, generation, "skin presentation not staged");
         }
     });
+}
+
+/// Resolve and stage the unlocked identity's presentation before building
+/// its first framed window. The Host still owns selection and validation.
+pub(in crate::windows) async fn prepare(
+    app: &AppHandle,
+    state: &SharedState,
+) -> Result<(), String> {
+    stage(app, state, super::begin_fetch(app), None).await
+}
+
+async fn stage(
+    app: &AppHandle,
+    state: &SharedState,
+    generation: u64,
+    announced: Option<SkinApplied>,
+) -> Result<(), String> {
+    let skin = if let Some(skin) = announced {
+        skin
+    } else {
+        crate::host_call::call::<SkinApplied>(state, IpcRequest::SkinGet { id: None })
+            .await
+            .map_err(|e| e.to_string())?
+            .value
+    };
+    let frames = crate::host_call::call::<SkinFrames>(state, IpcRequest::SkinFrames)
+        .await
+        .map_err(|e| e.to_string())?
+        .value;
+    if frames.id != skin.id || frames.tokens_href != skin.tokens_href {
+        return Err("Host skin frames were superseded during fetch".to_owned());
+    }
+    super::set_frames(app, generation, decode(frames)?, skin)
 }
 
 #[cfg(test)]

@@ -39,6 +39,7 @@ use crate::state::SharedState;
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 pub use geometry::{ShapeRect, Silhouette};
+pub(super) use skin::prepare;
 pub use skin::{frame_of, frame_of_label, refresh};
 
 /// The frames and the stylesheet obtained from the same Host content key.
@@ -378,12 +379,17 @@ fn begin_fetch(app: &AppHandle) -> u64 {
     state.fetch.fetch_add(1, Ordering::SeqCst) + 1
 }
 
-fn set_frames(app: &AppHandle, serial: u64, frames: skin::SkinFrameMap, skin: SkinApplied) {
+fn set_frames(
+    app: &AppHandle,
+    serial: u64,
+    frames: skin::SkinFrameMap,
+    skin: SkinApplied,
+) -> Result<(), String> {
     let state = registry(app);
     {
         let mut desired = state.generation.lock();
         if state.fetch.load(Ordering::SeqCst) != serial {
-            return;
+            return Err("Host skin presentation was superseded during fetch".to_owned());
         }
         *desired = Arc::new(Generation {
             serial,
@@ -400,4 +406,5 @@ fn set_frames(app: &AppHandle, serial: u64, frames: skin::SkinFrameMap, skin: Sk
             native::queue(&window, &shaped);
         }
     }
+    Ok(())
 }

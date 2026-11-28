@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -65,9 +67,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .on_menu_event(|app, event| match TrayAction::of(event.id.as_ref()) {
             Some(TrayAction::Quit) => quit_rekindle(app),
             // The same path as the tray's left-click.
-            Some(TrayAction::Show) => {
-                let _ = windows::open_buddy_list(app);
-            }
+            Some(TrayAction::Show) => show_from_tray(app),
             Some(TrayAction::OpenSettings(tab)) => {
                 let _ = windows::open_settings(app, tab);
             }
@@ -80,7 +80,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
-                let _ = windows::open_buddy_list(tray.app_handle());
+                show_from_tray(tray.app_handle());
             }
         })
         .build(app)?;
@@ -90,6 +90,23 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The tray icon's id, by which a status change finds it.
 const TRAY_ID: &str = "rekindle";
+
+fn show_from_tray(app: &tauri::AppHandle) {
+    if let Some(login) = app.get_webview_window(crate::window_labels::LOGIN) {
+        windows::reveal_window(&login);
+        return;
+    }
+    let state = Arc::clone(app.state::<SharedState>().inner());
+    let app = app.clone();
+    let task_state = Arc::clone(&state);
+    let runtime = tauri::async_runtime::handle();
+    let _entered = runtime.inner().enter();
+    crate::state_helpers::spawn_in_login(&task_state, "open buddy list from tray", async move {
+        if let Err(error) = windows::open_buddy_list(&app, &state).await {
+            tracing::warn!(%error, "could not open buddy list from tray");
+        }
+    });
+}
 
 /// The icon the tray shows (plan E7.2 "Tray"): the app mark while no one is
 /// logged in, else one of four pre-rendered icons carrying the status dot

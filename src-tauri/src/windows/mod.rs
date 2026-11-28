@@ -286,22 +286,40 @@ pub fn open_login(app: &AppHandle, preselect: Option<&PublicKeyHex>) -> Result<(
 /// revealed in place, never rebuilt: destroying a tray-hidden window and
 /// building another under its label left it hidden on COSMIC. A new one
 /// hydrates after the backend identity is set.
-pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
+pub async fn open_buddy_list(app: &AppHandle, state: &SharedState) -> Result<(), String> {
+    static OPEN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let scope = crate::state_helpers::login_scope(state).ok_or("No identity is unlocked")?;
+    let stop = scope.token();
+    let _opening = OPEN.lock().await;
+    if stop.is_cancelled() {
+        return Err("The login session ended".to_owned());
+    }
     if raise(app, labels::BUDDY_LIST) {
         return Ok(());
     }
-    let builder = base_builder(
-        app,
-        WindowKind::BuddyList,
-        labels::BUDDY_LIST,
-        "/buddy-list".to_owned(),
-    )?
-    .title("Rekindle");
-    finish(builder, WindowKind::BuddyList)?;
-    // A skin window: the Host serves its signals from now on (plan CR1); one
-    // opened before the Host is announced when it starts (`announce_open`).
-    crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
-    Ok(())
+    first_show::after_skin(
+        async {
+            tokio::select! {
+                biased;
+                () = stop.cancelled() => Err("The login session ended".to_owned()),
+                prepared = shape::prepare(app, state) => prepared,
+            }
+        },
+        || {
+            let builder = base_builder(
+                app,
+                WindowKind::BuddyList,
+                labels::BUDDY_LIST,
+                "/buddy-list".to_owned(),
+            )?
+            .title("Rekindle");
+            finish(builder, WindowKind::BuddyList)?;
+            // The Host serves the window's signals from now on (plan CR1).
+            crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
+            Ok(())
+        },
+    )
+    .await
 }
 
 /// What a chat window shows: a 1:1 conversation with a friend (identity
