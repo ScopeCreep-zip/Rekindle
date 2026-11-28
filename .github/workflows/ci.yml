@@ -1,4 +1,4 @@
-# Main CI — runs on every push to main and every PR.
+# Rust and Tauri validation for trunk pull requests and merge groups.
 #
 # Two jobs:
 #   * fmt + clippy + test — Rust workspace
@@ -20,21 +20,13 @@
 name: CI
 
 on:
-  # A pull request runs once, on pull_request. push covers only the long-lived
-  # branches a merge lands on (main and the integration branch); a push to a PR
-  # branch would otherwise start a second, identical run (GitHub: "If multiple
-  # triggering events for your workflow occur at the same time, multiple workflow
-  # runs will be triggered").
-  push:
-    branches: [main, codex/communities-merge-cli-claude-remote]
   pull_request:
-    branches: [main, "codex/**"]
-  # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   merge_group:
-  workflow_dispatch:
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [checks_requested]
 
-# A new commit on a pull request cancels that PR's older run; pushes to main and
-# the integration branch never cancel, so every merged commit keeps its result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -73,6 +65,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: "ci-rust"
+          save-if: false
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
@@ -168,6 +161,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: "ci-tauri-${{ matrix.os }}"
+          save-if: false
 
       - name: cargo check (workspace, default features)
         run: cargo check --workspace

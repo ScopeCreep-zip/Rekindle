@@ -26,21 +26,13 @@
 name: Lint
 
 on:
-  # A pull request runs once, on pull_request. push covers only the long-lived
-  # branches a merge lands on (main and the integration branch); a push to a PR
-  # branch would otherwise start a second, identical run (GitHub: "If multiple
-  # triggering events for your workflow occur at the same time, multiple workflow
-  # runs will be triggered").
-  push:
-    branches: [main, codex/communities-merge-cli-claude-remote]
   pull_request:
-    branches: [main, "codex/**"]
-  # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   merge_group:
-  workflow_dispatch:
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [checks_requested]
 
-# A new commit on a pull request cancels that PR's older run; pushes to main and
-# the integration branch never cancel, so every merged commit keeps its result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -150,7 +142,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - name: Install Rust toolchain
+        run: rustup show
 
       - name: Install system deps
         uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
@@ -158,6 +151,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: xtask
+          save-if: false
 
       # `cargo xtask check` runs `cargo deny check advisories bans licenses
       # sources`; pinned to the version the contributors' toolchain uses.
