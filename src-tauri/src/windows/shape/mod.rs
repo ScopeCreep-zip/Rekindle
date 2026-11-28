@@ -247,6 +247,7 @@ fn report_fit(
     if shaped.unfitted.swap(wanted.serial, Ordering::AcqRel) == wanted.serial {
         return;
     }
+    super::skin_load::refused(window, skin);
     let label = window.label().to_owned();
     tracing::warn!(%label, skin = %skin.id, ?canvas, width, height, "window_skin_too_small");
     let Some(state) = window

@@ -65,13 +65,15 @@ impl SkinRevealGate {
     }
 
     pub(super) fn commit(&mut self, href: String, now: Instant) {
-        if self
-            .committed
-            .as_ref()
-            .is_none_or(|(shown, _)| *shown != href)
-        {
+        if !self.committed_to(&href) {
             self.committed = Some((href, now));
         }
+    }
+
+    pub(super) fn committed_to(&self, href: &str) -> bool {
+        self.committed
+            .as_ref()
+            .is_some_and(|(shown, _)| shown == href)
     }
 
     pub(super) fn new_document(&mut self) {

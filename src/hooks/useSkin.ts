@@ -1,3 +1,4 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createSignal, onCleanup } from "solid-js";
 import { subscribeSkinApplyFailed, subscribeSkinEvents } from "../ipc/channels";
 import { commands } from "../ipc/commands";
@@ -109,8 +110,12 @@ export function useSkin(): void {
     received = true;
     apply(skin);
   });
-  const unsubscribeFailure = subscribeSkinApplyFailed(({ cause, notice }) => {
+  const unsubscribeFailure = subscribeSkinApplyFailed(({ window, cause, notice, reverted }) => {
     // The Host's words for it (SkinApplyFailure::notice), never the shell's.
+    if (cause.type === "loadTimeout" && window === getCurrentWindow().label && !reverted) {
+      // Native also reports a switch whose allocation or JS handler never started.
+      showSkinError(notice);
+    }
     if (cause.type === "windowTooSmall" && !document.getElementById(LINK_ID) && !loading) {
       addToast(notice);
     }
@@ -202,7 +207,7 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
   let attemptId: string | null = null;
   let href: string | null = null;
   try {
-    attemptId = await commands.startSkinApply(serial, skin.id, expired);
+    attemptId = await commands.startSkinApply(serial, skin.id, skin.tokensHref, expired);
     if (attemptId === null || attempt.signal.aborted) return;
     await untilAborted(commitSkin(skin, shown, frame, attempt.signal), attempt.signal);
     if (!attempt.signal.aborted) {

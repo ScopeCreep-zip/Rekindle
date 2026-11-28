@@ -278,15 +278,16 @@ pub async fn wait_skin_open(window: WebviewWindow) -> Result<Option<&'static str
     crate::windows::skin_load::wait_open(&window).await
 }
 
-/// Start the native clock before the webview asks its image and CSS loaders.
+/// Claim the native skin apply before the webview asks its image and CSS loaders.
 #[tauri::command]
 pub async fn start_skin_apply(
     window: WebviewWindow,
     serial: u32,
     skin: String,
+    href: String,
     expired: tauri::ipc::Channel<&'static str>,
 ) -> Option<String> {
-    crate::windows::skin_load::start_apply(&window, serial, skin, expired)
+    crate::windows::skin_load::start_apply(&window, serial, &skin, &href, expired)
 }
 
 /// A completed apply cancels its watchdog. A committed sheet also joins

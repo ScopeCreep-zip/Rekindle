@@ -72,8 +72,8 @@ export const systemCommands = {
   // for the skin this device shows now.
   getSkin: (id: string | null = null) => hostInvoke<SkinApplied>("get_skin", { id }),
   waitSkinOpen: () => invoke<string | null>("wait_skin_open"),
-  startSkinApply: (serial: number, skin: string, expired: Channel<string>) =>
-    invoke<string | null>("start_skin_apply", { serial, skin, expired }),
+  startSkinApply: (serial: number, skin: string, href: string, expired: Channel<string>) =>
+    invoke<string | null>("start_skin_apply", { serial, skin, href, expired }),
   finishSkinApply: (attemptId: string, href: string | null) =>
     invoke<void>("finish_skin_apply", { attemptId, href }),
   // Settings → Appearance: Host calls. A library skin chosen goes on

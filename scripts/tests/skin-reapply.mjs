@@ -1,5 +1,5 @@
 // Run with node --experimental-transform-types --test scripts/tests/skin-reapply.mjs.
-// Exercise useSkin with a profile document and controllable native and stylesheet events.
+// Exercise useSkin with controllable native and stylesheet events.
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { test } from "node:test";
@@ -14,6 +14,7 @@ const fixture = {
 };
 
 const imports = {
+  "@tauri-apps/api/window": `export const getCurrentWindow = () => ({ label: fixture.label });`,
   "solid-js": `
     export const createSignal = (value) => [() => value, (next) => {
       value = typeof next === "function" ? next(value) : next;
@@ -22,12 +23,14 @@ const imports = {
   `,
   "../ipc/channels": `
     export async function subscribeSkinEvents(apply) { fixture.apply = apply; }
-    export async function subscribeSkinApplyFailed() {}
+    export async function subscribeSkinApplyFailed(fail) { fixture.fail = fail; }
   `,
   "../ipc/commands": `
     export const commands = {
       getSkin: () => new Promise(() => {}),
-      async startSkinApply(serial, _, expired) {
+      waitSkinOpen: () => new Promise(() => {}),
+      async startSkinApply(serial, _, href, expired) {
+        fixture.startedHref = href;
         fixture.expire = expired.receive;
         return String(serial);
       },
@@ -69,6 +72,7 @@ globalThis.window = { location: { pathname: "/profile", search: "?key=friend" } 
 globalThis.document = {
   documentElement: { dataset: {} },
   getElementById: (id) => fixture.links.find((link) => link.id === id && !link.removed) ?? null,
+  querySelector: (selector) => selector === '.app-frame[data-skin-window="main"]',
   createElement: () => new Element(),
   head: { appendChild: (link) => fixture.links.push(link) },
   // The alert goes before the page (prepend), in flow above it, so it
@@ -83,12 +87,15 @@ globalThis.Image = class {
     this.src = "";
   }
 };
-async function openProfile(name) {
+async function openDocument(name, label = "profile") {
   fixture.links.length = 0;
   fixture.alerts.length = 0;
   fixture.finishes.length = 0;
   fixture.toasts.length = 0;
   fixture.decodeImage = () => Promise.resolve();
+  fixture.label = label;
+  window.location.pathname = `/${label}`;
+  delete document.documentElement.dataset.skinOpening;
   const { useSkin } = await import(`${hook.href}?${name}`);
   useSkin();
   await apply(oldSkin);
@@ -116,7 +123,7 @@ async function apply(skin) {
 }
 
 test("a background profile can commit a skin while unrelated frame art stays pending", async () => {
-  await openProfile("preloads");
+  await openDocument("preloads");
   const frameArt = "skin://new/frame.png";
   const sharedArt = "skin://new/shared.png";
   const requested = [];
@@ -131,7 +138,7 @@ test("a background profile can commit a skin while unrelated frame art stays pen
 });
 
 test("a failed switch stays visible on an open profile until a skin commits", async () => {
-  await openProfile("watchdog");
+  await openDocument("watchdog");
   fixture.apply(nextSkin);
   await flush();
   const stalled = fixture.links.at(-1);
@@ -161,4 +168,38 @@ test("a failed switch stays visible on an open profile until a skin commits", as
   await flush();
   assert.equal(committed(), later.tokensHref);
   assert.equal(alert.removed, true);
+});
+
+test("an occluded buddy list swaps its sheet without animation frames", async () => {
+  await openDocument("covered", "buddy-list");
+  document.visibilityState = "hidden";
+  let frameRequests = 0;
+  globalThis.requestAnimationFrame = window.requestAnimationFrame = () => ++frameRequests;
+  try {
+    await apply({ ...nextSkin, frameImages: { main: ["skin://new/frame.png"] } });
+    assert.equal(frameRequests, 0);
+    assert.equal(fixture.startedHref, nextSkin.tokensHref);
+    assert.equal(committed(), nextSkin.tokensHref);
+    assert.deepEqual(fixture.finishes.at(-1), ["2", nextSkin.tokensHref]);
+  } finally {
+    delete document.visibilityState;
+    delete window.requestAnimationFrame;
+    delete globalThis.requestAnimationFrame;
+  }
+});
+
+test("a buddy list shows its delivery timeout even if it never received the apply", async () => {
+  await openDocument("delivery-timeout", "buddy-list");
+  const failure = {
+    cause: { type: "loadTimeout" },
+    skin: nextSkin.id,
+    notice: "Rekindle could not load the skin for this window in time.",
+    reverted: false,
+  };
+  fixture.fail({ ...failure, window: "settings" });
+  assert.equal(fixture.alerts.length, 0);
+  fixture.fail({ ...failure, window: "buddy-list" });
+  assert.equal(committed(), oldSkin.tokensHref);
+  assert.equal(fixture.finishes.length, 1);
+  assert.equal(fixture.alerts[0]?.textContent, failure.notice);
 });

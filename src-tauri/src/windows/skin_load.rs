@@ -9,7 +9,7 @@ use std::time::Instant;
 use parking_lot::Mutex;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_lifecycle::SessionScope;
-use rekindle_types::dto::skin_library::SkinApplyFailure;
+use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
 #[cfg(not(target_os = "linux"))]
@@ -32,8 +32,10 @@ enum Opening {
 static NEXT_APPLY_ID: AtomicU64 = AtomicU64::new(1);
 
 struct Apply {
-    id: String,
     skin: String,
+    href: String,
+    end: Instant,
+    started: Option<(String, Channel<&'static str>)>,
     stop: CancellationToken,
 }
 
@@ -67,6 +69,7 @@ impl Load {
 struct State {
     gate: SkinRevealGate,
     apply: Option<Apply>,
+    timed_out: Option<String>,
     serial: u32,
     staged: bool,
     opening: watch::Sender<Opening>,
@@ -77,6 +80,7 @@ impl Default for State {
         Self {
             gate: SkinRevealGate::default(),
             apply: None,
+            timed_out: None,
             serial: 0,
             staged: false,
             opening: watch::channel(Opening::Waiting).0,
@@ -87,29 +91,81 @@ impl Default for State {
 impl State {
     fn new_document(&mut self) {
         self.apply = None;
+        self.timed_out = None;
         self.serial = 0;
         self.gate.new_document();
         self.opening = watch::channel(Opening::Waiting).0;
     }
 
-    fn begin_apply(&mut self, serial: u32, skin: String) -> Option<(String, CancellationToken)> {
-        if serial <= self.serial {
+    fn expects_delivery(&self, skin: &str, href: &str) -> bool {
+        !self.gate.failed()
+            && self.apply.as_ref().map_or_else(
+                || !self.gate.committed_to(href),
+                |apply| apply.skin != skin || apply.href != href,
+            )
+    }
+
+    fn deliver(
+        &mut self,
+        skin: String,
+        href: String,
+        now: Instant,
+    ) -> (Instant, CancellationToken) {
+        let stop = CancellationToken::new();
+        let end = now + LOAD_LIMIT;
+        self.timed_out = None;
+        self.apply = Some(Apply {
+            skin,
+            href,
+            end,
+            started: None,
+            stop: stop.clone(),
+        });
+        (end, stop)
+    }
+
+    fn begin_apply(
+        &mut self,
+        serial: u32,
+        skin: &str,
+        href: &str,
+        expired: Channel<&'static str>,
+        now: Instant,
+    ) -> Option<String> {
+        if self.gate.failed() || self.timed_out.as_deref() == Some(href) {
+            let _ = expired.send(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE);
+            return None;
+        }
+        let apply = self.apply.as_mut()?;
+        if serial <= self.serial || skin != apply.skin || href != apply.href || now >= apply.end {
             return None;
         }
         let id = NEXT_APPLY_ID.fetch_add(1, Ordering::Relaxed).to_string();
-        let stop = CancellationToken::new();
         self.serial = serial;
-        self.apply = Some(Apply {
-            id: id.clone(),
-            skin,
-            stop: stop.clone(),
-        });
-        Some((id, stop))
+        apply.started = Some((id.clone(), expired));
+        Some(id)
+    }
+
+    fn expire_apply(&mut self, now: Instant) -> Option<Apply> {
+        let apply = self.apply.take_if(|apply| now >= apply.end)?;
+        self.timed_out = Some(apply.href.clone());
+        Some(apply)
     }
 
     /// Complete only the native attempt that the document started.
     fn finish_apply(&mut self, attempt_id: &str, href: Option<String>, now: Instant) -> bool {
-        if self.apply.take_if(|apply| apply.id == attempt_id).is_none() {
+        if self
+            .apply
+            .take_if(|apply| {
+                now < apply.end
+                    && href.as_ref().is_none_or(|href| href == &apply.href)
+                    && apply
+                        .started
+                        .as_ref()
+                        .is_some_and(|(id, _)| id == attempt_id)
+            })
+            .is_none()
+        {
             return false;
         }
         if let Some(href) = href {
@@ -265,14 +321,16 @@ fn update(window: &WebviewWindow, load: &Load) {
     }
 
     let staged = std::mem::take(&mut state.staged);
-    let timed_out_skin = match effect {
+    let report = match effect {
         SkinRevealEffect::Skinned(_) => {
             state.opening.send_replace(Opening::Skinned);
             None
         }
         SkinRevealEffect::RevealAndReportTimeout(_) => {
             state.opening.send_replace(Opening::Failed);
-            state.apply.take().map(|apply| apply.skin.clone())
+            let skin = state.apply.take().map(|apply| apply.skin.clone());
+            // The live apply may already have reported the same timeout.
+            state.timed_out.is_none().then_some(skin)
         }
         SkinRevealEffect::Wait | SkinRevealEffect::Failed(_) => None,
     };
@@ -286,7 +344,9 @@ fn update(window: &WebviewWindow, load: &Load) {
             // The native error has its own close control even if the page
             // is suspended or its entry module never ran.
             expose(window, show, staged);
-            report_timeout(window, load, timed_out_skin);
+            if let Some(skin) = report {
+                report_timeout(window, load, skin);
+            }
             show_timeout_dialog(window);
         }
     }
@@ -444,56 +504,79 @@ pub(crate) async fn wait_open(
     Ok(matches!(*status, Opening::Failed).then_some(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE))
 }
 
-/// Every apply gets a native watchdog, including a switch after first reveal
-/// and windows that wear the palette without a native frame.
+/// Accept a live Host switch for a window, even before a framed window's
+/// native allocation can release the matching event to its document.
+pub(crate) fn delivered(window: &WebviewWindow, skin: &SkinApplied) {
+    let Some(load) = registry(window.app_handle())
+        .0
+        .lock()
+        .get(window.label())
+        .cloned()
+    else {
+        return;
+    };
+    let mut state = load.state.lock();
+    // The snapshot or a replay can already have started or committed this
+    // sheet. A duplicate live event may be dropped by the document's cursor.
+    if state.expects_delivery(&skin.id, &skin.tokens_href) {
+        let (end, stop) = state.deliver(skin.id.clone(), skin.tokens_href.clone(), Instant::now());
+        watch_apply(window, &load, end, stop);
+    }
+}
+
+/// The settled native allocation reported WindowTooSmall for this skin.
+pub(super) fn refused(window: &WebviewWindow, skin: &SkinApplied) {
+    let load = load(window);
+    let mut state = load.state.lock();
+    state.apply.take_if(|apply| apply.href == skin.tokens_href);
+}
+
+/// Claim the delivered switch. A document's initial snapshot also needs a
+/// deadline when there is no live delivery for it.
 pub(crate) fn start_apply(
     window: &WebviewWindow,
     serial: u32,
-    skin: String,
+    skin: &str,
+    href: &str,
     expired: Channel<&'static str>,
 ) -> Option<String> {
     let load = load(window);
     let mut state = load.state.lock();
-    if state.gate.failed() {
-        let _ = expired.send(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE);
-        return None;
+    let now = Instant::now();
+    if state.apply.is_none()
+        && state.timed_out.as_deref() != Some(href)
+        && !state.gate.failed()
+        && serial > state.serial
+    {
+        let (end, stop) = state.deliver(skin.to_owned(), href.to_owned(), now);
+        watch_apply(window, &load, end, stop);
     }
-    let (id, stop) = state.begin_apply(serial, skin)?;
-    drop(state);
+    state.begin_apply(serial, skin, href, expired, now)
+}
+
+fn watch_apply(window: &WebviewWindow, load: &Arc<Load>, end: Instant, stop: CancellationToken) {
     let target = window.clone();
-    let end = Instant::now() + LOAD_LIMIT;
-    let active = Arc::clone(&load);
+    let active = Arc::clone(load);
     load.spawn("wait for skin apply deadline", async move {
         tokio::select! {
             () = stop.cancelled() => {}
             () = tokio::time::sleep_until(end.into()) => {
-                let Some(apply) = expired_apply(&active, &stop).await else { return };
-                let _ = expired.send(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE);
+                let Some(apply) = expired_apply(&active, &stop) else { return };
+                if let Some((_, expired)) = &apply.started {
+                    let _ = expired.send(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE);
+                }
                 report_timeout(&target, &active, Some(apply.skin.clone()));
             }
         }
     });
-    Some(id)
 }
 
-async fn expired_apply(load: &Load, stop: &CancellationToken) -> Option<Apply> {
-    loop {
-        let mut opening = {
-            let mut state = load.state.lock();
-            if stop.is_cancelled() || state.gate.failed() {
-                return None;
-            }
-            if !state.gate.pending() {
-                return state.apply.take();
-            }
-            // A reveal in progress owns the error surface and report.
-            state.opening.subscribe()
-        };
-        tokio::select! {
-            () = stop.cancelled() => return None,
-            changed = opening.changed() => changed.ok()?,
-        }
+fn expired_apply(load: &Load, stop: &CancellationToken) -> Option<Apply> {
+    let mut state = load.state.lock();
+    if stop.is_cancelled() || state.gate.failed() {
+        return None;
     }
+    state.expire_apply(Instant::now())
 }
 
 pub(crate) fn finish_apply(window: &WebviewWindow, attempt_id: &str, href: Option<String>) {

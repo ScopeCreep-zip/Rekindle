@@ -408,7 +408,24 @@ pub fn spawn_host_stream(
                         crate::windows::follow_event(&app, &state, &sequenced.event);
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
-                            state.event_router.deliver(&envelope, &event.audience());
+                            let audience = event.audience();
+                            if let WebviewEvent::Subscription(SubscriptionEvent::System(
+                                SystemEvent::SkinChanged { skin },
+                            )) = &event
+                            {
+                                let windows = app.webview_windows();
+                                state.event_router.deliver_observed(
+                                    &envelope,
+                                    &audience,
+                                    |label| {
+                                        if let Some(window) = windows.get(label) {
+                                            crate::windows::skin_load::delivered(window, skin);
+                                        }
+                                    },
+                                );
+                            } else {
+                                state.event_router.deliver(&envelope, &audience);
+                            }
                         }
                     }
                     StreamFrame::InvalidSession => state

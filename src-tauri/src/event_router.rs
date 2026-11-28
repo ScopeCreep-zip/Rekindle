@@ -151,8 +151,19 @@ impl WebviewRouter {
 
     /// Send `envelope` to every registered window in `audience`.
     pub fn deliver(&self, envelope: &OutboundEnvelope, audience: &Audience) {
+        self.deliver_observed(envelope, audience, |_| ());
+    }
+
+    /// Record each native delivery before its callback can run in the webview.
+    pub fn deliver_observed(
+        &self,
+        envelope: &OutboundEnvelope,
+        audience: &Audience,
+        mut before_send: impl FnMut(&str),
+    ) {
         for (label, channel) in self.subs.read().iter() {
             if audience.includes(label) {
+                before_send(label);
                 if let Err(e) = channel.send(envelope.clone()) {
                     tracing::debug!(window = %label, error = %e, "event send failed");
                 }
