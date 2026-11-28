@@ -69,7 +69,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Rust (fmt / clippy / test)
+    name: Rust Clippy
     needs: classify
     if: startsWith(needs.classify.outputs.plan, 'full-')
     runs-on: ubuntu-24.04
@@ -218,3 +218,68 @@ jobs:
     env:
       TAURI_CACHE_KEY: ci-tauri-windows-2022
     steps: *tauri-steps
+
+  # This stable name still gates the split Rust jobs under the existing ruleset.
+  rust:
+    name: Rust (fmt / clippy / test)
+    if: ${{ always() && (startsWith(needs.classify.outputs.plan, 'full-') || (needs.classify.result != 'success' && github.event.pull_request.draft != true)) }}
+    needs: [classify, fmt, clippy, test]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+      PLAN: ${{ needs.classify.outputs.plan }}
+      EXPECTED: classify fmt clippy ${{ needs.classify.outputs.plan == 'full-queue' && 'test' || '' }}
+    steps:
+      - &check-results
+        name: Check planned results
+        if: ${{ always() }}
+        run: |
+          case "$PLAN" in
+            draft|license|docs|full-pr|full-queue) ;;
+            *) echo '::error::Missing or invalid CI plan'; exit 1 ;;
+          esac
+
+          problems=$(jq -r --arg expected "$EXPECTED" '
+            ($expected | split(" ") | map(select(length > 0))) as $planned
+            | . as $results
+            | (($planned + keys) | unique)[]
+            | . as $job
+            | (if $planned | index($job) then "success" else "skipped" end) as $want
+            | ($results[$job].result // "missing") as $got
+            | select($want != $got)
+            | "\($job): expected \($want), got \($got)"
+          ' <<< "$RESULTS")
+          if [[ -n $problems ]]; then
+            printf '::error::%s\n' "$problems"
+            exit 1
+          fi
+
+      - &reject-cancelled
+        name: Reject cancelled runs
+        if: cancelled()
+        run: |
+          echo '::error::Workflow run was cancelled'
+          exit 1
+
+  required:
+    name: CI Required
+    if: ${{ always() }}
+    needs: [classify, fmt, clippy, test, tauri-linux, tauri-macos, tauri-windows, rust]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+      PLAN: ${{ needs.classify.outputs.plan }}
+      EXPECTED: >-
+        classify
+        ${{ startsWith(needs.classify.outputs.plan, 'full-') && 'fmt clippy rust' || '' }}
+        ${{ needs.classify.outputs.plan == 'full-queue' && 'test tauri-linux tauri-macos tauri-windows' || '' }}
+    steps:
+      - *check-results
+      - *reject-cancelled
+      - name: Require a ready pull request
+        if: needs.classify.outputs.plan == 'draft'
+        run: |
+          echo '::error::Draft pull request: mark ready to validate'
+          exit 1

@@ -358,6 +358,8 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   secrets:
     name: Secrets (gitleaks)
+    needs: classify
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -408,6 +410,13 @@ jobs:
             exit 1
           fi
           echo "no agent attribution in $range"
+
+      # Keep a classifier failure visible under the existing required names.
+      - name: Require the lint plan
+        if: needs.classify.result != 'success'
+        run: |
+          echo '::error::Lint classifier did not succeed'
+          exit 1
 
   # ──────────────────────────────────────────────────────────────────
   # Semgrep — SAST that covers the DAST patterns Tauri webview exposes:
@@ -471,3 +480,47 @@ jobs:
             capnp compile -orust:/tmp --src-prefix=schemas "$f"
             echo "::endgroup::"
           done
+
+  required:
+    name: Lint Required
+    if: ${{ always() }}
+    needs: [classify, frontend, frontend-arch, xtask, toml, markdown, sql, workflows, shell, nix, typos, secrets, semgrep, capnp]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+      PLAN: ${{ needs.classify.outputs.plan }}
+      EXPECTED: >-
+        classify secrets typos
+        ${{ startsWith(needs.classify.outputs.plan, 'full-') && 'frontend frontend-arch toml sql workflows shell semgrep capnp' || '' }}
+        ${{ (startsWith(needs.classify.outputs.plan, 'full-') || needs.classify.outputs.plan == 'docs') && 'markdown' || '' }}
+        ${{ needs.classify.outputs.plan == 'full-queue' && 'xtask nix' || '' }}
+    steps:
+      - name: Check planned results
+        if: ${{ always() }}
+        run: |
+          case "$PLAN" in
+            draft|license|docs|full-pr|full-queue) ;;
+            *) echo '::error::Missing or invalid CI plan'; exit 1 ;;
+          esac
+
+          problems=$(jq -r --arg expected "$EXPECTED" '
+            ($expected | split(" ") | map(select(length > 0))) as $planned
+            | . as $results
+            | (($planned + keys) | unique)[]
+            | . as $job
+            | (if $planned | index($job) then "success" else "skipped" end) as $want
+            | ($results[$job].result // "missing") as $got
+            | select($want != $got)
+            | "\($job): expected \($want), got \($got)"
+          ' <<< "$RESULTS")
+          if [[ -n $problems ]]; then
+            printf '::error::%s\n' "$problems"
+            exit 1
+          fi
+
+      - name: Reject cancelled runs
+        if: cancelled()
+        run: |
+          echo '::error::Workflow run was cancelled'
+          exit 1
