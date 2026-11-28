@@ -77,6 +77,8 @@ impl Silhouette {
         }])
     }
 
+    /// The silhouette's rectangles, for the Linux region and Win32 corner builders.
+    #[cfg(any(target_os = "linux", windows, test))]
     pub fn rects(&self) -> &[ShapeRect] {
         &self.0
     }

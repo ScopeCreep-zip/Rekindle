@@ -146,7 +146,7 @@ impl Controller {
             state.csd_ready.set(!state.wayland);
             state.settling.borrow_mut().reset_surface();
         });
-        widget.connect_scale_factor_notify(|widget| widget.queue_allocate());
+        widget.connect_scale_factor_notify(gtk::prelude::WidgetExt::queue_allocate);
         let state = Rc::clone(self);
         widget.connect_window_state_event(move |widget, event| {
             state.window_state(widget, event.new_window_state());

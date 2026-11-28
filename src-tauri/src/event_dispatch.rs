@@ -105,7 +105,6 @@ impl WebviewEvent {
     pub fn audience(&self) -> Audience {
         match self {
             Self::Subscription(e) => subscription_audience(e),
-            Self::SkinFrameBase { window } => Audience::labels([window.clone()]),
             Self::Lifecycle { .. } => Audience::kinds(&WindowKind::ALL),
             Self::PairingLinkRefused => Audience::labels([labels::BUDDY_LIST.to_owned()]),
             Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
@@ -113,7 +112,9 @@ impl WebviewEvent {
             // community's events go to every one of them (each filters by
             // its selection) and to the buddy list's community list.
             Self::Community(_) => communities(),
-            Self::CommunityFocusChannel { window, .. } => Audience::labels([window.clone()]),
+            Self::SkinFrameBase { window } | Self::CommunityFocusChannel { window, .. } => {
+                Audience::labels([window.clone()])
+            }
         }
     }
 
@@ -174,11 +175,23 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         // A skin a window could not apply goes to that window, by label,
         // and to Settings, where skins are chosen and a trial ends (plan
         // SK2-T1).
-        SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
-            window,
-            cause: rekindle_types::dto::skin_library::SkinApplyFailure::WindowTooSmall { .. },
-            ..
-        }) => Audience::labels([window.clone()]),
+        // Each of these also goes to the one window it names, by label (ADR 0013):
+        // - a window's Infoview, asked with its own label (`commands::infoview`);
+        // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
+        //   another chat window's set names another friend's capabilities;
+        // - a view switch pressed in a popup, addressed by the Host to its
+        //   launcher (plan SK2-N4).
+        // This arm stays ahead of the general SkinApplyFailed arm below.
+        SubscriptionEvent::System(
+            SystemEvent::SkinApplyFailed {
+                window,
+                cause: rekindle_types::dto::skin_library::SkinApplyFailure::WindowTooSmall { .. },
+                ..
+            }
+            | SystemEvent::Infoview(InfoviewEvent::Updated { window, .. })
+            | SystemEvent::SkinSignals { window, .. }
+            | SystemEvent::SkinShell { window, .. },
+        ) => Audience::labels([window.clone()]),
         SubscriptionEvent::System(SystemEvent::SkinApplyFailed { window, .. }) => {
             Audience::labels([window.clone()]).with_kinds(&[WindowKind::Settings])
         }
@@ -191,17 +204,6 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
             // windows the Infoview's feed reaches.
             | SystemEvent::ServersViewChanged { .. },
         ) => buddy_list().with_kinds(&[WindowKind::Chat]),
-        // Each goes to the one window it names, by label (ADR 0013):
-        // - a window's Infoview, asked with its own label (`commands::infoview`);
-        // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
-        //   another chat window's set names another friend's capabilities;
-        // - a view switch pressed in a popup, addressed by the Host to its
-        //   launcher (plan SK2-N4).
-        SubscriptionEvent::System(
-            SystemEvent::Infoview(InfoviewEvent::Updated { window, .. })
-            | SystemEvent::SkinSignals { window, .. }
-            | SystemEvent::SkinShell { window, .. },
-        ) => Audience::labels([window.clone()]),
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them. So does the Downloads
         // view (`EngineView::Files`), where its skin's download capabilities
