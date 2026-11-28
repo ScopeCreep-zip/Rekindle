@@ -298,6 +298,9 @@ function applySendStatus(channel: string, messageId: string, state: string, reas
   }
 }
 
+/** The page a CP1 re-read asks for: the Host's largest (MAX_PAGE, rekindle-node validation.rs). */
+const REREAD_PAGE = 100;
+
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {
   if ("unreadChanged" in event) {
     applyChannelUnread(event.unreadChanged);
@@ -330,15 +333,17 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.attachmentDownloaded.attachmentId
       );
     } else if ("postAdmissionChanged" in m) {
-      // CP1: a held post was judged (or a new one held): re-read the
-      // channel or thread this window holds; the Host's rows are the truth.
+      // CP1: a held post was judged (or a new one held): re-read the newest
+      // page of the channel or thread this window holds (the Host takes at
+      // most MAX_PAGE rows, validation.rs); mergeRead keeps the earlier
+      // scrollback the page does not reach. The Host's rows are the truth.
       const a = m.postAdmissionChanged;
       if (a.thread) {
         if (communityState.threadMessages[a.streamId]) {
-          void handleLoadThreadMessages(a.community, a.streamId, 100);
+          void handleLoadThreadMessages(a.community, a.streamId, REREAD_PAGE);
         }
       } else if (communityState.channelMessages[a.streamId]) {
-        void handleLoadChannelMessages(a.streamId, 100);
+        void handleLoadChannelMessages(a.streamId, REREAD_PAGE);
       }
     } else if ("expressionAssetReady" in m) {
       // Architecture §18.4 — the eager fetch landed; re-pull the

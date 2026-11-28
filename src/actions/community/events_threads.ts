@@ -7,6 +7,7 @@ import { communityState, setCommunityState } from "../../stores/community.store"
 import { takeEarlySendState } from "../../stores/early_send.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
+import { mergeRead } from "../../utils/message_merge";
 import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
 
@@ -276,15 +277,10 @@ export async function handleLoadThreadMessages(
     const messages = await commands.getThreadMessages(communityId, threadId, limit);
     const mapped = transformMessages(messages);
     // The page may answer after a reply was sent or received (walk 14,
-    // M76: the late page replaced our own reply's bubble): keep what the
-    // page does not hold yet, after it.
-    setCommunityState("threadMessages", threadId, (prev) => {
-      const held = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
-      const later = (prev ?? []).filter((m) =>
-        m.serverMessageId ? !held.has(m.serverMessageId) : m.isOwn
-      );
-      return [...mapped, ...later];
-    });
+    // M76: the late page replaced our own reply's bubble), and earlier
+    // replies may be loaded beyond it: the channel's read merge keeps both,
+    // and refreshes every row the page holds (CP1: a held reply judged).
+    setCommunityState("threadMessages", threadId, (prev) => mergeRead(prev ?? [], mapped));
   } catch (e) {
     console.error("Failed to load thread messages:", e);
     addToast("Failed to load thread messages", "error");

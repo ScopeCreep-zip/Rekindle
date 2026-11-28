@@ -189,14 +189,25 @@ describe("a channel post is admitted at its signed governance cut (CP1)", functi
       ""
     ).catch(() => undefined);
     const refused = seen.find((r) => r.held === "refused");
+    // The refused tone is the theme's danger text: the row's computed colour
+    // must equal --color-xfire-danger-text resolved in the same document.
     const tone = (await browser.execute(() => {
       const el = document.querySelector<HTMLElement>('.message-held[data-admission="refused"]');
-      return el ? getComputedStyle(el).color : "";
-    })) as string;
-    console.log(`[cp1] refused: ${JSON.stringify(refused ?? seen)}; colour ${tone}`);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--color-xfire-danger-text)";
+      (el?.parentElement ?? document.body).appendChild(probe);
+      const danger = getComputedStyle(probe).color;
+      probe.remove();
+      return { row: el ? getComputedStyle(el).color : "", danger };
+    })) as { row: string; danger: string };
+    console.log(
+      `[cp1] refused: ${JSON.stringify(refused ?? seen)}; colour ${tone.row}, danger ${tone.danger}`
+    );
     await shot("cp1-refused");
     expect(refused).toBeDefined();
     expect(refused!.text).toContain(REFUSED_TEXT);
     expect(refused!.text).not.toContain(REFUSED_BODY);
+    expect(tone.row).not.toBe("");
+    expect(tone.row).toBe(tone.danger);
   });
 });
