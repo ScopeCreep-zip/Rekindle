@@ -140,7 +140,7 @@ jobs:
   # the real app (plan E7.14 S6, `pnpm test:app`), which needs a desktop
   # session and so is run by the gate on both target machines, not here.
   # The declared CSP is also covered by src-tauri/tests/csp_policy.rs in
-  # ci.yml's Rust job.
+  # ci.yml's workspace test job.
 
   # ──────────────────────────────────────────────────────────────────
   # xtask guardrails — tier boundaries, the unconditional 600-line
@@ -160,7 +160,7 @@ jobs:
   # lowered to create it, and anything NOT listed fails the build.
   xtask:
     needs: classify
-    if: startsWith(needs.classify.outputs.plan, 'full-')
+    if: needs.classify.outputs.plan == 'full-queue'
     name: Guardrails (cargo xtask check)
     runs-on: ubuntu-24.04
     steps:
@@ -184,6 +184,7 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked --version 0.19.6
 
+      # The full bundle also runs check-webdriver-release.
       - run: cargo xtask check
 
   # ──────────────────────────────────────────────────────────────────
@@ -314,7 +315,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   nix:
     needs: classify
-    if: startsWith(needs.classify.outputs.plan, 'full-')
+    if: needs.classify.outputs.plan == 'full-queue'
     name: Nix (nixfmt / statix / deadnix / flake check)
     runs-on: ubuntu-24.04
     steps:

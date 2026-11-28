@@ -1,11 +1,5 @@
 # Rust and Tauri validation for trunk pull requests and merge groups.
 #
-# Two jobs:
-#   * fmt + clippy + test — Rust workspace
-#   * cross-platform build smoke test — Tauri build per OS
-# The real-app UI suite (`pnpm test:app`) is not run here; see the note
-# above the build job.
-#
 # The release pipeline lives in release.yml and is triggered by tags.
 
 # Our own composite actions (.github/actions/<name>) are referenced as
@@ -60,45 +54,65 @@ jobs:
           MQ_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/classify-ci.sh
 
-  # ────────────────────────────────────────────────────────────────
-  # Rust: fmt + clippy + test on Ubuntu (the cheap path).
-  # ────────────────────────────────────────────────────────────────
-  rust:
+  fmt:
+    name: Rust formatting
     needs: classify
     if: startsWith(needs.classify.outputs.plan, 'full-')
-    name: Rust (fmt / clippy / test)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install system deps
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Rust (fmt / clippy / test)
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
+    runs-on: ubuntu-24.04
+    steps:
+      - *checkout
+
+      - &linux-deps
+        name: Install system deps
         uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
-      - name: Install Rust toolchain
+      - &rust-toolchain
+        name: Install Rust toolchain
         # rust-toolchain.toml pins the version; this just makes sure
         # the components are present.
         run: |
           rustup show
           rustup component add rustfmt clippy
 
-      - name: Cache cargo
+      - &rust-cache
+        name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: "ci-rust"
           save-if: false
 
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
-
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: cargo clippy (desktop, webdriver-test)
         run: cargo clippy -p rekindle-desktop --all-targets --features webdriver-test -- -D warnings
-      - name: WebDriver server absent from release builds
-        run: cargo xtask check-webdriver-release
-      - name: cargo test
+
+  test:
+    name: Rust workspace tests
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: ubuntu-24.04
+    steps:
+      - *checkout
+      - *linux-deps
+      - *rust-toolchain
+      - *rust-cache
+
+      - name: cargo test (including netsim)
         run: cargo test --workspace --no-fail-fast
 
   # ────────────────────────────────────────────────────────────────
@@ -114,36 +128,33 @@ jobs:
   # Cross-platform build smoke test. Verifies Tauri builds clean on
   # all three target OSes; doesn't run the GUI.
   # ────────────────────────────────────────────────────────────────
-  tauri-build:
+  # Keep three concrete check names even when the plan skips every build.
+  tauri-linux:
+    name: Tauri build (ubuntu-24.04)
     needs: classify
-    if: startsWith(needs.classify.outputs.plan, 'full-')
-    name: Tauri build (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-15, windows-2022]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: ubuntu-24.04
+    env:
+      TAURI_CACHE_KEY: ci-tauri-ubuntu-24.04
+    steps: &tauri-steps
+      - *checkout
 
       - name: Install Rust toolchain
         run: rustup show
 
       - name: Install system deps (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: runner.os == 'Linux'
         uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       # rekindle-protocol's build.rs shells out to `capnp` for schema
       # codegen on every build — not just Linux. Matches release.yml's
       # per-OS install.
       - name: Install system deps (macOS)
-        if: matrix.os == 'macos-15'
+        if: runner.os == 'macOS'
         run: brew install capnp
 
       - name: Install system deps (Windows)
-        if: matrix.os == 'windows-2022'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/ci/install-capnp-windows.ps1
 
@@ -154,7 +165,7 @@ jobs:
       # in /Library/Frameworks/GStreamer.framework, the path
       # .cargo/config.toml already points PKG_CONFIG_PATH at.
       - name: Install GStreamer (macOS)
-        if: matrix.os == 'macos-15'
+        if: runner.os == 'macOS'
         env:
           GST_VERSION: "1.26.8"
         run: |
@@ -173,7 +184,7 @@ jobs:
       # (setting PKG_CONFIG_PATH in the environment wins over the macOS
       # default in .cargo/config.toml, which is set-if-unset).
       - name: Install GStreamer (Windows)
-        if: matrix.os == 'windows-2022'
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           GST_VERSION: "1.26.8"
@@ -184,8 +195,26 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          shared-key: "ci-tauri-${{ matrix.os }}"
+          shared-key: ${{ env.TAURI_CACHE_KEY }}
           save-if: false
 
       - name: cargo check (workspace, default features)
         run: cargo check --workspace
+
+  tauri-macos:
+    name: Tauri build (macos-15)
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: macos-15
+    env:
+      TAURI_CACHE_KEY: ci-tauri-macos-15
+    steps: *tauri-steps
+
+  tauri-windows:
+    name: Tauri build (windows-2022)
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: windows-2022
+    env:
+      TAURI_CACHE_KEY: ci-tauri-windows-2022
+    steps: *tauri-steps
