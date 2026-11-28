@@ -361,7 +361,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     // (walk/probe.ts wraps the channel's callback), while the re-enrolment
     // is still the review on show. Only then is the first one answered.
     await recordPage(browser, [], ['"kind":"acceptSessionReset"']);
-    await dee.cli(["friend", "reset-session", "--friend", ariKey]);
+    await peerReviewed(dee, ["friend", "reset-session", "--friend", ariKey]);
     await waitUntil(
       async () => /\+\d+ms event /.test(await pageLog(browser)),
       NET_WAIT_MS,
