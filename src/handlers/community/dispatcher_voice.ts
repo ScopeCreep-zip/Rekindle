@@ -1,7 +1,7 @@
 import { refreshStageHandRaises } from "../../actions/community/shared";
 import type { CommunityEvent } from "../../ipc/channels";
 import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
-import type { VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
+import type { VoiceParticipant, VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
 import { commands } from "../../ipc/commands";
 import { announce } from "../../stores/announce.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
@@ -21,7 +21,7 @@ import { withCommunity } from "./community_reread";
 function mirrorRosterAdd(
   communityId: string,
   channelId: string,
-  entries: { pseudonymKey: string; displayName: string }[]
+  entries: VoiceParticipant[]
 ): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];

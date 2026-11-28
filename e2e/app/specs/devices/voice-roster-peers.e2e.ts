@@ -132,6 +132,56 @@ describe("voice join, leave and quit reach the roster by beat, both members in r
     await quitApp(c);
     const quitTook = await listsWithin(a, 1, BEAT_MS, "Cara quits her app");
 
+    // Ari's own tile names her as the community does (her member row's
+    // Host name, never her global name) with "(you)" added by the tile, and
+    // its avatar's initials come from the name alone.
+    const own = (await a.execute(() => {
+      const rows = Array.from(document.querySelectorAll(".member-item .member-name")).map((n) => (n.textContent ?? "").trim());
+      const tile = Array.from(document.querySelectorAll(".call-stage-tile")).find((t) =>
+        (t.querySelector(".call-stage-tile-name")?.textContent ?? "").includes("(you)"),
+      );
+      return {
+        rows,
+        label: (tile?.querySelector(".call-stage-tile-name")?.textContent ?? "").replace(/\s+/g, " ").trim(),
+        initials: (tile?.querySelector(".avatar")?.textContent ?? "").trim(),
+      };
+    })) as { rows: string[]; label: string; initials: string };
+    console.log(`[beats] Ari's own tile "${own.label}", initials "${own.initials}"; member rows ${JSON.stringify(own.rows)}`);
+    const ownName = own.label.replace(/ \(you\)$/, "");
+    if (!own.label.endsWith(" (you)") || !own.rows.includes(ownName)) {
+      throw new Error(`Ari's own tile reads "${own.label}", not a member row's name with "(you)" (rows ${JSON.stringify(own.rows)})`);
+    }
+    if (own.initials.includes("(")) throw new Error(`Ari's own avatar initials "${own.initials}" come from the "(you)" suffix`);
+
+    // Cara's quit reaches the member list too: her row shows offline within
+    // a bounded wait (the voice roster dropped her by beat above).
+    const caraRow = (await a.execute(() => {
+      const names = Array.from(document.querySelectorAll(".member-item .member-name")).map((n) => (n.textContent ?? "").trim());
+      return names;
+    })) as string[];
+    const quitAt = Date.now();
+    let caraStatus = "";
+    await waitUntil(
+      async () => {
+        caraStatus = (await a.execute(() => {
+          const rows = Array.from(document.querySelectorAll(".member-item"));
+          // Cara is the member who is not us: the row without our name.
+          const own = Array.from(document.querySelectorAll(".call-stage-tile-name"))
+            .map((n) => (n.textContent ?? "").replace(/\s*\(you\)\s*$/, "").trim())
+            .find((n) => n !== "");
+          const row = rows.find((r) => (r.querySelector(".member-name")?.textContent ?? "").trim() !== own);
+          return row?.querySelector("[role=img][aria-label^='Status:']")?.getAttribute("aria-label") ?? "";
+        })) as string;
+        return caraStatus === "Status: Offline";
+      },
+      30_000,
+      "",
+    ).catch(() => {
+      throw new Error(`Cara's member row still reads "${caraStatus}" 30 s after her quit (rows ${JSON.stringify(caraRow)}): her quit beat never reached presence`);
+    });
+    console.log(`[beats] Cara's member row offline ${Date.now() - quitAt} ms after the voice roster dropped her`);
+    await shot("after-quit");
+
     console.log(`[beats] join ${joinTook} ms, leave ${leaveTook} ms, quit ${quitTook} ms (bound ${BEAT_MS} ms)`);
   });
 });
