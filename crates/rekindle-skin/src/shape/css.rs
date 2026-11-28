@@ -163,6 +163,14 @@ fn window_rules(
     Some(())
 }
 
+/// The frame and title strip rules scoped to one window kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameSheet {
+    pub window: SkinWindow,
+    pub tiles: String,
+    pub title: String,
+}
+
 /// One component tree's rules (plan SK2): a window kind's tree, or a popup
 /// it launches (`popup` its name), apart from the shared frame rules so
 /// each tree's art is served on its own shell (plan SK4).
@@ -195,19 +203,24 @@ pub fn frame_css(
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
 ) -> Option<String> {
-    let (shared, trees) = frame_parts(manifest, images, base)?;
-    Some(layered(&shared, &trees))
+    let (frames, trees) = frame_parts(manifest, images, base)?;
+    Some(layered(&frames, &trees))
 }
 
 /// [`frame_css`]'s rules wrapped in its `@layer shape` (empty when the
 /// skin lays no window).
 #[must_use]
-pub fn layered(shared: &str, trees: &[TreeSheet]) -> String {
-    if shared.is_empty() && trees.is_empty() {
+pub fn layered(frames: &[FrameSheet], trees: &[TreeSheet]) -> String {
+    if frames.is_empty() && trees.is_empty() {
         return String::new();
     }
     let mut out = String::from("@layer shape {\n");
-    out.push_str(shared);
+    for frame in frames {
+        out.push_str(&frame.tiles);
+    }
+    for frame in frames {
+        out.push_str(&frame.title);
+    }
     for t in trees {
         out.push_str(&t.css);
     }
@@ -215,19 +228,16 @@ pub fn layered(shared: &str, trees: &[TreeSheet]) -> String {
     out
 }
 
-/// [`frame_css`] in its parts: the rules every window shares (frames and
-/// title strips) and each component tree's own rules, in emission order.
+/// [`frame_css`] in its parts: each window kind's frame and title strip
+/// and each component tree's own rules, in emission order.
 /// `None` as [`frame_css`].
 #[must_use]
 pub fn frame_parts(
     manifest: &SkinManifest,
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
-) -> Option<(String, Vec<TreeSheet>)> {
-    let mut out = String::new();
-    for (&window, layout) in &manifest.windows {
-        window_rules(&mut out, window, layout, images, base)?;
-    }
+) -> Option<(Vec<FrameSheet>, Vec<TreeSheet>)> {
+    let mut frames = Vec::new();
     // The pack-laid title strips (plan SK1-S1), only in the windows the
     // pack frames (the desktop's `frame_of`: the buddy list and chat, the
     // roots carrying `data-skin-window`); every other window (Settings, the
@@ -235,15 +245,19 @@ pub fn frame_parts(
     // only its own window kind: a chat window gets a pack strip only from
     // the pack's chat strip (plan SK5).
     for (&window, layout) in &manifest.windows {
-        let Some(title) = &layout.title else { continue };
-        let top = layout.outsets.top.saturating_add(layout.content.top);
-        out.push_str(&super::title::title_css(
-            &title_root(window),
+        let mut tiles = String::new();
+        window_rules(&mut tiles, window, layout, images, base)?;
+        let title = if let Some(title) = &layout.title {
+            let top = layout.outsets.top.saturating_add(layout.content.top);
+            super::title::title_css(&title_root(window), title, top, images, base)?
+        } else {
+            String::new()
+        };
+        frames.push(FrameSheet {
+            window,
+            tiles,
             title,
-            top,
-            images,
-            base,
-        )?);
+        });
     }
     // The pack's component trees (plan SK2): one rule per node.
     let mut trees = Vec::new();
@@ -267,7 +281,7 @@ pub fn frame_parts(
             });
         }
     }
-    Some((out, trees))
+    Some((frames, trees))
 }
 
 /// The smallest window (logical px) that holds `layout`: its `min_*` (the

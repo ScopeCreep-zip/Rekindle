@@ -1,5 +1,7 @@
 //! `event_dispatch`'s audience and channel tests.
 
+use std::collections::BTreeMap;
+
 use super::*;
 use rekindle_types::subscription_events::{
     CallEvent, MembershipEvent, NotificationEvent, PresenceEvent, PresenceSnapshot, VoiceEvent,
@@ -336,6 +338,7 @@ fn a_skin_change_is_delivered_directly_only_to_unframed_windows() {
             tokens_href: "skin://localhost/a/tokens.css".into(),
             regions: Vec::new(),
             images: Vec::new(),
+            frame_images: BTreeMap::new(),
             palette: Vec::new(),
             shells: Vec::new(),
             title_logo: None,

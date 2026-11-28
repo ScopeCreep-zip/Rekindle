@@ -1,7 +1,11 @@
 //! The skin library over IPC (plan E7.7.2): `SkinList`'s answer and the
 //! entry `SkinImport` answers.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
+
+use crate::dto::skin::SkinWindow;
 
 /// One skin the user can choose: a built-in or a library package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,10 +106,11 @@ pub struct SkinApplied {
     pub base: crate::dto::skin::SkinBase,
     pub tokens_href: String,
     pub regions: Vec<String>,
-    /// The `skin://` href of every image the stylesheet draws, so a window
-    /// can decode them before it shows the sheet (plan SK0: a frame tile
-    /// not yet loaded paints nothing inside the shaper's cut).
+    /// Shared region art to decode before showing the sheet.
     pub images: Vec<String>,
+    /// Frame and title art to decode only for the corresponding window kind.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub frame_images: BTreeMap<SkinWindow, Vec<String>>,
     /// The skin's resolved colours for the TUI's roles (plan E7.7.2 "the
     /// TUI applies the palette subset from the same DTO"), mapped by the
     /// generator's TUI table, so a terminal never parses CSS.

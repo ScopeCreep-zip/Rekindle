@@ -161,6 +161,7 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
         tokens_href: serve::tokens_href(&applied_address),
         regions: applied.regions,
         images: applied.images,
+        frame_images: applied.frame_images,
         palette: applied.palette,
         shells: applied.shells,
         title_logo: applied.title_logo,

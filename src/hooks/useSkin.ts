@@ -222,7 +222,11 @@ async function commitSkin(
   const sameSheet = shown?.getAttribute("href") === skin.tokensHref;
   if (!sameSheet) {
     const hrefs = [
-      ...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)]),
+      ...new Set([
+        ...skin.images,
+        ...(frame ? (skin.frameImages?.[frame] ?? []) : []),
+        ...boundShells(skin.shells ?? []).flatMap((s) => s.images),
+      ]),
     ];
     const images = hrefs.map((href) => {
       const img = new Image();

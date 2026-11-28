@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::*;
 
 #[test]
@@ -49,6 +51,7 @@ fn skin(base: SkinBase, palette: Vec<SkinPaletteColour>) -> SkinApplied {
         tokens_href: String::new(),
         regions: Vec::new(),
         images: Vec::new(),
+        frame_images: BTreeMap::new(),
         palette,
         shells: Vec::new(),
         title_logo: None,

@@ -1,5 +1,7 @@
 //! `SystemEvent` samples.
 
+use std::collections::BTreeMap;
+
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use crate::{channel, community, id, pk, text, Sample};
@@ -103,6 +105,7 @@ fn sync() -> Vec<Sample> {
                     tokens_href: "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/tokens.css".into(),
                     regions: vec!["frame".into()],
                     images: vec!["skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210.png".into()],
+                    frame_images: BTreeMap::new(),
                     palette: vec![rekindle_types::dto::skin_library::SkinPaletteColour {
                         role: "accent.primary".into(),
                         rgb: [0x34, 0x91, 0xd8],

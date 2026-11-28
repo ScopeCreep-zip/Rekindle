@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{
-    SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, TokenValue,
+    SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, SkinWindow, TokenValue,
 };
 use rekindle_types::dto::skin_action::{MenuRegistry, PackUrl, SkinAction};
 use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
@@ -144,6 +144,8 @@ pub struct Stylesheet {
     pub regions: Vec<String>,
     /// [`sheet_images`] of the shared rules: every image href any window's sheet may draw (SK4).
     pub images: Vec<String>,
+    /// Art from the frame and title rules scoped to each framed window.
+    pub frame_images: BTreeMap<SkinWindow, Vec<String>>,
     /// [`crate::generate::tui_colours`] of the active variant.
     pub palette: Vec<SkinPaletteColour>,
     /// Each tree-laid window kind's shell outline (plan SK2-S2).
@@ -191,16 +193,27 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
     css.push_str(&skin_css(&m, &images, &base).ok_or_else(|| unreadable("regions"))?);
     css.push_str(&title_css(&m, &images, &resolved));
     css.push_str(&label_css(&m, &images, &resolved));
-    let (frame, trees) =
+    let (frames, trees) =
         shape::frame_parts(&m, &images, &base).ok_or_else(|| unreadable("frame"))?;
-    let mut shared_css = css.clone();
-    shared_css.push_str(&frame);
-    let shared = sheet_images(&shared_css, &base);
-    css.push_str(&shape::layered(&frame, &trees));
+    let shared = sheet_images(&css, &base);
+    let frame_images = frames
+        .iter()
+        .map(|frame| {
+            let mut rules = frame.tiles.clone();
+            rules.push_str(&frame.title);
+            let own = sheet_images(&rules, &base)
+                .into_iter()
+                .filter(|href| !shared.contains(href))
+                .collect();
+            (frame.window, own)
+        })
+        .collect();
+    css.push_str(&shape::layered(&frames, &trees));
     Ok(Stylesheet {
         base: v.base,
         shells: shells(&m, &trees, &shared, &base)?,
         images: shared,
+        frame_images,
         css,
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
