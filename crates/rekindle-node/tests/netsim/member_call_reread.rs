@@ -321,3 +321,51 @@ async fn a_member_that_missed_the_rotation_asks_and_is_answered_by_m6() {
     );
     assert!(answered() > answered_before, "a RequestMEK was answered");
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn barrier_recovers_a_ring_peers_route_without_a_hint() {
+    use rekindle_governance_runtime::unlock_barrier::BarrierPhase;
+    use rekindle_types::dht_layout::member_record::ROUTES;
+
+    let community = Community::of(2, 4431).await;
+    let caller = community.nodes[0].host.governance();
+    let dee = &community.nodes[1];
+    let record = record_of(&community, 1).await;
+    let old = dee.routes.own_blob(RouteClass::General).unwrap();
+    assert_eq!(
+        caller.netsim_barrier_round(&community.anchor).await,
+        Some(BarrierPhase::Passed)
+    );
+    assert_eq!(cached(&community, 1).await, Some(old.clone()));
+
+    // Dee keeps the old route allocated, but its calls time out.
+    community.sim.fault(Fault::OutsideDead {
+        node: 1,
+        class: RouteClass::General,
+    });
+
+    // Only M/6 delivers the replacement; the ring watch never sees it.
+    let before = community.sim.network_get(&record, ROUTES).unwrap();
+    community.sim.fault(Fault::DropValueChanges {
+        node: 0,
+        key: record.clone(),
+        drop: true,
+    });
+    dee.routes.replace_own_class(RouteClass::General);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(20), || async {
+            community
+                .sim
+                .network_get(&record, ROUTES)
+                .is_some_and(|v| v.seq > before.seq)
+        })
+        .await,
+        "the fresh route landed in M/6"
+    );
+    assert_eq!(cached(&community, 1).await, Some(old.clone()));
+    assert_eq!(
+        caller.netsim_barrier_round(&community.anchor).await,
+        Some(BarrierPhase::Passed),
+        "Dee's frontier provides the one ring answer"
+    );
+}

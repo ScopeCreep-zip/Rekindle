@@ -1,9 +1,11 @@
 //! The unlock barrier (plan E3.2 S7d-keys.8): at every unlock, before the
 //! first governance write per community, the DHT read of our `M(p,d)`/2
 //! (`dht_layout::member_record::GOV_HEAD`) and a frontier request to every
-//! known ring peer ([`crate::frontier_exchange::request_frontier`]). A
+//! known ring peer through the member-call function passed to
+//! [`crate::frontier_exchange::request_frontier`]. A
 //! round takes the highest seq of our device key `d` over the DHT head and
-//! every peer that answered within one app-call timeout ([`judge_round`]).
+//! each peer that answered ([`judge_round`]). The round awaits each bounded
+//! member call, including its route re-read and retry after a full timeout.
 //! The barrier has two exits: a round in which at least one known ring
 //! peer answered, or an empty ring (a sole creator, which completes on the
 //! DHT head alone). A round with no answer is retried on every ring

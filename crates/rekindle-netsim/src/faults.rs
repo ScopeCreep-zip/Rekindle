@@ -100,6 +100,13 @@ pub enum Fault {
         key: String,
         min_seqnum: Option<u32>,
     },
+    /// Drop value changes for one watcher and record, independently of app
+    /// calls and of DHT reads and writes.
+    DropValueChanges {
+        node: usize,
+        key: String,
+        drop: bool,
+    },
     /// The node's watch on `key` dies: Veilid sends a last change with
     /// empty subkeys, `count == 0` and no value (0.5.8 `watch_value.rs:782-789`).
     WatchDeath { node: usize, key: String },
@@ -432,6 +439,14 @@ impl Netsim {
                     Some(seq) => min_seqnums.insert((node, key), seq),
                     None => min_seqnums.remove(&(node, key)),
                 };
+            }
+            Fault::DropValueChanges { node, key, drop } => {
+                let changes = &mut self.net.inner.lock().faults.drop_value_changes;
+                if drop {
+                    changes.insert((node, key));
+                } else {
+                    changes.remove(&(node, key));
+                }
             }
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
