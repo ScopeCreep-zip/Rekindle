@@ -11,7 +11,7 @@ use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
 
-use super::HostChannel;
+use super::{admission::admission_view, HostChannel};
 
 fn stored(e: impl std::fmt::Display) -> ChannelError {
     ChannelError::Adapter(format!("store: {e}"))
@@ -117,7 +117,7 @@ fn placeholder_view(placeholder: Placeholder) -> ChannelMessageView {
         id: 0,
         sender_id: placeholder.sender,
         body: String::new(),
-        admission: Some(placeholder.status),
+        admission: Some(admission_view(placeholder.status)),
         decryption_failed: false,
         undecryptable: None,
         automod_blurred: false,

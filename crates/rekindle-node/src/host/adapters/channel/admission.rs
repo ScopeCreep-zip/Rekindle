@@ -2,7 +2,7 @@
 
 use rekindle_channel::admission::authorize_post;
 use rekindle_channel::error::ChannelError;
-use rekindle_db::repo::messages::channel_admission::{self, Post};
+use rekindle_db::repo::messages::channel_admission::{self, Post, PostStatus};
 use rekindle_governance_runtime::post_cut::resolve_post_cut;
 use rekindle_sync::stream::Held;
 use rekindle_types::dto::channel_message::{PostAdmission, PostRefusal};
@@ -21,8 +21,8 @@ impl HostChannel {
         cut: &[OpRef],
         thread: bool,
         timestamp: u64,
-    ) -> Result<Option<PostAdmission>, ChannelError> {
-        let refused = |reason| PostAdmission::Refused { reason };
+    ) -> Result<Option<PostStatus>, ChannelError> {
+        let refused = |reason| PostStatus::Refused { reason };
         if cut.is_empty() {
             return Ok(Some(refused(PostRefusal::MissingCut)));
         }
@@ -33,7 +33,7 @@ impl HostChannel {
             .await
             .map_err(|e| ChannelError::Adapter(e.to_string()))?
         else {
-            return Ok(Some(PostAdmission::Pending));
+            return Ok(Some(PostStatus::Pending));
         };
         Ok(
             authorize_post(&state, author, stream, thread, timestamp / 1000)
@@ -77,9 +77,9 @@ impl HostChannel {
         let changed = self
             .set_post_admission(post, record, Some(status), thread)
             .await?;
-        if changed && status == PostAdmission::Pending {
+        if changed && status == PostStatus::Pending {
             let checked = judge().await?;
-            if let Some(PostAdmission::Refused { .. }) = checked {
+            if let Some(PostStatus::Refused { .. }) = checked {
                 self.set_post_admission(post, record, checked, thread)
                     .await?;
             }
@@ -92,7 +92,7 @@ impl HostChannel {
         &self,
         post: &ReceivedPost,
         record: &str,
-        status: Option<PostAdmission>,
+        status: Option<PostStatus>,
         thread: bool,
     ) -> Result<bool, ChannelError> {
         let (owner, db) = self.owner_and_db()?;
@@ -130,7 +130,7 @@ impl HostChannel {
                     community: post.community_id.clone(),
                     stream_id: post.channel_id.clone(),
                     thread,
-                    pending: status == Some(PostAdmission::Pending),
+                    pending: status == Some(PostStatus::Pending),
                 },
             ));
         }
@@ -138,9 +138,18 @@ impl HostChannel {
     }
 }
 
-fn hold_for_status(status: PostAdmission) -> Held {
+pub(super) fn admission_view(status: PostStatus) -> PostAdmission {
     match status {
-        PostAdmission::Pending => Held::Pending,
-        PostAdmission::Refused { .. } => Held::Stored,
+        PostStatus::Pending => PostAdmission::Pending {
+            text: "Waiting to verify that this post was allowed.".to_owned(),
+        },
+        PostStatus::Refused { reason } => reason.into(),
+    }
+}
+
+fn hold_for_status(status: PostStatus) -> Held {
+    match status {
+        PostStatus::Pending => Held::Pending,
+        PostStatus::Refused { .. } => Held::Stored,
     }
 }
