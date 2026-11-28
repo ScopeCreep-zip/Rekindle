@@ -84,6 +84,22 @@
     color: var(--color-xfire-offline-text);
   }
 
+  /* A composer we may not post from (the Host's reason as placeholder) or
+   * in a slowmode cooldown: shown, in the theme's disabled text (ST1). */
+  .message-input:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+  .message-input:disabled::placeholder {
+    color: var(--color-xfire-text-disabled);
+  }
+  .message-input-attach-btn:disabled,
+  .message-input-mic-btn:disabled,
+  .message-input-emoji-btn:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+
   /* Status bar */
   .status-bar {
     height: var(--chrome-height);
@@ -366,99 +382,6 @@
   .settings-about-value {
     font-size: 12px;
     color: var(--color-xfire-text);
-  }
-
-  /* Settings → Appearance (plan E7.7.2). */
-  .skin-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 12px;
-  }
-
-  .skin-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 8px;
-    padding-right: 12px;
-    border-radius: 4px;
-  }
-
-  /* The skin shown is Xfire's selected list row, solid: its text, the
-   * target-size line, badge and credits included, is the selected text. */
-  .skin-row-shown {
-    background: var(--color-xfire-accent);
-    color: var(--color-xfire-selection-text);
-  }
-
-  .skin-row-shown :is(.skin-access, .skin-badge, .skin-credits, .skin-credits-stated, .skin-credits-term, .skin-credits-value, .skin-credits-url, .skin-credits-licence) {
-    color: var(--color-xfire-selection-text);
-  }
-
-  .skin-choice {
-    flex: 1 1 160px;
-    min-width: 0;
-  }
-
-  .skin-name {
-    overflow-wrap: anywhere;
-  }
-
-  /* A skin's target sizes (plan SK14), on its own line under the name. */
-  .skin-access {
-    flex-basis: 100%;
-    padding-left: 24px;
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-  }
-
-  .skin-badge {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    white-space: nowrap;
-  }
-
-  .skin-actions {
-    display: flex;
-    gap: 8px;
-    margin-left: auto;
-  }
-
-  .skin-action {
-    white-space: nowrap;
-  }
-
-  .skin-import {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-  }
-
-  .skin-file-input {
-    display: none;
-  }
-
-  .skin-error {
-    font-style: normal;
-  }
-
-  /* The trial prompt's layout around its `.sec-review` card. */
-  .skin-trial {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-
-  /* The commit is full width (`@layer sec`); revert sits under it. */
-  .skin-trial-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
   }
 
   /* Profile */

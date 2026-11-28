@@ -143,8 +143,8 @@
   }
 
   .message-input-send-btn:disabled {
-    color: var(--color-xfire-text-dim);
-    cursor: default;
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
   }
 
   /* Architecture §32 a11y — opacity fade replaces the original

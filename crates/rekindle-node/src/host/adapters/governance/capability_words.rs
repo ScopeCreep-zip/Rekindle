@@ -1,9 +1,8 @@
-//! The Host's words for each community capability a member lacks (plan
+//! The Host's words for each community or channel capability a member lacks (plan
 //! E3.2 S9): the reason a community window shows on a disabled control,
-//! from the real cause `rekindle_governance::permissions::denied_capabilities`
-//! names (a missing permission, a running timeout, a creator seat), never a
-//! generic "not allowed". The window renders the text as given; it reads no
-//! permission bits for its controls.
+//! based on the cause governance returns (a missing permission, a running
+//! timeout, a creator seat, or a channel overwrite). The window renders
+//! these words directly.
 
 use chrono::{DateTime, Local, TimeZone as _};
 use rekindle_governance::permissions::{

@@ -205,7 +205,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                           myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
                           isConnectedToChannel={vm.isConnectedToActiveStage()}
                           canModerate={vm.canManageMessages()}
-                          canRequestToSpeak={vm.canRequestToSpeak()}
+                          requestToSpeakDenied={vm.requestToSpeakDenied()}
                           onJoinStage={() =>
                             void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())
                           }
