@@ -384,29 +384,11 @@ checksum = "7354288c522e7e980fafd2075d63d1285794c3a6a16cdd492f189ea406e5f18b"
 
 [[package]]
 name = "capnp"
-version = "0.20.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053b81915c2ce1629b8fb964f578b18cb39b23ef9d5b24120d0dfc959569a1d9"
-dependencies = [
- "embedded-io 0.6.1",
-]
-
-[[package]]
-name = "capnp"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58ddce707ad9fb2ae92770523cd0e17a0cf34e79b66a9ca4db2dd993535fe718"
 dependencies = [
- "embedded-io 0.7.1",
-]
-
-[[package]]
-name = "capnpc"
-version = "0.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aa3d5f01e69ed11656d2c7c47bf34327ea9bfb5c85c7de787fcd7b6c5e45b61"
-dependencies = [
- "capnp 0.20.6",
+ "embedded-io",
 ]
 
 [[package]]
@@ -415,7 +397,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13aea06b902f885cb0313b11e900e96cd57fef775e9e601a96e14e1d655f3cd3"
 dependencies = [
- "capnp 0.26.2",
+ "capnp",
 ]
 
 [[package]]
@@ -1028,12 +1010,6 @@ name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
-
-[[package]]
-name = "embedded-io"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "embedded-io"
@@ -2608,8 +2584,8 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "blake3",
- "capnp 0.20.6",
- "capnpc 0.20.1",
+ "capnp",
+ "capnpc",
  "hex",
  "rekindle-secrets",
  "rekindle-types",
@@ -3588,8 +3564,8 @@ dependencies = [
  "async-tungstenite",
  "bosion",
  "bytesize",
- "capnp 0.26.2",
- "capnpc 0.26.0",
+ "capnp",
+ "capnpc",
  "cfg-if",
  "ciborium",
  "clap",
