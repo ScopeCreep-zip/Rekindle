@@ -1,4 +1,5 @@
 import { createMemo, createSignal } from "solid-js";
+import { createMutable } from "solid-js/store";
 import { authState } from "../../../stores/auth.store";
 import { communityState } from "../../../stores/community.store";
 import { voiceState } from "../../../stores/voice.store";
@@ -56,7 +57,7 @@ export function useCallStage() {
     if (tile) {
       Object.assign(tile, data);
     } else {
-      tile = { key, ...data };
+      tile = createMutable({ key, ...data });
       cache.set(key, tile);
     }
     out.push(tile);
@@ -79,11 +80,10 @@ export function useCallStage() {
       //   - Linux native: the backend tees a JPEG preview branch we paint
       //     to a canvas (nativeSelfCanvas).
       // `nativeCapture()` is decided at mount and stable for the session,
-      // so the path never flips mid-session. CRITICAL: the cached tile
-      // objects are plain (mutated via Object.assign) and the keyed <For>
-      // reuses a row by reference — so a tile must NEVER change content
-      // TYPE (canvas↔video) under the same key, or the row never
-      // re-renders (black forever). On native, while the canvas hasn't
+      // so the path never flips mid-session. The cache keeps a tile's
+      // identity so the keyed <For> retains its mounted media. A media
+      // kind change still needs a new key to rerun its mount hook. On
+      // native, while the canvas hasn't
       // been created yet we therefore show the avatar under a DIFFERENT
       // key ("self-avatar"); the key swap forces a fresh row that mounts
       // the canvas the moment it exists.
