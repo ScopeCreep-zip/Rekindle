@@ -43,11 +43,23 @@
     background: var(--color-xfire-bg-dark);
   }
 
+  /* A failed switch on an open window: a strip above the page, in flow.
+   * The page shrinks beneath it, so no control is covered. */
   :root:not([data-skin-opening]) .skin-load-error {
-    position: fixed;
-    inset: auto 0 0;
-    z-index: 10;
+    flex: none;
     min-block-size: 0;
-    border-block-start: 1px solid currentColor;
+    border-block-end: 1px solid currentcolor;
+  }
+
+  :root:not([data-skin-opening]) body:has(> .skin-load-error) {
+    display: flex;
+    flex-direction: column;
+    block-size: 100vh;
+  }
+
+  :root:not([data-skin-opening]) body:has(> .skin-load-error) > #root {
+    flex: 1;
+    min-block-size: 0;
+    block-size: auto;
   }
 }

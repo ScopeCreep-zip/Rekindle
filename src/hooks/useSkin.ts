@@ -109,10 +109,10 @@ export function useSkin(): void {
     received = true;
     apply(skin);
   });
-  const unsubscribeFailure = subscribeSkinApplyFailed(({ cause }) => {
+  const unsubscribeFailure = subscribeSkinApplyFailed(({ cause, notice }) => {
+    // The Host's words for it (SkinApplyFailure::notice), never the shell's.
     if (cause.type === "windowTooSmall" && !document.getElementById(LINK_ID) && !loading) {
-      const { width, height } = cause.data;
-      addToast(`This skin needs a window at least ${width} × ${height} pixels.`);
+      addToast(notice);
     }
   });
   void commands
@@ -136,12 +136,17 @@ function showOpeningError(message: string): void {
   showSkinError(message);
 }
 
+/**
+ * Show `message` (the Host's words) in this window's skin alert: the whole
+ * window while it opens, else a strip above the page, in flow, so the page
+ * shrinks beneath it and no control is covered (22-skin-frame.css).
+ */
 function showSkinError(message: string): void {
   if (!skinError) {
     skinError = document.createElement("div");
     skinError.className = "skin-load-error";
     skinError.setAttribute("role", "alert");
-    document.body.appendChild(skinError);
+    document.body.prepend(skinError);
   }
   skinError.textContent = message;
 }
@@ -210,15 +215,23 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
     }
   } catch (error) {
     if (attempt.signal.aborted) return;
-    if (error instanceof SkinImageError) {
-      report(skin, { type: "imageDecode", data: { path: error.path } });
-    } else if (error instanceof Error) {
-      report(skin, { type: "sheetError", data: { detail: error.message } });
-    }
-    if (document.documentElement.dataset.skinOpening === undefined) {
-      showSkinError("Rekindle could not load the skin for this window.");
-    }
     logSkinError(error);
+    const notice = await report(
+      skin,
+      error instanceof SkinImageError
+        ? { type: "imageDecode", data: { path: error.path } }
+        : {
+            type: "sheetError",
+            data: { detail: error instanceof Error ? error.message : String(error) },
+          }
+    );
+    if (
+      notice !== null &&
+      !attempt.signal.aborted &&
+      document.documentElement.dataset.skinOpening === undefined
+    ) {
+      showSkinError(notice);
+    }
   } finally {
     attempt.abort();
     if (attemptId !== null) await commands.finishSkinApply(attemptId, href);
@@ -349,10 +362,15 @@ function linkSheet(href: string, signal: AbortSignal): Promise<HTMLLinkElement> 
 /**
  * Tell the Host this window could not apply `skin` (plan SK2-T1). The
  * window only reports: the Host logs it, tells this window and Settings,
- * and reverts `skin` if it is on trial.
+ * and reverts `skin` if it is on trial. It answers what the window tells
+ * the user, in its words (SkinApplyFailure::notice); null if the report
+ * did not reach it.
  */
-function report(skin: SkinApplied, cause: SkinApplyFailure): void {
-  void commands
-    .reportSkinApplyFailed(skin.id, cause)
-    .catch((err: unknown) => console.error(`skin ${skin.id}: the failure was not reported`, err));
+async function report(skin: SkinApplied, cause: SkinApplyFailure): Promise<string | null> {
+  try {
+    return await commands.reportSkinApplyFailed(skin.id, cause);
+  } catch (err: unknown) {
+    console.error(`skin ${skin.id}: the failure was not reported`, err);
+    return null;
+  }
 }

@@ -48,7 +48,7 @@ import { decodePng, encodePng, over, type Rgba } from "../../png.ts";
 import { type Box, type Cut, disagreements, silhouette } from "../../silhouette.ts";
 import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
-import { BUDDY_LIST, servedSize, sizeWindow, sizeWindowServed } from "../../windows.ts";
+import { BUDDY_LIST, servedSize, sizeWindow, sizeWindowServed, treeLimits } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "shape");
 // The accessible variant (plan SK14) re-lays only Symbiosis's controls: its
@@ -228,10 +228,22 @@ describe("a skinned window is the skin's shape", function () {
       Object.assign(found, await titleStrip("buddy-list"));
       if (!NATIVE_WAYLAND) {
         // A resize queues a fresh native allocation pass for the cut: grown
-        // from the app default, or the pack's served minimum where wider.
+        // from the app default, or the pack's served minimum where wider, by
+        // 60x80, held to its served maximum (rekindle_skin::shape::max_size,
+        // the limit the desktop holds it to). A pack whose window cannot grow
+        // on either axis (Total Chaos: its minimum is its maximum) is not grown.
         const base = await servedSize(browser, BUDDY_LIST.def);
-        await sizeWindow(browser, { width: base.width + 60, height: base.height + 80 });
-        Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
+        const limits = await treeLimits(browser);
+        const grown = {
+          width: Math.min(base.width + 60, limits?.max.width ?? Number.POSITIVE_INFINITY),
+          height: Math.min(base.height + 80, limits?.max.height ?? Number.POSITIVE_INFINITY),
+        };
+        if (grown.width === base.width && grown.height === base.height) {
+          console.log(`[shape] ${pack.name}: the buddy list cannot grow (served ${base.width}x${base.height} to ${limits?.max.width}x${limits?.max.height}), not resized`);
+        } else {
+          await sizeWindow(browser, grown);
+          Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
+        }
         // Back to the app default, or the pack's served minimum where it is wider.
         await sizeWindowServed(browser, BUDDY_LIST.def);
       }

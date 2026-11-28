@@ -173,7 +173,23 @@ export function sizes(w: WindowCase): [string, Size][] {
  * OS to refuse a smaller size.
  */
 export async function treeMinimum(b: Browser): Promise<Size | undefined> {
-  type Got = { width: number; height: number } | { none: true } | { error: string };
+  return (await treeLimits(b))?.min;
+}
+
+/** A tree-laid window's served limits: its minimum, and its maximum on each axis that has one. */
+export interface TreeLimits {
+  min: Size;
+  max: { width?: number; height?: number };
+}
+
+/**
+ * The limits the Host serves the window's skin tree (`SkinShell.minWidth/
+ * minHeight`, and `maxWidth/maxHeight` from `rekindle_skin::shape::max_size`,
+ * the same rule the desktop holds the window to; absent on an axis with no
+ * limit), or undefined when the window lays no tree.
+ */
+export async function treeLimits(b: Browser): Promise<TreeLimits | undefined> {
+  type Got = TreeLimits | { none: true } | { error: string };
   const got = (await b.execute((): Promise<Got> => {
     const frame = document.querySelector(".app-frame");
     if (!frame || !frame.querySelector(".skin-tree")) return Promise.resolve({ none: true });
@@ -183,9 +199,11 @@ export async function treeMinimum(b: Browser): Promise<Size | undefined> {
     return w.__TAURI_INTERNALS__.invoke("get_skin", { id: null }).then(
       (done): Got => {
         // A Host command answers `{ value, undo }` (ipc/invoke.ts hostInvoke).
-        type Shell = { window: string; popup?: { name: string }; minWidth: number; minHeight: number };
+        type Shell = { window: string; popup?: { name: string }; minWidth: number; minHeight: number; maxWidth?: number; maxHeight?: number };
         const shell = (done as { value: { shells?: Shell[] } }).value.shells?.find((s) => (popup ? s.popup?.name === popup : s.window === kind && !s.popup));
-        return shell ? { width: shell.minWidth, height: shell.minHeight } : { error: `no served shell for ${popup ?? kind ?? "this window"}` };
+        return shell
+          ? { min: { width: shell.minWidth, height: shell.minHeight }, max: { width: shell.maxWidth, height: shell.maxHeight } }
+          : { error: `no served shell for ${popup ?? kind ?? "this window"}` };
       },
       (e: unknown): Got => ({ error: `get_skin failed: ${String(e)}` }),
     );

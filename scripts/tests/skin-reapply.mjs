@@ -71,7 +71,9 @@ globalThis.document = {
   getElementById: (id) => fixture.links.find((link) => link.id === id && !link.removed) ?? null,
   createElement: () => new Element(),
   head: { appendChild: (link) => fixture.links.push(link) },
-  body: { appendChild: (alert) => fixture.alerts.push(alert) },
+  // The alert goes before the page (prepend), in flow above it, so it
+  // covers no control; an alert appended over the page fails here.
+  body: { prepend: (alert) => fixture.alerts.push(alert) },
 };
 globalThis.Image = class {
   decode() {
