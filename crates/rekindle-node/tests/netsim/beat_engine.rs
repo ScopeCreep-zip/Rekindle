@@ -33,7 +33,11 @@ async fn creator_beat(community: &Community, reader: usize) -> Option<PresenceBe
 }
 
 /// The creator's beat once node 1 reads it in `state`, within `bound`.
-async fn reads_state(community: &Community, state: BeatState, bound: Duration) -> PresenceBeat {
+pub(crate) async fn reads_state(
+    community: &Community,
+    state: BeatState,
+    bound: Duration,
+) -> PresenceBeat {
     let beat = std::cell::RefCell::new(None);
     let read = eventually(&community.sim, bound, || async {
         let read = creator_beat(community, 1)
@@ -53,9 +57,9 @@ async fn reads_state(community: &Community, state: BeatState, bound: Duration) -
 
 /// Well under the shortest scheduled delay (2.5 min): a picked status's
 /// write and node 1's forced read, at SimDht latency.
-const AT_ONCE: Duration = Duration::from_secs(60);
+pub(crate) const AT_ONCE: Duration = Duration::from_secs(60);
 
-async fn set_status(community: &Community, node: usize, status: SessionStatus) {
+pub(crate) async fn set_status(community: &Community, node: usize, status: SessionStatus) {
     community.nodes[node]
         .ok(IpcRequest::PresenceSet { status })
         .await;

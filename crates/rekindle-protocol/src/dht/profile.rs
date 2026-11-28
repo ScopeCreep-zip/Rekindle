@@ -45,7 +45,7 @@ pub struct ProfileFields<'a> {
 pub async fn create_profile(
     pool: &dyn RecordPort,
     fields: ProfileFields<'_>,
-) -> Result<(LeaseId, String, String, SetOutcome), ProtocolError> {
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>, SetOutcome), ProtocolError> {
     let (lease, key, keypair) = pool
         .create(&rekindle_records::schema::profile(), None)
         .await?;

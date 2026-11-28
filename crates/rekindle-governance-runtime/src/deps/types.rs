@@ -63,13 +63,22 @@ pub struct MekSnapshot {
 /// Outcome of creating a new SMPL DHT record. Owner keypair string is
 /// `None` if the underlying record was created with `o_cnt: 0` (the
 /// universal community SMPL schema — Schwarzschild principle, §3).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DhtRecordInfo {
     pub record_key: String,
-    pub owner_keypair: Option<String>,
+    pub owner_keypair: Option<zeroize::Zeroizing<String>>,
     /// The creator's lease on the new record, held writable: hand it to the
     /// host with `community_records_ready`, or release it.
     pub lease: rekindle_records::lease::LeaseId,
+}
+
+impl std::fmt::Debug for DhtRecordInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DhtRecordInfo")
+            .field("record_key", &self.record_key)
+            .field("lease", &self.lease)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Snapshot of the per-community DHT-records info the
@@ -100,14 +109,14 @@ pub struct DiscoveredMember {
 ///
 /// Constructed inside `origin::create_community` once all genesis writes
 /// succeed. The adapter copies the contents into a fresh `CommunityState`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CommunityInsert {
     /// The anchor `A`'s record key.
     pub id: String,
     pub name: String,
     pub channel_id_hex: String,
     pub registry_key: String,
-    pub registry_owner_keypair: Option<String>,
+    pub registry_owner_keypair: Option<zeroize::Zeroizing<String>>,
     pub slot_seed_hex: String,
     pub slot_keypair: String,
     pub my_pseudonym_hex: String,
@@ -126,6 +135,15 @@ pub struct CommunityInsert {
     /// `VaultKey::MemberHpkeSecret{community}` before the row, so before
     /// the card that carries its public half.
     pub member_hpke_secret: zeroize::Zeroizing<[u8; 32]>,
+}
+
+impl std::fmt::Debug for CommunityInsert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CommunityInsert")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What the publisher of a governance op waits for

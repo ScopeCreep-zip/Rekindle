@@ -39,10 +39,10 @@ impl RecordPort for RecordPool {
         &self,
         schema: &RecordSchema,
         owner: Option<&str>,
-    ) -> Result<(LeaseId, String, String), PortError> {
+    ) -> Result<(LeaseId, String, zeroize::Zeroizing<String>), PortError> {
         let (lease, key, keypair) =
             RecordPool::create(self, schema.clone(), self.writer(owner)?).await?;
-        Ok((lease, key, keypair.keypair))
+        Ok((lease, key, keypair.into_keypair().into_zeroizing()))
     }
 
     fn key_of(&self, lease: LeaseId) -> Option<String> {

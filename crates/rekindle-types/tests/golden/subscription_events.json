@@ -2630,7 +2630,7 @@
             "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
           }
         },
-        "state": "offerSent"
+        "state": "seen"
       }
     }
   },
@@ -2689,6 +2689,11 @@
   "voice.localJoined.community": {
     "voice": {
       "localJoined": {
+        "joinHandshake": "connected",
+        "mediaReady": {
+          "ready": true,
+          "reason": "ready"
+        },
         "scope": {
           "community": {
             "channel": "vc_cccccccccccccccccccccccccccccccc",
@@ -2701,6 +2706,11 @@
   "voice.localJoined.dm": {
     "voice": {
       "localJoined": {
+        "joinHandshake": "announced",
+        "mediaReady": {
+          "ready": false,
+          "reason": "handshake-announced"
+        },
         "scope": {
           "dm": {
             "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -2785,6 +2795,10 @@
           {
             "displayName": "Eve",
             "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          {
+            "displayName": "aaaa aaaa",
+            "pseudonymKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           }
         ],
         "scope": {

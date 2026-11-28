@@ -18,7 +18,7 @@ use super::super::ops::append_op_once;
 const JOINED_COMMUNITY: &str = "community";
 
 /// A fresh member record: its key, writer keypair text and owner public key.
-async fn record(port: &dyn RecordPort) -> (String, String, String) {
+async fn record(port: &dyn RecordPort) -> (String, zeroize::Zeroizing<String>, String) {
     let (lease, key, writer) = port
         .create(&rekindle_records::schema::member_record(), None)
         .await

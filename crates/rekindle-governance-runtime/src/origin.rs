@@ -280,9 +280,9 @@ fn owner_signing_key(
     info: &DhtRecordInfo,
     what: &str,
 ) -> Result<(Zeroizing<String>, SigningKey), GovernanceRuntimeError> {
-    let text = Zeroizing::new(info.owner_keypair.clone().ok_or_else(|| {
+    let text = info.owner_keypair.clone().ok_or_else(|| {
         GovernanceRuntimeError::Adapter(format!("origin: the {what} has no owner keypair"))
-    })?);
+    })?;
     let (_, secret) = keypair_text::parse_keypair_text(&text)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("{what} owner: {e}")))?;
     let secret = Zeroizing::new(secret);
@@ -316,10 +316,9 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
             anchor.lease,
             community_anchor::GENESIS_CERT,
             bytes.clone(),
-            Some(k_a_text.to_string()),
+            Some(k_a_text),
         )
         .await;
-    drop(k_a_text);
     deps.release_record(anchor.lease).await;
     if let Some(stale) = outcome? {
         return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
@@ -455,7 +454,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             reg_record.lease,
             CREATOR_SLOT,
             presence_bytes,
-            Some(creator_writer.clone()),
+            Some(Zeroizing::new(creator_writer.clone())),
         )
         .await?;
     if let Some(stale) = reg_outcome {

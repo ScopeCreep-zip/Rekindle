@@ -215,7 +215,23 @@ impl DaemonHandler {
         }
 
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
-            sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts);
+            if let Some(
+                payload @ (ControlPayload::VoiceJoin { .. } | ControlPayload::VoiceRoster { .. }),
+            ) = envelope.as_control()
+            {
+                if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                    if sub_mgr.admit(community_id, sender_pseudonym, lamport_ts) {
+                        let host = crate::host::adapters::governance::HostGovernance::new(ctx);
+                        if let Some(event) =
+                            host.named_voice_event(community_id, sender_pseudonym, payload)
+                        {
+                            sub_mgr.process_event(event);
+                        }
+                    }
+                }
+            } else {
+                sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts);
+            }
         }
     }
 

@@ -368,6 +368,9 @@ impl HostGovernance {
     /// Stop the community's loops, so none writes to a record the leave
     /// clears or closes.
     async fn stop_community_tasks(&self, id: &str) {
+        // Our voice session there ends with it (`host::own_voice`); the
+        // `Departed` beat already says nothing more than its state.
+        self.ctx.own_voice.leave_community(id);
         let daemon_tasks = self.ctx.community_scopes.lock().remove(id);
         let store_tasks = self
             .ctx

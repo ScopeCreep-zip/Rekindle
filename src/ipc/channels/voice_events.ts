@@ -26,10 +26,12 @@ export type VoiceScope =
   | { community: { community: string; channel: string } }
   | { dm: { peerKey: string } };
 
-/** One participant in a voice roster. */
+/** One participant in a voice roster: its pseudonym and the name the Host
+ *  shows for it (contract VN1: the member list's shown name, the card name
+ *  else the fingerprint form; never absent, never a raw key). */
 interface VoiceParticipant {
   pseudonymKey: string;
-  displayName: string | null;
+  displayName: string;
 }
 
 export type VoiceEvent =
@@ -37,7 +39,8 @@ export type VoiceEvent =
       joined: {
         scope: VoiceScope;
         pseudonym: string;
-        displayName: string | null;
+        /** The Host's shown name for the joiner (contract VN1). */
+        displayName: string;
         /**
          * The joiner's private-route blob. The desktop ignores it — its
          * transport resolves the route separately — but a CLI voice
@@ -97,7 +100,19 @@ export type VoiceEvent =
       };
     }
   /** **We** joined a call and the audio pipeline is running. */
-  | { localJoined: { scope: VoiceScope } }
+  /**
+   * Our session started. It carries the session's join handshake and media
+   * readiness as they stand (contract VN3: snapshotted under the lock their
+   * transitions take), so no handshake or media event of the session can
+   * fall before it and be lost; later events advance them.
+   */
+  | {
+      localJoined: {
+        scope: VoiceScope;
+        joinHandshake: "announced" | "seen" | "connected";
+        mediaReady: { ready: boolean; reason: string };
+      };
+    }
   | { speakingChanged: { scope: VoiceScope; pseudonym: string; speaking: boolean } }
   /** Machine-wide — no scope, since a device can change with no call. */
   | { deviceChanged: { deviceType: string; deviceName: string; reason: string } }

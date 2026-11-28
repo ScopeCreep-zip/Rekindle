@@ -8,6 +8,7 @@
 //! `calls_*` Vec on `MockState` so tests assert both behaviour AND
 //! the exact (community_id, …) values that flowed through.
 
+mod session_presence;
 mod state;
 
 use std::collections::{HashMap, HashSet};
@@ -23,7 +24,7 @@ use crate::deps::{
 pub use state::MockState;
 
 pub struct MockCommunityDeps {
-    pub state: Mutex<MockState>,
+    pub state: std::sync::Arc<Mutex<MockState>>,
     /// An open session scope: the orchestrators run to completion.
     pub scope: std::sync::Arc<rekindle_lifecycle::SessionScope>,
 }
@@ -32,7 +33,7 @@ impl MockCommunityDeps {
     /// A fixture over `state` inside an open session scope.
     pub fn new(state: MockState) -> Self {
         Self {
-            state: Mutex::new(state),
+            state: std::sync::Arc::new(Mutex::new(state)),
             scope: rekindle_lifecycle::SessionScope::new("test", std::sync::Arc::new(|_| {})),
         }
     }
@@ -40,6 +41,20 @@ impl MockCommunityDeps {
 
 #[async_trait]
 impl CommunityPresenceDeps for MockCommunityDeps {
+    fn session_presence(&self) -> std::sync::Arc<dyn crate::deps::SessionPresence> {
+        std::sync::Arc::new(session_presence::MockSessionPresence {
+            state: std::sync::Arc::clone(&self.state),
+        })
+    }
+    fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
+        rekindle_types::presence::MemberSession::default()
+    }
+    fn presence_policy(
+        &self,
+        _community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        rekindle_types::presence::PresenceSharingPolicy::default()
+    }
     /// A fixed clock: the fixture's runs are reproducible.
     fn now_secs(&self) -> u64 {
         1_700_000_000
@@ -79,15 +94,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             mek_generation: 1,
             ciphertext: vec![0; 12 + plaintext.len() + 16],
         })
-    }
-    fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
-        rekindle_types::presence::MemberSession::default()
-    }
-    fn presence_policy(
-        &self,
-        _community_id: &str,
-    ) -> rekindle_types::presence::PresenceSharingPolicy {
-        rekindle_types::presence::PresenceSharingPolicy::default()
     }
     fn encrypt_session_extras_with_current_mek(
         &self,
@@ -244,15 +250,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             updates.len(),
             emit_refreshed,
         ));
-    }
-    fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
-        self.state.lock().active_voice_channel.clone()
-    }
-    fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<crate::deps::VoicePresenceRow>) {
-        self.state
-            .lock()
-            .calls_reconcile_voice_roster
-            .push((community_id.to_string(), rows));
     }
     fn maybe_auto_expand_segment(&self, community_id: &str) {
         self.state

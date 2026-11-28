@@ -3,7 +3,7 @@ use super::*;
 fn entry(key: &str) -> OwnerEntry {
     OwnerEntry {
         record_key: key.into(),
-        keypair: format!("kp-{key}"),
+        keypair: zeroize::Zeroizing::new(format!("kp-{key}")),
     }
 }
 
@@ -22,7 +22,10 @@ fn stored(db_key: Option<&str>, entry_key: Option<&str>) -> StoredRecord {
 fn the_unlock_follows_the_vault_after_an_interrupted_write() {
     let agreed = stored(Some("k1"), Some("k1"));
     assert_eq!(plan(&agreed), Plan::Reopen(&entry("k1")));
-    assert_eq!(agreed.matching_keypair(), Some("kp-k1"));
+    assert_eq!(
+        agreed.matching_keypair().map(|pair| pair.as_str()),
+        Some("kp-k1")
+    );
     let rotated = stored(Some("old"), Some("new"));
     assert_eq!(plan(&rotated), Plan::Repair(&entry("new")));
     assert_eq!(rotated.matching_keypair(), None);
