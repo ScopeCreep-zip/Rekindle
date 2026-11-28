@@ -61,8 +61,29 @@ describe("the role editor lists the Host's permission catalogue (PN1)", function
 
     // Tick one and create the role.
     await press(browser, await shown(browser, `label.settings-option[data-permission="${TICKED}"] input`));
+    // Every error toast and console error from here on is recorded: a
+    // failure message for a role the Host saved is a defect (the Mac run on
+    // 2e96ce70d showed "Failed to create role" over a saved role), and the
+    // console line carries the rejection roles.ts caught.
+    await browser.execute(() => {
+      const w = window as unknown as { __roleErrors?: string[]; __roleToasts?: string[] };
+      w.__roleErrors = [];
+      w.__roleToasts = [];
+      const original = console.error.bind(console);
+      console.error = (...args: unknown[]) => {
+        w.__roleErrors!.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a) ?? String(a))).join(" ").slice(0, 600));
+        original(...args);
+      };
+      new MutationObserver(() => {
+        for (const t of document.querySelectorAll<HTMLElement>(".toast-item.toast-error")) {
+          const text = (t.textContent ?? "").trim();
+          if (!w.__roleToasts!.includes(text)) w.__roleToasts!.push(text);
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
     await press(browser, await byText(browser, ".modal-container .form-btn-primary", "Create"));
-    await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 3000 });
+    const outcome = await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 3000 });
+    console.log(`[roles] create review: ${outcome}`);
     await byText(browser, ".settings-role-row", ROLE, NET_WAIT_MS);
 
     // The Host's role carries exactly the ticked bit.
@@ -88,6 +109,12 @@ describe("the role editor lists the Host's permission catalogue (PN1)", function
     const checked = (await ticked.isSelected()) as boolean;
     console.log(`[roles] reopened ${ROLE}: ${TICKED} checked=${checked}`);
     await shot("role-saved-ticked");
+    const failures = (await browser.execute(() => {
+      const w = window as unknown as { __roleErrors?: string[]; __roleToasts?: string[] };
+      return { errors: w.__roleErrors ?? [], toasts: w.__roleToasts ?? [] };
+    })) as { errors: string[]; toasts: string[] };
+    console.log(`[roles] error toasts ${JSON.stringify(failures.toasts)}; console errors ${JSON.stringify(failures.errors)}`);
+    expect(failures.toasts).toEqual([]);
 
     expect({ editor: shownGroups, saved: saved === bit, checked }).toEqual({ editor: served, saved: true, checked: true });
   });
