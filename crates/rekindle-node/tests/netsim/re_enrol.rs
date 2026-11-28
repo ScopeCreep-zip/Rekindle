@@ -2,11 +2,12 @@
 
 use std::time::Duration;
 
+use rekindle_governance_runtime::unlock_barrier::BarrierPhase;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse, LifecycleRequest};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::intent::{HeldReview, IntentKind, IntentProof};
-use rekindle_types::subscription_events::SubscriptionEvent;
+use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, Community};
 
@@ -50,6 +51,69 @@ async fn restore_creator(seed: u64) -> Community {
     let community = Community::of(3, seed).await;
     rewind_creator(&community).await;
     community
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn re_enrol_barrier_and_own_key_retired_share_one_review() {
+    let (community, backup) = solo_creator_and_restored_copy(7032).await;
+    let copy_review = wait_for_review(&community, 1).await;
+    let original = &community.nodes[0];
+    original.ok(IpcRequest::Lock).await;
+    crate::data_root::restore(&community.sim, original, &backup);
+    crate::devices::unlock(&community, 0).await;
+
+    let first = wait_for_review(&community, 0).await;
+    let governance = original.host.governance();
+    assert!(matches!(
+        governance.unlock_barrier(&community.anchor).phase(),
+        BarrierPhase::Restored(_)
+    ));
+
+    wait_for_own_record_watch(&community).await;
+    let events = original.events().await;
+    // The copy's commit writes a retirement pointer to the original's
+    // watched record. The original's earlier barrier verdict still gives
+    // both producers the same review facts.
+    let answer = community.nodes[1]
+        .ok(IpcRequest::IntentCommit {
+            intent_id: copy_review.review.intent_id,
+            proof: IntentProof::Acknowledged,
+        })
+        .await;
+    assert!(answer["reEnrolled"][0].get("error").is_none(), "{answer:?}");
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            events.any(|event| {
+                matches!(
+                    event,
+                    SubscriptionEvent::Notification(NotificationEvent::SystemAlert { title, .. })
+                        if title == "Signing stopped"
+                )
+            })
+        })
+        .await,
+        "the original's own-record watch reported its key's retirement"
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let SubscriptionEvent::HeldReviews(held) = original.host.held_reviews() else {
+        panic!("expected the held set");
+    };
+    let held: Vec<_> = held
+        .into_iter()
+        .filter(|item| item.review.kind == IntentKind::ReEnrolDevice)
+        .collect();
+    assert_eq!(held, vec![first.clone()], "both sources keep the same hold");
+    assert!(!events.any(|event| matches!(
+        event,
+        SubscriptionEvent::IntentPending { review, .. } if review.kind == IntentKind::ReEnrolDevice
+    )));
+    original
+        .ok(IpcRequest::IntentCancel {
+            intent_id: first.review.intent_id,
+        })
+        .await;
+    assert!(review(&community, 0).is_none());
 }
 
 async fn rewind_creator(community: &Community) {
@@ -321,11 +385,8 @@ async fn re_enrol_from_a_cloned_root_retires_the_original_key() {
     wait_for_review(&community, 1).await;
 }
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_solo_members_original_device_learns_its_re_enrolment_from_its_own_record() {
-    use rekindle_types::subscription_events::NotificationEvent;
-
-    let mut community = Community::create(2, 7031).await;
+async fn solo_creator_and_restored_copy(seed: u64) -> (Community, crate::data_root::Backup) {
+    let mut community = Community::create(2, seed).await;
     community.nodes[0].ok(IpcRequest::Lock).await;
     let backup = crate::data_root::snapshot(&community.sim, &community.nodes[0]);
     crate::devices::unlock(&community, 0).await;
@@ -335,12 +396,13 @@ async fn a_solo_members_original_device_learns_its_re_enrolment_from_its_own_rec
     crate::data_root::restore(&community.sim, &community.nodes[1], &backup);
     let unused = community.nodes.remove(1);
     let mut copy = unused.restart(&community.sim, Duration::from_secs(1)).await;
-    copy.public_key = community.nodes[0].public_key.clone();
+    copy.public_key.clone_from(&community.nodes[0].public_key);
     community.nodes.push(copy);
     crate::devices::unlock(&community, 1).await;
+    (community, backup)
+}
 
-    let original_events = community.nodes[0].events().await;
-    let held = wait_for_review(&community, 1).await;
+async fn wait_for_own_record_watch(community: &Community) -> String {
     let original = community.nodes[0].host.governance();
     let state = original.governance_state(&community.anchor).unwrap();
     let old_record = rekindle_governance_runtime::device_signer::own_op_record(
@@ -360,6 +422,16 @@ async fn a_solo_members_original_device_learns_its_re_enrolment_from_its_own_rec
         .await,
         "the original's own-record watch is armed"
     );
+    old_record
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_solo_members_original_device_learns_its_re_enrolment_from_its_own_record() {
+    let (community, _backup) = solo_creator_and_restored_copy(7031).await;
+    let original_events = community.nodes[0].events().await;
+    let held = wait_for_review(&community, 1).await;
+    let original = community.nodes[0].host.governance();
+    let old_record = wait_for_own_record_watch(&community).await;
     for node in &community.nodes {
         let gov = node.host.governance();
         assert_eq!(

@@ -107,8 +107,8 @@ pub enum SubscriptionEvent {
     },
     /// The complete set of reviews the backend holds for this identity,
     /// unexpired and uncommitted, empty included (plan E3.2 S7d-keys.10):
-    /// a window's standing snapshot, handed on every subscribe and resume,
-    /// never journaled. It replaces the set the window held.
+    /// handed to a window on subscribe and resume, and published live
+    /// when a backend hold is replaced. It replaces the set the window held.
     HeldReviews(Vec<crate::intent::HeldReview>),
 }
 

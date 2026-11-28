@@ -73,28 +73,18 @@ async fn a_held_review_is_handed_to_a_later_subscriber_until_it_is_resolved() {
         assert_eq!(held(&host), vec![(first, first)], "exactly one");
         assert!(host.holds_review(first, first));
 
-        let (latest, _) = raise(&host, &bob).await;
-        assert_ne!(latest, first);
-        assert!(!host.holds_review(first, first));
-        assert!(host.holds_review(latest, latest));
-        assert_eq!(
-            held(&host),
-            vec![(latest, latest)],
-            "a replacement supersedes"
-        );
-
         let answer = if commit {
             IpcRequest::IntentCommit {
-                intent_id: latest,
+                intent_id: first,
                 proof: IntentProof::Acknowledged,
             }
         } else {
-            IpcRequest::IntentCancel { intent_id: latest }
+            IpcRequest::IntentCancel { intent_id: first }
         };
         let answer = host.call(Caller::shell(), answer).await;
         assert!(!matches!(answer, IpcResponse::Error { .. }), "{answer:?}");
         assert!(held(&host).is_empty(), "resolved (commit: {commit})");
-        assert!(!host.holds_review(latest, latest));
+        assert!(!host.holds_review(first, first));
     }
 }
 

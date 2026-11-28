@@ -25,9 +25,9 @@ pub(crate) enum HoldRefused {
 }
 
 /// Hold `action` (with `cancel`, run on Cancel) under `kind` and announce
-/// it. One hold per `same` action: a newer one replaces the older, which
-/// goes without its cancel, but only once the newer fits: a full gate
-/// refuses it and keeps the older (plan audit D-4).
+/// it. An unchanged selection for the same action keeps its hold. A changed
+/// selection replaces the older hold without running its cancel, provided
+/// the new hold fits (plan audit D-4).
 ///
 /// # Errors
 /// [`HoldRefused`].
@@ -45,34 +45,28 @@ pub(crate) async fn raise(
     let selection = crate::host::intent_select::select(ctx, &action, kind)
         .await
         .map_err(|e| HoldRefused::Select(format!("{e:?}")))?;
-    let now = ctx.clock.now_ms();
-    if !ctx
-        .intents
-        .has_room(&owner, |held_action| same(held_action, &action), now)
-    {
-        return Err(HoldRefused::Gate(
-            rekindle_idempotency::intent_gate::GateError::TooManyPending.to_string(),
-        ));
+    // Keep concurrent raises' events in the same order as their gate changes.
+    let _publication = ctx.backend_hold_publication.lock();
+    if ctx.require_owner().map_err(|_| HoldRefused::Locked)? != owner.identity {
+        return Err(HoldRefused::Locked);
     }
-    ctx.intents.retain_held(|held_by, held_action| {
-        !(held_by.conn.is_none()
-            && held_by.identity == owner.identity
-            && same(held_action, &action))
-    });
-    let review = ctx
+    let Some((review, replaced)) = ctx
         .intents
-        .hold(
-            owner,
-            selection,
-            action,
-            cancel,
-            rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS,
-            now,
-        )
-        .map_err(|e| HoldRefused::Gate(e.to_string()))?;
+        .hold_backend(owner, selection, action, cancel, same, ctx.clock.now_ms())
+        .map_err(|e| HoldRefused::Gate(e.to_string()))?
+    else {
+        return Ok(());
+    };
+    if replaced {
+        ctx.publish_event(SubscriptionEvent::HeldReviews(super::held_reviews_of(ctx)));
+    }
     // Live to the windows open now; a window that subscribes later (or
     // resumes) is handed the held set instead (`Host::held_reviews`).
     let hold_id = Some(review.intent_id);
     ctx.publish_event(SubscriptionEvent::IntentPending { review, hold_id });
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "backend_hold_tests.rs"]
+mod tests;
