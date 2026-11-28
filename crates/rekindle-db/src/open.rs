@@ -284,7 +284,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// rendezvous record.
 /// 167 (SEC5): `thread_messages` scopes each reply id to its verified author.
 /// 168 (CP1): channel post admission placeholders.
-pub const SCHEMA_VERSION: i64 = 168;
+pub const SCHEMA_VERSION: i64 = 171;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

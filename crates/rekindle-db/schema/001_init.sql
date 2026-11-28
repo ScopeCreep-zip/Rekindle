@@ -281,6 +281,15 @@ CREATE TABLE IF NOT EXISTS creator_invites (
     PRIMARY KEY (owner_key, anchor)
 );
 
+-- A withdrawal is terminal for an inviter and its one-time anchor,
+-- even if we have never received the invitation.
+CREATE TABLE IF NOT EXISTS creator_invite_withdrawals (
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    anchor TEXT NOT NULL CHECK (length(anchor) > 0),
+    inviter_key TEXT NOT NULL CHECK (length(inviter_key) = 64),
+    PRIMARY KEY (owner_key, anchor, inviter_key)
+);
+
 CREATE TABLE IF NOT EXISTS pending_creations (
     owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     anchor TEXT NOT NULL CHECK (length(anchor) > 0),

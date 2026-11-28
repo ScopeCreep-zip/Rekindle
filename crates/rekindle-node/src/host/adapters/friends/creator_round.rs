@@ -51,13 +51,17 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
                 community_name: community_name.clone(),
                 received_at: host.ctx.clock.now_ms_i64(),
             };
-            if let Err(e) = db
+            match db
                 .call(move |c| rekindle_db::repo::creator_round::put_invite(c, &owner, &row))
                 .await
             {
-                tracing::warn!(error = %e, anchor = %anchor, from = %sender,
-                    "co-creator invite not stored (kept for the replay)");
-                return false;
+                Ok(true) => {}
+                Ok(false) => return true,
+                Err(e) => {
+                    tracing::warn!(error = %e, anchor = %anchor, from = %sender,
+                        "co-creator invite not stored (kept for the replay)");
+                    return false;
+                }
             }
             tracing::info!(anchor = %anchor, from = %sender, "co-creator invite held");
             host.publish(SubscriptionEvent::Friend(FriendEvent::CreatorInvited {
@@ -69,18 +73,18 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
         CreatorFrame::Withdrawn { anchor } => {
             let a = anchor.clone();
             match db
-                .call(move |c| rekindle_db::repo::creator_round::take_invite(c, &owner, &a, &from))
+                .call(move |c| {
+                    rekindle_db::repo::creator_round::withdraw_invite(c, &owner, &a, &from)
+                })
                 .await
             {
-                Ok(Some(_)) => host.publish(SubscriptionEvent::Friend(
+                Ok(true) => host.publish(SubscriptionEvent::Friend(
                     FriendEvent::CreatorInviteWithdrawn {
                         peer_key: sender.to_owned(),
                         anchor,
                     },
                 )),
-                Ok(None) => {
-                    tracing::warn!(anchor = %anchor, from = %sender, "CreatorWithdrawn for no held invite refused");
-                }
+                Ok(false) => {}
                 Err(e) => {
                     tracing::warn!(error = %e, anchor = %anchor, from = %sender, "co-creator withdrawal not applied");
                     return false;

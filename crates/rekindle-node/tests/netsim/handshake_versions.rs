@@ -112,3 +112,86 @@ async fn game_invite_ignores_expired_retry() {
     assert!(eventually(&sim, LIMIT, || async { game_seen(&seen, 4102) }).await);
     assert!(!game_seen(&seen, 4181), "the expired invite was shown");
 }
+
+async fn create_with(ann: &SimNode, bea: &SimNode, name: &str) -> String {
+    use rekindle_ipc::protocol::{CommunityRequest, LifecycleRequest};
+    use rekindle_types::dto::community::CommunityCreated;
+
+    let data = ann
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityCreate {
+                name: name.into(),
+                description: String::new(),
+                approval_required: false,
+                co_creators: vec![key(bea)],
+            },
+        )))
+        .await;
+    serde_json::from_value::<CommunityCreated>(data)
+        .expect("reserved creation")
+        .anchor
+}
+
+fn creator_invited(events: &Events, anchor: &str) -> bool {
+    events.friend().iter().any(
+        |event| matches!(event, FriendEvent::CreatorInvited { anchor: held, .. } if held == anchor),
+    )
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn creator_invite_retries_after_route_death() {
+    let (sim, nodes) = friends(294).await;
+    let (ann, bea) = (&nodes[0], &nodes[1]);
+    let seen = bea.events().await;
+    outside_dead(&sim, bea);
+    let anchor = create_with(ann, bea, "Route loss").await;
+    attempted(&sim, ann, bea, DmTypeId::CreatorInvite).await;
+    assert!(!creator_invited(&seen, &anchor));
+    sim.fault(Fault::RouteDeath { node: bea.index });
+    assert!(
+        eventually(&sim, LIMIT, || async { creator_invited(&seen, &anchor) }).await,
+        "the co-creator sees the invitation on the replacement route"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn creator_invite_ignores_a_withdrawal_of_an_unseen_invite() {
+    use rekindle_transport::operations::friend::creator_round::CreatorFrame;
+
+    let (sim, nodes) = friends(295).await;
+    let (ann, bea) = (&nodes[0], &nodes[1]);
+    let seen = bea.events().await;
+    let anchor = format!("VLD0:{}", "Q".repeat(43));
+    send_again(
+        ann,
+        bea,
+        &CreatorFrame::Withdrawn {
+            anchor: anchor.clone(),
+        }
+        .body(),
+    )
+    .await;
+    send_again(
+        ann,
+        bea,
+        &CreatorFrame::Invite {
+            anchor: anchor.clone(),
+            community_name: "Abandoned".into(),
+        }
+        .body(),
+    )
+    .await;
+    let active = create_with(ann, bea, "Active").await;
+    assert!(eventually(&sim, LIMIT, || async { creator_invited(&seen, &active) }).await);
+    assert!(
+        !creator_invited(&seen, &anchor),
+        "the withdrawn invite was shown"
+    );
+    let owner = key(bea);
+    let db = bea.host.identity_stores().db.current().expect("invite DB");
+    assert!(db
+        .call(move |conn| rekindle_db::repo::creator_round::invite(conn, &owner, &anchor))
+        .await
+        .expect("read invite")
+        .is_none());
+}

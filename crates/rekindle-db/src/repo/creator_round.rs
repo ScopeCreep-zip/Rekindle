@@ -28,7 +28,7 @@ fn invite_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CreatorInviteRow> {
     })
 }
 
-/// Hold an invite (a resend replaces the held one).
+/// Hold an invite unless its inviter withdrew it. Whether it was stored.
 ///
 /// # Errors
 /// The write failed (a column is refused).
@@ -36,15 +36,36 @@ pub fn put_invite(
     conn: &Connection,
     owner_key: &str,
     row: &CreatorInviteRow,
-) -> rusqlite::Result<()> {
-    conn.execute(
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
         "INSERT INTO creator_invites (owner_key, anchor, inviter_key, community_name, received_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(owner_key, anchor) DO UPDATE SET \
-         inviter_key = excluded.inviter_key, community_name = excluded.community_name, \
-         received_at = excluded.received_at",
+         SELECT ?1, ?2, ?3, ?4, ?5 WHERE NOT EXISTS (SELECT 1 FROM creator_invite_withdrawals \
+         WHERE owner_key = ?1 AND anchor = ?2 AND inviter_key = ?3) \
+         ON CONFLICT(owner_key, anchor) DO UPDATE SET received_at = excluded.received_at \
+         WHERE creator_invites.inviter_key = excluded.inviter_key",
         params![owner_key, row.anchor, row.inviter_key, row.community_name, row.received_at],
+    )? > 0)
+}
+
+/// Record a withdrawal and take any matching invite in one transaction.
+///
+/// # Errors
+/// The transaction failed.
+pub fn withdraw_invite(
+    conn: &Connection,
+    owner_key: &str,
+    anchor: &str,
+    inviter_key: &str,
+) -> rusqlite::Result<bool> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "INSERT INTO creator_invite_withdrawals (owner_key, anchor, inviter_key) \
+         VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
+        params![owner_key, anchor, inviter_key],
     )?;
-    Ok(())
+    let held = take_invite(&tx, owner_key, anchor, inviter_key)?.is_some();
+    tx.commit()?;
+    Ok(held)
 }
 
 /// Take (delete and return) the invite to `anchor` from `inviter_key`; an
