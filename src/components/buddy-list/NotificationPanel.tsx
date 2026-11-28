@@ -1,4 +1,4 @@
-import { type Component, createEffect, For, on, onCleanup, Show } from "solid-js";
+import { type Component, createEffect, For, on, onCleanup, onMount, Show } from "solid-js";
 import { handleStartDmCall } from "../../actions/calls.actions";
 import { ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
 import { commands } from "../../ipc/commands";
@@ -59,13 +59,9 @@ const NotificationPanel: Component = () => {
       (open) => {
         if (!open) return;
         returnTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        // A frame later: the trigger's own focus handling (a closing menu
-        // restoring its button) has run by then, so focus stays in the panel.
-        const frame = requestAnimationFrame(() => panel?.focus());
         document.addEventListener("mousedown", onPointer);
         document.addEventListener("keydown", onKey, true);
         onCleanup(() => {
-          cancelAnimationFrame(frame);
           document.removeEventListener("mousedown", onPointer);
           document.removeEventListener("keydown", onKey, true);
         });
@@ -75,100 +71,114 @@ const NotificationPanel: Component = () => {
 
   return (
     <Show when={buddyListUI.showNotifications}>
-      <div
-        ref={panel}
-        class="notification-panel"
-        role="dialog"
-        aria-label="Notifications"
-        tabindex="-1"
-      >
-        <div class="notification-panel-header">
-          <span class="notification-panel-title">Notifications</span>
-          <Show when={unreadNotifications() > 0}>
-            <button type="button" class="notification-mark-all" onClick={markAllNotificationsRead}>
-              Mark all read
-            </button>
-          </Show>
-        </div>
-        <div class="notification-panel-list">
-          <Show
-            when={notificationState.notifications.length > 0}
-            fallback={<div class="notification-empty">No notifications</div>}
+      {(_open) => {
+        // Focus moves in once the card is in the document (onMount runs after
+        // its insertion; a detached element takes no focus, and a frame
+        // callback is throttled for a window that is not on screen). The
+        // panel opens after its trigger's action resolved, so a trigger's
+        // own focus handling has already run.
+        onMount(() => panel?.focus());
+        return (
+          <div
+            ref={panel}
+            class="notification-panel"
+            role="dialog"
+            aria-label="Notifications"
+            tabindex="-1"
           >
-            <For each={notificationState.notifications}>
-              {(notification) => (
-                <div
-                  class={
-                    notification.read
-                      ? "notification-item notification-item-read"
-                      : "notification-item"
-                  }
+            <div class="notification-panel-header">
+              <span class="notification-panel-title">Notifications</span>
+              <Show when={unreadNotifications() > 0}>
+                <button
+                  type="button"
+                  class="notification-mark-all"
+                  onClick={markAllNotificationsRead}
                 >
-                  <div class="notification-item-content">
-                    <span class="notification-title">{notification.title}</span>
-                    <span class="notification-body">{notification.body}</span>
-                    <span class="notification-time">
-                      {formatRelativeTime(notification.timestamp)}
-                    </span>
-                    {/* Wave 12 W12.8 — missed-call action row. */}
-                    <Show
-                      when={notification.type === "missed_call" && notification.peerKey != null}
+                  Mark all read
+                </button>
+              </Show>
+            </div>
+            <div class="notification-panel-list">
+              <Show
+                when={notificationState.notifications.length > 0}
+                fallback={<div class="notification-empty">No notifications</div>}
+              >
+                <For each={notificationState.notifications}>
+                  {(notification) => (
+                    <div
+                      class={
+                        notification.read
+                          ? "notification-item notification-item-read"
+                          : "notification-item"
+                      }
                     >
-                      <div class="notification-actions">
-                        <button
-                          type="button"
-                          class="form-btn-secondary notification-action-btn"
-                          title="Call back"
-                          onClick={() => {
-                            const peerKey = notification.peerKey!;
-                            const name = notification.body.split(" (")[0];
-                            const kind = notification.callKind ?? "audio";
-                            void handleStartDmCall(peerKey, name, kind === "video");
-                            markNotificationRead(notification.id);
-                          }}
+                      <div class="notification-item-content">
+                        <span class="notification-title">{notification.title}</span>
+                        <span class="notification-body">{notification.body}</span>
+                        <span class="notification-time">
+                          {formatRelativeTime(notification.timestamp)}
+                        </span>
+                        {/* Wave 12 W12.8 — missed-call action row. */}
+                        <Show
+                          when={notification.type === "missed_call" && notification.peerKey != null}
                         >
-                          <span class="nf-icon" aria-hidden="true">
-                            {ICON_PHONE}
-                          </span>
-                          Call back
-                        </button>
-                        <button
-                          type="button"
-                          class="form-btn-secondary notification-action-btn"
-                          title="Send a message"
-                          onClick={() => {
-                            const peerKey = notification.peerKey!;
-                            void commands.openChatWindow(peerKey);
-                            markNotificationRead(notification.id);
-                          }}
-                        >
-                          <span class="nf-icon" aria-hidden="true">
-                            {ICON_SEND}
-                          </span>
-                          Message
-                        </button>
+                          <div class="notification-actions">
+                            <button
+                              type="button"
+                              class="form-btn-secondary notification-action-btn"
+                              title="Call back"
+                              onClick={() => {
+                                const peerKey = notification.peerKey!;
+                                const name = notification.body.split(" (")[0];
+                                const kind = notification.callKind ?? "audio";
+                                void handleStartDmCall(peerKey, name, kind === "video");
+                                markNotificationRead(notification.id);
+                              }}
+                            >
+                              <span class="nf-icon" aria-hidden="true">
+                                {ICON_PHONE}
+                              </span>
+                              Call back
+                            </button>
+                            <button
+                              type="button"
+                              class="form-btn-secondary notification-action-btn"
+                              title="Send a message"
+                              onClick={() => {
+                                const peerKey = notification.peerKey!;
+                                void commands.openChatWindow(peerKey);
+                                markNotificationRead(notification.id);
+                              }}
+                            >
+                              <span class="nf-icon" aria-hidden="true">
+                                {ICON_SEND}
+                              </span>
+                              Message
+                            </button>
+                          </div>
+                        </Show>
                       </div>
-                    </Show>
-                  </div>
-                  <Show when={!notification.read}>
-                    <button
-                      type="button"
-                      class="notification-mark-read"
-                      onClick={() => markNotificationRead(notification.id)}
-                      title="Mark as read"
-                      aria-label="Mark notification as read"
-                    >
-                      <span class="nf-icon nf-icon-sm" aria-hidden="true">
-                        {ICON_CHECK}
-                      </span>
-                    </button>
-                  </Show>
-                </div>
-              )}
-            </For>
-          </Show>
-        </div>
-      </div>
+                      <Show when={!notification.read}>
+                        <button
+                          type="button"
+                          class="notification-mark-read"
+                          onClick={() => markNotificationRead(notification.id)}
+                          title="Mark as read"
+                          aria-label="Mark notification as read"
+                        >
+                          <span class="nf-icon nf-icon-sm" aria-hidden="true">
+                            {ICON_CHECK}
+                          </span>
+                        </button>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </div>
+        );
+      }}
     </Show>
   );
 };
