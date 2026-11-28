@@ -455,6 +455,9 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
 
 /// The shell's own commands.
 pub const SHELL_LOCAL: &[&str] = &[
+    "wait_skin_open",
+    "start_skin_apply",
+    "finish_skin_apply",
     "subscribe_events",
     "show_buddy_list",
     "quit_app",

@@ -29,7 +29,7 @@ fn image() -> SkinApplyFailure {
 fn failed(window: &str, skin: &str, cause: SkinApplyFailure) -> IpcRequest {
     IpcRequest::SkinApplyFailed {
         window: window.into(),
-        skin: skin.into(),
+        skin: Some(skin.into()),
         cause,
     }
 }

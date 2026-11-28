@@ -187,6 +187,9 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
                     h.update(b"sheet|");
                     h.update(detail.as_bytes());
                 }
+                SkinApplyFailure::LoadTimeout { .. } => {
+                    h.update(b"load_timeout");
+                }
                 SkinApplyFailure::WindowTooSmall { width, height } => {
                     h.update(b"window_too_small|");
                     h.update(&width.to_le_bytes());

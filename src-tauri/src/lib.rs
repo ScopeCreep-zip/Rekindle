@@ -65,7 +65,7 @@ use state::{AppState, SharedState};
 /// The single-instance plugin. It MUST be registered first: a second
 /// launch raises this app's window and exits.
 #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
-fn single_instance<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+fn single_instance() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_single_instance::init(|app, _args, _cwd| {
         // Deep-link URLs in argv are handled by the single-instance
         // `deep-link` feature, which forwards them into the deep-link

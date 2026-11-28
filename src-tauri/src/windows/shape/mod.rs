@@ -66,10 +66,7 @@ struct Shaped {
 
 impl Shaped {
     fn spawn(&self, name: &'static str, task: impl Future<Output = ()> + Send + 'static) {
-        // Native callbacks can arrive on a UI thread outside the runtime.
-        let runtime = tauri::async_runtime::handle();
-        let _entered = runtime.inner().enter();
-        self.tasks.spawn_or_drop(name, task);
+        super::spawn_window_task(&self.tasks, name, task);
     }
 }
 
@@ -183,7 +180,7 @@ fn publish(
     {
         return;
     }
-    let skin = match fitted {
+    let (skin, current) = match fitted {
         Some(applied) => {
             let mut previous = shaped.applied.lock();
             let current = Arc::ptr_eq(wanted, &applied)
@@ -196,10 +193,12 @@ fn publish(
             }
             let skin = applied.skin.clone();
             *previous = Some(applied);
-            skin
+            (skin, current)
         }
-        None => None,
+        None => (None, false),
     };
+    let ready = skin.as_ref().filter(|_| current);
+    super::skin_load::allocated(window, ready.map(|skin| skin.tokens_href.as_str()));
     if *shaped.presented.borrow() == skin {
         return;
     }
@@ -258,7 +257,7 @@ fn report_fit(
     };
     let request = IpcRequest::SkinApplyFailed {
         window: label,
-        skin: skin.id.clone(),
+        skin: Some(skin.id.clone()),
         cause: SkinApplyFailure::WindowTooSmall { width, height },
     };
     shaped.spawn("report constrained skin window", async move {
@@ -277,13 +276,14 @@ pub async fn presented_skin(window: &WebviewWindow) -> Option<SkinApplied> {
         .get(window.label())?
         .presented
         .subscribe();
-    let skin = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
+    let wait = tokio::time::timeout(
+        super::skin_reveal::LOAD_LIMIT,
         presented.wait_for(Option::is_some),
-    )
-    .await
-    .ok()?
-    .ok()?;
+    );
+    let skin = tokio::select! {
+        skin = wait => skin.ok()?.ok()?,
+        _ = super::skin_load::wait_open(window, true) => return None,
+    };
     skin.as_ref().cloned()
 }
 

@@ -6,6 +6,7 @@
     "chat-*"
   ],
   "permissions": [
+    "allow-wait-skin-open",
     "allow-get-own-presence",
     "allow-get-infoview",
     "allow-activity-list",

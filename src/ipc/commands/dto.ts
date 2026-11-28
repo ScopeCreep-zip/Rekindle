@@ -491,6 +491,7 @@ export interface SkinTrial {
 export type SkinApplyFailure =
   | { type: "imageDecode"; data: { path: string } }
   | { type: "sheetError"; data: { detail: string } }
+  | { type: "loadTimeout"; data: { message: string } }
   | { type: "windowTooSmall"; data: { width: number; height: number } };
 
 /// `list_skins`' answer (`SkinLibrary`).

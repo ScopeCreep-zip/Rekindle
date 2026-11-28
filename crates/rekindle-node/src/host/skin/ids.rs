@@ -89,6 +89,7 @@ fn cause_fits(cause: &rekindle_types::dto::skin_library::SkinApplyFailure) -> bo
     match cause {
         F::ImageDecode { path } => !path.is_empty() && path.len() <= 4096,
         F::SheetError { detail } => detail.len() <= 1024,
+        F::LoadTimeout { message } => message == F::LOAD_TIMEOUT_MESSAGE,
         F::WindowTooSmall { width, height } => {
             (1..=rekindle_skin::shape::MAX_WINDOW_WIDTH).contains(&u32::from(*width))
                 && (1..=rekindle_skin::shape::MAX_WINDOW_HEIGHT).contains(&u32::from(*height))
@@ -120,7 +121,9 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             ))
         }
         // `builtin:<id>`, `pkg:<hash>` or `dev:<hash>` (`SkinApplied::id`).
-        IpcRequest::SkinApplyFailed { skin, .. } if skin.is_empty() || skin.len() > 128 => {
+        IpcRequest::SkinApplyFailed {
+            skin: Some(skin), ..
+        } if skin.is_empty() || skin.len() > 128 => {
             Err(IpcResponse::error(400, "skin id not 1 to 128 bytes"))
         }
         IpcRequest::SkinApplyFailed { cause, .. } if !cause_fits(cause) => Err(IpcResponse::error(

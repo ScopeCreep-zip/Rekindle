@@ -73,6 +73,21 @@ pub enum SkinApplyFailure {
     SheetError { detail: String },
     /// The native canvas cannot fit the skin's minimum logical dimensions.
     WindowTooSmall { width: u16, height: u16 },
+    /// The native clock expired before the window could present this skin.
+    LoadTimeout { message: String },
+}
+
+impl SkinApplyFailure {
+    /// The skin-load error the Host and desktop show on deadline.
+    pub const LOAD_TIMEOUT_MESSAGE: &'static str =
+        "Rekindle could not load the skin for this window in time.";
+
+    #[must_use]
+    pub fn load_timeout() -> Self {
+        Self::LoadTimeout {
+            message: Self::LOAD_TIMEOUT_MESSAGE.to_owned(),
+        }
+    }
 }
 
 /// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):

@@ -249,10 +249,13 @@ pub async fn report_skin_apply_failed(
     skin: String,
     cause: SkinApplyFailure,
 ) -> Result<Done<()>, CommandError> {
-    if matches!(cause, SkinApplyFailure::WindowTooSmall { .. }) {
+    if matches!(
+        cause,
+        SkinApplyFailure::WindowTooSmall { .. } | SkinApplyFailure::LoadTimeout { .. }
+    ) {
         return Err(CommandError::Failed {
             code: 400,
-            message: "Window allocation reports come from the desktop shell".to_owned(),
+            message: "Native skin failures come from the desktop shell".to_owned(),
             remediation: None,
         });
     }
@@ -261,9 +264,36 @@ pub async fn report_skin_apply_failed(
         &state,
         IpcRequest::SkinApplyFailed {
             window,
-            skin,
+            skin: Some(skin),
             cause,
         },
     )
     .await
+}
+
+/// The terminal result of this document's native reveal gate.
+#[tauri::command]
+pub async fn wait_skin_open(
+    window: WebviewWindow,
+    until_failed: bool,
+) -> Result<Option<&'static str>, &'static str> {
+    crate::windows::skin_load::wait_open(&window, until_failed).await
+}
+
+/// Start the native clock before the webview asks its image and CSS loaders.
+#[tauri::command]
+pub async fn start_skin_apply(
+    window: WebviewWindow,
+    serial: u32,
+    skin: String,
+    expired: tauri::ipc::Channel<&'static str>,
+) {
+    crate::windows::skin_load::start_apply(&window, serial, skin, expired);
+}
+
+/// A completed apply cancels its watchdog. A committed sheet also joins
+/// the native allocation at the reveal gate.
+#[tauri::command]
+pub async fn finish_skin_apply(window: WebviewWindow, serial: u32, href: Option<String>) {
+    crate::windows::skin_load::finish_apply(&window, serial, href);
 }

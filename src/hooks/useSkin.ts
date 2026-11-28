@@ -1,6 +1,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import { subscribeSkinApplyFailed, subscribeSkinEvents } from "../ipc/channels";
 import { commands } from "../ipc/commands";
+import { Channel } from "../ipc/invoke";
 import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
 import { addToast } from "../stores/toast.store";
@@ -69,16 +70,7 @@ function boundShells(shells: SkinShell[]): SkinShell[] {
   }
   // A community window with a community (`/community?id=`, plan SKW1) wears
   // the community frame; the community browser (no `id`) none.
-  const community =
-    path.startsWith("/community") && new URLSearchParams(window.location.search).has("id");
-  const kind: SkinShell["window"] | undefined =
-    path === "/buddy-list"
-      ? "main"
-      : path.startsWith("/chat")
-        ? "chat"
-        : community
-          ? "community"
-          : undefined;
+  const kind = framedWindow();
   return kind ? shells.filter((s) => s.window === kind && s.popup === undefined) : [];
 }
 
@@ -97,9 +89,25 @@ const LINK_ID = "rekindle-skin";
 export function useSkin(): void {
   let stopped = false;
   let received = false;
+  const frame = framedWindow();
+  if (frame) {
+    document.documentElement.dataset.skinOpening = "";
+    void (async () => {
+      let error = await commands.waitSkinOpen(false);
+      if (stopped) return;
+      if (error === null) {
+        delete document.documentElement.dataset.skinOpening;
+        error = await commands.waitSkinOpen(true);
+      }
+      if (error !== null && !stopped) showOpeningError(error);
+    })().catch(logSkinError);
+  }
+  const apply = (skin: SkinApplied | null): void => {
+    if (!openingFailed) void applySkin(skin, frame).catch(logSkinError);
+  };
   const unsubscribe = subscribeSkinEvents((skin) => {
     received = true;
-    applySkin(skin);
+    apply(skin);
   });
   const unsubscribeFailure = subscribeSkinApplyFailed(({ cause }) => {
     if (cause.type === "windowTooSmall" && !document.getElementById(LINK_ID) && !loading) {
@@ -110,42 +118,60 @@ export function useSkin(): void {
   void commands
     .getSkin()
     .then((skin) => {
-      if (!stopped && !received) applySkin(skin);
+      if (!stopped && !received) apply(skin);
     })
-    .catch((err: unknown) => console.error("get_skin failed — this window shows no skin", err));
+    .catch(logSkinError);
   onCleanup(() => {
     stopped = true;
+    pending?.abort();
     void unsubscribe.then((unlisten) => unlisten());
     void unsubscribeFailure.then((unlisten) => unlisten());
   });
 }
 
-/// Each apply's number: an apply a newer one superseded does nothing more,
-/// so a slow sheet or image can never land over a later choice.
-let generation = 0;
+function showOpeningError(message: string): void {
+  openingFailed = true;
+  pending?.abort();
+  document.documentElement.dataset.skinOpening = "";
+  const alert = document.createElement("div");
+  alert.className = "skin-load-error";
+  alert.setAttribute("role", "alert");
+  alert.textContent = message;
+  document.body.appendChild(alert);
+}
 
-/// The `<link>` of the newest apply still loading, if any.
+function logSkinError(error: unknown): void {
+  console.error("Skin presentation failed", error);
+}
+
+let generation = 0;
+let pending: AbortController | undefined;
+let openingFailed = false;
 let loading: HTMLLinkElement | null = null;
 
+function framedWindow(): SkinShell["window"] | undefined {
+  const path = window.location.pathname;
+  if (path === "/buddy-list") return "main";
+  if (path.startsWith("/chat")) return "chat";
+  if (path.startsWith("/community") && new URLSearchParams(window.location.search).has("id")) {
+    return "community";
+  }
+  return undefined;
+}
+
 /**
- * Apply `skin` to this window, showing it only once it can be drawn
- * whole. First every image it draws is decoded (`skin.images`, the shared
- * sheet's, plus its own trees' `images`, plan SK4): a
- * frame tile or region still loading paints nothing, so the window would
- * be see-through inside the shaper's cut, which already follows the new
- * skin. Then the sheet loads in its own `<link>` beside the shown one
- * (WebKit keeps a link's old `.sheet` until a changed `href` finishes
- * loading, so swapping in place would show the previous skin while the
- * link already names the new one). On `load` the new link takes the id,
- * the old one is removed and `data-skin-base` follows, so the id, the
- * sheet and the base always belong to the same skin. On any failure the
- * shown skin stays and the error is reported.
+ * Hold decoded images through the stylesheet swap. A native deadline
+ * cancels the apply even if neither the image decoder nor the link settles.
  */
-function applySkin(skin: SkinApplied | null): void {
-  const mine = ++generation;
-  loading?.remove();
-  loading = null;
-  const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
+async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | undefined) {
+  // A framed document keeps its last committed skin during a native
+  // allocation change. Its first open has its own native error surface.
+  if (skin === null && frame) return;
+  pending?.abort();
+  const attempt = new AbortController();
+  pending = attempt;
+  const serial = ++generation;
+  const shown = document.getElementById(LINK_ID);
   if (skin === null) {
     shown?.remove();
     delete document.documentElement.dataset.skinBase;
@@ -154,79 +180,138 @@ function applySkin(skin: SkinApplied | null): void {
     setSheetsLinked((n) => n + 1);
     return;
   }
-  if (shown?.getAttribute("href") === skin.tokensHref) {
-    document.documentElement.dataset.skinBase = skin.base;
-    setShells(skin.shells ?? []);
-    return;
-  }
-  // Held until the swap, so the decoded images stay in this document's cache.
-  // The shared sheet's images and this window's own trees' (plan SK4): a
-  // window never waits on art another window's tree draws.
-  const hrefs = [
-    ...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)]),
-  ];
-  const loads = hrefs.map((href) => {
-    const img = new Image();
-    img.src = href;
-    return { href, img };
-  });
-  const images = loads.map((l) => l.img);
-  // Each decode names its own href, so the report says which image failed.
-  const decoded = loads.map(({ href, img }) =>
-    img.decode().catch((err: unknown) => {
-      throw new SkinImageError(href, err);
-    })
-  );
-  Promise.all(decoded).then(
-    () => {
-      if (mine === generation) linkSheet(skin, mine, images);
-    },
-    (err: SkinImageError) => {
-      if (mine !== generation) return;
-      console.error(
-        `skin ${skin.id}: ${err.path} failed to decode — the shown skin stays`,
-        err.reason
-      );
-      report(skin, { type: "imageDecode", data: { path: err.path } });
+
+  const expired = new Channel<string>((message) => {
+    if (!attempt.signal.aborted) {
+      attempt.abort();
+      addToast(message);
     }
-  );
+  });
+  await commands.startSkinApply(serial, skin.id, expired);
+  let href: string | null = null;
+  try {
+    if (attempt.signal.aborted) return;
+    await untilAborted(commitSkin(skin, shown, frame, attempt.signal), attempt.signal);
+    if (!attempt.signal.aborted) href = skin.tokensHref;
+  } catch (error) {
+    if (attempt.signal.aborted) return;
+    if (error instanceof SkinImageError) {
+      report(skin, { type: "imageDecode", data: { path: error.path } });
+    } else if (error instanceof Error) {
+      report(skin, { type: "sheetError", data: { detail: error.message } });
+    }
+    logSkinError(error);
+  } finally {
+    attempt.abort();
+    await commands.finishSkinApply(serial, href);
+  }
 }
 
-/** A skin image that did not decode: its `skin://` href and the reason. */
+async function commitSkin(
+  skin: SkinApplied,
+  shown: HTMLElement | null,
+  frame: SkinShell["window"] | undefined,
+  signal: AbortSignal
+): Promise<void> {
+  const sameSheet = shown?.getAttribute("href") === skin.tokensHref;
+  if (!sameSheet) {
+    const hrefs = [
+      ...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)]),
+    ];
+    const images = hrefs.map((href) => {
+      const img = new Image();
+      img.src = href;
+      return img;
+    });
+    signal.addEventListener(
+      "abort",
+      () => {
+        for (const img of images) img.removeAttribute("src");
+      },
+      { once: true }
+    );
+    await Promise.all(
+      images.map((img, i) =>
+        img.decode().catch(() => {
+          throw new SkinImageError(hrefs[i]);
+        })
+      )
+    );
+    if (signal.aborted) return;
+    const next = await linkSheet(skin.tokensHref, signal);
+    if (signal.aborted) {
+      next.remove();
+      return;
+    }
+    shown?.remove();
+    next.id = LINK_ID;
+    images.length = 0;
+  }
+  document.documentElement.dataset.skinBase = skin.base;
+  setShells(skin.shells ?? []);
+  setSkinTitleLogo(skin.titleLogo);
+  if (!sameSheet) setSheetsLinked((n) => n + 1);
+  if (frame) {
+    const hasTree = skin.shells?.some((s) => s.window === frame && !s.popup) ?? false;
+    await waitForTree(frame, hasTree, signal);
+  }
+}
+
+function untilAborted(work: Promise<void>, signal: AbortSignal): Promise<void> {
+  return Promise.race([
+    work,
+    new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
+  ]);
+}
+
+/** The route is lazy; wait until its frame and any served tree are in the DOM. */
+function waitForTree(
+  frame: SkinShell["window"],
+  hasTree: boolean,
+  signal: AbortSignal
+): Promise<void> {
+  const selector = `.app-frame[data-skin-window="${frame}"]${hasTree ? " .skin-tree" : ""}`;
+  if (document.querySelector(selector)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(selector)) {
+        observer.disconnect();
+        resolve();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    signal.addEventListener("abort", () => observer.disconnect(), { once: true });
+  });
+}
+
 class SkinImageError extends Error {
-  constructor(
-    readonly path: string,
-    readonly reason: unknown
-  ) {
+  constructor(readonly path: string) {
     super(`${path} failed to decode`);
   }
 }
 
-/** Load `skin`'s sheet beside the shown one and swap on `load` (apply `mine`). */
-function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]): void {
-  const next = document.createElement("link");
-  next.rel = "stylesheet";
-  loading = next;
-  next.addEventListener("load", () => {
-    if (mine !== generation) return;
-    loading = null;
-    document.getElementById(LINK_ID)?.remove();
-    next.id = LINK_ID;
-    document.documentElement.dataset.skinBase = skin.base;
-    setShells(skin.shells ?? []);
-    setSkinTitleLogo(skin.titleLogo);
-    setSheetsLinked((n) => n + 1);
-    images.length = 0;
+function linkSheet(href: string, signal: AbortSignal): Promise<HTMLLinkElement> {
+  return new Promise((resolve, reject) => {
+    const next = document.createElement("link");
+    next.rel = "stylesheet";
+    next.href = href;
+    loading = next;
+    const cancel = (): void => {
+      loading = null;
+      next.remove();
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    next.addEventListener("load", () => {
+      loading = null;
+      signal.removeEventListener("abort", cancel);
+      resolve(next);
+    }, { once: true, signal });
+    next.addEventListener("error", () => {
+      cancel();
+      reject(new Error(`${href} failed to load`));
+    }, { once: true, signal });
+    document.head.appendChild(next);
   });
-  next.addEventListener("error", () => {
-    if (mine !== generation) return;
-    loading = null;
-    next.remove();
-    console.error(`skin sheet ${skin.tokensHref} failed to load — the shown skin stays`);
-    report(skin, { type: "sheetError", data: { detail: `${skin.tokensHref} failed to load` } });
-  });
-  next.href = skin.tokensHref;
-  document.head.appendChild(next);
 }
 
 /**

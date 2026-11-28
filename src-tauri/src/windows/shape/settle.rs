@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use super::logical::Margins;
 
 pub(super) const SIZE_WAIT: Duration = Duration::from_millis(250);
+#[cfg(target_os = "linux")]
 pub(super) const PAINT_WAIT: Duration = Duration::from_millis(500);
 const MAX_TRANSITIONS: usize = 4;
 
@@ -17,9 +18,12 @@ pub(super) enum ShapeSettleError {
     InvalidAllocation,
     RepeatedTransition,
     TransitionLimit,
+    #[cfg(target_os = "linux")]
     SizeRefused,
+    #[cfg(target_os = "linux")]
     PaintTimeout,
     PaintMismatch,
+    #[cfg(target_os = "linux")]
     InvalidSurface,
 }
 

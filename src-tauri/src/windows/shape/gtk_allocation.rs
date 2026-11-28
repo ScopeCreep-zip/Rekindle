@@ -12,6 +12,8 @@ use gtk::glib::{self, Propagation, SignalHandlerId, SourceId};
 use gtk::prelude::*;
 use tauri::{LogicalSize, Manager, WebviewWindow};
 
+use crate::windows::skin_load;
+
 use super::super::logical::Margins;
 use super::super::{
     desired, fitting, is_current, is_latest, logical::LogicalShape, publish, report_fit, settle,
@@ -136,7 +138,10 @@ impl Controller {
             state.stage(widget);
         });
         let state = Rc::clone(self);
-        widget.connect_unmap(move |_| state.suspend());
+        widget.connect_unmap(move |_| {
+            state.suspend();
+            skin_load::allocated(&state.target, None);
+        });
         let state = Rc::clone(self);
         widget.connect_unrealize(move |_| {
             state.suspend();

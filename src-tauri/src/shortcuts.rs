@@ -374,7 +374,7 @@ fn trigger_quick_wipe(scope: &Arc<SessionScope>, state: SharedState) {
 /// Toggle the buddy list window visibility (Ctrl+Shift+X / Cmd+Shift+X).
 fn toggle_buddy_list(app_handle: &tauri::AppHandle) {
     if let Some(window) = app_handle.get_webview_window(crate::window_labels::BUDDY_LIST) {
-        if window.is_visible().unwrap_or(false) {
+        if crate::windows::skin_load::is_revealed(&window) {
             let _ = window.hide();
             tracing::debug!("buddy list hidden via global shortcut");
         } else {

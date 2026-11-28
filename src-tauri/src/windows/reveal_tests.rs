@@ -1,4 +1,4 @@
-use super::*;
+use super::{reveal, Revealable};
 use parking_lot::Mutex;
 
 /// A window that records the calls a reveal makes.

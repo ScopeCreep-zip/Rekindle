@@ -69,6 +69,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "export_skin_draft",
   "export_skin_schema",
   "fetch_link_preview",
+  "finish_skin_apply",
   "follow_community_successor",
   "force_native_keyframes",
   "forward_channel_message",
@@ -318,6 +319,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "start_group_call",
   "start_native_video",
   "start_pairing_session",
+  "start_skin_apply",
   "stop_native_video",
   "submit_onboarding_answers",
   "subscribe_events",
@@ -349,6 +351,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "vault_diagnostics",
   "volunteer_relay",
   "vote_poll",
+  "wait_skin_open",
   "write_paired_devices",
   "write_sync_manifest",
   "write_sync_preferences"

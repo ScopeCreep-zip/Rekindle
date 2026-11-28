@@ -1,4 +1,4 @@
-use super::*;
+use super::{open, Build, Show};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -32,7 +32,21 @@ impl Show for Fake {
 #[test]
 fn a_window_is_built_hidden_then_shown() {
     let log = Log::default();
-    let window = open(Fake(log.clone()), |w| w.0.lock().push("prepare".to_owned()));
+    let window = open(Fake(log.clone()), |w| {
+        w.0.lock().push("prepare".to_owned());
+        true
+    });
     assert!(window.is_ok());
     assert_eq!(*log.lock(), ["visible(false)", "build", "prepare", "show"]);
+}
+
+#[test]
+fn a_managed_first_show_leaves_the_window_hidden() {
+    let log = Log::default();
+    open(Fake(log.clone()), |w| {
+        w.0.lock().push("prepare".to_owned());
+        false
+    })
+    .expect("build hidden");
+    assert_eq!(*log.lock(), ["visible(false)", "build", "prepare"]);
 }

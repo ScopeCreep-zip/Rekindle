@@ -101,15 +101,6 @@ fn select_size(
 
 fn allocate(window: &WebviewWindow, shaped: &Arc<Shaped>) -> Result<(), String> {
     let mut native = shaped.native.lock();
-    if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false) {
-        native.applied = None;
-        #[cfg(target_os = "macos")]
-        {
-            *shaped.current.lock() = None;
-            super::macos::set(window, &shaped.ignoring, false)?;
-        }
-        return Ok(());
-    }
     let generation = desired(window.app_handle());
     let fixed = window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false);
     select_size(window, shaped, &generation, fixed, &mut native).map_err(|e| e.to_string())?;

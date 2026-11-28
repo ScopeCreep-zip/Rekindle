@@ -28,3 +28,17 @@
     image-rendering: pixelated;
   }
 }
+
+@layer components {
+  :root[data-skin-opening] body > :not(.skin-load-error) {
+    display: none;
+  }
+
+  .skin-load-error {
+    display: grid;
+    place-content: center;
+    min-block-size: 100vh;
+    padding: 1rem;
+    background: var(--color-xfire-bg-dark);
+  }
+}

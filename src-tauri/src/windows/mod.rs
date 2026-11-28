@@ -13,17 +13,23 @@ pub mod popup_place;
 mod rebind;
 mod reveal;
 mod shape;
+pub(crate) mod skin_load;
+mod skin_reveal;
 pub(crate) use shape::{frame_of_label, presented_skin};
 mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
 
+use std::future::Future;
+use std::sync::Arc;
+
+use rekindle_lifecycle::SessionScope;
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
 use serde::{Deserialize, Serialize};
 use tauri::utils::config::BackgroundThrottlingPolicy;
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
 
 use crate::state::SharedState;
@@ -173,6 +179,11 @@ fn base_builder<'a>(
         .resizable(true)
         .background_throttling(background_policy(kind))
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
+        .on_page_load(|window, page| {
+            if page.event() == PageLoadEvent::Started {
+                skin_load::page_started(&window);
+            }
+        })
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
             navigation::permission_for(captures_media, permission)
@@ -199,6 +210,17 @@ fn with_store<'a>(
     }
 }
 
+/// Native callbacks can arrive on a UI thread outside the runtime.
+fn spawn_window_task(
+    scope: &Arc<SessionScope>,
+    name: &'static str,
+    task: impl Future<Output = ()> + Send + 'static,
+) {
+    let runtime = tauri::async_runtime::handle();
+    let _entered = runtime.inner().enter();
+    scope.spawn_or_drop(name, task);
+}
+
 /// Build the window hidden, enable platform media capture if `kind`
 /// captures, then show it ([`first_show`]: a window built visible opens
 /// taller than its inner size on GTK Wayland). Attach the shape controller
@@ -207,15 +229,18 @@ fn finish(
     builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
     kind: WindowKind,
 ) -> Result<WebviewWindow, String> {
-    let window = first_show::open(builder, |window| {
-        shape::attach(window, shape::frame_of_label(window.label()));
+    first_show::open(builder, |window| {
+        let frame = frame_of_label(window.label());
+        skin_load::prepare(window);
+        shape::attach(window, frame);
         if kind.captures_media() {
             crate::platform::enable_webview_media_capture(window);
         }
-    })?;
-    #[cfg(not(target_os = "linux"))]
-    shape::revealed(&window);
-    Ok(window)
+        if frame.is_some() {
+            skin_load::request(window, skin_reveal::Show::First);
+        }
+        frame.is_none()
+    })
 }
 
 /// Show, restore and focus an existing window ([`reveal_window`]). Returns
@@ -225,8 +250,6 @@ fn raise(app: &AppHandle, label: &str) -> bool {
         return false;
     };
     reveal_window(&window);
-    #[cfg(not(target_os = "linux"))]
-    shape::revealed(&window);
     true
 }
 

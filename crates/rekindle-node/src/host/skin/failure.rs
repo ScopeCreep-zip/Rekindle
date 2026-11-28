@@ -57,6 +57,16 @@ pub(crate) async fn report(ctx: &DaemonContext, request: IpcRequest) -> IpcRespo
     else {
         unreachable!("{} is not SkinApplyFailed", request.name());
     };
+    let skin = match skin {
+        Some(skin) => skin,
+        None if matches!(cause, SkinApplyFailure::LoadTimeout { .. }) => {
+            match super::serve::resolved(ctx).await {
+                Ok(skin) => skin,
+                Err(response) => return response,
+            }
+        }
+        None => return IpcResponse::error(400, "skin failure has no skin id"),
+    };
     if matches!(cause, SkinApplyFailure::WindowTooSmall { .. }) {
         ctx.publish_event(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
             window,
