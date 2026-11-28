@@ -6,15 +6,17 @@ use rekindle_codec::capnp_codec::identity::{
     decode_opk_slot, decode_prekey_record_list, encode_prekey_head,
 };
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_netsim::{Fault, Netsim};
+use rekindle_netsim::{Fault, Netsim, Records, Writes};
 use rekindle_types::dht_layout::prekeys::{slot_subkey, HEAD, SLOT_COUNT};
-use rekindle_types::dht_layout::profile::PREKEY_RECORDS;
+use rekindle_types::dht_layout::profile::{PREKEY_RECORDS, ROUTE_BLOB};
+use rekindle_types::intent::IntentKind;
 use rekindle_types::subscription_events::{
     CryptoEvent, FriendEvent, NotificationEvent, SubscriptionEvent,
 };
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
 use crate::pair::{accept, befriend, is_accepted_friend, key, request, talk, LIMIT};
+use crate::requester_route_replaced::published_route;
 
 /// The node's prekey record key, once its unlock holds the record.
 async fn record_key(node: &SimNode) -> String {
@@ -150,6 +152,72 @@ async fn a_session_reset_completes_from_the_record() {
         .await
     );
     talk(&sim, &nodes[0], &nodes[1], "after the reset").await;
+}
+
+/// The first reset request goes into the receiver's dead route. Hold its
+/// replacement off the network until that attempt finishes, so landing
+/// requires another outbox attempt.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_session_reset_request_retries_after_route_death() {
+    let (sim, mut nodes) = start(2, 32).await;
+    nodes[0].unlock_new_identity("Dee").await;
+    nodes[1].unlock_new_identity("Bea").await;
+    let (dee, bea) = (&nodes[0], &nodes[1]);
+    befriend(&sim, dee, bea).await;
+    talk(&sim, dee, bea, "before route death").await;
+    let events = bea.events().await;
+    let (profile, old_route) = published_route(&sim, bea).await;
+    assert!(old_route.is_some(), "Bea published the route Dee used");
+    sim.fault(Fault::WriteFails {
+        node: bea.index,
+        of: Writes::Subkey {
+            subkey: ROUTE_BLOB,
+            record: Some(Records::Key(profile.clone())),
+        },
+    });
+    sim.fault(Fault::RouteDeath { node: bea.index });
+    dee.ok(IpcRequest::SessionResetStart {
+        public_key: key(bea),
+    })
+    .await;
+
+    let holds_reset = || {
+        events.any(|event| {
+            matches!(event, SubscriptionEvent::IntentPending { review, .. }
+            if review.kind == IntentKind::AcceptSessionReset)
+        })
+    };
+    let owner = key(dee);
+    let stream = format!("friend_handshake:{}", key(bea));
+    let db = dee.db.current().expect("Dee's database");
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            let (owner, stream) = (owner.clone(), stream.clone());
+            db.call(move |conn| rekindle_db::repo::outbox::prefix_rows(conn, &owner, &stream))
+                .await
+                .expect("Dee's handshake rows")
+                .iter()
+                .filter(|row| row.client_id.starts_with("SessionResetRequest:"))
+                .all(|row| row.attempts > 0)
+        })
+        .await,
+        "the first reset attempt finished"
+    );
+    assert!(!holds_reset(), "Bea received nothing on the dead route");
+    assert_eq!(
+        sim.network_get(&profile, ROUTE_BLOB).map(|v| v.data),
+        old_route
+    );
+
+    sim.fault(Fault::Heal);
+    assert!(
+        eventually(&sim, LIMIT, || async { holds_reset() }).await,
+        "Dee's outbox retried the reset and Bea holds AcceptSessionReset"
+    );
+    assert_ne!(
+        sim.network_get(&profile, ROUTE_BLOB).map(|v| v.data),
+        old_route
+    );
 }
 
 /// B3: a friend's record whose head is signed by another identity — its
