@@ -273,11 +273,8 @@ pub async fn report_skin_apply_failed(
 
 /// The terminal result of this document's native reveal gate.
 #[tauri::command]
-pub async fn wait_skin_open(
-    window: WebviewWindow,
-    until_failed: bool,
-) -> Result<Option<&'static str>, &'static str> {
-    crate::windows::skin_load::wait_open(&window, until_failed).await
+pub async fn wait_skin_open(window: WebviewWindow) -> Result<Option<&'static str>, &'static str> {
+    crate::windows::skin_load::wait_open(&window).await
 }
 
 /// Start the native clock before the webview asks its image and CSS loaders.

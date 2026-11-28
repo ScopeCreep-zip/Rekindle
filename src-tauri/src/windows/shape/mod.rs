@@ -282,7 +282,7 @@ pub async fn presented_skin(window: &WebviewWindow) -> Option<SkinApplied> {
     );
     let skin = tokio::select! {
         skin = wait => skin.ok()?.ok()?,
-        _ = super::skin_load::wait_open(window, true) => return None,
+        _ = super::skin_load::wait_open(window) => return None,
     };
     skin.as_ref().cloned()
 }

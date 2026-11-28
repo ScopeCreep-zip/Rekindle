@@ -96,7 +96,7 @@ export function useSkin(): void {
     // failure shows the error instead.
     document.documentElement.dataset.skinOpening = "";
     void commands
-      .waitSkinOpen(true)
+      .waitSkinOpen()
       .then((error) => {
         if (error !== null && !stopped) showOpeningError(error);
       })

@@ -351,21 +351,18 @@ fn report_timeout(window: &WebviewWindow, load: &Load, skin: Option<String>) {
     });
 }
 
-/// The document observes the same deadline which releases its native window.
+/// The document observes the same deadline which releases its native window:
+/// this resolves when this document's reveal gate fails (its deadline expired),
+/// with the failure's message, and never for a skinned reveal.
 pub(crate) async fn wait_open(
     window: &WebviewWindow,
-    until_failed: bool,
 ) -> Result<Option<&'static str>, &'static str> {
     if !framed(window) {
         return Ok(None);
     }
     let mut opening = load(window).state.lock().opening.subscribe();
     let status = opening
-        .wait_for(|status| match status {
-            Opening::Waiting => false,
-            Opening::Skinned => !until_failed,
-            Opening::Failed => true,
-        })
+        .wait_for(|status| matches!(status, Opening::Failed))
         .await
         .map_err(|_| "The skin load document was replaced")?;
     Ok(matches!(*status, Opening::Failed).then_some(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE))

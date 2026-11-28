@@ -71,7 +71,7 @@ export const systemCommands = {
   // The skin this window shows (plan E7.7.2): a Host call; `null` asks
   // for the skin this device shows now.
   getSkin: (id: string | null = null) => hostInvoke<SkinApplied>("get_skin", { id }),
-  waitSkinOpen: (untilFailed: boolean) => invoke<string | null>("wait_skin_open", { untilFailed }),
+  waitSkinOpen: () => invoke<string | null>("wait_skin_open"),
   startSkinApply: (serial: number, skin: string, expired: Channel<string>) =>
     invoke<void>("start_skin_apply", { serial, skin, expired }),
   finishSkinApply: (serial: number, href: string | null) =>
