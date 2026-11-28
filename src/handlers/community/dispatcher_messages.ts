@@ -8,6 +8,7 @@ import type {
   ChannelMessageEvent,
   CommunitySubscriptionEvent,
 } from "../../ipc/channels/community_subscription_events";
+import { noteAdmissionEvent } from "../../stores/admission_events.store";
 import type { Message } from "../../stores/chat.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { holdEarlySendState } from "../../stores/early_send.store";
@@ -336,6 +337,7 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
       // time. One older than the window is unloaded history, which the next
       // read returns with the same view.
       const a = m.postAdmissionChanged;
+      noteAdmissionEvent(a.messageId);
       const list = a.thread ? "threadMessages" : "channelMessages";
       const rows = communityState[list][a.streamId];
       if (!rows) return;

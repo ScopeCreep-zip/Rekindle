@@ -2,6 +2,7 @@ import type { CreateEventRequest } from "../../ipc/commands";
 import { commands } from "../../ipc/commands";
 import { isCommandError } from "../../ipc/commands/dto";
 import type { SendState } from "../../ipc/commands/types";
+import { eventAfter, readMark } from "../../stores/admission_events.store";
 import type { Message } from "../../stores/chat.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { takeEarlySendState } from "../../stores/early_send.store";
@@ -274,13 +275,16 @@ export async function handleLoadThreadMessages(
   limit: number
 ): Promise<void> {
   try {
+    const mark = readMark();
     const messages = await commands.getThreadMessages(communityId, threadId, limit);
     const mapped = transformMessages(messages);
     // The page may answer after a reply was sent or received (walk 14,
     // M76: the late page replaced our own reply's bubble), and earlier
     // replies may be loaded beyond it: the channel's read merge keeps both,
     // and refreshes every row the page holds (CP1: a held reply judged).
-    setCommunityState("threadMessages", threadId, (prev) => mergeRead(prev ?? [], mapped));
+    setCommunityState("threadMessages", threadId, (prev) =>
+      mergeRead(prev ?? [], mapped, (m) => eventAfter(m.serverMessageId, mark))
+    );
   } catch (e) {
     console.error("Failed to load thread messages:", e);
     addToast("Failed to load thread messages", "error");

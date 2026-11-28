@@ -1,5 +1,6 @@
 import { commands } from "../../ipc/commands";
 import { isCommandError } from "../../ipc/commands/dto";
+import { eventAfter, readMark } from "../../stores/admission_events.store";
 import { clearBulkSelection } from "../../stores/chat.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
@@ -128,10 +129,11 @@ export async function handleLoadOlderMessages(
 
 export async function handleLoadChannelMessages(channelId: string, limit: number): Promise<void> {
   try {
+    const mark = readMark();
     const messages = await commands.getChannelMessages(channelId, limit);
     const mapped = transformMessages(messages);
     setCommunityState("channelMessages", channelId, (existing) =>
-      mergeRead(existing ?? [], mapped)
+      mergeRead(existing ?? [], mapped, (m) => eventAfter(m.serverMessageId, mark))
     );
   } catch (e) {
     console.error("Failed to load channel messages:", e);

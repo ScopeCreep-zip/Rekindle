@@ -7,9 +7,14 @@ import type { Message } from "../stores/chat.store";
  * (an echo or a post that arrived while the read was in flight). A row
  * older than the read's oldest is history the read did not reach (earlier
  * scrollback), and stays before it. Only a row inside the read's window
- * that the read lacks was removed, and goes.
+ * that the read lacks was removed, and goes. A row `newerThanRead` names
+ * (its admission changed after the read began) keeps the store's version.
  */
-export function mergeRead(existing: Message[], read: Message[]): Message[] {
+export function mergeRead(
+  existing: Message[],
+  read: Message[],
+  newerThanRead: (m: Message) => boolean = () => false
+): Message[] {
   // An empty read has no window: nothing it holds replaces or removes a row
   // (with no oldest or newest, every row would land both before and after it).
   if (read.length === 0) return existing;
@@ -21,5 +26,13 @@ export function mergeRead(existing: Message[], read: Message[]): Message[] {
   );
   const earlier = unread.filter((m) => m.serverMessageId !== undefined && m.timestamp < oldest);
   const later = unread.filter((m) => m.serverMessageId === undefined || m.timestamp > newest);
-  return [...earlier, ...read, ...later];
+  // A loaded row the store holds a newer version of than the read (an
+  // admission event that came after the read began) keeps the store's.
+  const newer = new Map(
+    existing
+      .filter((m) => m.serverMessageId !== undefined && newerThanRead(m))
+      .map((m) => [m.serverMessageId, m])
+  );
+  const fresh = read.map((m) => newer.get(m.serverMessageId) ?? m);
+  return [...earlier, ...fresh, ...later];
 }
