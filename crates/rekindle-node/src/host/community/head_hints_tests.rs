@@ -49,19 +49,25 @@ fn a_first_value_at_seq_0_is_read() {
 #[test]
 fn concurrent_triggers_for_one_write_cost_one_catch_up() {
     let mut hints = HeadHints::default();
-    assert!(hints.claim_frontier("M", 5, true), "the ring change claims");
-    assert!(!hints.claim_frontier("M", 5, false), "the hint is refused");
     assert!(
-        !hints.claim_frontier("M", 5, true),
+        hints.claim_frontier("M", Some(5), true),
+        "the ring change claims"
+    );
+    assert!(
+        !hints.claim_frontier("M", Some(5), false),
+        "the hint is refused"
+    );
+    assert!(
+        !hints.claim_frontier("M", Some(5), true),
         "so is a second ring change"
     );
     assert_eq!(
-        hints.finish_frontier("M", Some(5)),
+        hints.finish_frontier("M", Some(5), false),
         None,
         "nothing to read again"
     );
-    assert!(!hints.claim_frontier("M", 5, false), "seq 5 was read");
-    assert!(hints.claim_frontier("M", 6, false), "seq 6 was not");
+    assert!(!hints.claim_frontier("M", Some(5), false), "seq 5 was read");
+    assert!(hints.claim_frontier("M", Some(6), false), "seq 6 was not");
 }
 
 /// A frontier written after the claimed catch-up read is caught up once
@@ -70,27 +76,24 @@ fn concurrent_triggers_for_one_write_cost_one_catch_up() {
 #[test]
 fn a_write_refused_mid_flight_is_read_again_once() {
     let mut hints = HeadHints::default();
-    assert!(hints.claim_frontier("M", 5, false));
-    assert!(!hints.claim_frontier("M", 6, false));
-    assert_eq!(hints.finish_frontier("M", Some(5)), Some(6));
-    assert!(hints.claim_frontier("M", 6, true));
-    assert_eq!(hints.finish_frontier("M", Some(6)), None);
+    assert!(hints.claim_frontier("M", Some(5), false));
+    assert!(!hints.claim_frontier("M", Some(6), false));
+    assert_eq!(hints.finish_frontier("M", Some(5), false), Some(6));
+    assert_eq!(hints.finish_frontier("M", Some(6), true), None);
 
-    assert!(hints.claim_frontier("M", 7, false));
-    assert!(!hints.claim_frontier("M", 7, true));
+    assert!(hints.claim_frontier("M", Some(7), false));
+    assert!(!hints.claim_frontier("M", Some(7), true));
     assert_eq!(
-        hints.finish_frontier("M", None),
+        hints.finish_frontier("M", None, false),
         Some(7),
         "incomplete: read again"
     );
-    assert!(hints.claim_frontier("M", 7, true));
-    assert!(!hints.claim_frontier("M", u64::MAX, false));
-    assert_eq!(hints.finish_frontier("M", Some(7)), Some(u64::MAX));
-    assert!(hints.claim_frontier("M", u64::MAX, true));
+    assert!(!hints.claim_frontier("M", Some(u64::MAX), false));
+    assert_eq!(hints.finish_frontier("M", Some(7), true), Some(u64::MAX));
     assert_eq!(
-        hints.finish_frontier("M", Some(7)),
+        hints.finish_frontier("M", Some(7), true),
         None,
-        "the lie is read once"
+        "a completed capped attempt releases the claim"
     );
     assert!(
         hints.worth_reading("M", FRONTIER, 8),
@@ -173,8 +176,8 @@ fn a_departed_members_entries_are_pruned() {
 fn the_ring_and_the_sweeps_share_one_frontier_read_set() {
     let mut hints = HeadHints::default();
     let sweep = hints.frontiers();
-    assert!(hints.claim_frontier("VLD0:m", 5, true));
-    assert_eq!(hints.finish_frontier("VLD0:m", Some(5)), None);
+    assert!(hints.claim_frontier("VLD0:m", Some(5), true));
+    assert_eq!(hints.finish_frontier("VLD0:m", Some(5), false), None);
     assert!(
         !sweep.unread("VLD0:m", 5),
         "the sweep skips what the ring read"
@@ -184,4 +187,17 @@ fn the_ring_and_the_sweeps_share_one_frontier_read_set() {
         !hints.worth_reading("VLD0:m", FRONTIER, 7),
         "the ring skips what the sweep read"
     );
+}
+
+#[test]
+fn a_lagging_read_keeps_the_original_claim_unread() {
+    let mut hints = HeadHints::default();
+    assert!(hints.claim_frontier("M", Some(4), true));
+    assert!(!hints.claim_frontier("M", Some(5), true));
+    assert_eq!(hints.finish_frontier("M", Some(3), false), Some(4));
+    assert_eq!(hints.frontiers().get("M"), None);
+    assert_eq!(hints.finish_frontier("M", Some(4), true), Some(5));
+    assert_eq!(hints.frontiers().get("M"), Some(4));
+    assert_eq!(hints.finish_frontier("M", Some(5), true), None);
+    assert_eq!(hints.frontiers().get("M"), Some(5));
 }

@@ -106,6 +106,13 @@ pub enum Fault {
         key: String,
         min_seqnum: Option<u32>,
     },
+    /// The next network get reaches only replicas at the currently stored
+    /// value, even if the writer reaches other replicas before that get.
+    NextGetFromLaggingReplica {
+        node: usize,
+        key: String,
+        subkey: u32,
+    },
     /// Drop value changes for one watcher and record, independently of app
     /// calls and of DHT reads and writes.
     DropValueChanges {
@@ -453,6 +460,17 @@ impl Netsim {
                     Some(seq) => min_seqnums.insert((node, key), seq),
                     None => min_seqnums.remove(&(node, key)),
                 };
+            }
+            Fault::NextGetFromLaggingReplica { node, key, subkey } => {
+                let value = self
+                    .network_get(&key, subkey)
+                    .expect("establish the replica's value before arming the fault");
+                self.net
+                    .inner
+                    .lock()
+                    .faults
+                    .lagging_gets
+                    .insert((node, key, subkey), value);
             }
             Fault::DropValueChanges { node, key, drop } => {
                 let changes = &mut self.net.inner.lock().faults.drop_value_changes;

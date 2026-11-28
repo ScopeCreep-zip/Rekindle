@@ -39,10 +39,10 @@ pub struct HeadHints {
     heads: BTreeMap<String, u64>,
 }
 
-/// A frontier catch-up in flight: the highest seq a trigger refused
-/// while it ran named, read again after it when above the seq it read.
-#[derive(Debug, Clone, Default)]
+/// A frontier catch-up and the highest sequence any later trigger named.
+#[derive(Debug, Clone)]
 struct Flight {
+    claimed: Option<u64>,
     missed: Option<u64>,
 }
 
@@ -85,30 +85,61 @@ impl HeadHints {
     /// another catch-up of it runs (its seq is then kept as missed, see
     /// [`Self::finish_frontier`]) or, unless `forced` (a ring change, never
     /// gated on an inspect a lagging replica answers), when `seq` was read.
-    pub fn claim_frontier(&mut self, record: &str, seq: u64, forced: bool) -> bool {
+    pub fn claim_frontier(&mut self, record: &str, seq: Option<u64>, forced: bool) -> bool {
+        let unread = self
+            .read_at(record, FRONTIER)
+            .map_or(0, |read| read.saturating_add(1));
         if let Some(flight) = self.in_flight.get_mut(record) {
-            flight.missed = flight.missed.max(Some(seq));
+            flight.missed = flight.missed.max(Some(seq.unwrap_or(unread)));
             return false;
         }
-        if !forced && !self.worth_reading(record, FRONTIER, seq) {
+        if !forced && seq.is_some_and(|seq| !self.worth_reading(record, FRONTIER, seq)) {
             return false;
         }
-        self.in_flight.insert(record.to_owned(), Flight::default());
+        self.in_flight.insert(
+            record.to_owned(),
+            Flight {
+                claimed: seq,
+                missed: None,
+            },
+        );
         true
     }
 
-    /// End `record`'s claimed catch-up: a complete one marks its frontier
-    /// read at `read`. The seq to catch up again, when a trigger refused
-    /// while it ran named one above what it read (or it read nothing), so
-    /// a frontier written after its read is not lost.
-    pub fn finish_frontier(&mut self, record: &str, read: Option<u64>) -> Option<u64> {
-        let flight = self.in_flight.remove(record).unwrap_or_default();
-        if let Some(read) = read {
+    /// Keep a complete read only when it reached the claim. An initial
+    /// short read gets a capped refetch of its own claim before servicing
+    /// any other trigger that arrived while it ran.
+    pub fn finish_frontier(
+        &mut self,
+        record: &str,
+        read: Option<u64>,
+        refetched: bool,
+    ) -> Option<u64> {
+        let flight = self.in_flight.remove(record)?;
+        if let Some(read) =
+            read.filter(|read| flight.claimed.is_none_or(|claimed| *read >= claimed))
+        {
             self.record_read(record, FRONTIER, read);
         }
-        flight
-            .missed
-            .filter(|missed| read.is_none_or(|read| *missed > read))
+        let unread = |seq: &u64| read.is_none_or(|read| *seq > read);
+        let next = flight
+            .claimed
+            .filter(|seq| !refetched && unread(seq))
+            .or_else(|| {
+                flight
+                    .missed
+                    .filter(|seq| Some(*seq) != flight.claimed && unread(seq))
+            });
+        if let Some(seq) = next {
+            self.in_flight.insert(
+                record.to_owned(),
+                Flight {
+                    claimed: Some(seq),
+                    missed: flight.missed.filter(|missed| *missed != seq),
+                },
+            );
+        }
+        next
     }
 
     /// Does the ring change on `subkeys` of `record` relay a frontier

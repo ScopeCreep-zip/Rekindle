@@ -253,7 +253,7 @@ impl HostGovernance {
         if hint.subkey == FRONTIER {
             // The frontier is opened and read once, forced, by the
             // catch-up itself, and only by the trigger that claims it.
-            self.refresh_member_record(community_id, record, hint.seq, false)
+            self.refresh_member_record(community_id, record, Some(hint.seq), false)
                 .await;
             return;
         }

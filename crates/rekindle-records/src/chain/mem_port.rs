@@ -249,6 +249,15 @@ impl RecordPort for MemPort {
         Err(unused())
     }
 
+    async fn refetch_hinted(
+        &self,
+        _: LeaseId,
+        _: u32,
+        _: u64,
+    ) -> Result<Option<RecordValue>, PortError> {
+        Err(unused())
+    }
+
     async fn read_hinted(
         &self,
         _: LeaseId,

@@ -392,6 +392,17 @@ impl DhtBackend for SimDht {
         let span = || self.read_span(key, Some(&[subkey]));
         let _slot = self.network(span, key, &[subkey]).await?;
         let mut inner = self.net.inner.lock();
+        if let Some(lagging) =
+            inner
+                .faults
+                .lagging_gets
+                .remove(&(self.node, key.to_owned(), subkey))
+        {
+            return Ok(local
+                .into_iter()
+                .chain([lagging])
+                .max_by_key(|value| value.seq));
+        }
         Ok(replicas::refresh(
             &mut inner,
             self.node,

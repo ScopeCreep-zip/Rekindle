@@ -128,6 +128,15 @@ impl RecordPort for RecordPool {
         RecordPool::read_changed(self, lease, subkeys).await
     }
 
+    async fn refetch_hinted(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        claimed: u64,
+    ) -> Result<Option<RecordValue>, PortError> {
+        RecordPool::refetch_hinted(self, lease, subkey, claimed).await
+    }
+
     async fn read_hinted(
         &self,
         lease: LeaseId,

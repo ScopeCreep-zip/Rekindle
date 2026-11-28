@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{ActivityRequest, ChannelRequest, CommunityRequest, IpcRequest};
 use rekindle_netsim::Fault;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, SUBKEY_COUNT};
@@ -350,4 +351,72 @@ async fn concurrent_frontier_triggers_read_the_record_once() {
     assert!(first && second, "both are ring changes");
     community.sim.quiesce().await;
     assert_eq!(reads(), before + 1, "one frontier read for both triggers");
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn ring_frontier_retries_when_the_claiming_read_lags() {
+    let community = Community::of(2, 4117).await;
+    let creator = creator_record(&community);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(300), || async {
+            community
+                .sim
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
+        })
+        .await
+    );
+    community.sim.quiesce().await;
+    let previous = community.sim.network_get(&creator, FRONTIER).unwrap().seq;
+
+    // Deliver one watch trigger explicitly, so another replica's push
+    // or an app hint cannot rescue the first lagging fanout.
+    community.sim.fault(Fault::DropValueChanges {
+        node: 1,
+        key: creator.clone(),
+        drop: true,
+    });
+    community.sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
+    community.sim.fault(Fault::NextGetFromLaggingReplica {
+        node: 1,
+        key: creator.clone(),
+        subkey: FRONTIER,
+    });
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelCreate {
+                community: community.anchor.clone(),
+                name: "lagging-frontier".into(),
+                kind: "text".into(),
+                category: None,
+                topic: None,
+                slowmode_seconds: 0,
+                parent_voice_channel: None,
+            },
+        )))
+        .await;
+    let current = community.sim.network_get(&creator, FRONTIER).unwrap().seq;
+    assert_eq!(current, previous + 1);
+    assert!(!lists_channel(&community, 1, "lagging-frontier").await);
+
+    let before = community.sim.app_gets_at(1, &creator, FRONTIER);
+    assert!(
+        community.nodes[1]
+            .host
+            .governance()
+            .on_watched_change(&creator, &[FRONTIER])
+            .await
+    );
+    assert!(lists_channel(&community, 1, "lagging-frontier").await);
+    let port = community.nodes[1].host.governance().record_port().unwrap();
+    let caught_up = port
+        .read_once(&creator, FRONTIER, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(caught_up.seq, current, "node 1 holds the written frontier");
+    assert_eq!(community.sim.app_gets_at(1, &creator, FRONTIER) - before, 2);
 }

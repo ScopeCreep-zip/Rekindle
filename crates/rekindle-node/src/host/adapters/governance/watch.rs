@@ -98,13 +98,12 @@ impl HostGovernance {
         if rebuilds_on(subkeys) {
             // The change names the frontier: it is force-read (VU3's hint
             // contract), never gated on an inspect a lagging replica answers;
-            // the inspected seq only tells a catch-up already in flight
-            // whether to read once more. An unknown seq always does.
+            // the inspected seq tells the catch-up whether its forced
+            // read reached the write that triggered it.
             let seq = seqs
                 .as_ref()
-                .and_then(|s| s.get(FRONTIER as usize).copied().flatten())
-                .unwrap_or(u64::MAX);
-            tracing::debug!(%community, record, seq, "ring member's frontier changed");
+                .and_then(|s| s.get(FRONTIER as usize).copied().flatten());
+            tracing::debug!(%community, record, ?seq, "ring member's frontier changed");
             self.refresh_member_record(&community, record, seq, true)
                 .await;
         } else {
@@ -169,7 +168,13 @@ impl HostGovernance {
 
     /// Claim `record`'s frontier catch-up under the communities write
     /// lock (`HeadHints::claim_frontier`).
-    fn claim_frontier(&self, community: &str, record: &str, seq: u64, forced: bool) -> bool {
+    fn claim_frontier(
+        &self,
+        community: &str,
+        record: &str,
+        seq: Option<u64>,
+        forced: bool,
+    ) -> bool {
         self.ctx
             .communities
             .map()
@@ -182,13 +187,19 @@ impl HostGovernance {
     /// every head it names is stored (`anti_entropy::inspect_one` counts it
     /// read only then), so a frontier whose head did not fetch yet is read
     /// again on its next change or hint; the seq to catch up again.
-    fn finish_frontier(&self, community: &str, record: &str, read: Option<u64>) -> Option<u64> {
+    fn finish_frontier(
+        &self,
+        community: &str,
+        record: &str,
+        read: Option<u64>,
+        refetched: bool,
+    ) -> Option<u64> {
         self.ctx
             .communities
             .map()
             .write()
             .get_mut(community)
-            .and_then(|c| c.head_hints.finish_frontier(record, read))
+            .and_then(|c| c.head_hints.finish_frontier(record, read, refetched))
     }
 
     /// Read `record`'s frontier and, when the read stored a head we lacked,
@@ -208,29 +219,31 @@ impl HostGovernance {
         &self,
         community: &str,
         record: &str,
-        seq: u64,
+        seq: Option<u64>,
         forced: bool,
     ) {
         if !self.claim_frontier(community, record, seq, forced) {
             tracing::debug!(
                 community,
                 record,
-                seq,
+                ?seq,
                 "member's frontier already read or being read"
             );
             return;
         }
         let mut stored = 0;
         let mut read = None;
+        let mut mode = FrontierRead::Hinted { minimum: seq };
         loop {
             tracing::info!(community, record, "reading a member's frontier");
-            let (seq_read, stored_now) = self.catch_up_record(community, record).await;
+            let (seq_read, stored_now) = self.catch_up_record(community, record, mode).await;
             stored += stored_now;
             read = seq_read.or(read);
-            match self.finish_frontier(community, record, seq_read) {
-                Some(again) if self.claim_frontier(community, record, again, true) => {}
-                _ => break,
-            }
+            let refetched = matches!(mode, FrontierRead::Refetch { .. });
+            let Some(again) = self.finish_frontier(community, record, seq_read, refetched) else {
+                break;
+            };
+            mode = FrontierRead::Refetch { minimum: again };
         }
         if stored == 0 {
             tracing::debug!(
@@ -253,7 +266,12 @@ impl HostGovernance {
     /// Store the heads `record`'s frontier names that we do not hold; the
     /// frontier seq read (this read's when every head is stored), and how
     /// many were stored.
-    async fn catch_up_record(&self, community: &str, record: &str) -> (Option<u64>, usize) {
+    async fn catch_up_record(
+        &self,
+        community: &str,
+        record: &str,
+        mode: FrontierRead,
+    ) -> (Option<u64>, usize) {
         let known: Result<BTreeSet<_>, _> = self
             .governance_ops(community)
             .await
@@ -266,30 +284,23 @@ impl HostGovernance {
             }
         };
         let seen = self.seen_frontiers(community);
-        let stored = match anti_entropy::inspect_one(
-            self,
-            community,
-            record,
-            &seen,
-            &mut known,
-            FrontierRead::Hinted,
-        )
-        .await
-        {
-            Ok(stored) => stored,
-            Err(GovernanceRuntimeError::CommunityNotFound(_)) => {
-                tracing::debug!(
-                    community,
-                    record,
-                    "ring change for a community we no longer hold: dropped"
-                );
-                0
-            }
-            Err(error) => {
-                tracing::warn!(community, record, %error, "ring change: heads not stored");
-                0
-            }
-        };
+        let stored =
+            match anti_entropy::inspect_one(self, community, record, &seen, &mut known, mode).await
+            {
+                Ok(stored) => stored,
+                Err(GovernanceRuntimeError::CommunityNotFound(_)) => {
+                    tracing::debug!(
+                        community,
+                        record,
+                        "ring change for a community we no longer hold: dropped"
+                    );
+                    0
+                }
+                Err(error) => {
+                    tracing::warn!(community, record, %error, "ring change: heads not stored");
+                    0
+                }
+            };
         tracing::debug!(
             community,
             record,

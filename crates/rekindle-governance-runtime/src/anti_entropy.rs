@@ -132,7 +132,10 @@ pub enum FrontierRead {
     /// inspect whose replica has not caught up would answer "nothing
     /// newer", and the forced read clears Veilid's report mark so the next
     /// change of it is reported.
-    Hinted,
+    Hinted { minimum: Option<u64> },
+    /// The claiming read lagged. Force a second fanout for the same claim
+    /// under the record pool's D8 cap.
+    Refetch { minimum: u64 },
 }
 
 /// Inspect `record`; when its frontier seq moved, read the frontier and
@@ -157,35 +160,46 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
             return Ok(0);
         }
     };
-    if mode == FrontierRead::Hinted {
-        let read = deps.read_hinted_value(lease, member_record::FRONTIER).await;
-        deps.release_record(lease).await;
-        let Ok(Some((seq, bytes))) = read else {
-            return Ok(0);
-        };
-        return store_frontier_heads(deps, community_id, record, seen, known, seq, &bytes).await;
-    }
-    let seq = deps
-        .inspect_dht_record_update_get_seqs(lease)
-        .await
-        .ok()
-        .and_then(|seqs| {
-            seqs.get(member_record::FRONTIER as usize)
-                .copied()
-                .flatten()
-        });
-    // The inspect and the read are separate fanouts (0.5.8
-    // `inspect_record.rs:672-705`, `get_value.rs`): the read may settle on an
-    // older value than the inspect's seq, so what counts as read is the seq
-    // of the value the read returned, never the inspect's.
-    let read = match seq {
-        Some(seq) if seen.unread(record, seq) => {
-            Some(deps.read_hinted_value(lease, member_record::FRONTIER).await)
+    let read = match mode {
+        FrontierRead::Sweep => {
+            let seq = deps
+                .inspect_dht_record_update_get_seqs(lease)
+                .await
+                .ok()
+                .and_then(|seqs| {
+                    seqs.get(member_record::FRONTIER as usize)
+                        .copied()
+                        .flatten()
+                });
+            // The inspect and read fan out separately. Only the value's
+            // seq counts as read.
+            if seq.is_some_and(|seq| seen.unread(record, seq)) {
+                deps.read_hinted_value(lease, member_record::FRONTIER)
+                    .await
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            }
         }
-        _ => None,
+        FrontierRead::Hinted { minimum } => deps
+            .read_hinted_value(lease, member_record::FRONTIER)
+            .await
+            .ok()
+            .flatten()
+            .filter(|(seq, _)| minimum.is_none_or(|minimum| *seq >= minimum)),
+        FrontierRead::Refetch { minimum } => match deps.record_port() {
+            Ok(port) => port
+                .refetch_hinted(lease, member_record::FRONTIER, minimum)
+                .await
+                .ok()
+                .flatten()
+                .map(|value| (u64::from(value.seq), value.data)),
+            Err(_) => None,
+        },
     };
     deps.release_record(lease).await;
-    let Some(Ok(Some((seq, bytes)))) = read else {
+    let Some((seq, bytes)) = read else {
         return Ok(0);
     };
     store_frontier_heads(deps, community_id, record, seen, known, seq, &bytes).await

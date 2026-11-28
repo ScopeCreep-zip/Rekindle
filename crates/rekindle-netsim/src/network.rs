@@ -97,6 +97,7 @@ pub(crate) struct Faults {
     /// sends that are dropped ([`crate::Fault::DropFrom`]); read only by
     /// [`Network::lost_in_transit`], never by the DHT model.
     pub drop_from: HashMap<usize, u32>,
+    pub lagging_gets: HashMap<(usize, String, u32), rekindle_records::port::RecordValue>,
     pub drop_value_changes: HashSet<(usize, String)>,
     /// Nodes whose app calls are never answered (the caller times out).
     pub unanswered: HashSet<usize>,

@@ -303,6 +303,15 @@ pub trait RecordPort: Send + Sync {
         subkeys: &[u32],
     ) -> Result<Vec<(u32, RecordValue)>, PortError>;
 
+    /// Retry a hinted read for an unmet sequence claim, subject to D8's cap.
+    /// Returns no value when the claim is capped or still unconfirmed.
+    async fn refetch_hinted(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        claimed: u64,
+    ) -> Result<Option<RecordValue>, PortError>;
+
     /// [`read_changed`](Self::read_changed)'s hinted mode, for the subkeys
     /// a [`ValueChange`] named: every one is read from the network
     /// (`force_refresh`), which clears its report mark, so the next change
