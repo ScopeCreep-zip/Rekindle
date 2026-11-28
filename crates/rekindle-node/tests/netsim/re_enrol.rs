@@ -6,6 +6,7 @@ use rekindle_governance_runtime::unlock_barrier::BarrierPhase;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse, LifecycleRequest};
 use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_types::dht_layout::member_record::GOV_HEAD;
 use rekindle_types::intent::{HeldReview, IntentKind, IntentProof};
 use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
 
@@ -332,9 +333,8 @@ async fn wait_for_own_record_watch(community: &Community) -> String {
         eventually(&community.sim, LIMIT, || async {
             community
                 .sim
-                .watchers_of_dflt(rekindle_types::dht_layout::member_record::SUBKEY_COUNT)
-                .get(&old_record)
-                .is_some_and(|watchers| watchers.contains(&0))
+                .watched_subkeys(0, &old_record)
+                .contains(&GOV_HEAD)
         })
         .await,
         "the original's own-record watch is armed"

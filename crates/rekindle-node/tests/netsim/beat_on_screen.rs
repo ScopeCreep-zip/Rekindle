@@ -8,11 +8,13 @@
 use std::time::Duration;
 
 use rekindle_codec::member_record::BeatState;
+use rekindle_governance_runtime::watch_ring::RING_K;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, UnreadRequest};
 use rekindle_netsim::Fault;
-use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
+use rekindle_types::dht_layout::member_record::BEAT;
 
 use crate::harness::{eventually, Community};
+use crate::ring_census::member_watchers;
 use crate::watch_ring::creator_record;
 
 /// The 15-minute rule, one inspection period and the expiry's 30 s check.
@@ -46,16 +48,13 @@ async fn a_member_on_screen_outside_the_ring_stays_live_and_expires() {
     // The creator's ring watchers settle at k = 4; the one other member
     // does not watch it.
     let watching = || {
-        community
-            .sim
-            .watchers_of_dflt(SUBKEY_COUNT)
-            .get(&record)
-            .cloned()
+        member_watchers(&community, BEAT)
+            .remove(&record)
             .unwrap_or_default()
     };
     assert!(
         eventually(&community.sim, Duration::from_secs(600), || async {
-            watching().len() == 4
+            watching().len() == RING_K
         })
         .await,
         "the creator's record has its four ring watchers"

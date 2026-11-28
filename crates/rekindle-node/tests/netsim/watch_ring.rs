@@ -1,8 +1,8 @@
 //! Plan E3.2 "Watching" (`evidence/slot-integrity.md` §4.5): with the
 //! members joined and merged, every member record `M` is watched by its
-//! `min(k, N − 1)` ring predecessors and nobody else, and no replica
-//! refuses a watch. Six members here (each `M` has 4 watchers, the creator's
-//! included); `watch_ring_budget` runs N = 40 in the scale target.
+//! `min(k, N − 1)` ring predecessors plus each device's own GOV_HEAD
+//! watch. Six members here (four ring watchers per `M`, including the
+//! creator's record), with zero refusals. The scale target runs N = 40.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -10,10 +10,10 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 
-use rekindle_types::dht_layout::community_anchor;
-use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
-
+use rekindle_governance_runtime::watch_ring::RING_K;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
+use rekindle_types::dht_layout::community_anchor;
+use rekindle_types::dht_layout::member_record::{BEAT, GOV_HEAD};
 
 use crate::harness::{eventually, Community};
 use crate::ring_census;
@@ -67,19 +67,16 @@ async fn member_sets(
     lines
 }
 
-fn census(community: &Community) -> BTreeMap<String, BTreeSet<usize>> {
-    community.sim.watchers_of_dflt(SUBKEY_COUNT)
-}
-
 /// `members` join through one invite; then every `M` converges to
 /// `min(4, members − 1)` ring watchers, and no replica refuses a watch.
 pub async fn ring_converges(members: usize, seed: u64) {
+    assert_eq!(RING_K, 4);
     // One invite for everyone: an inviter holds at most 8 live invites
     // (`invite_quota::MAX_ACTIVE_INVITES_PER_INVITER`).
     let mut community = Community::create(members, seed).await;
     let uses = u32::try_from(members - 1).expect("a small count");
     let link = community.invite_for(uses).await;
-    let want = 4.min(members - 1);
+    let want = RING_K.min(members - 1);
     let last = Arc::new(Mutex::new(String::from("census: none yet")));
     let done = ring_census::guard(Arc::clone(&last));
     let run = async {
@@ -87,7 +84,7 @@ pub async fn ring_converges(members: usize, seed: u64) {
             community.join_with(i, link.clone()).await;
         }
         eventually(&community.sim, Duration::from_secs(600), || async {
-            let watched = census(&community);
+            let watched = ring_census::member_watchers(&community, BEAT);
             watched.len() == members && watched.values().all(|nodes| nodes.len() == want)
         })
         .await
@@ -97,7 +94,7 @@ pub async fn ring_converges(members: usize, seed: u64) {
         () = ring_census::every_minute(&community, Arc::clone(&last)) => unreachable!("the census never ends"),
     };
     drop(done);
-    let watched = census(&community);
+    let watched = ring_census::member_watchers(&community, BEAT);
     let counts: Vec<usize> = watched.values().map(BTreeSet::len).collect();
     // Each node's member count, the nodes its roster lacks against the
     // union of every roster, and the records it watches, so a run that
@@ -121,6 +118,11 @@ pub async fn ring_converges(members: usize, seed: u64) {
         watched.get(&creator).map(BTreeSet::len),
         Some(want),
         "the creator's M {creator} has {want} ring watchers: {watched:?}"
+    );
+    assert_eq!(
+        community.sim.watched_subkeys(0, &creator),
+        BTreeSet::from([GOV_HEAD]),
+        "the creator separately watches its own governance head"
     );
 }
 

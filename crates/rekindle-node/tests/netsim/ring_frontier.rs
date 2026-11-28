@@ -16,6 +16,7 @@ use tracing::Instrument as _;
 
 use crate::events;
 use crate::harness::{eventually, Community, Events};
+use crate::ring_census::member_watchers;
 use crate::watch_ring::creator_record;
 
 /// The ring arm's rebuild line (`watch.rs` `refresh_member_record`): a
@@ -65,9 +66,8 @@ async fn a_lost_op_gossip_reaches_the_ring_watcher_through_the_frontier() {
         eventually(&community.sim, Duration::from_secs(300), || async {
             community
                 .sim
-                .watchers_of_dflt(SUBKEY_COUNT)
-                .get(&creator)
-                .is_some_and(|w| w.contains(&1))
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
         })
         .await,
         "node 1 watches the creator's member record"
@@ -184,9 +184,8 @@ async fn a_moved_frontier_naming_only_held_heads_rebuilds_nothing() {
         eventually(&community.sim, Duration::from_secs(300), || async {
             community
                 .sim
-                .watchers_of_dflt(SUBKEY_COUNT)
-                .get(&creator)
-                .is_some_and(|w| w.contains(&1))
+                .watched_subkeys(1, &creator)
+                .contains(&FRONTIER)
         })
         .await,
         "node 1 watches the creator's member record"
@@ -244,7 +243,7 @@ async fn ring_settled(community: &Community) {
     let n = community.nodes.len();
     assert!(
         eventually(&community.sim, Duration::from_secs(300), || async {
-            let watched = community.sim.watchers_of_dflt(SUBKEY_COUNT);
+            let watched = member_watchers(community, FRONTIER);
             watched.len() >= n && watched.values().all(|w| !w.is_empty())
         })
         .await,
@@ -311,7 +310,7 @@ async fn one_op_relays_frontier_hints_only_for_the_heads_it_moved() {
     );
     tokio::time::sleep(Duration::from_secs(30)).await;
     community.sim.quiesce().await;
-    let watchers = community.sim.watchers_of_dflt(SUBKEY_COUNT);
+    let watchers = member_watchers(&community, FRONTIER);
     let bound: u64 = heads(&community)
         .iter()
         .map(|(record, seq)| {

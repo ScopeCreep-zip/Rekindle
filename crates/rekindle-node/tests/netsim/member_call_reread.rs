@@ -37,7 +37,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_netsim::{Fault, RELEASES_PEER_ROUTE, RPC_TIMEOUT};
 use rekindle_node::host::adapters::governance::MemberCallError;
 use rekindle_records::port::RouteClass;
-use rekindle_types::dht_layout::member_record::{ROUTES, SUBKEY_COUNT};
+use rekindle_types::dht_layout::member_record::ROUTES;
 
 use crate::harness::{eventually, Community};
 
@@ -79,11 +79,10 @@ async fn record_of(community: &Community, i: usize) -> String {
 
 /// The nodes (but 0) whose member records node 0 does not watch.
 async fn outside_ring(community: &Community) -> Vec<usize> {
-    let watched = community.sim.watchers_of_dflt(SUBKEY_COUNT);
     let mut outside = Vec::new();
     for i in 1..community.nodes.len() {
         let record = record_of(community, i).await;
-        if !watched.get(&record).is_some_and(|w| w.contains(&0)) {
+        if !community.sim.watched_subkeys(0, &record).contains(&ROUTES) {
             outside.push(i);
         }
     }
