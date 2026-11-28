@@ -545,8 +545,8 @@ pub fn add(
     };
     outdent::clip_window(&mut tree.root, &mut art)?;
     clip(&mut tree.root, ((None, None), [Some(0); 2]), &mut art)?;
-    let window = layout.attr_ci("Component").unwrap_or("MainWindow");
-    let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
+    let component = layout.attr_ci("Component").unwrap_or("MainWindow");
+    let declared = walk.by_name.get(&component.to_ascii_lowercase()).copied();
     let pack_min = (
         limit_of(declared, "MinWidth").unwrap_or(0),
         limit_of(declared, "MinHeight").unwrap_or(0),
@@ -569,5 +569,8 @@ pub fn add(
     content::restore(&mut tree, held)?;
     built.1.extend(walk.files);
     built.0.tree = Some(tree);
+    if window == SkinWindow::Main {
+        crate::shape::paint::deduplicate_legacy_frame(&mut built.0, &built.1);
+    }
     Ok(())
 }

@@ -8,8 +8,9 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{SkinError, SkinRule};
+use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule, TokenValue};
 
+use crate::images::PngEncoding;
 use crate::output::{self, Canonical};
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
 use crate::{access, images, manifest, package, regions, shape, sounds, tokens};
@@ -38,13 +39,33 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
     run_on(bytes, ENTRIES)
 }
 
-/// [`run`] with the tokens resolved and held over `table` alone: the import
-/// walks the base rows ([`crate::registry::BASE_TABLE`]) before it derives
-/// any dialog role (ST1 ruling 2).
+/// [`run`] with the tokens resolved and checked over `table` alone.
 ///
 /// # Errors
 /// The first rule the package breaks, naming the entry.
 pub fn run_on(bytes: &[u8], table: &[TokenEntry]) -> Result<Canonical, SkinError> {
+    let checked = check(bytes, table, PngEncoding::Canonical)?;
+    output::package(
+        &checked.manifest,
+        &checked.tokens,
+        &checked.images,
+        &checked.sounds,
+    )
+}
+
+/// Test a candidate's rules before encoding PNGs and writing the final pack.
+pub(crate) fn check_trial(bytes: &[u8], table: &[TokenEntry]) -> Result<(), SkinError> {
+    check(bytes, table, PngEncoding::Trial).map(|_| ())
+}
+
+struct Checked {
+    manifest: SkinManifest,
+    tokens: BTreeMap<String, BTreeMap<String, TokenValue>>,
+    images: BTreeMap<String, Vec<u8>>,
+    sounds: BTreeMap<String, Vec<u8>>,
+}
+
+fn check(bytes: &[u8], table: &[TokenEntry], png: PngEncoding) -> Result<Checked, SkinError> {
     let package = package::read(bytes)?;
     let manifest = manifest::parse(&package)?;
     let mut parsed = BTreeMap::new();
@@ -52,7 +73,7 @@ pub fn run_on(bytes: &[u8], table: &[TokenEntry]) -> Result<Canonical, SkinError
         let file = package.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         parsed.insert(v.tokens.clone(), tokens::parse(&v.tokens, file)?);
     }
-    let images = images::validate(&package, &manifest)?;
+    let images = images::validate_with(&package, &manifest, png)?;
     let sounds = sounds::validate(&package, &manifest)?;
     // The served form is what is checked: a pack whose tree leaves no room
     // for the Host's placements is refused (design `sk2a` §3). What is
@@ -71,5 +92,14 @@ pub fn run_on(bytes: &[u8], table: &[TokenEntry]) -> Result<Canonical, SkinError
         regions::validate(&served, &images, &resolved)?;
         access::icons::validate(&served, &images, base, &resolved)?;
     }
-    output::package(&manifest, &parsed, &images, &sounds)
+    Ok(Checked {
+        manifest,
+        tokens: parsed,
+        images,
+        sounds,
+    })
 }
+
+#[cfg(test)]
+#[path = "validate_tests.rs"]
+mod tests;

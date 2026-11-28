@@ -20,6 +20,7 @@ mod composite;
 pub mod css;
 mod mask;
 mod nodes;
+pub(crate) mod paint;
 mod silhouette;
 pub mod title;
 
