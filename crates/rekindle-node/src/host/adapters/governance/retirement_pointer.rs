@@ -20,7 +20,9 @@ fn owner_key(community: &str, device: &[u8; 32]) -> VaultKey {
     }
 }
 
-fn split_handoff(bytes: &[u8]) -> Result<(&str, &str, Option<&[u8]>), String> {
+/// The staged handoff: the retired record, its writer and the signed carrier
+/// (`commit_retirement_carrier`, its only writer, always stores all three).
+fn split_handoff(bytes: &[u8]) -> Result<(&str, &str, &[u8]), String> {
     let mut fields = bytes.splitn(3, |byte| *byte == b'\n');
     let record = fields
         .next()
@@ -28,9 +30,11 @@ fn split_handoff(bytes: &[u8]) -> Result<(&str, &str, Option<&[u8]>), String> {
     let writer = fields
         .next()
         .and_then(|field| std::str::from_utf8(field).ok());
-    match (record, writer) {
-        (Some(record), Some(writer)) => Ok((record, writer, fields.next())),
-        _ => Err("malformed staged retirement record and owner".into()),
+    match (record, writer, fields.next()) {
+        (Some(record), Some(writer), Some(carrier)) if !carrier.is_empty() => {
+            Ok((record, writer, carrier))
+        }
+        _ => Err("malformed staged retirement handoff".into()),
     }
 }
 
@@ -97,9 +101,7 @@ impl HostGovernance {
                 continue;
             }
             let Some(bytes) = bytes else { continue };
-            let (_, _, Some(encoded)) = split_handoff(&bytes)? else {
-                continue;
-            };
+            let (_, _, encoded) = split_handoff(&bytes)?;
             let decoded = rekindle_codec::governance_op::decode_op(encoded)
                 .map_err(|error| format!("read retirement carrier: {error}"))?;
             let GovernanceEntry::DeviceReEnrol(re_enrol) = &decoded.op.body else {
@@ -165,8 +167,8 @@ impl HostGovernance {
                 .get(&key)
                 .map_err(|error| format!("read retirement owner: {error}"))?
         };
-        // Older queued rows never staged an owner. A retried row can also
-        // reach here after its pointer landed and its staged owner was deleted.
+        // A retried row reaches here after its pointer landed and its staged
+        // handoff was deleted.
         let Some(bytes) = bytes else {
             return Ok(());
         };
