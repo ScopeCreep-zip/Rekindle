@@ -10,15 +10,15 @@ fn writer_from_fixture(control: &str) -> WriterKey {
 }
 
 #[test]
-fn writer_key_redacts_the_credential_in_originals_and_clones() {
+fn writer_key_redacts_all_fields_in_originals_and_clones() {
     let control = "synthetic-writer-credential";
     let writer = writer_from_fixture(control);
     for item in [&writer, &writer.clone()] {
         let output = format!("{item:?}");
-        assert!(output.contains("VLD0:fixture-owner"));
         assert!(
             !output.contains(control),
             "DHT writer Debug exposed its fixture credential"
         );
+        assert_eq!(output, "WriterKey(<redacted>)");
     }
 }
