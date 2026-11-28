@@ -18,8 +18,6 @@ mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
-/// Which skin frame a window wears, by label (the signal windows, `skin_windows`).
-pub use shape::frame_of_label;
 
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
