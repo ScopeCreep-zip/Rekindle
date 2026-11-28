@@ -12,6 +12,20 @@ pub trait ActionOps<R: Runtime>: PlatformExecutor<R> {
     // Actions (Keyboard/Pointer)
     // =========================================================================
 
+    /// Dispatch an Actions key natively when it participates in focus or activation.
+    async fn dispatch_action_key(
+        &self,
+        key: &str,
+        is_down: bool,
+        modifiers: &ModifierState,
+    ) -> Result<(), WebDriverErrorResponse> {
+        if let Some(native) = super::NativeKey::from_action(key) {
+            self.dispatch_native_key(native, is_down, *modifiers).await
+        } else {
+            self.dispatch_key_event(key, is_down, modifiers).await
+        }
+    }
+
     /// Dispatch a keyboard event with modifier state
     async fn dispatch_key_event(
         &self,

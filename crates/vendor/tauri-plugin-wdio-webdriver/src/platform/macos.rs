@@ -214,9 +214,23 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
         self.timeouts.script
     }
 
-    // =========================================================================
-    // Core JavaScript Execution
-    // =========================================================================
+    async fn dispatch_native_key(
+        &self,
+        key: super::NativeKey,
+        is_down: bool,
+        modifiers: super::ModifierState,
+    ) -> Result<(), WebDriverErrorResponse> {
+        super::macos_keys::dispatch_to_window(
+            &self.window,
+            key,
+            is_down,
+            modifiers,
+            self.timeouts.script,
+        )
+        .await
+    }
+
+    // Core JavaScript execution.
 
     async fn evaluate_js(&self, script: &str) -> Result<Value, WebDriverErrorResponse> {
         let (tx, rx) = oneshot::channel();

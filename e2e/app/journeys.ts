@@ -5,7 +5,7 @@ import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { CHANNEL_COMPOSER, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, communityWindowLabel, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, chooseSetting, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, settingShown, submitJoin, underTree } from "../walk/nav.ts";
-import { showSkinView, skinViewShown } from "./journeys_skins.ts";
+import { servedSkinShown, showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
 
 export { type User, newUser } from "./user.ts";
@@ -331,6 +331,9 @@ export async function openCommunity(b: Browser, name: string): Promise<void> {
   await doubleClick(b, await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS));
   await switchTo(b, label, NET_WAIT_MS);
   await shown(b, ".community-sidebar", NET_WAIT_MS);
+  // The window draws its own layout until its skin links: no step or shot
+  // may prove that (plan E7.14 (b)).
+  await servedSkinShown(b);
 }
 
 /** How many channel rows in the open community window show `name`. */
@@ -549,29 +552,6 @@ export async function joinCommunity(b: Browser, user: User, link: string, name: 
   else await (await shown(b, '[aria-label="Join Community"]')).click();
   await submitJoin(b, link, user.passphrase);
   await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS);
-}
-
-/**
- * From now on, record every `console.warn` and `console.error` the window
- * `b` is on writes (they still print), so a spec can assert one never
- * happened; `consoleSeen` reads them. Lasts until the page reloads.
- */
-export async function watchConsole(b: Browser): Promise<void> {
-  await b.execute(`if (!window.__rekindleConsole) {
-  window.__rekindleConsole = [];
-  for (const level of ["warn", "error"]) {
-    const original = console[level].bind(console);
-    console[level] = (...args) => {
-      window.__rekindleConsole.push(level + ": " + args.map((a) => (a instanceof Error ? a.message : typeof a === "string" ? a : JSON.stringify(a))).join(" "));
-      original(...args);
-    };
-  }
-}`);
-}
-
-/** What `watchConsole` recorded in the window `b` is on. */
-export async function consoleSeen(b: Browser): Promise<string[]> {
-  return (await b.execute("return window.__rekindleConsole || null;")) as string[];
 }
 
 /** `user` logs out from the buddy list (Logout, then the review) to the unlock screen under their name. */
