@@ -7,8 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rekindle_governance_runtime::anti_entropy::SeenFrontiers;
+use rekindle_governance_runtime::anti_entropy::{FrontierRead, SeenFrontiers};
 use rekindle_types::dht_layout::member_record::{FRONTIER, GOV_HEAD};
+use rekindle_utils::log_scrub::tag;
 
 /// The seqs `HeadAdvanced` hints were acted on at, per (member record,
 /// subkey): a seq is recorded only once read from the DHT, never from the
@@ -86,16 +87,27 @@ impl HeadHints {
     /// [`Self::finish_frontier`]) or, unless `forced` (a ring change, never
     /// gated on an inspect a lagging replica answers), when `seq` was read.
     pub fn claim_frontier(&mut self, record: &str, seq: Option<u64>, forced: bool) -> bool {
-        let unread = self
-            .read_at(record, FRONTIER)
-            .map_or(0, |read| read.saturating_add(1));
+        let last_read = self.read_at(record, FRONTIER);
+        let unread = last_read.map_or(0, |read| read.saturating_add(1));
         if let Some(flight) = self.in_flight.get_mut(record) {
             flight.missed = flight.missed.max(Some(seq.unwrap_or(unread)));
+            self.frontiers
+                .set_minimum(record, flight.claimed.max(flight.missed));
+            tracing::debug!(
+                record_tag = %tag(record),
+                ?seq,
+                forced,
+                claimed = ?flight.claimed,
+                missed = ?flight.missed,
+                "frontier trigger joined a read in flight"
+            );
             return false;
         }
         if !forced && seq.is_some_and(|seq| !self.worth_reading(record, FRONTIER, seq)) {
+            tracing::debug!(record_tag = %tag(record), ?seq, ?last_read, "frontier hint refused: sequence already read");
             return false;
         }
+        self.frontiers.set_minimum(record, seq);
         self.in_flight.insert(
             record.to_owned(),
             Flight {
@@ -103,42 +115,67 @@ impl HeadHints {
                 missed: None,
             },
         );
+        tracing::debug!(record_tag = %tag(record), ?seq, ?last_read, forced, "frontier trigger claimed");
         true
     }
 
-    /// Keep a complete read only when it reached the claim. An initial
-    /// short read gets a capped refetch of its own claim before servicing
-    /// any other trigger that arrived while it ran.
+    /// Record a complete read that reached the highest trigger. A newer
+    /// trigger that joined the flight gets its own forced read. Only a
+    /// second attempt for a claim goes through D8's refetch cap.
     pub fn finish_frontier(
         &mut self,
         record: &str,
         read: Option<u64>,
         refetched: bool,
-    ) -> Option<u64> {
-        let flight = self.in_flight.remove(record)?;
-        if let Some(read) =
-            read.filter(|read| flight.claimed.is_none_or(|claimed| *read >= claimed))
-        {
+    ) -> Option<FrontierRead> {
+        let Some(flight) = self.in_flight.remove(record) else {
+            tracing::debug!(record_tag = %tag(record), ?read, "frontier finish refused: no claim");
+            return None;
+        };
+        let minimum = flight.claimed.max(flight.missed);
+        if let Some(read) = read.filter(|read| Some(*read) >= minimum) {
             self.record_read(record, FRONTIER, read);
         }
-        let unread = |seq: &u64| read.is_none_or(|read| *seq > read);
-        let next = flight
-            .claimed
-            .filter(|seq| !refetched && unread(seq))
-            .or_else(|| {
-                flight
-                    .missed
-                    .filter(|seq| Some(*seq) != flight.claimed && unread(seq))
-            });
-        if let Some(seq) = next {
+        let recorded = self.read_at(record, FRONTIER);
+        let (next, reason) = if minimum.is_none() && recorded.is_none() {
+            (None, "trigger had no sequence and no complete read")
+        } else if minimum <= recorded {
+            (None, "read reached the claim")
+        } else if flight.missed > flight.claimed {
+            (
+                Some(FrontierRead::Hinted { minimum }),
+                "newer joined trigger needs its forced read",
+            )
+        } else if let Some(minimum) = minimum.filter(|_| !refetched) {
+            (
+                Some(FrontierRead::Refetch { minimum }),
+                "claim needs a capped refetch",
+            )
+        } else {
+            (None, "capped refetch finished below the claim")
+        };
+        if next.is_some() {
             self.in_flight.insert(
                 record.to_owned(),
                 Flight {
-                    claimed: Some(seq),
-                    missed: flight.missed.filter(|missed| *missed != seq),
+                    claimed: minimum,
+                    missed: None,
                 },
             );
+        } else {
+            self.frontiers.set_minimum(record, None);
         }
+        tracing::debug!(
+            record_tag = %tag(record),
+            ?read,
+            ?recorded,
+            ?next,
+            claimed = ?flight.claimed,
+            missed = ?flight.missed,
+            refetched,
+            reason,
+            "frontier read finished"
+        );
         next
     }
 

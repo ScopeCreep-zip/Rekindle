@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 
+use rekindle_governance_runtime::anti_entropy::FrontierRead;
 use rekindle_types::dht_layout::member_record::{FRONTIER, GOV_HEAD};
 
 use super::HeadHints;
@@ -78,18 +79,31 @@ fn a_write_refused_mid_flight_is_read_again_once() {
     let mut hints = HeadHints::default();
     assert!(hints.claim_frontier("M", Some(5), false));
     assert!(!hints.claim_frontier("M", Some(6), false));
-    assert_eq!(hints.finish_frontier("M", Some(5), false), Some(6));
+    assert_eq!(
+        hints.finish_frontier("M", Some(5), false),
+        Some(FrontierRead::Hinted { minimum: Some(6) })
+    );
     assert_eq!(hints.finish_frontier("M", Some(6), true), None);
 
     assert!(hints.claim_frontier("M", Some(7), false));
     assert!(!hints.claim_frontier("M", Some(7), true));
     assert_eq!(
         hints.finish_frontier("M", None, false),
-        Some(7),
+        Some(FrontierRead::Refetch { minimum: 7 }),
         "incomplete: read again"
     );
+    assert!(hints.record_read("M", FRONTIER, 7));
     assert!(!hints.claim_frontier("M", Some(u64::MAX), false));
-    assert_eq!(hints.finish_frontier("M", Some(7), true), Some(u64::MAX));
+    assert_eq!(
+        hints.finish_frontier("M", Some(7), true),
+        Some(FrontierRead::Hinted {
+            minimum: Some(u64::MAX)
+        })
+    );
+    assert_eq!(
+        hints.finish_frontier("M", Some(7), false),
+        Some(FrontierRead::Refetch { minimum: u64::MAX })
+    );
     assert_eq!(
         hints.finish_frontier("M", Some(7), true),
         None,
@@ -190,14 +204,17 @@ fn the_ring_and_the_sweeps_share_one_frontier_read_set() {
 }
 
 #[test]
-fn a_lagging_read_keeps_the_original_claim_unread() {
+fn a_joined_claim_keeps_older_values_out_of_the_shared_read_marker() {
     let mut hints = HeadHints::default();
+    let sweep = hints.frontiers();
     assert!(hints.claim_frontier("M", Some(4), true));
     assert!(!hints.claim_frontier("M", Some(5), true));
-    assert_eq!(hints.finish_frontier("M", Some(3), false), Some(4));
-    assert_eq!(hints.frontiers().get("M"), None);
-    assert_eq!(hints.finish_frontier("M", Some(4), true), Some(5));
-    assert_eq!(hints.frontiers().get("M"), Some(4));
-    assert_eq!(hints.finish_frontier("M", Some(5), true), None);
-    assert_eq!(hints.frontiers().get("M"), Some(5));
+    assert!(!sweep.mark_read("M", 4));
+    assert_eq!(
+        hints.finish_frontier("M", Some(4), false),
+        Some(FrontierRead::Hinted { minimum: Some(5) })
+    );
+    assert_eq!(sweep.get("M"), None);
+    assert_eq!(hints.finish_frontier("M", Some(5), false), None);
+    assert_eq!(sweep.get("M"), Some(5));
 }

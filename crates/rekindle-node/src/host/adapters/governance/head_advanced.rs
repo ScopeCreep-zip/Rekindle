@@ -18,6 +18,7 @@ use rekindle_presence::community::Observed;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
 use rekindle_types::id::PseudonymKey;
+use rekindle_utils::log_scrub::tag;
 
 use super::moderation::pseudonym;
 use super::HostGovernance;
@@ -228,6 +229,14 @@ impl HostGovernance {
                 c.head_hints
                     .worth_reading(&hint.member_record, hint.subkey, hint.seq)
             });
+        if hint.subkey == FRONTIER {
+            tracing::debug!(
+                record_tag = %tag(&hint.member_record),
+                seq = hint.seq,
+                decision = if worth { "dispatch to claim" } else { "already read or community absent" },
+                "frontier hint checked against the last read"
+            );
+        }
         if worth {
             let host = self.clone();
             let community = community_id.to_owned();

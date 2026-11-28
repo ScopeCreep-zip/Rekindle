@@ -9,6 +9,7 @@
 
 use rekindle_secrets::record_writer::RecordWriterSecret;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -70,6 +71,13 @@ struct Pending {
     droppable: bool,
 }
 
+/// A replica value served to the next few gets of one subkey.
+#[derive(Debug)]
+pub(crate) struct LaggingGets {
+    pub value: RecordValue,
+    pub remaining: NonZeroUsize,
+}
+
 /// Faults in force (plan C9.3).
 #[derive(Debug, Default)]
 pub(crate) struct Faults {
@@ -97,7 +105,7 @@ pub(crate) struct Faults {
     /// sends that are dropped ([`crate::Fault::DropFrom`]); read only by
     /// [`Network::lost_in_transit`], never by the DHT model.
     pub drop_from: HashMap<usize, u32>,
-    pub lagging_gets: HashMap<(usize, String, u32), rekindle_records::port::RecordValue>,
+    pub lagging_gets: HashMap<(usize, String, u32), LaggingGets>,
     pub drop_value_changes: HashSet<(usize, String)>,
     /// Nodes whose app calls are never answered (the caller times out).
     pub unanswered: HashSet<usize>,

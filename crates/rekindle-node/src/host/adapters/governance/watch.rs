@@ -13,6 +13,7 @@ use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dht_layout::member_record::{BEAT, CARD, FRONTIER, GOV_HEAD, OUTBOX, ROUTES};
+use rekindle_utils::log_scrub::tag;
 
 #[cfg(test)]
 #[path = "watch_tests.rs"]
@@ -71,6 +72,9 @@ impl HostGovernance {
         // A community we were removed from is read-only history: a late
         // change opens nothing (plan E3.2 S9, R3-1).
         if self.ctx.communities.own_removal(&community).is_some() {
+            if rebuilds_on(subkeys) {
+                tracing::debug!(record_tag = %tag(record), "ring frontier refused: removed from community");
+            }
             return true;
         }
         // The card (0) is read by its watchers alone, never relayed (plan
@@ -103,7 +107,12 @@ impl HostGovernance {
             let seq = seqs
                 .as_ref()
                 .and_then(|s| s.get(FRONTIER as usize).copied().flatten());
-            tracing::debug!(%community, record, ?seq, "ring member's frontier changed");
+            tracing::debug!(
+                record_tag = %tag(record),
+                ?seq,
+                relay = frontier_follows_head,
+                "ring member's frontier changed"
+            );
             self.refresh_member_record(&community, record, seq, true)
                 .await;
         } else {
@@ -175,12 +184,12 @@ impl HostGovernance {
         seq: Option<u64>,
         forced: bool,
     ) -> bool {
-        self.ctx
-            .communities
-            .map()
-            .write()
-            .get_mut(community)
-            .is_some_and(|c| c.head_hints.claim_frontier(record, seq, forced))
+        let mut communities = self.ctx.communities.map().write();
+        let Some(state) = communities.get_mut(community) else {
+            tracing::debug!(record_tag = %tag(record), ?seq, forced, "frontier trigger refused: community absent");
+            return false;
+        };
+        state.head_hints.claim_frontier(record, seq, forced)
     }
 
     /// End the claimed catch-up, marking the frontier read at `read` when
@@ -193,13 +202,13 @@ impl HostGovernance {
         record: &str,
         read: Option<u64>,
         refetched: bool,
-    ) -> Option<u64> {
-        self.ctx
-            .communities
-            .map()
-            .write()
-            .get_mut(community)
-            .and_then(|c| c.head_hints.finish_frontier(record, read, refetched))
+    ) -> Option<FrontierRead> {
+        let mut communities = self.ctx.communities.map().write();
+        let Some(state) = communities.get_mut(community) else {
+            tracing::debug!(record_tag = %tag(record), ?read, "frontier finish refused: community absent");
+            return None;
+        };
+        state.head_hints.finish_frontier(record, read, refetched)
     }
 
     /// Read `record`'s frontier and, when the read stored a head we lacked,
@@ -223,12 +232,6 @@ impl HostGovernance {
         forced: bool,
     ) {
         if !self.claim_frontier(community, record, seq, forced) {
-            tracing::debug!(
-                community,
-                record,
-                ?seq,
-                "member's frontier already read or being read"
-            );
             return;
         }
         let mut stored = 0;
@@ -243,7 +246,7 @@ impl HostGovernance {
             let Some(again) = self.finish_frontier(community, record, seq_read, refetched) else {
                 break;
             };
-            mode = FrontierRead::Refetch { minimum: again };
+            mode = again;
         }
         if stored == 0 {
             tracing::debug!(
@@ -264,8 +267,7 @@ impl HostGovernance {
     }
 
     /// Store the heads `record`'s frontier names that we do not hold; the
-    /// frontier seq read (this read's when every head is stored), and how
-    /// many were stored.
+    /// last frontier seq marked as read and the number of heads stored.
     async fn catch_up_record(
         &self,
         community: &str,
@@ -307,8 +309,8 @@ impl HostGovernance {
             stored,
             "ring change: frontier heads stored"
         );
-        // The shared seq: this read's when it completed, else the last one
-        // read (by any path), which a refused trigger is compared against.
+        // The shared marker advances only when all heads were stored and
+        // the read reached every trigger accepted into this flight.
         (seen.get(record), stored)
     }
 }

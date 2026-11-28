@@ -1,10 +1,12 @@
 //! The faults a scenario puts in force (plan C9.3) and how the sim
 //! applies them; split from `lib.rs` along its seam.
 
+use std::num::NonZeroUsize;
+
 use rekindle_records::port::{RecordSchema, RouteClass};
 
 use super::{pair, toggle, Netsim, PortEvent};
-use crate::network::{Faults, NetRecord};
+use crate::network::{Faults, LaggingGets, NetRecord};
 use crate::records::GET_COUNT;
 
 /// A fault to put in force (plan C9.3).
@@ -106,12 +108,13 @@ pub enum Fault {
         key: String,
         min_seqnum: Option<u32>,
     },
-    /// The next network get reaches only replicas at the currently stored
-    /// value, even if the writer reaches other replicas before that get.
-    NextGetFromLaggingReplica {
+    /// The next `count` network gets reach only replicas at the currently stored
+    /// value, even if the writer reaches other replicas before those gets.
+    GetsFromLaggingReplica {
         node: usize,
         key: String,
         subkey: u32,
+        count: NonZeroUsize,
     },
     /// Drop value changes for one watcher and record, independently of app
     /// calls and of DHT reads and writes.
@@ -461,16 +464,22 @@ impl Netsim {
                     None => min_seqnums.remove(&(node, key)),
                 };
             }
-            Fault::NextGetFromLaggingReplica { node, key, subkey } => {
+            Fault::GetsFromLaggingReplica {
+                node,
+                key,
+                subkey,
+                count,
+            } => {
                 let value = self
                     .network_get(&key, subkey)
                     .expect("establish the replica's value before arming the fault");
-                self.net
-                    .inner
-                    .lock()
-                    .faults
-                    .lagging_gets
-                    .insert((node, key, subkey), value);
+                self.net.inner.lock().faults.lagging_gets.insert(
+                    (node, key, subkey),
+                    LaggingGets {
+                        value,
+                        remaining: count,
+                    },
+                );
             }
             Fault::DropValueChanges { node, key, drop } => {
                 let changes = &mut self.net.inner.lock().faults.drop_value_changes;
