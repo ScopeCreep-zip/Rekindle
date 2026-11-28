@@ -217,7 +217,7 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
                 };
                 let is_own = own == Some(&message.sender_pseudonym);
                 ThreadMessageView {
-                    admission: item.admission,
+                    admission: item.admission.clone(),
                     is_own,
                     send_state: if is_own {
                         SendState::Sent

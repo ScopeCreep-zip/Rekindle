@@ -1,7 +1,16 @@
 //! Reader-side channel post placeholders.
 
-use rekindle_types::dto::channel_message::PostAdmission;
+use rekindle_types::dto::channel_message::PostRefusal;
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+
+/// A stored verdict. The Host adds the user-facing text when it serves history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PostStatus {
+    Pending,
+    Refused { reason: PostRefusal },
+}
 
 /// A pending or refused post in a channel history page.
 #[derive(Debug)]
@@ -9,7 +18,7 @@ pub struct Placeholder {
     pub sender: String,
     pub message_id: String,
     pub timestamp: i64,
-    pub status: PostAdmission,
+    pub status: PostStatus,
 }
 
 /// The keys and metadata of a post as its verified chain carries them.
@@ -31,7 +40,7 @@ pub struct Post<'a> {
 pub fn set(
     conn: &Connection,
     post: Post<'_>,
-    status: Option<PostAdmission>,
+    status: Option<PostStatus>,
 ) -> rusqlite::Result<bool> {
     let changed = if let Some(status) = status {
         let json = serde_json::to_string(&status)

@@ -14,7 +14,7 @@ use rekindle_client::fmt;
 use rekindle_client::DaemonClient;
 use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_types::dto::channel_message::ChannelMessageView;
+use rekindle_types::dto::channel_message::{ChannelMessageView, PostAdmission};
 use rekindle_types::dto::community::CommunityMemberView;
 
 use crate::cli::ChannelCmd;
@@ -184,19 +184,13 @@ pub fn history_text(view: &ChannelMessageView, names: &HashMap<String, String>) 
     if view.history_gap_through.is_some() {
         return format!("── {sender}: some earlier messages could not be delivered ──");
     }
-    use rekindle_types::dto::channel_message::{PostAdmission, PostRefusal};
-    let body = if let Some(admission) = view.admission {
+    let body = if let Some(admission) = &view.admission {
         match admission {
-            PostAdmission::Pending => "(pending governance verification)",
-            PostAdmission::Refused { reason } => match reason {
-                PostRefusal::MissingCut => "(refused: missing governance reference)",
-                PostRefusal::NotMember => "(refused: author was not a member)",
-                PostRefusal::TimedOut => "(refused: author was timed out)",
-                PostRefusal::UnknownStream => "(refused: stream was unknown)",
-                PostRefusal::MissingPermission => "(refused: author lacked permission to post)",
-            },
+            PostAdmission::Pending { text }
+            | PostAdmission::Refused {
+                reason_text: text, ..
+            } => text.clone(),
         }
-        .to_owned()
     } else if let Some(by) = &view.removed_by {
         fmt::removed_by(&fmt::member_name(names, by))
     } else if view.decryption_failed {

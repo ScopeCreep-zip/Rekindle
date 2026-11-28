@@ -148,7 +148,9 @@ async fn a_channel_post_is_judged_before_or_after_the_role_revocation() {
                     row["body"] == ""
                         && row["admission"]
                             == serde_json::json!({
-                                "status": "refused", "reason": "missingPermission"
+                                "status": "refused",
+                                "reason": "missingPermission",
+                                "reasonText": "This post was refused because the author did not have permission to post here."
                             })
                 })
         })
@@ -199,9 +201,14 @@ async fn a_channel_post_stays_pending_until_its_governance_cut_resolves() {
     let id = message_id(&posted);
     assert!(
         eventually(&community.sim, LIMIT, || async {
-            post_row(&community, 1, id)
-                .await
-                .is_some_and(|row| row["body"] == "" && row["admission"]["status"] == "pending")
+            post_row(&community, 1, id).await.is_some_and(|row| {
+                row["body"] == ""
+                    && row["admission"]
+                        == serde_json::json!({
+                            "status": "pending",
+                            "text": "Waiting to verify that this post was allowed."
+                        })
+            })
         })
         .await,
         "the reader exposes a pending placeholder without opening the body"

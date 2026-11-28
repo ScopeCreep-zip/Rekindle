@@ -18,7 +18,7 @@ use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::id::{ChannelId, PseudonymKey, ThreadId};
 
-use super::HostChannel;
+use super::{admission::admission_view, HostChannel};
 
 impl HostChannel {
     /// Every entry of `channel_id` in `community_id`'s channel outboxes,
@@ -152,7 +152,7 @@ impl HostChannel {
             stream_seq: decoded.stream_seq,
             committed_at: decoded.committed_at,
             entry: decoded.entry,
-            admission,
+            admission: admission.map(admission_view),
         })
     }
 
