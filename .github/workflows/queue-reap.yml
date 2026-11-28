@@ -1,0 +1,146 @@
+name: Queue Reap
+
+on:
+  merge_group:
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [checks_requested]
+  schedule:
+    - cron: '4-59/5 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: queue-reap
+  cancel-in-progress: false
+
+jobs:
+  reap:
+    name: Cancel obsolete merge-group runs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      # Use only GitHub API metadata. This job never checks out a queue ref.
+      - name: Compare runs with the live merge queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_HEAD: ${{ github.event.merge_group.head_sha }}
+          TRUNK: codex/communities-merge-cli-claude-remote
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          owner, name = repository.split("/")
+          trunk = os.environ["TRUNK"]
+          current_run = int(os.environ["GITHUB_RUN_ID"])
+          event_head = os.environ["EVENT_HEAD"]
+          queue_prefix = f"refs/heads/gh-readonly-queue/{trunk}/"
+          queue_ref_pattern = re.compile(re.escape(queue_prefix) + r"pr-([1-9][0-9]*)-[0-9a-f]+")
+          sha_pattern = re.compile(r"[0-9a-f]{40}")
+          api_root = f"repos/{repository}"
+          query = """
+          query($owner: String!, $repo: String!, $branch: String!, $endCursor: String) {
+            repository(owner: $owner, name: $repo) {
+              mergeQueue(branch: $branch) {
+                entries(first: 100, after: $endCursor) {
+                  totalCount
+                  pageInfo { hasNextPage endCursor }
+                  nodes { id headCommit { oid } }
+                }
+              }
+            }
+          }
+          """
+
+          def gh_api(*args):
+              return subprocess.check_output(["gh", "api", *args], text=True, timeout=60)
+
+          def live_heads():
+              pages = json.loads(gh_api(
+                  "graphql", "--paginate", "--slurp", "-f", f"query={query}",
+                  "-f", f"owner={owner}", "-f", f"repo={name}", "-f", f"branch={trunk}",
+              ))
+              connections = []
+              for page in pages:
+                  if page.get("errors"):
+                      raise RuntimeError("Could not read the live merge queue")
+                  connections.append(page["data"]["repository"]["mergeQueue"]["entries"])
+              if not connections or connections[-1]["pageInfo"]["hasNextPage"] is not False:
+                  raise RuntimeError("Did not receive the complete merge queue")
+              nodes = [node for page in connections for node in page["nodes"]]
+              if len({node["id"] for node in nodes}) != len(nodes) or any(
+                  page["totalCount"] != len(nodes) for page in connections
+              ):
+                  raise RuntimeError("Merge queue changed during pagination")
+              heads = {node["headCommit"]["oid"] for node in nodes if node["headCommit"] is not None}
+              if any(not sha_pattern.fullmatch(sha) for sha in heads):
+                  raise RuntimeError("Malformed merge-queue head SHA")
+              return heads
+
+          def active_runs():
+              for status in ("queued", "in_progress"):
+                  pages = json.loads(gh_api(
+                      "--method", "GET", "--paginate", "--slurp", f"{api_root}/actions/runs",
+                      "-f", "event=merge_group", "-f", f"status={status}", "-F", "per_page=100",
+                  ))
+                  for page in pages:
+                      for run in page["workflow_runs"]:
+                          if run["event"] == "merge_group" and run["status"] in ("queued", "in_progress"):
+                              yield run
+
+          def pull_state(number):
+              # This repository is public. The anonymous read avoids granting
+              # the cancellation token an additional pull-requests permission.
+              url = f'{os.environ["GITHUB_API_URL"]}/{api_root}/pulls/{number}'
+              request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  pull = json.load(response)
+              if pull["number"] != int(number):
+                  raise RuntimeError("Unexpected pull request response")
+              if pull["merged"] is True:
+                  return "merged"
+              if pull["state"] == "open" and pull["merged"] is False:
+                  return "open"
+              return None
+
+          def ref_still_points_to_head(ref, sha):
+              refs = json.loads(gh_api(f"{api_root}/git/matching-refs/{ref.removeprefix('refs/')}"))
+              if not isinstance(refs, list):
+                  raise RuntimeError("Unexpected queue ref response")
+              return any(item["ref"] == ref and item["object"]["sha"] == sha for item in refs)
+
+          runs = {run["id"]: run for run in active_runs()}
+          heads = live_heads()
+          for run_id, run in runs.items():
+              sha = run["head_sha"]
+              ref = run["head_branch"] or ""
+              if not ref.startswith("refs/heads/"):
+                  ref = f"refs/heads/{ref}"
+              match = queue_ref_pattern.fullmatch(ref)
+              if run_id == current_run or not match or not sha_pattern.fullmatch(sha):
+                  continue
+              if sha == event_head or sha in heads:
+                  continue
+
+              number = match[1]
+              state = pull_state(number)
+              if state is None:
+                  continue
+              # Recheck both views just before the write. A ref still
+              # pointing at the exact SHA covers queue API propagation lag.
+              if sha in live_heads() or ref_still_points_to_head(ref, sha):
+                  continue
+              gh_api("--method", "POST", f"{api_root}/actions/runs/{run_id}/cancel")
+              print(
+                  f"Cancelled run {run_id}: {sha} is absent from the live queue, "
+                  f"its queue ref no longer points at it, and PR #{number} is {state}.",
+                  flush=True,
+              )
+          PY

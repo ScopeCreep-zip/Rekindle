@@ -312,6 +312,10 @@ pub enum CommandResult {
     CommunityInfoLoaded {
         detail: rekindle_types::display::CommunityDetail,
     },
+    CommunityPresencePolicyLoaded {
+        community: String,
+        policy: rekindle_types::presence::PresenceSharingPolicy,
+    },
     PermissionCatalogueLoaded(rekindle_types::dto::permission_catalogue::PermissionCatalogue),
     FriendListLoaded {
         friends: Vec<rekindle_types::dto::friends::Friend>,

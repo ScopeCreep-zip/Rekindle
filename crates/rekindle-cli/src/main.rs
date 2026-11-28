@@ -11,6 +11,9 @@
 // `rekindle_utils::text::{prefix, abbreviate}` instead (plan C2).
 #![deny(clippy::string_slice)]
 
+#[cfg(all(feature = "webdriver-test", not(debug_assertions)))]
+compile_error!("the webdriver-test feature is for debug builds only");
+
 mod cli;
 mod config;
 mod error;
@@ -190,6 +193,23 @@ async fn dispatch_command(
         Command::Friend(cmd) => friends::dispatch(&cmd, client, mode).await,
         Command::Dm(cmd) => dm::dispatch(&cmd, client, mode).await,
         Command::Group(cmd) => group_dm::dispatch(&cmd, client, mode).await,
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        Command::WebdriverPostSkippingLocalPermission {
+            channel,
+            body,
+            reply_to,
+        } => {
+            let value = helpers::send(
+                client,
+                rekindle_ipc::protocol::IpcRequest::WebdriverPostSkippingLocalPermission {
+                    channel,
+                    body,
+                    reply_to,
+                },
+            )
+            .await?;
+            output::format::print_structured(&value, mode)
+        }
         Command::Community(cmd) => community::dispatch(&cmd, client, mode).await,
         Command::Channel(cmd) => channel::dispatch(&cmd, client, mode).await,
         Command::Voice(cmd) => voice::dispatch(&cmd, client, mode).await,

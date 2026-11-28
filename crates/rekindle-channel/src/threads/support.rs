@@ -8,8 +8,6 @@ use rekindle_types::id::ChannelId;
 
 use crate::deps::{ChannelMessagingDeps, OutboxItem, PendingThreadReply};
 use crate::error::ChannelError;
-use crate::outbox_seal::open_entry_body;
-use crate::send::BodyPosition;
 
 pub(super) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
     hex::decode(hex_str)
@@ -59,7 +57,8 @@ pub(super) struct ThreadReplies {
 }
 
 /// The replies of `thread_id`: each message entry of the thread's stream
-/// across its authors' outboxes, naming its own author.
+/// across its authors' outboxes, naming its own author. A verified entry
+/// may still need causal admission.
 pub(super) async fn thread_replies<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -100,34 +99,6 @@ pub(super) async fn thread_replies<D: ChannelMessagingDeps>(
     })
 }
 
-/// A reply's body, opened under exactly its generation of the parent
-/// channel's text scope at `{anchor, thread, author, streamSeq}`. `None`
-/// when that key is not held or the body does not authenticate there.
-pub(super) fn open_thread_body<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    scope: KeyScope,
-    thread_id: &str,
-    item: &OutboxItem,
-    message: &ChannelMessage,
-) -> Option<String> {
-    let at = BodyPosition {
-        anchor: community_id,
-        channel_id: thread_id,
-        author: &item.author.0,
-        stream_seq: item.stream_seq,
-    };
-    open_entry_body(
-        &*deps.keys(),
-        community_id,
-        scope,
-        message.mek_generation,
-        at,
-        &message.ciphertext,
-    )
-    .and_then(|plaintext| String::from_utf8(plaintext).ok())
-}
-
 /// A thread's activity as its replies leave it.
 pub(super) struct ThreadActivity {
     /// The newest counted reply's activity time in seconds, or creation time.
@@ -146,7 +117,10 @@ pub(super) async fn thread_activity<D: ChannelMessagingDeps>(
     archived_op: Option<&str>,
     created_at: u64,
 ) -> Result<ThreadActivity, ChannelError> {
-    let replies = thread_replies(deps, community_id, thread_id).await?;
+    let mut replies = thread_replies(deps, community_id, thread_id).await?;
+    replies
+        .verified
+        .retain(|(item, _)| item.admission.is_none());
     let last_activity = replies
         .verified
         .iter()

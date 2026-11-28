@@ -585,3 +585,6 @@ fn community_focus_maps_arguments_to_the_host_request() {
         assert_eq!(kind, expected_kind);
     }
 }
+
+#[path = "presence_command_tests.rs"]
+mod presence_command_tests;

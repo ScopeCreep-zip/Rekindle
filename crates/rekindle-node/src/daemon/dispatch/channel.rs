@@ -179,10 +179,15 @@ pub(crate) fn resolve_channel(
     needle: &str,
 ) -> Option<(rekindle_types::id::ChannelId, String)> {
     let gov = ctx.communities.governance_state(community_id)?;
-    gov.channels.iter().find_map(|(channel_id, channel)| {
-        let hex_id = hex::encode(channel_id.0);
-        (channel.name == needle || hex_id == needle).then_some((*channel_id, hex_id))
-    })
+    if let Some(id) = gov.channels.keys().find(|id| hex::encode(id.0) == needle) {
+        return Some((*id, needle.to_owned()));
+    }
+    let mut named = gov
+        .channels
+        .iter()
+        .filter(|(_, channel)| channel.name == needle);
+    let (id, _) = named.next()?;
+    named.next().is_none().then(|| (*id, hex::encode(id.0)))
 }
 
 /// Create a channel. `channel.position` is assigned here (after the

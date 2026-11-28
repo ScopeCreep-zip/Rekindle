@@ -59,7 +59,7 @@ Rejected categories:
 Three automated systems run continuously:
 
 | System | Cadence | Scope | Workflow |
-|--------|---------|-------|----------|
+| -------- | --------- | ------- | ---------- |
 | **Dependabot** | Weekly (Monday 09:00 UTC) | Cargo + npm + GitHub Actions | [`/.github/dependabot.yml`](../../.github/dependabot.yml) |
 | **`cargo-deny`** (advisories from RustSec, bans, licenses, sources; the one advisory policy is `deny.toml [advisories]`) | Daily (04:13 UTC scheduled) + every PR + every push | Rust workspace | [`/.github/workflows/audit.yml`](../../.github/workflows/audit.yml) |
 | **`cargo deny check`** (advisories, bans, licenses, sources) | Every local gate run | Rust workspace | `cargo xtask check` (`check-supply-chain`, plan SC1) |
@@ -83,7 +83,7 @@ We adopt the spirit of BOD 22-01 with adjusted timelines for an OSS
 publisher:
 
 | Timeline | Action |
-|----------|--------|
+| ---------- | -------- |
 | **0–48 hours** | Triage. Confirm the CVE applies to a code path Rekindle reaches. Author a VEX statement (`affected` / `unaffected` / `under_investigation`). |
 | **≤ 7 days** | Patch shipped, regardless of release cadence, if the CVE is `affected`. Hotfix process per [`../contributor/release-process.md`](../contributor/release-process.md). |
 | **≤ 14 days** | If `unaffected`, the rationale is published in the SBOM's VEX section so downstream consumers know they don't need to act. |

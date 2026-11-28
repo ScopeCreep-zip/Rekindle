@@ -20,8 +20,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_codec::member_record::{BeatState, PresenceBeat, BEAT_PERIOD_MS};
-use rekindle_types::presence::SessionExtras;
+use rekindle_codec::member_record::{BeatState, PresenceBeat, SealedExtras, BEAT_PERIOD_MS};
 
 use crate::deps::VoicePresenceRow;
 
@@ -79,10 +78,8 @@ struct Entry {
     seen_at: u64,
     /// The beat's voice channel.
     voice_channel: Option<String>,
-    /// The beat's extras, opened with our community key and filtered by
-    /// our sharing policy (`None` when absent, sealed under a generation we
-    /// don't hold, or not shared back).
-    extras: Option<SessionExtras>,
+    /// The verified beat's extras, still sealed.
+    extras: Option<SealedExtras>,
 }
 
 impl Entry {
@@ -157,7 +154,7 @@ impl BeatView {
                 shown,
                 seen_at: now_ms,
                 voice_channel: beat.voice_channel.clone(),
-                extras: None,
+                extras: beat.extras.clone(),
             },
         );
         let current = Self::selected(records).expect("the observed record was inserted");
@@ -170,38 +167,23 @@ impl BeatView {
     }
 
     fn selected(records: &BTreeMap<String, Entry>) -> Option<&Entry> {
+        Self::selected_record(records).map(|(_, entry)| entry)
+    }
+
+    fn selected_record(records: &BTreeMap<String, Entry>) -> Option<(&String, &Entry)> {
         records
-            .values()
-            .max_by_key(|e| (e.shown.is_present(), e.seen_at))
+            .iter()
+            .max_by_key(|(_, e)| (e.shown.is_present(), e.seen_at))
     }
 
-    /// Keep extras for a member with a single record.
-    pub fn set_extras(&mut self, member: &str, seq: u64, extras: Option<SessionExtras>) {
-        self.set_record_extras(member, member, seq, extras);
-    }
-
-    /// Keep extras from the same record and beat that is still held.
-    pub fn set_record_extras(
-        &mut self,
-        member: &str,
-        record: &str,
-        seq: u64,
-        extras: Option<SessionExtras>,
-    ) {
-        if let Some(entry) = self
-            .members
-            .get_mut(member)
-            .and_then(|records| records.get_mut(record))
-            .filter(|e| e.seq == seq)
-        {
-            entry.extras = extras;
-        }
-    }
-
-    /// The present device's extras, if their beat carried readable ones.
+    /// The selected live record and its verified, sealed extras.
     #[must_use]
-    pub fn extras(&self, member: &str) -> Option<&SessionExtras> {
-        Self::selected(self.members.get(member)?).and_then(|e| e.extras.as_ref())
+    pub fn sealed_extras(&self, member: &str) -> Option<(&str, &SealedExtras)> {
+        let (record, entry) = Self::selected_record(self.members.get(member)?)?;
+        if !entry.shown.is_present() {
+            return None;
+        }
+        Some((record, entry.extras.as_ref()?))
     }
 
     /// Every member's current voice claim.

@@ -115,6 +115,7 @@ impl HostChannel {
     pub(super) async fn queue_post_impl(&self, post: &ChannelPost) -> Result<(), ChannelError> {
         // An op on other rows has no `messages` row to echo it.
         let posts = self.channel_posts()?;
+        let post = &self.with_post_cut(post).await?;
         let queued = if post.entry.has_row() {
             posts.queue(post).await
         } else {
@@ -129,9 +130,23 @@ impl HostChannel {
         deadline_ms: i64,
     ) -> Result<(), ChannelError> {
         self.channel_posts()?
-            .queue_waiting(post, deadline_ms)
+            .queue_waiting(&self.with_post_cut(post).await?, deadline_ms)
             .await
             .map_err(|e| outbox(&e))
+    }
+
+    async fn with_post_cut(&self, post: &ChannelPost) -> Result<ChannelPost, ChannelError> {
+        let mut post = post.clone();
+        if post.entry.needs_governance_cut() {
+            post.governance_cut = rekindle_governance_runtime::post_cut::capture_post_cut(
+                &self.gov,
+                &post.community,
+                None,
+            )
+            .await
+            .map_err(stored)?;
+        }
+        Ok(post)
     }
 
     pub(super) async fn waiting_posts_impl(&self, community_id: &str) -> Vec<ChannelPost> {

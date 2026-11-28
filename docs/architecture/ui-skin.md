@@ -86,7 +86,7 @@ URL path; the SolidJS `Switch` in `main.tsx` reads
 `window.location.pathname` and renders the matching component.
 
 | Window | Label | Path | Notes |
-|--------|-------|------|-------|
+| -------- | ------- | ------ | ------- |
 | Login | `login` | `/login` | 380 × 480, opened by `open_login` at setup |
 | Buddy list | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
 | Chat | `chat-{pubkey}`, `chat-{record-key}` | `/chat?peer={key}`, `/chat?group={key}` | One per 1:1 friend conversation or group DM |
@@ -301,7 +301,7 @@ for visual reference. **Do not execute the binary;** the files there
 are static assets only:
 
 | Asset | Purpose |
-|-------|---------|
+| ------- | --------- |
 | `skins/Symbiosis/*.gif` (460 files) | Per-element skin assets (window edges, buttons, status dots, gradients) |
 | `skins/Symbiosis/*.xml` | Layout definitions linking assets to UI regions |
 | `skins/Symbiosis/Themes.xml` | Colour palette overrides |
@@ -316,7 +316,7 @@ theme tokens, and compose the component using `@apply` semantics.
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | Window builders (frameless + transparent), login included | `src-tauri/src/windows/mod.rs` |
 | Pathname-based routing | `src/main.tsx` |
 | Per-window components | `src/windows/{LoginWindow,BuddyListWindow,ChatWindow,CommunityWindow,SettingsWindow,ProfileWindow}.tsx` |

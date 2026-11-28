@@ -70,6 +70,7 @@ pub mod own_frontier;
 mod own_op;
 pub mod own_record_watch;
 pub mod partial;
+pub mod post_cut;
 pub mod quarantine;
 pub mod rebuild_flight;
 pub(crate) mod records;

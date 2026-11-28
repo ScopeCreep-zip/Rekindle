@@ -93,6 +93,18 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "set_share_game_totals",
         HostCall::Request("SetShareGameTotals"),
     ),
+    (
+        "get_presence_policy",
+        HostCall::Request("CommunityGetPresencePolicy"),
+    ),
+    (
+        "set_presence_policy",
+        HostCall::Request("CommunitySetPresencePolicy"),
+    ),
+    (
+        "set_presence_policy_field",
+        HostCall::Request("CommunitySetPresencePolicyField"),
+    ),
     ("set_game_detection", HostCall::Request("SetGameDetection")),
     ("set_auto_away", HostCall::Request("SetAutoAway")),
     (
@@ -477,8 +489,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
     // by the group DM requests.
     // E3.1 — communities.
-    ("get_presence_policy", "E3.4"),
-    ("set_presence_policy", "E3.4"),
     ("rotate_mek", "E3.5"),
     // Search reads both histories: it moves with the last of them.
     // E3.2 — plate gates.

@@ -136,10 +136,7 @@ impl HostGovernance {
         if self.binding_of_record(community_id, record)?.1 != binding {
             return None;
         }
-        let observed = view::observe_record(&self.ctx, at, &author, &beat, arrived_at);
-        if let Some(sealed) = &beat.extras {
-            view::take_extras(&self.ctx, at, &author, beat.seq, sealed);
-        }
+        let observed = view::observe(&self.ctx, at, &author, &beat, arrived_at);
         if observed.state_changed {
             self.mesh_member_moved(community_id, &author).await;
         }

@@ -26,7 +26,7 @@ Matching by token set rather than substring (`join_community` ↔
 **47 of 258 desktop commands have a daemon counterpart, 211 do not.**
 
 | area | Tauri commands | no daemon equivalent |
-|---|---|---|
+| --- | --- | --- |
 | community | 144 | 111 |
 | friends | 21 | 17 |
 | calls | 13 | 13 |

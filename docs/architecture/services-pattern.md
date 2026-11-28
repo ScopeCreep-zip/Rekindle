@@ -62,7 +62,7 @@ Every adapter follows the same internal split (see
 `services/channel_adapter/` as the reference shape):
 
 | File | Contents |
-|---|---|
+| --- | --- |
 | `mod.rs` | The adapter struct (`pub struct ChannelAdapter { state: Arc<AppState>, app: AppHandle, pool: Db }`) and module declarations |
 | `deps_impl.rs` | The single `impl rekindle_channel::ChannelMessagingDeps for ChannelAdapter` block — every method body delegates to one of the submodules below |
 | `state_reads.rs` | Read paths: channel / thread / member lookups, permission computation |
@@ -145,7 +145,7 @@ logic split because they are long-running background tasks rather
 than command-driven flows:
 
 | Service | Path | Role |
-|---|---|---|
+| --- | --- | --- |
 | `dht_publish_service` | `services/dht_publish_service.rs` | Periodic profile re-publish |
 | `game_service` | `services/game_service.rs` | Periodic game detection, publish to DHT |
 | `game_publisher` | `services/game_publisher.rs` | Game detection → DHT subkey-4 publisher |

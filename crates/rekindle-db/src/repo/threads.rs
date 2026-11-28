@@ -103,6 +103,7 @@ pub struct ThreadMessageRow<'a> {
 }
 
 /// Store `message` once per author and wire id and count it on its thread's row.
+/// Returns whether a new reply was inserted.
 ///
 /// # Errors
 /// The insert or the update failed.
@@ -111,7 +112,7 @@ pub fn insert_message(
     owner_key: &str,
     community_id: &str,
     message: &ThreadMessageRow<'_>,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<bool> {
     let inserted = conn.execute(
         "INSERT OR IGNORE INTO thread_messages \
          (owner_key, community_id, thread_id, message_id, sender_pseudonym, body, timestamp, \
@@ -140,7 +141,7 @@ pub fn insert_message(
             ],
         )?;
     }
-    Ok(())
+    Ok(inserted != 0)
 }
 
 /// How many reply rows `thread_id` of `community_id` holds for `owner_key`.

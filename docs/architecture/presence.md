@@ -35,7 +35,7 @@ primitives in `status.rs`, `heartbeat.rs`, `idle.rs`, and
 The crate's `lib.rs` re-exports cover the integration surface:
 
 | Re-export | Surface |
-|---|---|
+| --- | --- |
 | `presence_poll_tick`, `presence_poll_tick_public`, `start_presence_poll`, `steady_poll_duration` | Community presence poll loop |
 | `compute_rebuild_plan`, `GossipOverlayPlan`, `GossipOverlaySnapshot`, `GossipRebuildOutcome` | Gossip overlay rebuild decisions |
 | `compute_merged_roles`, `role_ids_from_governance` | Effective-role computation against `GovernanceState` |
@@ -48,7 +48,7 @@ The crate's `lib.rs` re-exports cover the integration surface:
 Plus timing constants:
 
 | Constant | Value | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `STEADY_TICK_INTERVAL_SECS` | 30 | Default community presence poll cadence |
 | `RAPID_TICK_INTERVAL_SECS` | 5 | Faster cadence during onboarding / rebuild |
 | `RAPID_TICKS` | small N | Number of rapid ticks before falling back to steady |

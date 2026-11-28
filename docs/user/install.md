@@ -4,7 +4,7 @@ Rekindle is a Tauri 2 desktop application. We target three operating
 systems with the standard distribution format for each:
 
 | OS | Format | Notes |
-|----|--------|-------|
+| ---- | -------- | ------- |
 | Windows | NSIS installer (`.exe`) | Windows 10 1903+ / Windows 11; uses the system WebView2 runtime |
 | macOS | DMG (`.dmg`) | macOS 14 Sonoma or later, both Intel and Apple Silicon; uses the system WebKit |
 | Linux | AppImage and `.deb` | x86_64; GTK 3 + WebKitGTK 4.1 (2.40 or later) required |
@@ -76,7 +76,7 @@ from source:
 ### Prerequisites
 
 | Component | Minimum | Notes |
-|-----------|---------|-------|
+| ----------- | --------- | ------- |
 | Rust | 1.92 | Use [`rustup`](https://rustup.rs/) |
 | Node.js | 22 | Use [`nvm`](https://github.com/nvm-sh/nvm) or [`fnm`](https://github.com/Schniz/fnm) |
 | pnpm | 9+ | `npm install -g pnpm` |
@@ -141,7 +141,7 @@ identifier `com.rekindle.app` (the same folders on every Rekindle program:
 the desktop app, `rekindled` and the CLI).
 
 | OS | Data folder | Config folder | Logs |
-|----|-------------|---------------|------|
+| ---- | ------------- | --------------- | ------ |
 | Windows | `%APPDATA%\com.rekindle.app\` | `%APPDATA%\com.rekindle.app\` | `%LOCALAPPDATA%\com.rekindle.app\logs\` |
 | macOS | `~/Library/Application Support/com.rekindle.app/` | the data folder | `~/Library/Logs/com.rekindle.app/` |
 | Linux | `~/.local/share/com.rekindle.app/` | `~/.config/com.rekindle.app/` | `~/.local/share/com.rekindle.app/logs/` |
@@ -195,7 +195,7 @@ autostart entry is registered with the OS's standard mechanism
 ## Uninstall
 
 | OS | How |
-|----|-----|
+| ---- | ----- |
 | Windows | Settings → Apps → Rekindle → Uninstall |
 | macOS | Drag `Rekindle.app` to Trash; optionally delete `~/Library/Application Support/com.rekindle.app/` |
 | Linux (`.deb`) | `sudo apt remove rekindle` |

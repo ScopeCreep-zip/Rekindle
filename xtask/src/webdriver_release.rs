@@ -15,15 +15,17 @@
 //!   resolve does not enable and which no package's features turn on;
 //! - in the graph `cargo metadata` resolves, nothing depends on it and no
 //!   release binary's build graph reaches it;
-//! - no release binary already built under `target/release` holds
-//!   `/wdio/eval`, the walk's `REKINDLE_WDIO_IDLE_SECONDS` override, or
-//!   `REKINDLE_WDIO_DAMAGE_NEXT_POST` (the suite's damaged-post switch,
-//!   `src-tauri/src/webdriver.rs`), this gate's own binary aside: they are
-//!   its needles.
+//! - the CP1 aids' requests, test modules and Host interception points are
+//!   feature-gated, and the fleet and Host feature rejects release builds;
+//! - release binaries under the workspace and configured Cargo target
+//!   directories contain none of the driver or test-aid identifiers scanned
+//!   by this check. The gate's own binary carries those strings for the scan.
 
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
+use quote::ToTokens;
+use syn::visit::{self, Visit};
 
 pub(crate) const CRATE: &str = "tauri-plugin-wdio-webdriver";
 const CRATE_DIR: &str = "crates/vendor/tauri-plugin-wdio-webdriver";
@@ -37,7 +39,21 @@ const IDLE_ENV: &[u8] = b"REKINDLE_WDIO_IDLE_SECONDS";
 /// binary naming it would damage a received post on request.
 const DAMAGE_NEXT_POST_VAR: &[u8] = b"REKINDLE_WDIO_DAMAGE_NEXT_POST";
 /// What no release binary may hold.
-const NEEDLES: [&[u8]; 3] = [EVAL_ROUTE, IDLE_ENV, DAMAGE_NEXT_POST_VAR];
+const NEEDLES: &[&[u8]] = &[
+    EVAL_ROUTE,
+    IDLE_ENV,
+    DAMAGE_NEXT_POST_VAR,
+    b"webdriver-post-skipping-local-permission",
+    b"/wdio/hold-governance-ops",
+    b"/wdio/release-governance-ops",
+];
+const AID_PACKAGES: [&str; 5] = [
+    HOST,
+    "rekindle-cli",
+    "rekindle-node",
+    "rekindle-ipc",
+    "rekindle-types",
+];
 
 /// Whether `lib` has `#[cfg(not(debug_assertions))] compile_error!`.
 fn has_release_guard(lib: &str) -> bool {
@@ -98,24 +114,40 @@ fn feature_problems(
             "{HOST} has no {FEATURE} = [\"dep:{CRATE}\"] feature"
         )),
     }
-    if host
-        .features
-        .get("default")
-        .is_some_and(|d| d.iter().any(|f| f == FEATURE))
-    {
-        problems.push(format!("{FEATURE} is a default feature of {HOST}"));
-    }
-    if meta.resolved_features(HOST).iter().any(|f| f == FEATURE) {
-        problems.push(format!("the workspace resolve enables {HOST}/{FEATURE}"));
-    }
-    for package in &meta.packages {
-        let enables = package
+    for name in AID_PACKAGES {
+        let Some(package) = meta.package(name) else {
+            problems.push(format!("{name} is not in the workspace"));
+            continue;
+        };
+        if !package.features.contains_key(FEATURE) {
+            problems.push(format!("{name} has no {FEATURE} feature"));
+        }
+        if package
             .features
-            .values()
-            .flatten()
-            .any(|f| f.starts_with(HOST) && f.ends_with(&format!("/{FEATURE}")));
-        if enables {
-            problems.push(format!("{} enables {HOST}/{FEATURE}", package.name));
+            .get("default")
+            .is_some_and(|d| d.iter().any(|f| f == FEATURE))
+        {
+            problems.push(format!("{FEATURE} is a default feature of {name}"));
+        }
+        if meta.resolved_features(name).iter().any(|f| f == FEATURE) {
+            problems.push(format!("the workspace resolve enables {name}/{FEATURE}"));
+        }
+        for dependent in &meta.packages {
+            for (feature, enables) in &dependent.features {
+                let enables_aid = enables.iter().any(|f| {
+                    f.split_once('/').is_some_and(|(dep, enabled)| {
+                        dep.trim_end_matches('?') == name && enabled == FEATURE
+                    })
+                });
+                if enables_aid
+                    && !(AID_PACKAGES.contains(&dependent.name.as_str()) && feature == FEATURE)
+                {
+                    problems.push(format!(
+                        "{} feature {feature} enables {name}/{FEATURE}",
+                        dependent.name
+                    ));
+                }
+            }
         }
     }
     let optional = host_manifest
@@ -158,7 +190,11 @@ fn graph_problems(meta: &crate::cargo_meta::Metadata) -> Vec<String> {
 /// -p xtask`, as a skin re-import does) would always match. It is a
 /// development tool no bundle ships.
 fn release_binary_problems(root: &Path, meta: &crate::cargo_meta::Metadata) -> Vec<String> {
-    let release = root.join("target").join("release");
+    release_binaries_in(&root.join("target"), meta)
+}
+
+fn release_binaries_in(target: &Path, meta: &crate::cargo_meta::Metadata) -> Vec<String> {
+    let release = target.join("release");
     meta.members()
         .filter(|m| m.name != env!("CARGO_PKG_NAME"))
         .flat_map(|m| m.targets.iter())
@@ -178,6 +214,112 @@ fn release_binary_problems(root: &Path, meta: &crate::cargo_meta::Metadata) -> V
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// Check the source boundaries even when there are no release artifacts.
+/// These are the request declarations, the app and Host test modules, and
+/// the two interception points in the normal send and governance paths.
+fn aid_source_problems(root: &Path) -> Result<Vec<String>> {
+    let mut problems = Vec::new();
+    for (path, markers) in [
+        (
+            "crates/rekindle-ipc/src/protocol/mod.rs",
+            &[
+                "WebdriverPostSkippingLocalPermission",
+                "WebdriverHoldGovernanceOps",
+                "WebdriverReleaseGovernanceOps",
+            ][..],
+        ),
+        (
+            "crates/rekindle-cli/src/cli/mod.rs",
+            &["WebdriverPostSkippingLocalPermission"],
+        ),
+        ("crates/rekindle-node/src/host/mod.rs", &["webdriver"]),
+        ("src-tauri/src/lib.rs", &["webdriver"]),
+        (
+            "crates/rekindle-node/src/host/adapters/channel/deps_impl.rs",
+            &["self . skip_local_post_permission"],
+        ),
+        (
+            "crates/rekindle-node/src/host/adapters/governance/op_store.rs",
+            &["let Some (queued) = queue . as_mut ()"],
+        ),
+    ] {
+        let src =
+            std::fs::read_to_string(root.join(path)).with_context(|| format!("reading {path}"))?;
+        let file = syn::parse_file(&src).with_context(|| format!("parsing {path}"))?;
+        for marker in markers {
+            let mut guard = AidGuard {
+                marker,
+                declarations: Vec::new(),
+            };
+            guard.visit_file(&file);
+            if guard.declarations != [true] {
+                problems.push(format!(
+                    "{path}: {marker} must appear once behind {FEATURE} and debug_assertions"
+                ));
+            }
+        }
+    }
+
+    for path in [
+        "crates/rekindle-cli/src/main.rs",
+        "crates/rekindle-node/src/lib.rs",
+        "crates/rekindle-ipc/src/lib.rs",
+        "crates/rekindle-types/src/lib.rs",
+    ] {
+        let src =
+            std::fs::read_to_string(root.join(path)).with_context(|| format!("reading {path}"))?;
+        if !has_feature_release_guard(&src) {
+            problems.push(format!("{path} lacks the {FEATURE} release compile_error!"));
+        }
+    }
+    Ok(problems)
+}
+
+struct AidGuard<'a> {
+    marker: &'a str,
+    declarations: Vec<bool>,
+}
+
+impl AidGuard<'_> {
+    fn record(&mut self, attrs: &[syn::Attribute]) {
+        self.declarations.push(attrs.iter().any(|attr| {
+            attr.path().is_ident("cfg")
+                && attr.parse_args::<syn::Meta>().is_ok_and(|meta| {
+                    meta.to_token_stream().to_string()
+                        == "all (feature = \"webdriver-test\" , debug_assertions)"
+                })
+        }));
+    }
+}
+
+impl<'ast> Visit<'ast> for AidGuard<'_> {
+    fn visit_variant(&mut self, variant: &'ast syn::Variant) {
+        if variant.ident == self.marker {
+            self.record(&variant.attrs);
+        }
+        visit::visit_variant(self, variant);
+    }
+
+    fn visit_item_mod(&mut self, module: &'ast syn::ItemMod) {
+        if module.ident == self.marker {
+            self.record(&module.attrs);
+        }
+        visit::visit_item_mod(self, module);
+    }
+
+    fn visit_expr_if(&mut self, branch: &'ast syn::ExprIf) {
+        if branch
+            .cond
+            .to_token_stream()
+            .to_string()
+            .starts_with(self.marker)
+        {
+            self.record(&branch.attrs);
+        }
+        visit::visit_expr_if(self, branch);
+    }
 }
 
 fn workspace_names_driver(manifest: &toml_edit::DocumentMut) -> bool {
@@ -237,9 +379,13 @@ pub(crate) fn check_webdriver_release(root: &Path) -> Result<()> {
     }
     let meta = crate::cargo_meta::Metadata::load(root)?;
     let host_manifest = read_manifest(&root.join("src-tauri/Cargo.toml"))?;
+    problems.extend(aid_source_problems(root)?);
     problems.extend(graph_problems(&meta));
     problems.extend(feature_problems(&meta, &host_manifest));
     problems.extend(release_binary_problems(root, &meta));
+    if meta.target_directory != root.join("target") {
+        problems.extend(release_binaries_in(&meta.target_directory, &meta));
+    }
     if problems.is_empty() {
         return Ok(());
     }

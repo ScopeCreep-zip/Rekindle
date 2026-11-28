@@ -1,7 +1,6 @@
 //! Plan E3.4 S8-pre on the shell mode: a member's voice join reaches a
 //! peer's voice roster from beats alone. The netsim's shells run no
-//! registry poll (`BareShell::spawn_presence_poll_tick` and
-//! `presence_refresh` do nothing), so every roster they are handed comes
+//! registry poll (`BareShell::presence_refresh` does nothing), so every roster they are handed comes
 //! from the beat view (`view::reconcile_voice`). The creator runs on the
 //! daemon mode: a shell-mode node answers no bootstrap request in the
 //! netsim (`shell_node.rs`: that answer is `src-tauri`'s until F1), so the

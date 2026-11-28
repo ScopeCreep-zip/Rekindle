@@ -53,6 +53,9 @@ pub(super) fn selection(
         SettingsRequest::OnboardingSubmit {
             community: target, ..
         }
+        | SettingsRequest::CommunitySetPresencePolicyField {
+            community: target, ..
+        }
         | SettingsRequest::CommunitySetPresencePolicy {
             community: target, ..
         }
@@ -63,6 +66,7 @@ pub(super) fn selection(
         SettingsRequest::OnboardingConfigGet { .. }
         | SettingsRequest::WelcomeScreenGet { .. }
         | SettingsRequest::CommunityAvatarGet { .. }
+        | SettingsRequest::CommunityGetPresencePolicy { .. }
         | SettingsRequest::CommunityPolicyGet { .. } => {}
     }
     Ok(())

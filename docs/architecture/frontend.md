@@ -7,7 +7,7 @@ All business logic, cryptography, and networking live in Rust.
 ## Technology
 
 | Component | Technology |
-|-----------|-----------|
+| ----------- | ----------- |
 | Framework | SolidJS (fine-grained reactivity, compiled JSX) |
 | Styling | Tailwind CSS 4 (global styles only, no inline classes) |
 | Bundler | Vite |
@@ -35,7 +35,7 @@ matching window component. Each Tauri window has its own URL path
 and its own lazy chunk.
 
 | Path prefix | Window component |
-|---|---|
+| --- | --- |
 | `/login` | `LoginWindow` |
 | `/buddy-list` | `BuddyListWindow` |
 | `/chat` | `ChatWindow` (`?peer=` 1:1, `?group=` group DM) |
@@ -178,7 +178,7 @@ Xfire skin baseline.
 Sixteen SolidJS reactive stores live in `src/stores/`:
 
 | Store | Purpose |
-|---|---|
+| --- | --- |
 | `auth.store.ts` | Identity, session, login state |
 | `chat.store.ts` | 1:1 chat conversations |
 | `dm.store.ts` | DM / group DM conversations |
@@ -229,7 +229,7 @@ command or event class does not bloat a single file.
 ### `ipc/commands/`
 
 | File | Domain |
-|---|---|
+| --- | --- |
 | `account.ts` | Identity creation, login, logout, list / delete |
 | `community.ts` | Community CRUD, channels, members, roles, moderation, threads, events, polls, reactions, expressions, files |
 | `governance.ts` | Governance state queries and admin commands |
@@ -241,7 +241,7 @@ command or event class does not bloat a single file.
 ### `ipc/channels/`
 
 | File | Veilid-side channel |
-|---|---|
+| --- | --- |
 | `chat_events.ts` | `chat-event` — 1:1 chat, friend requests, calls |
 | `community_events.ts` | `community-event` — 50+ variants |
 | `community_video_events.ts` | High-throughput video frames (separate from `community-event` to avoid hot-path overhead) |
@@ -258,7 +258,7 @@ browser mode without an event transport.
 ### IPC adapters at the root
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `invoke.ts` | Tauri `invoke` wrapper; `hostInvoke` for Host-call commands (`Done<T>`, intent review, undo offer) |
 | `hydrate.ts` | State hydration on login |
 | `avatar.ts` | Avatar bytes from `get_avatar` → `data:image/webp` URL |

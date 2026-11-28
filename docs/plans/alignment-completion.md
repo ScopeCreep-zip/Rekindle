@@ -437,7 +437,7 @@ two, and every migration turned up the same defect class the audit
 predicted: Tier 1 could not express what the desktop carried.
 
 | family | what Tier 1 was missing | fixed by |
-|---|---|---|
+| --- | --- | --- |
 | presence | our own presence; `elapsed_seconds`, `server_address`, `status_message`, `game_id` | `SelfChanged` + one `PresenceSnapshot` for all three subjects |
 | voice | the whole local session (device, speaking, quality, drops); **any way to name a DM call** | 5 local-session variants + `VoiceScope` |
 | notification | the entire family — a CLI could not ring, alert, or prompt | new Tier 1 `NotificationEvent` |
@@ -480,7 +480,7 @@ Each sub-family repeated the pattern: Tier 1 held a fragment of what the
 desktop carried, and the migration is what surfaced it.
 
 | sub-family | what Tier 1 was missing |
-|---|---|
+| --- | --- |
 | membership | `MembersRefreshed`, `MemberDiscovered`, `JoinProgress`; `mek_generation` had to become `Option` |
 | governance | **the payloads themselves** — every variant was `{ community }` alone, "go re-read it" |
 | social | event/thread/server variants carried hand-picked fragments of types Tier 1 already owned |
@@ -1190,7 +1190,7 @@ They are features rather than alignment defects, so they sit behind
 phases 1-5 — but they are what "done" actually means.
 
 | # | roadmap line | what it needs |
-|---|---|---|
+| --- | --- | --- |
 | 6.1 | PreKey rotation + one-time replenishment (:35) | `replenish_prekeys` exists in `transport/operations/mek.rs`; needs a rotation schedule and a Stronghold-side bundle refresh |
 | 6.2 | Game time tracking (:63) | elapsed seconds persisted to SQLite; `GameInfo.elapsed_seconds` already on the wire both tracks |
 | 6.3 | Rich presence server info (:64) | `GameInfo.server_address` exists and is unused by the UI |

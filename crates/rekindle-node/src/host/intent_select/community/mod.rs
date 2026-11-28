@@ -8,6 +8,8 @@ mod expressions;
 mod lifecycle;
 mod members;
 mod messages;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+pub(super) use messages::select_channel_post;
 mod pins;
 mod settings;
 

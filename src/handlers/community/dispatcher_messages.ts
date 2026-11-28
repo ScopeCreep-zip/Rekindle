@@ -8,11 +8,13 @@ import type {
   ChannelMessageEvent,
   CommunitySubscriptionEvent,
 } from "../../ipc/channels/community_subscription_events";
+import { noteAdmissionEvent } from "../../stores/admission_events.store";
 import type { Message } from "../../stores/chat.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
+import { holdEarlySendState } from "../../stores/early_send.store";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { addToast } from "../../stores/toast.store";
-import { transformHistoryGap } from "../../utils/transformers";
+import { transformHistoryGap, transformMessage } from "../../utils/transformers";
 
 type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 
@@ -284,14 +286,7 @@ function applySendStatus(channel: string, messageId: string, state: string, reas
   if (list === null || idx < 0) {
     // Our own reply whose send answer has not come back yet: its row has no
     // server id to match, so the state waits for that answer (either order).
-    earlySendStates.delete(messageId);
-    earlySendStates.set(messageId, { state, reason });
-    // Only our own posts are announced; one never matched (its window closed)
-    // must not be held forever: the oldest goes past a bound.
-    if (earlySendStates.size > EARLY_SEND_STATES_MAX) {
-      const oldest = earlySendStates.keys().next().value;
-      if (oldest !== undefined) earlySendStates.delete(oldest);
-    }
+    holdEarlySendState(messageId, state, reason);
     return;
   }
   if (state === "failed") {
@@ -301,25 +296,6 @@ function applySendStatus(channel: string, messageId: string, state: string, reas
   } else if (state === "sent" || state === "queued" || state === "awaiting_key") {
     setCommunityState(list, channel, idx, "status", state);
   }
-}
-
-/** A `ChannelSendStatus` that came before its row could be matched, by message id (insertion-ordered). */
-const earlySendStates = new Map<string, { state: string; reason?: string }>();
-
-/** How many unmatched send states are held: far above the replies one window has in flight. */
-const EARLY_SEND_STATES_MAX = 256;
-
-/**
- * The newest send state the Host announced for `messageId` before its row
- * knew that id (FT1: `ChannelSendStatus` may beat the send's own answer),
- * taken once; undefined when none came first.
- */
-export function takeEarlySendState(
-  messageId: string
-): { state: string; reason?: string } | undefined {
-  const early = earlySendStates.get(messageId);
-  earlySendStates.delete(messageId);
-  return early;
 }
 
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {
@@ -353,6 +329,28 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.attachmentDownloaded.channel,
         m.attachmentDownloaded.attachmentId
       );
+    } else if ("postAdmissionChanged" in m) {
+      // CP1: a held post was judged, or a new one held (the Host announces a
+      // first hold only here). The event carries the post as the Host's
+      // history read builds it now: a loaded row is replaced in place, at any
+      // depth of scrollback; a new one inside the loaded window goes in by
+      // time. One older than the window is unloaded history, which the next
+      // read returns with the same view.
+      const a = m.postAdmissionChanged;
+      noteAdmissionEvent(a.messageId);
+      const list = a.thread ? "threadMessages" : "channelMessages";
+      const rows = communityState[list][a.streamId];
+      if (!rows) return;
+      const row = transformMessage(a.row);
+      const idx = rows.findIndex((r) => r.serverMessageId === a.messageId);
+      if (idx >= 0) {
+        setCommunityState(list, a.streamId, idx, row);
+      } else if (rows.length === 0 || row.timestamp >= rows[0].timestamp) {
+        setCommunityState(list, a.streamId, (prev) => {
+          const at = prev.findIndex((r) => r.timestamp > row.timestamp);
+          return at < 0 ? [...prev, row] : [...prev.slice(0, at), row, ...prev.slice(at)];
+        });
+      }
     } else if ("expressionAssetReady" in m) {
       // Architecture §18.4 — the eager fetch landed; re-pull the
       // community's expressions so the picker shows the resolved bytes.

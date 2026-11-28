@@ -87,6 +87,7 @@ async fn queue_poll_op<D: ChannelMessagingDeps>(
     entry: PostEntry,
 ) -> Result<(), ChannelError> {
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_owned(),
         channel: channel_id.to_owned(),
         message: format!(

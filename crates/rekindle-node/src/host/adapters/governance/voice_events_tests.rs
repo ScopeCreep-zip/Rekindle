@@ -1,10 +1,9 @@
-use rekindle_codec::community::envelope::{MediaSessionKey, VoiceRosterEntry};
+use rekindle_codec::community::envelope::{ControlPayload, MediaSessionKey, VoiceRosterEntry};
 use rekindle_governance_runtime::CardText;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceParticipant};
 
 use crate::host::runtime::tests::offline_host;
-
-use super::*;
 
 #[tokio::test]
 async fn voice_join_prefers_the_verified_card_to_the_handshake() {

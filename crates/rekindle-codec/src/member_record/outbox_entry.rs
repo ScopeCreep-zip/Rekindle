@@ -9,11 +9,14 @@
 //! that cannot open a restricted entry still checks continuity.
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
 use rekindle_types::domains;
+use rekindle_types::governance::OpRef;
 
 use super::{put_lp, sign, verify};
 use crate::capnp_codec::{bounds, capnp_err, pack, unpack_bounded};
 use crate::community::channel_record::ChannelRecordEntry;
+use crate::governance_op::{read_op_ref, write_op_ref};
 use crate::member_record_capnp::{outbox_entry, OutboxEntryKind};
 use crate::CodecError;
 
@@ -35,6 +38,7 @@ pub struct OutboxEntry {
     /// The author's clock at commit, in ms.
     pub committed_at: u64,
     pub entry: ChannelRecordEntry,
+    pub governance_cut: Vec<OpRef>,
 }
 
 /// BLAKE3 of an entry's stored bytes: the next entry's `prev`.
@@ -91,6 +95,28 @@ impl OutboxEntry {
         out.extend_from_slice(&self.committed_at.to_be_bytes());
         out.extend_from_slice(&(kind as u16).to_be_bytes());
         put_lp(&mut out, sealed)?;
+        if !self.governance_cut.is_empty() {
+            let count = self.governance_cut.len();
+            if !matches!(kind, OutboxEntryKind::Message | OutboxEntryKind::Forward)
+                || count > MAX_FRONTIER_REFS
+                || self
+                    .governance_cut
+                    .windows(2)
+                    .any(|w| matches!(w, [a, b] if a.op_hash >= b.op_hash))
+            {
+                return Err(CodecError::Serialization("invalid outbox governance cut".into()));
+            }
+            let count = u32::try_from(count)
+                .map_err(|e| CodecError::Serialization(e.to_string()))?;
+            out.extend_from_slice(&count.to_be_bytes());
+            for head in &self.governance_cut {
+                out.extend_from_slice(&head.op_hash.0);
+                out.extend_from_slice(&head.author.0);
+                put_lp(&mut out, head.author_record.as_bytes())?;
+                out.extend_from_slice(&head.author_seq.to_be_bytes());
+                out.extend_from_slice(&head.device_key);
+            }
+        }
         Ok(out)
     }
 
@@ -118,6 +144,14 @@ impl OutboxEntry {
             b.set_kind(kind);
             b.set_sealed(&sealed);
             b.set_sig(&sig);
+            if !self.governance_cut.is_empty() {
+                let count = u32::try_from(self.governance_cut.len())
+                    .map_err(|e| CodecError::Serialization(e.to_string()))?;
+                let mut cut = b.init_governance_cut(count);
+                for (i, head) in (0..count).zip(&self.governance_cut) {
+                    write_op_ref(cut.reborrow().get(i), head);
+                }
+            }
         }
         // The size is the writer's check (`EntryTooLarge`, one sealed page)
         // and the decoder's bound.
@@ -156,7 +190,12 @@ pub fn decode_outbox_entry(
     if kind_of(&entry) != kind {
         return Err(malformed("kind does not match its entry"));
     }
+    let cut = b.get_governance_cut().map_err(|e| capnp_err(&e))?;
+    if cut.len() as usize > MAX_FRONTIER_REFS {
+        return Err(malformed("governance cut exceeds the frontier limit"));
+    }
     let decoded = OutboxEntry {
+        governance_cut: cut.iter().map(read_op_ref).collect::<Result<_, _>>()?,
         prev,
         channel_tag,
         stream_seq: b.get_stream_seq(),

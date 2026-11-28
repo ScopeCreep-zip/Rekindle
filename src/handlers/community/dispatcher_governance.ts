@@ -123,8 +123,10 @@ function applyGovernance(g: GovernanceEvent): void {
   // FX3: the community key we hold, current or waiting on a key holder.
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;
-    if (communityState.communities[community])
+    if (communityState.communities[community]) {
       setCommunityState("communities", community, "keyStatus", status);
+      refreshCommunityMembers(community);
+    }
     return;
   }
   // The ban list changed (plan E3.2 S9): a shown ban list reads it again

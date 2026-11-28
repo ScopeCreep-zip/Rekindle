@@ -106,7 +106,7 @@ The tier hierarchy is a contract. The CI gauntlet greps every crate's
 `src/` for forbidden imports and fails the build on violation.
 
 | Tier | Crates | Allowed | Forbidden |
-|------|--------|---------|-----------|
+| ------ | -------- | --------- | ----------- |
 | 1 | `types` | `serde`, `thiserror` | `tokio`, async, `veilid-core`, `tauri`, any crypto lib |
 | 2 | `secrets`, `vault`, `audit` | crypto libs (only here) | `veilid-core`, `tauri`, network I/O |
 | 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics`, `image`, `skin` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only, `image` (pure-Rust codecs) for `image` only | `veilid-core`, `tauri`, `unsafe` in `image` and `skin` |
@@ -188,7 +188,7 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
 ## Most-Common Reading Paths
 
 | If you are … | Start at |
-|---|---|
+| --- | --- |
 | New to the codebase | [`overview.md`](overview.md) → this file → [`crates-tier-detail.md`](crates-tier-detail.md) |
 | Adding a feature | [`crates-tier-detail.md`](crates-tier-detail.md) for the target crate, then [`tauri-backend.md`](tauri-backend.md) for wiring |
 | Auditing the Veilid boundary | [`crates-tier-detail.md`](crates-tier-detail.md) entries for `rekindle-protocol` and `rekindle-transport`; [`decisions/0001-veilid-as-transport.md`](../decisions/0001-veilid-as-transport.md) |

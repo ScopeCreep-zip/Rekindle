@@ -420,7 +420,10 @@ async fn a_community_page_counts_us_and_the_members_its_beats_show_present() {
     for (member, state) in [(1, BeatState::Online), (2, BeatState::Offline)] {
         crate::host::adapters::presence::view::observe(
             &host.ctx,
-            "c1",
+            rekindle_codec::member_record::RecordScope {
+                community_id: "c1",
+                member_record: "record",
+            },
             &rekindle_types::id::PseudonymKey([member; 32]),
             &beat(1, state),
             Some(now),

@@ -1,6 +1,6 @@
 //! The Host's governance projection (plan E3.1 B2c).
 
-use super::*;
+use super::{create_ann, offline_host, seed_registry_community};
 
 /// A rebuild result projects merged channels and roles into the community
 /// store and the community's SQLite rows (plan E3.1 B2c), the same body on
@@ -302,7 +302,10 @@ async fn a_founder_is_listed_as_her_beats_show_her_without_a_join_announce() {
     let now = host.ctx.clock.now_ms();
     crate::host::adapters::presence::view::observe(
         &host.ctx,
-        "c1",
+        rekindle_codec::member_record::RecordScope {
+            community_id: "c1",
+            member_record: "record",
+        },
         &founder,
         &PresenceBeat {
             seq: 1,
@@ -348,7 +351,10 @@ async fn a_founder_is_listed_as_her_beats_show_her_without_a_join_announce() {
     // the beat view never holds us (finding PR1).
     let observed = crate::host::adapters::presence::view::observe(
         &host.ctx,
-        "c1",
+        rekindle_codec::member_record::RecordScope {
+            community_id: "c1",
+            member_record: "record",
+        },
         &joiner,
         &PresenceBeat {
             seq: 2,

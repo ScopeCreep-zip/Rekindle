@@ -126,6 +126,23 @@ impl std::fmt::Debug for IpcRequest {
             | Self::IdentitySafetyNumber { .. }
             | Self::IdentityMarkVerified { .. }
             | Self::IdentityClearVerification { .. } => self.fmt_friend(f),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            Self::WebdriverPostSkippingLocalPermission {
+                channel,
+                body,
+                reply_to,
+            } => f
+                .debug_struct(self.name())
+                .field("channel", channel)
+                .field("body_len", &body.len())
+                .field("reply_to", reply_to)
+                .finish(),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            Self::WebdriverHoldGovernanceOps { community }
+            | Self::WebdriverReleaseGovernanceOps { community } => f
+                .debug_struct(self.name())
+                .field("community", community)
+                .finish(),
             Self::Community(request) => std::fmt::Debug::fmt(request, f),
             Self::Transfer(request) => std::fmt::Debug::fmt(request, f),
             Self::Servers(request) => std::fmt::Debug::fmt(request, f),

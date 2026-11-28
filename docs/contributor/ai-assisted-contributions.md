@@ -41,7 +41,7 @@ auditable lineage.
 ### What counts as AI-assisted
 
 | Pattern | Trailer required? |
-|---------|-------------------|
+| --------- | ------------------- |
 | AI wrote / drafted the diff | Yes |
 | You wrote the diff but used AI to refactor it | Yes |
 | AI wrote tests that you committed | Yes |
@@ -100,7 +100,7 @@ src/styles/       ← global Tailwind theme tokens; semantic class names
 Forbidden patterns that AI tools love to suggest:
 
 | Pattern | Why forbidden | Where to look instead |
-|---------|---------------|-----------------------|
+| --------- | --------------- | ----------------------- |
 | `import { invoke } from "@tauri-apps/api"` in a component | Direct Tauri import bypasses the typed wrapper layer | Use `src/ipc/commands.ts` |
 | Business logic in `*.tsx` (validation, encryption, parsing) | Frontend is presentation only | Add a Tauri command in Rust |
 | `class="flex bg-xfire-bg-panel p-2 ..."` inline | Project policy: global styles only | Add a semantic class in `src/styles/xfire-theme.css` |
@@ -130,7 +130,7 @@ Cross-cutting — protocol, crypto, voice, sync, transport, node, cli
 Forbidden patterns AI tools commonly suggest:
 
 | Pattern | Why forbidden | Mitigation |
-|---------|---------------|------------|
+| --------- | --------------- | ------------ |
 | `use ed25519_dalek::*` outside `rekindle-secrets` | Tier 2 sole crypto boundary | `cargo deny check bans` (rollout: see [§5](#5-pending-enforcement-being-rolled-out)) |
 | `use veilid_core::*` outside `rekindle-transport` (daemon track) or `rekindle-protocol` (desktop track) | Veilid integration is centralised | `cargo deny check bans` |
 | `tokio::spawn` in `rekindle-governance` | Tier 6 is pure logic — no async | Code review |
@@ -229,7 +229,7 @@ A few automated gates are in **soft-launch** mode. They warn today
 and will harden over time:
 
 | Gate | Status | When it hardens |
-|------|--------|-----------------|
+| ------ | -------- | ----------------- |
 | Semgrep `rekindle-no-bare-allow` (no `#[allow]` without `reason = "…"`) | Active on **new** code via `--baseline-commit` | When the ~35 existing `#[allow]`s have been retrofitted |
 | `cargo deny` crypto wrapper rules (`ed25519-dalek` etc. only via `rekindle-secrets`) | Documented in `deny.toml`; not yet enforced | When the 6 crates importing crypto directly are refactored to consume via `rekindle-secrets` |
 | `cargo deny` veilid wrapper rule (`veilid-core` only via `rekindle-transport` / `rekindle-protocol`) | Documented; not yet enforced | When the daemon-track migration completes |

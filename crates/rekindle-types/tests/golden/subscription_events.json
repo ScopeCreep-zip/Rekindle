@@ -350,6 +350,33 @@
       }
     }
   },
+  "channelMessage.postAdmissionChanged": {
+    "channelMessage": {
+      "postAdmissionChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "pending": true,
+        "row": {
+          "admission": {
+            "status": "pending",
+            "text": "Waiting to verify that this post was allowed."
+          },
+          "automodBlurred": false,
+          "body": "",
+          "decryptionFailed": false,
+          "flags": 0,
+          "id": 0,
+          "isOwn": false,
+          "sendState": "delivered",
+          "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "serverMessageId": "msg_11111111111111111111111111111111",
+          "timestamp": 1700000000000
+        },
+        "streamId": "ch_cccccccccccccccccccccccccccccccc",
+        "thread": false
+      }
+    }
+  },
   "crypto.mekRequested": {
     "crypto": {
       "mekRequested": {

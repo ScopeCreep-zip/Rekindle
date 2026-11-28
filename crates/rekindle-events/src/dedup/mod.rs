@@ -13,7 +13,7 @@ use tokio::time::Instant;
 
 use tracing::{debug, trace};
 
-use rekindle_types::subscription_events::SubscriptionEvent;
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 // Per-event-family Blake3 content hashers, split out by domain for
 // line-count. CRITICAL INVARIANT: these hashers are wire-visible dedup
@@ -73,12 +73,15 @@ impl EventDedup {
     /// Returns `false` if the event is a duplicate.
     pub fn check(&mut self, event: &SubscriptionEvent, now_ms: u64) -> bool {
         // UnreadChanged is always emitted — it's a computed aggregate, not a network event.
-        // A transfer event is the Host's own local state (plan E7.2 G12): it
-        // arrives by one path only, and the same state legitimately repeats
-        // (stop, start, stop again), so no digest may suppress it.
+        // Transfers and post admission changes come from local state.
+        // Each change may legitimately repeat the same event payload.
         if matches!(
             event,
-            SubscriptionEvent::UnreadChanged { .. } | SubscriptionEvent::Transfer(_)
+            SubscriptionEvent::UnreadChanged { .. }
+                | SubscriptionEvent::Transfer(_)
+                | SubscriptionEvent::ChannelMessage(
+                    ChannelMessageEvent::PostAdmissionChanged { .. }
+                )
         ) {
             return true;
         }

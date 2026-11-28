@@ -32,7 +32,9 @@ use rekindle_types::presence::SessionStatus;
 
 use super::governance::HostGovernance;
 use crate::daemon::dispatch::DaemonContext;
-pub(crate) use own_session::{own_session, presence_policy};
+pub(crate) use own_session::{
+    own_session, own_session_with_policy, presence_policy, stored_policy,
+};
 
 /// The unlock's beat engine, while one runs or until the teardown's quit.
 pub(crate) type BeatSlot = Arc<RwLock<Option<Arc<BeatEngine>>>>;
@@ -72,6 +74,14 @@ impl BeatSink for HostBeats {
     async fn write_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
         let host = self.host().ok_or("the host is gone")?;
         host.write_own_beat(community, state).await.map(drop)
+    }
+
+    async fn write_refreshed_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
+        let host = self.host().ok_or("the host is gone")?;
+        if let Some(hint) = host.write_beat_hint(community, state).await? {
+            host.send_to_mesh_impl(community, &hint);
+        }
+        Ok(())
     }
 
     async fn write_quit_beat(&self, community: &str) -> Result<(), String> {
@@ -150,14 +160,19 @@ pub(crate) fn session_presence(ctx: &DaemonContext) -> Arc<dyn SessionPresence> 
 /// a join and a quick leave cannot leave the join's beat last.
 pub(crate) fn voice_changed(ctx: &DaemonContext, community: &str) {
     view::reconcile_voice(ctx, community);
+    refresh_beat(ctx, community);
+}
+
+/// Publish a changed session or policy on the unlock scope.
+pub(crate) fn refresh_beat(ctx: &DaemonContext, community: &str) {
     let Some(engine) = ctx.own_presence.beats.read().clone() else {
         return;
     };
     let community = community.to_owned();
     ctx.unlock_scope_or_closed()
-        .spawn_or_drop("voice beat", async move {
-            if let Err(error) = engine.voice_changed(&community).await {
-                tracing::warn!(%error, "voice beat not written");
+        .spawn_or_drop("refresh presence beat", async move {
+            if let Err(error) = engine.refresh_community(&community).await {
+                tracing::warn!(%error, "presence beat not written");
             }
         });
 }

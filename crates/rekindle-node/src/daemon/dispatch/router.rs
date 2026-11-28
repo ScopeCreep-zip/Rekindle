@@ -97,6 +97,25 @@ async fn route(
         ),
 
         // ── Community, channels, governance and channel keys (plan E3.1) ──
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverPostSkippingLocalPermission {
+            channel,
+            body,
+            reply_to,
+        } => {
+            super::channel_message::handle_post_skipping_local_permission(
+                ctx, state, &channel, &body, reply_to,
+            )
+            .await
+        }
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverHoldGovernanceOps { community } => {
+            crate::host::webdriver::hold_governance_ops(ctx, &community).await
+        }
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverReleaseGovernanceOps { community } => {
+            crate::host::webdriver::release_governance_ops(ctx, &community).await
+        }
         IpcRequest::Community(request) => community::route(ctx, state, request).await,
         IpcRequest::PermissionCatalogue => IpcResponse::ok(&PermissionCatalogue::current()),
         // ── File transfers (plan E7.2 G12) ──

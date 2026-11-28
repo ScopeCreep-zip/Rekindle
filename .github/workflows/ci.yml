@@ -1,10 +1,4 @@
-# Main CI — runs on every push to main and every PR.
-#
-# Two jobs:
-#   * fmt + clippy + test — Rust workspace
-#   * cross-platform build smoke test — Tauri build per OS
-# The real-app UI suite (`pnpm test:app`) is not run here; see the note
-# above the build job.
+# Rust and Tauri validation for trunk pull requests and merge groups.
 #
 # The release pipeline lives in release.yml and is triggered by tags.
 
@@ -20,23 +14,16 @@
 name: CI
 
 on:
-  # A pull request runs once, on pull_request. push covers only the long-lived
-  # branches a merge lands on (main and the integration branch); a push to a PR
-  # branch would otherwise start a second, identical run (GitHub: "If multiple
-  # triggering events for your workflow occur at the same time, multiple workflow
-  # runs will be triggered").
-  push:
-    branches: [main, codex/communities-merge-cli-claude-remote]
   pull_request:
-    branches: [main, "codex/**"]
-  # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   merge_group:
-  workflow_dispatch:
+    branches: [codex/communities-merge-cli-claude-remote]
+    types: [checks_requested]
 
-# A new commit on a pull request cancels that PR's older run; pushes to main and
-# the integration branch never cancel, so every merged commit keeps its result.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Supersede work on the same PR. Queue runs are keyed by the full group ref.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('mq-{0}', github.event.merge_group.head_ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -48,42 +35,85 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # ────────────────────────────────────────────────────────────────
-  # Rust: fmt + clippy + test on Ubuntu (the cheap path).
-  # ────────────────────────────────────────────────────────────────
-  rust:
-    name: Rust (fmt / clippy / test)
+  classify:
+    name: CI plan
+    runs-on: ubuntu-24.04
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          MQ_BASE: ${{ github.event.merge_group.base_sha }}
+          MQ_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/classify-ci.sh
+
+  fmt:
+    name: Rust formatting
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install system deps
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Rust Clippy
+    needs: classify
+    if: startsWith(needs.classify.outputs.plan, 'full-')
+    runs-on: ubuntu-24.04
+    steps:
+      - *checkout
+
+      - &linux-deps
+        name: Install system deps
         uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
-      - name: Install Rust toolchain
+      - &rust-toolchain
+        name: Install Rust toolchain
         # rust-toolchain.toml pins the version; this just makes sure
         # the components are present.
         run: |
           rustup show
           rustup component add rustfmt clippy
 
-      - name: Cache cargo
+      - &rust-cache
+        name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: "ci-rust"
-
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
+          save-if: false
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: cargo clippy (desktop, webdriver-test)
         run: cargo clippy -p rekindle-desktop --all-targets --features webdriver-test -- -D warnings
-      - name: WebDriver server absent from release builds
-        run: cargo xtask check-webdriver-release
-      - name: cargo test
+
+  test:
+    name: Rust workspace tests
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: ubuntu-24.04
+    steps:
+      - *checkout
+      - *linux-deps
+      - *rust-toolchain
+      - *rust-cache
+
+      - name: cargo test (including netsim)
         run: cargo test --workspace --no-fail-fast
 
   # ────────────────────────────────────────────────────────────────
@@ -99,34 +129,33 @@ jobs:
   # Cross-platform build smoke test. Verifies Tauri builds clean on
   # all three target OSes; doesn't run the GUI.
   # ────────────────────────────────────────────────────────────────
-  tauri-build:
-    name: Tauri build (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-15, windows-2022]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
+  # Keep three concrete check names even when the plan skips every build.
+  tauri-linux:
+    name: Tauri build (ubuntu-24.04)
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: ubuntu-24.04
+    env:
+      TAURI_CACHE_KEY: ci-tauri-ubuntu-24.04
+    steps: &tauri-steps
+      - *checkout
 
       - name: Install Rust toolchain
         run: rustup show
 
       - name: Install system deps (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: runner.os == 'Linux'
         uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       # rekindle-protocol's build.rs shells out to `capnp` for schema
       # codegen on every build — not just Linux. Matches release.yml's
       # per-OS install.
       - name: Install system deps (macOS)
-        if: matrix.os == 'macos-15'
+        if: runner.os == 'macOS'
         run: brew install capnp
 
       - name: Install system deps (Windows)
-        if: matrix.os == 'windows-2022'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/ci/install-capnp-windows.ps1
 
@@ -137,7 +166,7 @@ jobs:
       # in /Library/Frameworks/GStreamer.framework, the path
       # .cargo/config.toml already points PKG_CONFIG_PATH at.
       - name: Install GStreamer (macOS)
-        if: matrix.os == 'macos-15'
+        if: runner.os == 'macOS'
         env:
           GST_VERSION: "1.26.8"
         run: |
@@ -156,7 +185,7 @@ jobs:
       # (setting PKG_CONFIG_PATH in the environment wins over the macOS
       # default in .cargo/config.toml, which is set-if-unset).
       - name: Install GStreamer (Windows)
-        if: matrix.os == 'windows-2022'
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           GST_VERSION: "1.26.8"
@@ -167,7 +196,91 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          shared-key: "ci-tauri-${{ matrix.os }}"
+          shared-key: ${{ env.TAURI_CACHE_KEY }}
+          save-if: false
 
       - name: cargo check (workspace, default features)
         run: cargo check --workspace
+
+  tauri-macos:
+    name: Tauri build (macos-15)
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: macos-15
+    env:
+      TAURI_CACHE_KEY: ci-tauri-macos-15
+    steps: *tauri-steps
+
+  tauri-windows:
+    name: Tauri build (windows-2022)
+    needs: classify
+    if: needs.classify.outputs.plan == 'full-queue'
+    runs-on: windows-2022
+    env:
+      TAURI_CACHE_KEY: ci-tauri-windows-2022
+    steps: *tauri-steps
+
+  # This stable name still gates the split Rust jobs under the existing ruleset.
+  rust:
+    name: Rust (fmt / clippy / test)
+    if: ${{ always() && (startsWith(needs.classify.outputs.plan, 'full-') || (needs.classify.result != 'success' && github.event.pull_request.draft != true)) }}
+    needs: [classify, fmt, clippy, test]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+      PLAN: ${{ needs.classify.outputs.plan }}
+      EXPECTED: classify fmt clippy ${{ needs.classify.outputs.plan == 'full-queue' && 'test' || '' }}
+    steps:
+      - &check-results
+        name: Check planned results
+        if: ${{ always() }}
+        run: |
+          case "$PLAN" in
+            draft|license|docs|full-pr|full-queue) ;;
+            *) echo '::error::Missing or invalid CI plan'; exit 1 ;;
+          esac
+
+          problems=$(jq -r --arg expected "$EXPECTED" '
+            ($expected | split(" ") | map(select(length > 0))) as $planned
+            | . as $results
+            | (($planned + keys) | unique)[]
+            | . as $job
+            | (if $planned | index($job) then "success" else "skipped" end) as $want
+            | ($results[$job].result // "missing") as $got
+            | select($want != $got)
+            | "\($job): expected \($want), got \($got)"
+          ' <<< "$RESULTS")
+          if [[ -n $problems ]]; then
+            printf '::error::%s\n' "$problems"
+            exit 1
+          fi
+
+      - &reject-cancelled
+        name: Reject cancelled runs
+        if: cancelled()
+        run: |
+          echo '::error::Workflow run was cancelled'
+          exit 1
+
+  required:
+    name: CI Required
+    if: ${{ always() }}
+    needs: [classify, fmt, clippy, test, tauri-linux, tauri-macos, tauri-windows, rust]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+      PLAN: ${{ needs.classify.outputs.plan }}
+      EXPECTED: >-
+        classify
+        ${{ startsWith(needs.classify.outputs.plan, 'full-') && 'fmt clippy rust' || '' }}
+        ${{ needs.classify.outputs.plan == 'full-queue' && 'test tauri-linux tauri-macos tauri-windows' || '' }}
+    steps:
+      - *check-results
+      - *reject-cancelled
+      - name: Require a ready pull request
+        if: needs.classify.outputs.plan == 'draft'
+        run: |
+          echo '::error::Draft pull request: mark ready to validate'
+          exit 1

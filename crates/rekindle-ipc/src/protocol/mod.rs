@@ -548,6 +548,17 @@ pub enum IpcRequest {
 
     /// This unlocked identity's current backend-held reviews (plan S7d-keys.10).
     IntentListHeld,
+
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverPostSkippingLocalPermission {
+        channel: String,
+        body: String,
+        reply_to: Option<String>,
+    },
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverHoldGovernanceOps { community: String },
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverReleaseGovernanceOps { community: String },
 }
 
 mod capability;

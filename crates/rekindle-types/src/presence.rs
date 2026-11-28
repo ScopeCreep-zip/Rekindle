@@ -20,8 +20,9 @@ pub mod session;
 // keep resolving — the split is a file-layout change, not an API one.
 use crate::domains;
 pub use session::{
-    EncryptedSessionExtras, IdleState, LastSeenPrecision, MemberSession, PresenceSharingPolicy,
-    SessionExtras, SessionLocation, SessionStatus, ShareScope, INVISIBLE_WIRE_VALUE,
+    EncryptedSessionExtras, IdleState, LastSeenPrecision, MemberSession, PresencePolicyField,
+    PresenceSharingPolicy, SessionExtras, SessionLocation, SessionStatus, ShareScope,
+    INVISIBLE_WIRE_VALUE,
 };
 
 /// Member presence data written to the registry SMPL subkey.

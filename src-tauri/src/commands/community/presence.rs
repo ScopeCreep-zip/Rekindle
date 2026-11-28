@@ -1,13 +1,13 @@
 use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use tauri::State;
 
-use crate::services::community_presence_runtime::get_presence_policy_inner;
 use crate::state::SharedState;
 
 use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest, SettingsRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::presence::{PresencePolicyField, PresenceSharingPolicy};
 
 /// The composer of a channel changed: `typing` is whether it holds text
 /// (`ChannelMessageRequest::ChannelTyping`; the Host decides what is sent).
@@ -57,23 +57,43 @@ pub async fn set_presence_policy(
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(
         SettingsRequest::CommunitySetPresencePolicy {
-            community: community_id.clone(),
+            community: community_id,
             policy,
         },
     ));
-    let done = crate::host_call::call(&state, request).await?;
-    // The registry row's redaction follows the consent now, not at the
-    // next heartbeat tick.
-    crate::services::community::write_our_presence(state.inner(), &community_id).await;
-    Ok(done)
+    crate::host_call::call(&state, request).await
 }
 
+/// Change one consent field in the Host's current policy.
+#[tauri::command]
+pub async fn set_presence_policy_field(
+    community_id: String,
+    field: PresencePolicyField,
+    state: State<'_, SharedState>,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunitySetPresencePolicyField {
+            community: community_id,
+            field,
+        },
+    ));
+    crate::host_call::call(&state, request).await
+}
+
+/// Read the Host's policy, retaining the settings panel's existing payload.
 #[tauri::command]
 pub async fn get_presence_policy(
     community_id: String,
     state: State<'_, SharedState>,
-) -> Result<rekindle_types::presence::PresenceSharingPolicy, String> {
-    Ok(get_presence_policy_inner(state.inner(), &community_id))
+) -> Result<PresenceSharingPolicy, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunityGetPresencePolicy {
+            community: community_id,
+        },
+    ));
+    crate::host_call::call(&state, request)
+        .await
+        .map(|done| done.value)
 }
 
 /// A community's member list (`IpcRequest::Community(CommunityRequest::CommunityMembers)`).

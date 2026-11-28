@@ -208,6 +208,7 @@ impl SubscriptionEvent {
                 | ChannelMessageEvent::Edited { community, .. }
                 | ChannelMessageEvent::Deleted { community, .. }
                 | ChannelMessageEvent::ChannelSendStatus { community, .. }
+                | ChannelMessageEvent::PostAdmissionChanged { community, .. }
                 | ChannelMessageEvent::ChannelHistoryGap { community, .. }
                 | ChannelMessageEvent::ChannelHistoryGapClosed { community, .. }
                 | ChannelMessageEvent::AttachmentDownloaded { community, .. }

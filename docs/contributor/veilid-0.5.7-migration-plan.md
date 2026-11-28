@@ -50,7 +50,7 @@ declare `links = "sqlite3"`, so nothing resolves until we unify.
 Bump rusqlite `0.38` → `0.39` in all six pins:
 
 | Crate | File | Features |
-|---|---|---|
+| --- | --- | --- |
 | `rekindle-dm` | `crates/rekindle-dm/Cargo.toml:31` | `bundled` |
 | `rekindle-analytics` | `crates/rekindle-analytics/Cargo.toml:13,16` | `bundled` (two entries) |
 | `rekindle-asql` | `crates/rekindle-asql/Cargo.toml:21,26` | — / `bundled` |
@@ -448,7 +448,7 @@ written** — see
 ## 6. Sequencing and risk
 
 | Phase | Blocking? | Risk | Payoff |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 0 — rusqlite 0.39 | **Yes, hard blocker** | Low — SQLCipher amalgamation is byte-identical, tests green | None on its own |
 | 1 — the bump | Yes | Low — 1 line, plus the `AttachmentState` fix | Security fixes (audit §1.7) |
 | 2 — workarounds | No | Medium — UPnP is an A/B, not a deletion | One config path instead of two; *maybe* direct inbound |

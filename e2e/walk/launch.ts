@@ -126,8 +126,12 @@ export function build(): void {
   if (helper.status !== 0) throw new Error(`helper build failed (exit ${helper.status ?? helper.signal})`);
   // Plan E7.14's peer fleet (e2e/app/fleet.ts): headless peers are
   // `rekindled` driven by the `rekindle` CLI.
-  console.log("[walk] building: cargo build -p rekindle-node --bin rekindled -p rekindle-cli --bin rekindle");
-  const fleet = spawnSync("cargo", ["build", "-p", "rekindle-node", "--bin", "rekindled", "-p", "rekindle-cli", "--bin", "rekindle"], {
+  const fleetArgs = [
+    "build", "-p", "rekindle-node", "--bin", "rekindled", "-p", "rekindle-cli", "--bin", "rekindle",
+    "--features", "rekindle-node/webdriver-test,rekindle-cli/webdriver-test",
+  ];
+  console.log(`[walk] building: cargo ${fleetArgs.join(" ")}`);
+  const fleet = spawnSync("cargo", fleetArgs, {
     cwd: REPO_ROOT,
     stdio: "inherit",
   });

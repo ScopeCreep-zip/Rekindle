@@ -1,0 +1,172 @@
+name: Cache Warm
+
+on:
+  push:
+    branches: [codex/communities-merge-cli-claude-remote]
+    paths:
+      - '**/Cargo.lock'
+      - '**/Cargo.toml'
+      - '**/rust-toolchain*'
+      - '**/build.rs'
+      - '**/package.json'
+      - '**/pnpm-lock.yaml'
+      - '.cargo/**'
+      - '.github/actions/**'
+      - '.github/workflows/cache-warm.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/lint.yml'
+      - 'scripts/ci/**'
+      - 'schemas/**'
+      - 'src-tauri/tauri.conf.json'
+  schedule:
+    - cron: '23 3 * * 2'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Match ci.yml's compiler and cache inputs. Only default trunk writes.
+  rust:
+    name: Warm Linux Rust cache
+    if: github.ref == 'refs/heads/codex/communities-merge-cli-claude-remote'
+    runs-on: ubuntu-24.04
+    env: &ci-env
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: "-D warnings"
+      RUST_BACKTRACE: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install system deps
+        uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+
+      - name: Install Rust toolchain
+        # rust-toolchain.toml pins the version; this just makes sure
+        # the components are present.
+        run: |
+          rustup show
+          rustup component add rustfmt clippy
+
+      - name: Cache cargo
+        id: cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: "ci-rust"
+
+      - name: Compile workspace test dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo test --workspace --no-run --locked
+
+  # Match lint.yml's xtask cache, including its release dependency profile.
+  xtask:
+    name: Warm Linux guardrails cache
+    if: github.ref == 'refs/heads/codex/communities-merge-cli-claude-remote'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install system deps
+        uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+
+      - id: cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: xtask
+
+      - name: Install cargo-deny
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-deny --locked --version 0.19.6
+
+      - name: Compile guardrail and release dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo xtask check-release
+
+  # Match the native runners and setup in ci.yml.
+  tauri-build:
+    name: Warm Tauri cache (${{ matrix.os }})
+    if: github.ref == 'refs/heads/codex/communities-merge-cli-claude-remote'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    env: *ci-env
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install system deps (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+
+      # rekindle-protocol's build.rs shells out to `capnp` for schema
+      # codegen on every build — not just Linux. Matches release.yml's
+      # per-OS install.
+      - name: Install system deps (macOS)
+        if: matrix.os == 'macos-15'
+        run: brew install capnp
+
+      - name: Install system deps (Windows)
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: ./scripts/ci/install-capnp-windows.ps1
+
+      # rekindle-video-capture links GStreamer on every OS (gstreamer-sys
+      # finds it through pkg-config). Install the official 1.26.8 runtime +
+      # development packages, each checked against the sha256 that
+      # gstreamer.freedesktop.org publishes beside it. On macOS they land
+      # in /Library/Frameworks/GStreamer.framework, the path
+      # .cargo/config.toml already points PKG_CONFIG_PATH at.
+      - name: Install GStreamer (macOS)
+        if: matrix.os == 'macos-15'
+        env:
+          GST_VERSION: "1.26.8"
+        run: |
+          base="https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}"
+          while read -r sum pkg; do
+            curl -sSfL "${base}/${pkg}" -o "${RUNNER_TEMP}/${pkg}"
+            echo "${sum}  ${RUNNER_TEMP}/${pkg}" | shasum -a 256 -c -
+            sudo installer -pkg "${RUNNER_TEMP}/${pkg}" -target /
+          done <<SUMS
+          cbf02848ea1cfd742e34089da5d5ab693869de55b4a6e6ced57b2270bc40f0e7 gstreamer-1.0-${GST_VERSION}-universal.pkg
+          ef5bb48607d10be6a9a7e1f6632bc690369185d8b920f4883a64a9806d8fb6e4 gstreamer-1.0-devel-${GST_VERSION}-universal.pkg
+          SUMS
+
+      # Windows: the MSVC runtime + devel MSIs; the devel tree ships the
+      # .pc files and pkg-config.exe, so PKG_CONFIG_PATH and PATH point there
+      # (setting PKG_CONFIG_PATH in the environment wins over the macOS
+      # default in .cargo/config.toml, which is set-if-unset).
+      - name: Install GStreamer (Windows)
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        env:
+          GST_VERSION: "1.26.8"
+        run: ./scripts/ci/install-gstreamer-windows.ps1
+
+      - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+
+      - name: Cache cargo
+        id: cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: "ci-tauri-${{ matrix.os }}"
+
+      - name: Compile workspace check dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo check --workspace --locked
