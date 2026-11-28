@@ -74,6 +74,7 @@ mod governance_queued;
 mod governance_warm_restore;
 mod group_dm;
 mod group_dm_accept;
+mod group_dm_departure;
 mod group_dm_fast_path;
 mod group_dm_first_contact;
 mod group_dm_hint_stretch;
