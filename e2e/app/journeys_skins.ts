@@ -142,7 +142,7 @@ export async function skinShown(b: Browser, href: string): Promise<void> {
  * "the window never showed the applied skin" when the skin really is
  * missing (plan E7.14 (b), lead 2026-11-27).
  */
-export async function servedSkinShown(b: Browser): Promise<void> {
+async function servedSkinShown(b: Browser): Promise<void> {
   const href = (await b.execute(async () => {
     const w = window as unknown as {
       __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<{ value: { tokensHref: string } }> };
