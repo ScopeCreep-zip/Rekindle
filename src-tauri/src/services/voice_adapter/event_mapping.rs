@@ -158,6 +158,7 @@ pub(crate) const SELF_STATE: &str = "voice.self";
 /// changes.
 pub(super) fn emit_local_joined_impl(
     app: &tauri::AppHandle,
+    session: &rekindle_voice::session_state::VoiceSessionState,
     channel_id: &str,
     community_id: Option<&str>,
     public_key: &str,
@@ -191,28 +192,20 @@ pub(super) fn emit_local_joined_impl(
                 &rekindle_types::id::PseudonymKey::from_hex_lossy(public_key),
             ),
         };
-        let session_state = [
-            (
-                SESSION_STATE,
-                VoiceEvent::LocalJoined {
-                    scope: scope.clone(),
-                },
-            ),
-            (
-                SELF_STATE,
-                VoiceEvent::Joined {
-                    scope: scope.clone(),
-                    pseudonym: public_key.to_string(),
-                    display_name,
-                    // This is us joining our own call; nobody needs a route to
-                    // reach us from this event.
-                    route_blob: None,
-                },
-            ),
-        ];
-        for (key, event) in session_state {
-            host.publish_state(key, SubscriptionEvent::Voice(event));
-        }
+        session.emit_local_joined(scope.clone(), |event| {
+            host.publish_state(SESSION_STATE, SubscriptionEvent::Voice(event));
+        });
+        host.publish_state(
+            SELF_STATE,
+            SubscriptionEvent::Voice(VoiceEvent::Joined {
+                scope: scope.clone(),
+                pseudonym: public_key.to_string(),
+                display_name,
+                // This is us joining our own call; nobody needs a route to
+                // reach us from this event.
+                route_blob: None,
+            }),
+        );
     } else {
         tracing::warn!("voice join not published: the host has not started");
     }

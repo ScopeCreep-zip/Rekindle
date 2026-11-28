@@ -16,7 +16,14 @@ fn a_dm_call_is_expressible_and_has_no_community() {
     assert_eq!(dm.call_type(), "dm");
     assert_eq!(dm.session_key(), "peer");
 
-    let event = VoiceEvent::LocalJoined { scope: dm };
+    let event = VoiceEvent::LocalJoined {
+        scope: dm,
+        join_handshake: JoinHandshake::Announced,
+        media_ready: VoiceMediaReady {
+            ready: false,
+            reason: "handshake-announced".into(),
+        },
+    };
     assert_eq!(event.community(), None, "a DM call belongs to no community");
 }
 
@@ -85,7 +92,7 @@ fn postcard_round_trips_every_variant() {
         },
         VoiceEvent::JoinHandshake {
             scope: community_scope(),
-            state: "offered".into(),
+            state: JoinHandshake::Seen,
             peer: Some("p".into()),
             display_name: None,
         },
@@ -117,6 +124,11 @@ fn postcard_round_trips_every_variant() {
         VoiceEvent::LocalJoined {
             scope: VoiceScope::Dm {
                 peer_key: "peer".into(),
+            },
+            join_handshake: JoinHandshake::Announced,
+            media_ready: VoiceMediaReady {
+                ready: false,
+                reason: "handshake-announced".into(),
             },
         },
         VoiceEvent::SpeakingChanged {
@@ -183,10 +195,15 @@ fn postcard_round_trips_every_variant() {
 fn json_shape_is_what_the_webview_parses() {
     let event = VoiceEvent::LocalJoined {
         scope: community_scope(),
+        join_handshake: JoinHandshake::Seen,
+        media_ready: VoiceMediaReady {
+            ready: false,
+            reason: "handshake-seen".into(),
+        },
     };
     assert_eq!(
         serde_json::to_string(&event).unwrap(),
-        r#"{"localJoined":{"scope":{"community":{"community":"c","channel":"ch"}}}}"#
+        r#"{"localJoined":{"scope":{"community":{"community":"c","channel":"ch"}},"joinHandshake":"seen","mediaReady":{"ready":false,"reason":"handshake-seen"}}}"#
     );
 
     let dm = VoiceEvent::Joined {

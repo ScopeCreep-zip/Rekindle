@@ -83,6 +83,8 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     let startup =
         deps.init_voice_session(&prefs, channel_id, community_id, peer_route.as_deref())?;
 
+    let session = startup.transport.lock().await.session_state();
+
     // init_voice_session installed the engine handle and started the
     // cpal devices. If loop spawn fails now, tear that down — leaving
     // it would block the next join with "already in a different voice
@@ -98,6 +100,7 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     }
 
     deps.emit_local_joined(
+        &session,
         channel_id,
         community_id,
         &self_voice_id,

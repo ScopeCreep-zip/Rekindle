@@ -558,6 +558,7 @@ fn hosts_route_the_handshake_and_not_the_keys() {
     }
 }
 
+mod join_snapshot;
 mod outbox;
 mod roster_names;
 mod sealing;

@@ -155,7 +155,14 @@ impl VoiceSessionDeps for Joiner {
     fn broadcast_media_capabilities(&self, _: &str, _: &str) {
         unreachable!("not on the leave path")
     }
-    fn emit_local_joined(&self, _: &str, _: Option<&str>, _: &str, _: &str) {
+    fn emit_local_joined(
+        &self,
+        _: &crate::session_state::VoiceSessionState,
+        _: &str,
+        _: Option<&str>,
+        _: &str,
+        _: &str,
+    ) {
         unreachable!("not on the leave path")
     }
     fn spawn_voice_loops(

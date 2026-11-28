@@ -45,6 +45,7 @@ pub mod replay_window;
 pub mod send_loop; // Phase 14 — capture → process → encode → transport send pipeline.
 pub mod session; // Phase 14.l — voice session orchestrator (start_session port).
 pub mod session_deps; // Phase 14 — VoiceSessionDeps trait + VoiceSessionEvent.
+pub mod session_state;
 pub mod signaling; // Phase 14.k — community voice signaling handlers (VoiceSignalingDeps).
 pub mod stream_config; // cpal stream-config negotiation + format adaptation.
 pub mod topology; // Phase 14 — pure mode-decision + stage-host election math.

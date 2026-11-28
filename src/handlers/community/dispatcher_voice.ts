@@ -1,7 +1,7 @@
 import { refreshStageHandRaises } from "../../actions/community/shared";
 import type { CommunityEvent } from "../../ipc/channels";
 import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
-import type { VoiceParticipant, VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
+import type { VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
 import { commands } from "../../ipc/commands";
 import { announce } from "../../stores/announce.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
@@ -21,16 +21,19 @@ import { withCommunity } from "./community_reread";
 function mirrorRosterAdd(
   communityId: string,
   channelId: string,
-  entries: VoiceParticipant[]
+  entries: { pseudonymKey: string; displayName: string }[]
 ): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
   const self = community?.myPseudonymKey;
+  // Each name is the Host's shown name (contract VN1): rendered as served,
+  // never looked up or made from the key here.
   for (const { pseudonymKey: pk, displayName } of entries) {
     if (pk === self) continue;
     setVoiceState("participants", (prev) => {
       const existing = prev.findIndex((p) => p.publicKey === pk);
       if (existing >= 0) {
+        // The Host's name for this member changed (a card update): show it.
         if (prev[existing].displayName !== displayName) {
           return prev.map((p, i) => (i === existing ? { ...p, displayName } : p));
         }
@@ -100,6 +103,13 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
   }
 }
 
+// ── Daemon vocabulary ──────────────────────────────────────────────
+//
+// Each body is the `{ type, data }` case it replaced. Only the
+// destructuring changed: `communityId`/`channelId` come out of the
+// scope, and the roster's participants carry `displayName: string |
+// null` where the old DTO had `string | undefined`.
+
 /// Voice signalling on the daemon vocabulary.
 ///
 /// Arrives on `voice-event`, not `community-event`: `VoiceEvent` is one
@@ -165,7 +175,14 @@ export function reduceSubscriptionVoice(event: VoiceSubscriptionEvent): void {
       );
       return { ...state, participants: merged };
     });
-    mirrorRosterAdd(community, channel, participants);
+    mirrorRosterAdd(
+      community,
+      channel,
+      participants.map((p) => ({
+        pseudonymKey: p.pseudonymKey,
+        displayName: p.displayName,
+      }))
+    );
     return;
   }
 

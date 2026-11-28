@@ -4,13 +4,15 @@
 
 use std::sync::Arc;
 
+use rekindle_types::subscription_events::JoinHandshake;
+
 use rekindle_codec::community::envelope::{MediaSessionKey, VoiceRosterEntry};
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceRosterParticipant, VoiceSignalingDeps};
 use crate::signaling::media_keys;
 use crate::transport::VoiceTransport;
 
-use super::join::send_confirmed_if_first;
+use super::join::{advance_handshake, send_confirmed_if_first};
 
 /// Project transport membership into a roster with the Host's current names.
 pub(in crate::signaling) fn named_roster(
@@ -186,15 +188,15 @@ pub(in crate::signaling) fn handle_voice_roster(
             deps_task.advertise_media_capabilities(&cid, &channel_id);
             // Roster receipt is leg-2 evidence too: a member built and
             // sent it because they saw our VoiceJoin. Advance + confirm.
-            if transport.lock().await.advance_handshake_seen() {
-                deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                    community_id: cid.clone(),
-                    channel_id: channel_id.clone(),
-                    state: "seen".to_string(),
-                    peer: None,
-                    display_name: None,
-                });
-            }
+            advance_handshake(
+                &*deps_task,
+                &cid,
+                &channel_id,
+                &transport,
+                JoinHandshake::Seen,
+                None,
+            )
+            .await;
             send_confirmed_if_first(&*deps_task, &cid, &channel_id, &transport).await;
         });
 }
