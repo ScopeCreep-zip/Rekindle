@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+    CommunityRoleView, RoleTagColours,
 };
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -27,6 +28,7 @@ use rekindle_types::dto::friends::{
 };
 use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
 use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, NotJoinableReason};
@@ -263,6 +265,7 @@ fn samples() -> Map<String, Value> {
             ..Preferences::default()
         }),
     );
+    add("permissionCatalogue", to(PermissionCatalogue::current()));
     friend_samples(&mut add);
     onboarding::samples(&mut add);
     skin::samples(&mut add);
@@ -427,6 +430,25 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             target_name: Some("Bea".into()),
             details: Some("spam".into()),
             timestamp: 7,
+        }),
+    );
+    add(
+        "community.roleView",
+        to(CommunityRoleView {
+            id: "ff".repeat(16),
+            name: "Owner".into(),
+            color: 0xc1_7c_17,
+            tag_colours: RoleTagColours {
+                dark: 0xc1_7c_17,
+                light: 0x99_61_12,
+            },
+            permissions: rekindle_types::permissions::ADMINISTRATOR.to_string(),
+            position: u32::MAX,
+            position_label: "Always first".into(),
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
         }),
     );
     add(

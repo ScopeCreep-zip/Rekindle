@@ -542,6 +542,9 @@ pub enum IpcRequest {
     AgentRevoke { name: String },
     /// Reload authorization policy from disk.
     PolicyReload,
+
+    /// The static role-editor permission catalogue, available in any state.
+    PermissionCatalogue,
 }
 
 mod capability;
