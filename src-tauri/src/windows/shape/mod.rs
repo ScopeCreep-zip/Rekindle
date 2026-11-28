@@ -262,7 +262,8 @@ fn report_fit(
         cause: SkinApplyFailure::WindowTooSmall { width, height },
     };
     shaped.spawn("report constrained skin window", async move {
-        if let Err(error) = crate::host_call::call::<()>(&state, request).await {
+        // The window's own toast shows the event's notice.
+        if let Err(error) = crate::host_call::call::<String>(&state, request).await {
             tracing::warn!(?error, "window skin size could not be reported");
         }
     });

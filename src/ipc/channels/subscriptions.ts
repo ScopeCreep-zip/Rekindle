@@ -312,6 +312,8 @@ export interface SkinApplyFailed {
   window: string;
   skin: string;
   cause: SkinApplyFailure;
+  /** What the window tells the user about it, in the Host's words. */
+  notice: string;
   /** The Host reverted `skin`, which was on trial. */
   reverted: boolean;
 }

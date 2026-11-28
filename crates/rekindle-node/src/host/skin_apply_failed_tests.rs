@@ -56,9 +56,15 @@ async fn next_failed(
                 window,
                 skin,
                 cause,
+                notice,
                 reverted,
             }) = s.event
             {
+                assert_eq!(
+                    notice,
+                    cause.notice(),
+                    "the event carries the Host's words for its cause"
+                );
                 return (window, skin, cause, reverted);
             }
         }

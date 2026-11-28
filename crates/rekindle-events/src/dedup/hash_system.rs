@@ -167,10 +167,13 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
                 h.update(&t.reverts_at_ms.to_le_bytes());
             }
         }
+        // `notice` is `cause`'s wording (`SkinApplyFailure::notice`), so
+        // the cause identifies it.
         SystemEvent::SkinApplyFailed {
             window,
             skin,
             cause,
+            notice: _,
             reverted,
         } => {
             h.update(b"skin_apply_failed|");

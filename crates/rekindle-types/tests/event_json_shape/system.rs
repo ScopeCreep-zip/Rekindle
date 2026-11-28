@@ -134,6 +134,7 @@ fn sync() -> Vec<Sample> {
                 cause: rekindle_types::dto::skin_library::SkinApplyFailure::ImageDecode {
                     path: "skin://pkg/frame/top.png".into(),
                 },
+                notice: "Rekindle could not load the skin for this window.".into(),
                 reverted: true,
             },
         ),

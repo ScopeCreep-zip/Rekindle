@@ -420,7 +420,8 @@ fn report_timeout(window: &WebviewWindow, load: &Load, skin: Option<String>) {
             skin,
             cause: SkinApplyFailure::load_timeout(),
         };
-        if let Err(error) = crate::host_call::call::<()>(&state, request).await {
+        // The native dialog shows the same words (`LOAD_TIMEOUT_MESSAGE`).
+        if let Err(error) = crate::host_call::call::<String>(&state, request).await {
             tracing::warn!(?error, "skin load timeout could not be reported");
         }
     });

@@ -44,6 +44,7 @@ fn the_skin_minimum_notice_only_reaches_the_constrained_window() {
                 width: 470,
                 height: 380,
             },
+            notice: "This skin needs a window at least 470 × 380 pixels.".to_owned(),
             reverted: false,
         }));
     assert!(event.audience().includes("buddy-list"));
@@ -386,6 +387,7 @@ fn a_skin_apply_failure_reaches_its_window_and_settings_only() {
         cause: rekindle_types::dto::skin_library::SkinApplyFailure::SheetError {
             detail: "failed to load".into(),
         },
+        notice: "Rekindle could not load the skin for this window.".into(),
         reverted: false,
     }));
     assert_eq!(e.channel(), "skin-apply-event");

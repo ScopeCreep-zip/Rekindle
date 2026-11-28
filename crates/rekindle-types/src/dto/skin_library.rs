@@ -86,10 +86,30 @@ impl SkinApplyFailure {
     pub const LOAD_TIMEOUT_MESSAGE: &'static str =
         "Rekindle could not load the skin for this window in time.";
 
+    /// The skin-load error a window shows when an image or its stylesheet
+    /// did not load.
+    pub const LOAD_FAILED_MESSAGE: &'static str =
+        "Rekindle could not load the skin for this window.";
+
     #[must_use]
     pub fn load_timeout() -> Self {
         Self::LoadTimeout {
             message: Self::LOAD_TIMEOUT_MESSAGE.to_owned(),
+        }
+    }
+
+    /// What the window tells the user about this failure: the Host's words,
+    /// which the window shows as served (thin frontend).
+    #[must_use]
+    pub fn notice(&self) -> String {
+        match self {
+            Self::ImageDecode { .. } | Self::SheetError { .. } => {
+                Self::LOAD_FAILED_MESSAGE.to_owned()
+            }
+            Self::WindowTooSmall { width, height } => {
+                format!("This skin needs a window at least {width} × {height} pixels.")
+            }
+            Self::LoadTimeout { message } => message.clone(),
         }
     }
 }

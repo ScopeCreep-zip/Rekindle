@@ -108,9 +108,10 @@ export const systemCommands = {
   setSkinSelection: (selection: SkinSelection | null) =>
     hostInvoke<void>("set_skin_selection", { selection }),
   // This window could not apply `skin` and kept the one it shows; the
-  // Host logs it and reverts a skin on trial (plan SK2-T1).
+  // Host logs it, reverts a skin on trial (plan SK2-T1) and answers with
+  // its words for the failure, which the window shows.
   reportSkinApplyFailed: (skin: string, cause: SkinApplyFailure) =>
-    hostInvoke<void>("report_skin_apply_failed", { skin, cause }),
+    hostInvoke<string>("report_skin_apply_failed", { skin, cause }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

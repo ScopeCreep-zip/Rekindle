@@ -241,14 +241,15 @@ pub async fn set_skin_selection(
 /// The calling window could not apply `skin` (`useSkin.ts`: an image did
 /// not decode, or the stylesheet did not load) and kept the skin it
 /// shows. The window only reports; the Host logs it, tells this window
-/// and Settings, and reverts `skin` if it is on trial (plan SK2-T1).
+/// and Settings, reverts `skin` if it is on trial (plan SK2-T1), and
+/// answers with its words for the failure, which the window shows.
 #[tauri::command]
 pub async fn report_skin_apply_failed(
     state: State<'_, SharedState>,
     window: tauri::WebviewWindow,
     skin: String,
     cause: SkinApplyFailure,
-) -> Result<Done<()>, CommandError> {
+) -> Result<Done<String>, CommandError> {
     if matches!(
         cause,
         SkinApplyFailure::WindowTooSmall { .. } | SkinApplyFailure::LoadTimeout { .. }
