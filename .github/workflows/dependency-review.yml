@@ -12,6 +12,13 @@ on:
   pull_request:
     branches: [main, "codex/**"]
 
+# A newer push to the same pull request supersedes this run: cancel the old one so it
+# stops holding a runner the merge queue needs (same rule as ci.yml and lint.yml; pushes
+# to the trunk, schedules and manual runs are never cancelled).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: write
