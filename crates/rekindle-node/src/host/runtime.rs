@@ -342,6 +342,7 @@ impl Host {
                 Arc::clone(&stores.attempts),
                 Arc::clone(&rng),
             )),
+            backend_hold_publication: parking_lot::Mutex::new(()),
             rng,
             idle,
             undo: super::undo::UndoCache::default(),

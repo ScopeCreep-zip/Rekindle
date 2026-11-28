@@ -180,7 +180,27 @@ impl WebviewRouter {
         if !is_current() {
             return;
         }
-        for (label, channel) in subs.iter() {
+        Self::send_matching(&subs, audience, envelope);
+    }
+
+    /// Read a live snapshot under the lock that orders subscriber snapshots.
+    pub fn deliver_snapshot(
+        &self,
+        audience: &Audience,
+        snapshot: impl FnOnce() -> Option<OutboundEnvelope>,
+    ) {
+        let subs = self.subs.read();
+        if let Some(envelope) = snapshot() {
+            Self::send_matching(&subs, audience, &envelope);
+        }
+    }
+
+    fn send_matching(
+        subs: &HashMap<String, Channel<OutboundEnvelope>>,
+        audience: &Audience,
+        envelope: &OutboundEnvelope,
+    ) {
+        for (label, channel) in subs {
             if audience.includes(label) {
                 if let Err(e) = channel.send(envelope.clone()) {
                     tracing::debug!(window = %label, error = %e, "event send failed");

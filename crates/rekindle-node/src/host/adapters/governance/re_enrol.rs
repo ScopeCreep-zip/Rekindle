@@ -24,7 +24,7 @@ fn re_enrol_request() -> IpcRequest {
     ))
 }
 
-/// One `ReEnrolDevice` hold at a time: a newer review replaces the older.
+/// One `ReEnrolDevice` hold for all communities on this device.
 fn same_review(a: &IpcRequest, b: &IpcRequest) -> bool {
     let review = |r: &IpcRequest| {
         matches!(

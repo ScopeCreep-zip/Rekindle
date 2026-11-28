@@ -439,6 +439,16 @@ pub fn spawn_host_stream(
                         );
                         crate::windows::follow_event(&app, &state, &sequenced.event);
                         let event = WebviewEvent::Subscription(sequenced.event);
+                        if matches!(
+                            event,
+                            WebviewEvent::Subscription(SubscriptionEvent::HeldReviews(_))
+                        ) {
+                            state.event_router.deliver_snapshot(&event.audience(), || {
+                                WebviewEvent::Subscription(host.held_reviews())
+                                    .envelope(Some(sequenced.cursor))
+                            });
+                            continue;
+                        }
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
                             state
                                 .event_router

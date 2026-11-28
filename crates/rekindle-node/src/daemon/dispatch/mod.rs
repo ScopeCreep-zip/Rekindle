@@ -170,6 +170,8 @@ pub struct DaemonContext {
     /// The host's one intent gate (plan D3.3), counting wrong passphrase
     /// proofs on `identity_attempts`.
     pub intents: std::sync::Arc<crate::host::gate::HostGate>,
+    /// Orders backend hold mutations and their live events.
+    pub(crate) backend_hold_publication: parking_lot::Mutex<()>,
     /// The undo offers of actions that ran (plan E1.1).
     pub undo: crate::host::undo::UndoCache,
     /// The host's one event journal (plan D3.2): every event a frontend

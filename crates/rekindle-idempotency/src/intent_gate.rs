@@ -219,6 +219,57 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         self.insert(owner, selection, action, on_cancel, ttl_ms, now_ms)
     }
 
+    /// Hold one backend action per `same` match for this owner. An
+    /// unchanged review keeps its id and expiry, returning `None`.
+    /// A new review returns whether it withdrew a previous hold.
+    ///
+    /// # Errors
+    /// `owner` has no room after accounting for the matching hold.
+    pub fn hold_backend(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        on_cancel: Option<A>,
+        same: impl Fn(&A, &A) -> bool,
+        now_ms: u64,
+    ) -> Result<Option<(IntentReview, bool)>, GateError> {
+        let mut pending = self.pending.lock();
+        let mut occupied = 0;
+        let mut replaced = false;
+        for held in pending.values().filter(|p| p.owner == owner) {
+            let unexpired = held.review.expires_at_ms > now_ms;
+            if same(&held.action, &action) {
+                if unexpired
+                    && held.selection == selection
+                    && held.on_cancel.is_some() == on_cancel.is_some()
+                {
+                    return Ok(None);
+                }
+                replaced = true;
+            } else if unexpired {
+                occupied += 1;
+            }
+        }
+        if occupied >= MAX_PENDING_PER_OWNER {
+            return Err(GateError::TooManyPending);
+        }
+        pending.retain(|_, p| {
+            p.review.expires_at_ms > now_ms && (p.owner != owner || !same(&p.action, &action))
+        });
+        let held = self.pending_of(
+            owner,
+            selection,
+            action,
+            on_cancel,
+            BACKEND_HOLD_TTL_MS,
+            now_ms,
+        );
+        let review = held.review.clone();
+        pending.insert(review.intent_id, held);
+        Ok(Some((review, replaced)))
+    }
+
     fn insert(
         &self,
         owner: O,
@@ -233,21 +284,32 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         if pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER {
             return Err(GateError::TooManyPending);
         }
+        let held = self.pending_of(owner, selection, action, on_cancel, ttl_ms, now_ms);
+        let review = held.review.clone();
+        pending.insert(review.intent_id, held);
+        Ok(review)
+    }
+
+    fn pending_of(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        on_cancel: Option<A>,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Pending<A, O> {
         let id = mint_intent_id(now_ms, self.rng.as_ref());
         let review = review_of(id, &selection, now_ms, ttl_ms, on_cancel.is_some());
-        pending.insert(
-            review.intent_id,
-            Pending {
-                owner,
-                original_id: id,
-                selection,
-                review: review.clone(),
-                action,
-                on_cancel,
-                ttl_ms,
-            },
-        );
-        Ok(review)
+        Pending {
+            owner,
+            original_id: id,
+            selection,
+            review,
+            action,
+            on_cancel,
+            ttl_ms,
+        }
     }
 
     /// Step 3, Commit: with `fresh` = the selection recomputed now, either
