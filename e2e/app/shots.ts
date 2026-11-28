@@ -134,9 +134,11 @@ export function saveImage(name: string, image: Rgba): void {
 }
 
 /** The state a spec asserts mid-test (a dialog open, a toast shown): each running user's current window,
- *  as `<user>-<name>.png`; a user whose app has quit has no window to shoot. */
-export async function shot(name: string): Promise<void> {
+ *  as `<user>-<name>.png`; a user whose app has quit has no window to shoot. `only` names the
+ *  sessions to shoot when a spec knows another user's app is gone or going. */
+export async function shot(name: string, only?: readonly string[]): Promise<void> {
   for (const [user, b] of sessions()) {
+    if (only && !only.includes(user)) continue;
     if (!(await running(b))) {
       console.log(`[shot] ${user}: the app has quit, no "${name}" shot`);
       continue;

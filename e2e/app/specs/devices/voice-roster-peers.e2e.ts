@@ -180,7 +180,9 @@ describe("voice join, leave and quit reach the roster by beat, both members in r
       throw new Error(`Cara's member row still reads "${caraStatus}" 30 s after her quit (rows ${JSON.stringify(caraRow)}): her quit beat never reached presence`);
     });
     console.log(`[beats] Cara's member row offline ${Date.now() - quitAt} ms after the voice roster dropped her`);
-    await shot("after-quit");
+    // Only Ari's app: Cara's quit by design, and her app may still be
+    // exiting (the session answers, then refuses mid-screenshot).
+    await shot("after-quit", ["alice"]);
 
     console.log(`[beats] join ${joinTook} ms, leave ${leaveTook} ms, quit ${quitTook} ms (bound ${BEAT_MS} ms)`);
   });
