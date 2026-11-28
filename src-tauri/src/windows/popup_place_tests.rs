@@ -128,6 +128,8 @@ fn a_skin_without_the_popup_closes_it() {
         menus: rekindle_types::dto::skin_action::MenuRegistry { menus: Vec::new() },
         min_width: 0,
         min_height: 0,
+        max_width: None,
+        max_height: None,
         images: Vec::new(),
     };
     let info = popup(PopupEdge::Right, -13, STRETCH);

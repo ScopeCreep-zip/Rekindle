@@ -246,7 +246,10 @@ fn shells(
                 None => {
                     let tree = layout.tree.as_ref().ok_or_else(|| unreadable("tree"))?;
                     let min = shape::min_window(layout).ok_or_else(|| unreadable("minimum"))?;
-                    tree.shell(t.window, min, own(&t.css))
+                    let mut shell = tree.shell(t.window, min, own(&t.css));
+                    (shell.max_width, shell.max_height) =
+                        shape::max_size(t.window, min, &layout.size_hints);
+                    shell
                 }
                 Some(name) => {
                     let popup = layout.popups.get(name).ok_or_else(|| unreadable("popup"))?;

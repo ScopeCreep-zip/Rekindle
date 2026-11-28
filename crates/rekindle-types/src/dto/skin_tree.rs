@@ -435,6 +435,15 @@ pub struct SkinShell {
     /// SK4); a popup's is its frame's at the launching window's minimum.
     pub min_width: u16,
     pub min_height: u16,
+    /// The window's served maximum (logical px), `None` on an axis with no
+    /// limit: Rekindle's ceiling for its kind raised to the pack's minimum
+    /// and default, lowered to the pack's maximum
+    /// (`rekindle_skin::shape::max_size`), the limit the desktop shell holds
+    /// the native window to. A popup is placed from `popup` and has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<u16>,
     /// The `skin://` href of every image this tree's own rules draw that
     /// `SkinApplied::images` (the shared sheet's) does not list, so only a
     /// window binding this shell decodes them before it shows the sheet
@@ -531,7 +540,7 @@ impl SkinNode {
 impl SkinTree {
     /// The tree's outline for `window`'s shell: ids, roles and nesting,
     /// with the window's served minimum `min` (width, height) and the
-    /// tree's own `images`.
+    /// tree's own `images`; its maximum is the server's to set.
     #[must_use]
     pub fn shell(&self, window: SkinWindow, min: (u16, u16), images: Vec<String>) -> SkinShell {
         SkinShell {
@@ -541,6 +550,8 @@ impl SkinTree {
             menus: super::skin_action::MenuRegistry::rekindle(),
             min_width: min.0,
             min_height: min.1,
+            max_width: None,
+            max_height: None,
             images,
         }
     }

@@ -421,6 +421,9 @@ export interface SkinShell {
    *  (plan SK4): what the desktop's fit holds the window to. */
   minWidth: number;
   minHeight: number;
+  /** The window's served maximum, absent on an axis with no limit (`rekindle_skin::shape::max_size`). */
+  maxWidth?: number;
+  maxHeight?: number;
   /** The `skin://` hrefs this tree's own rules draw beyond the shared sheet's
    *  (`SkinApplied.images`), decoded only by a window laying this tree. */
   images: string[];

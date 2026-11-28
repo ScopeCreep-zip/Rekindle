@@ -72,21 +72,21 @@ impl SettingsTab {
 /// Size limits for one window kind: (inner, min inner).
 struct Size {
     inner: (f64, f64),
-    min: (f64, f64),
+    min: (u16, u16),
 }
 
 const fn size(kind: WindowKind) -> Size {
     let (inner, min) = match kind {
-        WindowKind::Login => ((380.0, 480.0), (340.0, 440.0)),
-        WindowKind::BuddyList => ((320.0, 650.0), (300.0, 500.0)),
-        WindowKind::Settings => ((500.0, 550.0), (420.0, 450.0)),
-        WindowKind::Chat => ((480.0, 550.0), (380.0, 400.0)),
-        WindowKind::Community => ((900.0, 650.0), (750.0, 500.0)),
-        WindowKind::Call => ((420.0, 540.0), (360.0, 420.0)),
-        WindowKind::Profile => ((380.0, 500.0), (340.0, 420.0)),
-        WindowKind::SkinEditor => ((640.0, 620.0), (480.0, 480.0)),
+        WindowKind::Login => ((380.0, 480.0), (340, 440)),
+        WindowKind::BuddyList => ((320.0, 650.0), (300, 500)),
+        WindowKind::Settings => ((500.0, 550.0), (420, 450)),
+        WindowKind::Chat => ((480.0, 550.0), (380, 400)),
+        WindowKind::Community => ((900.0, 650.0), (750, 500)),
+        WindowKind::Call => ((420.0, 540.0), (360, 420)),
+        WindowKind::Profile => ((380.0, 500.0), (340, 420)),
+        WindowKind::SkinEditor => ((640.0, 620.0), (480, 480)),
         // Placed and sized from the served popup (`popup::open`).
-        WindowKind::SkinPopup => ((200.0, 300.0), (100.0, 100.0)),
+        WindowKind::SkinPopup => ((200.0, 300.0), (100, 100)),
     };
     Size { inner, min }
 }
@@ -169,7 +169,7 @@ fn base_builder<'a>(
         let Size { inner, min } = size(kind);
         builder
             .inner_size(inner.0, inner.1)
-            .min_inner_size(min.0, min.1)
+            .min_inner_size(f64::from(min.0), f64::from(min.1))
     };
     let builder = builder
         .decorations(false)

@@ -13,21 +13,11 @@ pub(super) struct Sizing {
     pub maximum: (Option<f64>, Option<f64>),
 }
 
-fn axis(
-    initial: f64,
-    minimum: f64,
-    cap: Option<f64>,
-    default: Option<u16>,
-    maximum: Option<u16>,
-) -> (f64, Option<f64>) {
-    let preferred = default.map_or(initial, f64::from).max(minimum);
-    let cap = cap.map(|cap| cap.max(minimum).max(default.map_or(0.0, f64::from)));
-    let supplied = maximum.map(f64::from);
-    let max = match (cap, supplied) {
-        (Some(a), Some(b)) => Some(a.min(b).max(minimum)),
-        (a, b) => a.or(b).map(|limit| limit.max(minimum)),
-    };
-    (max.map_or(preferred, |max| preferred.min(max)), max)
+/// One axis's wanted size: the pack's default, else the kind's initial
+/// size, at least `minimum` and at most the served `maximum`.
+fn wanted(initial: f64, minimum: u16, default: Option<u16>, maximum: Option<u16>) -> f64 {
+    let preferred = default.map_or(initial, f64::from).max(f64::from(minimum));
+    maximum.map_or(preferred, |max| preferred.min(f64::from(max)))
 }
 
 impl Sizing {
@@ -35,27 +25,17 @@ impl Sizing {
         let base = super::super::size(skin::kind_of(frame));
         let minimum = layout
             .and_then(rekindle_skin::shape::min_window)
-            .map_or(base.min, |(w, h)| (f64::from(w), f64::from(h)));
+            .unwrap_or(base.min);
         let hints = layout.map_or_else(WindowSizeHints::default, |layout| layout.size_hints);
-        let cap = (frame == SkinWindow::Main).then_some((400.0, 900.0));
-        let (width, max_w) = axis(
-            base.inner.0,
-            minimum.0,
-            cap.map(|c| c.0),
-            hints.default_width,
-            hints.max_width,
-        );
-        let (height, max_h) = axis(
-            base.inner.1,
-            minimum.1,
-            cap.map(|c| c.1),
-            hints.default_height,
-            hints.max_height,
-        );
+        // The same maximum the Host serves on the window's shell.
+        let (max_w, max_h) = rekindle_skin::shape::max_size(frame, minimum, &hints);
         Self {
-            wanted: (width, height),
-            minimum,
-            maximum: (max_w, max_h),
+            wanted: (
+                wanted(base.inner.0, minimum.0, hints.default_width, max_w),
+                wanted(base.inner.1, minimum.1, hints.default_height, max_h),
+            ),
+            minimum: (f64::from(minimum.0), f64::from(minimum.1)),
+            maximum: (max_w.map(f64::from), max_h.map(f64::from)),
         }
     }
 
