@@ -92,6 +92,21 @@ pub fn validate(
     package: &Package<'_>,
     manifest: &SkinManifest,
 ) -> Result<BTreeMap<String, Vec<u8>>, SkinError> {
+    validate_with(package, manifest, PngEncoding::Canonical)
+}
+
+/// A trial can validate the source pixels before the final package emits PNGs.
+#[derive(Clone, Copy)]
+pub(crate) enum PngEncoding {
+    Canonical,
+    Trial,
+}
+
+pub(crate) fn validate_with(
+    package: &Package<'_>,
+    manifest: &SkinManifest,
+    png: PngEncoding,
+) -> Result<BTreeMap<String, Vec<u8>>, SkinError> {
     check_references(package, manifest)?;
     let mut checked = Vec::new();
     let mut total = 0u64;
@@ -118,9 +133,17 @@ pub fn validate(
         let ways = drawn
             .get(name)
             .map_or(&[DrawnAs::UNBOUNDED][..], Vec::as_slice);
-        let canonical = canonical(bytes, kind, pixels, &mut budget, ways)
-            .map_err(|rule| SkinError::new(name, rule))?;
-        out.insert(name.to_owned(), canonical);
+        let checked = match (kind, png) {
+            (ImageKind::Png, PngEncoding::Trial) => {
+                // A PNG round trip preserves these decoded RGBA pixels. The
+                // layout and contrast checks can read them from the source
+                // bytes while the trial decides whether to keep the colors.
+                png_pixels(bytes).map(|_| bytes.to_vec())
+            }
+            _ => canonical(bytes, kind, pixels, &mut budget, ways),
+        }
+        .map_err(|rule| SkinError::new(name, rule))?;
+        out.insert(name.to_owned(), checked);
     }
     Ok(out)
 }
@@ -218,13 +241,17 @@ fn still_limits(frames: Frames, max_alloc: u64) -> DecodeLimits {
 /// # Errors
 /// What the decoder refuses within the still-image limits.
 pub(crate) fn decode_png(bytes: &[u8]) -> Result<rekindle_image::RgbaImage, SkinRule> {
-    let limits = still_limits(Frames::First, MAX_IMAGE_ALLOC);
     #[cfg(test)]
     {
         use crate::work::{add, DECODED_FRAMES, DECODES};
         add(&DECODES, 1);
         add(&DECODED_FRAMES, 1);
     }
+    png_pixels(bytes)
+}
+
+fn png_pixels(bytes: &[u8]) -> Result<rekindle_image::RgbaImage, SkinRule> {
+    let limits = still_limits(Frames::First, MAX_IMAGE_ALLOC);
     Ok(decode_limited(bytes, ImageKind::Png, &limits)
         .map_err(rule_of)?
         .into_first()
@@ -233,11 +260,7 @@ pub(crate) fn decode_png(bytes: &[u8]) -> Result<rekindle_image::RgbaImage, Skin
 
 /// A PNG's pixels as an RGBA8 PNG.
 fn canonical_png(bytes: &[u8]) -> Result<Vec<u8>, SkinRule> {
-    let limits = still_limits(Frames::First, MAX_IMAGE_ALLOC);
-    let image = decode_limited(bytes, ImageKind::Png, &limits)
-        .map_err(rule_of)?
-        .into_first();
-    encode_png(&DynamicImage::ImageRgba8(image.into_rgba8())).map_err(rule_of)
+    encode_png(&DynamicImage::ImageRgba8(png_pixels(bytes)?)).map_err(rule_of)
 }
 
 /// A GIF's composited frames as a looping GIF. The frames past the first
