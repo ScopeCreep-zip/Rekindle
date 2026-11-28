@@ -1,6 +1,5 @@
 //! Bind voice ingress to the desktop's current session and work queues.
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -34,7 +33,7 @@ impl MediaIngress for DesktopMediaIngress<'_> {
     }
 
     fn note_voice_drop(&self) {
-        self.0.voice_pkt_drops.fetch_add(1, Ordering::Relaxed);
+        self.0.voice_packet_drops.record_ingress();
     }
 
     fn queue_media_envelope(&self, signed: SignedEnvelope) {

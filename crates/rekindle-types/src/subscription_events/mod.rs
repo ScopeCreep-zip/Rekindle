@@ -47,7 +47,8 @@ pub use transfer::TransferEvent;
 pub use typing::{TypingContext, TypingEvent};
 pub use video::{VideoCodecPeer, VideoEvent};
 pub use voice::{
-    JoinHandshake, LinkMeasurement, VoiceEvent, VoiceMediaReady, VoiceParticipant, VoiceScope,
+    JoinHandshake, LinkMeasurement, PacketDropReason, VoiceEvent, VoiceMediaReady,
+    VoiceParticipant, VoiceQuality, VoiceScope,
 };
 
 use serde::{Deserialize, Serialize};

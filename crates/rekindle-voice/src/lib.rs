@@ -39,6 +39,7 @@ pub mod media_frame; // Media datagram framing: tag + per-route transport_seq (p
 pub mod media_quality; // Render, post-FEC loss and lip sync at this receiver (plan E4.3 Q0).
 pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
+pub mod packet_drops;
 pub mod playback;
 pub mod receive_loop; // Phase 14 — packet receive → decode → mix → playback pipeline.
 pub mod receiver_report; // RFC 3550 receiver reports — the return path voice never had.

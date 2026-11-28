@@ -110,7 +110,7 @@ impl WebviewEvent {
                 ..
             } => Ok(serde_json::json!({
                 "type": "nativeVideoError",
-                "data": { "communityId": community_id, "channelId": channel_id, "message": cause.notice() },
+                "data": { "communityId": community_id, "channelId": channel_id, "notice": cause.notice() },
             })),
             Self::CommunityFocusChannel { channel, .. } => serde_json::to_value(channel),
         }

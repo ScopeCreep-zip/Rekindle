@@ -216,27 +216,26 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent, now_ms: u64) {
         VoiceEvent::DeviceChanged {
             device_type,
             device_name,
-            reason,
+            notice,
         } => {
             h.update(b"device|");
             h.update(device_type.as_bytes());
             h.update(b"|");
             h.update(device_name.as_bytes());
             h.update(b"|");
-            h.update(reason.as_bytes());
+            h.update(notice.as_bytes());
         }
         VoiceEvent::PacketsDropped { reason, .. } => {
-            // Not the count: it climbs monotonically, so including it
-            // would make every report unique and defeat the dedup.
+            // Coalesce reports of the same cause within the bucket.
             h.update(b"drops|");
-            h.update(reason.as_bytes());
+            h.update(&[*reason as u8]);
             h.update(b"|");
             h.update(&now_bucket.to_le_bytes());
         }
         VoiceEvent::ConnectionQuality { quality, .. } => {
             // The verdict, not the counters — same reason as above.
             h.update(b"quality|");
-            h.update(quality.as_bytes());
+            h.update(&[*quality as u8]);
             h.update(b"|");
             h.update(&now_bucket.to_le_bytes());
         }

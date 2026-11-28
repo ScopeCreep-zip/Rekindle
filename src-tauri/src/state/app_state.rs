@@ -179,7 +179,7 @@ pub struct AppState {
     /// expires_at_ms). In-memory only.
     pub temp_call_muted: Arc<Mutex<HashMap<String, u64>>>,
     /// Wave 14 W14.4 — observability counter for dropped voice packets.
-    pub voice_pkt_drops: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub voice_packet_drops: rekindle_voice::packet_drops::PacketDrops,
     /// Wave 14 W14.1 — pre-staged voice packet receiver.
     pub voice_packet_rx_staged: parking_lot::Mutex<
         Option<tokio::sync::mpsc::Receiver<rekindle_voice::transport::VoicePacket>>,
@@ -217,10 +217,6 @@ pub struct AppState {
     /// on different 5 s cadences; each emission carries both).
     pub voice_quality_cache:
         Mutex<crate::services::voice_adapter::event_mapping::VoiceQualityCache>,
-    /// Phase 5 — CUMULATIVE inbound voice drops (`voice_pkt_drops` is
-    /// swap-reset every second by the telemetry poller; this total
-    /// feeds the quality event's `ingress_drops`).
-    pub voice_ingress_drops_total: std::sync::atomic::AtomicU64,
     /// Channel-media sends that found an empty roster (observability —
     /// frames encoded but with nobody to send to).
     pub channel_send_empty_roster_drops: std::sync::atomic::AtomicU64,
@@ -294,7 +290,7 @@ impl Default for AppState {
                 Arc::new(Mutex::new(HashMap::new())),
             )),
             temp_call_muted: Arc::new(Mutex::new(HashMap::new())),
-            voice_pkt_drops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            voice_packet_drops: rekindle_voice::packet_drops::PacketDrops::default(),
             voice_packet_rx_staged: parking_lot::Mutex::new(None),
             group_calls: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
@@ -307,7 +303,6 @@ impl Default for AppState {
             voice_quality_cache: Mutex::new(
                 crate::services::voice_adapter::event_mapping::VoiceQualityCache::default(),
             ),
-            voice_ingress_drops_total: std::sync::atomic::AtomicU64::new(0),
             video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
             channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),
             gossip_resolve_gate: rekindle_gossip::ResolveGate::new(),

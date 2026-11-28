@@ -21,8 +21,7 @@
 //! * [`media_keys`] — the `MediaKeySource` half: SFrame key sources
 //!   for calls and community channels.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
-use std::sync::atomic::Ordering;
+use rekindle_types::subscription_events::SubscriptionEvent;
 use std::sync::Arc;
 
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
@@ -165,24 +164,12 @@ pub fn spawn_drop_telemetry(
             if stop.run_until_cancelled(tick).await.is_none() {
                 return;
             }
-            let count = task_state.voice_pkt_drops.swap(0, Ordering::Relaxed);
-            task_state
-                .voice_ingress_drops_total
-                .fetch_add(count, Ordering::Relaxed);
-            // This loop lives at login scope, so it ticks before any
-            // call starts. Drops belong to a session; with none running
-            // there is nothing to attribute them to.
-            if count > 0 {
-                if let Some(scope) = crate::state_helpers::current_voice_scope(&task_state) {
-                    crate::event_dispatch::emit_subscription(
-                        &task_app,
-                        &SubscriptionEvent::Voice(VoiceEvent::PacketsDropped {
-                            scope,
-                            reason: "voice_pkt_drops".into(),
-                            count,
-                        }),
-                    );
-                }
+            let scope = crate::state_helpers::current_voice_scope(&task_state);
+            for event in task_state.voice_packet_drops.drain(scope) {
+                crate::event_dispatch::emit_subscription(
+                    &task_app,
+                    &SubscriptionEvent::Voice(event),
+                );
             }
         }
     })

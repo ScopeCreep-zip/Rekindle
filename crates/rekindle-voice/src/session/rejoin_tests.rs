@@ -124,9 +124,6 @@ impl VoiceSessionDeps for Joiner {
     fn record_packet_drop(&self) {
         unreachable!("not on the leave path")
     }
-    fn packet_drops(&self) -> u64 {
-        unreachable!("not on the leave path")
-    }
     fn emit_voice_event(&self, _: VoiceSessionEvent) {}
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
         unreachable!("not on the leave path")

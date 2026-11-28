@@ -97,6 +97,60 @@ pub struct VoiceParticipant {
     pub display_name: String,
 }
 
+/// Where the local audio pipeline discarded voice packets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PacketDropReason {
+    /// Before a packet reached the receive loop.
+    Ingress,
+    /// While processing a packet in the receive loop.
+    ReceiveLoop,
+}
+
+impl PacketDropReason {
+    /// The complete notice for one telemetry report.
+    #[must_use]
+    pub fn notice(self, count: u64) -> String {
+        let packets = if count == 1 {
+            "packet was"
+        } else {
+            "packets were"
+        };
+        match self {
+            Self::Ingress => format!("{count} voice {packets} dropped before playback processing."),
+            Self::ReceiveLoop => {
+                format!("{count} voice {packets} dropped during playback processing.")
+            }
+        }
+    }
+}
+
+/// Connection state for presentation and control styling.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceQuality {
+    #[default]
+    Good,
+    Fair,
+    Poor,
+    Lost,
+    Recovering,
+}
+
+impl VoiceQuality {
+    /// The user-facing connection state.
+    #[must_use]
+    pub const fn notice(self) -> &'static str {
+        match self {
+            Self::Good => "Good connection",
+            Self::Fair => "Fair connection",
+            Self::Poor => "Poor connection",
+            Self::Lost => "Connection lost",
+            Self::Recovering => "Reconnecting",
+        }
+    }
+}
+
 /// Voice channel activity, and the local session's own state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -241,15 +295,16 @@ pub enum VoiceEvent {
         /// `"input"` or `"output"`.
         device_type: String,
         device_name: String,
-        /// Why it changed — e.g. `"unplugged"`, `"user"`.
-        reason: String,
+        /// The Host’s explanation of why the device changed.
+        notice: String,
     },
 
     /// Packets were dropped somewhere in the local pipeline.
     PacketsDropped {
         scope: VoiceScope,
-        reason: String,
+        reason: PacketDropReason,
         count: u64,
+        notice: String,
     },
 
     /// Connection quality, with the drop counters behind the verdict.
@@ -265,7 +320,8 @@ pub enum VoiceEvent {
         /// a degraded call and a call that dropped and is coming back
         /// need different words, and only the second one resolves by
         /// waiting.
-        quality: String,
+        quality: VoiceQuality,
+        notice: String,
         rx_overflow_drops: u64,
         rx_late_drops: u64,
         rx_key_drops: u64,
@@ -321,6 +377,17 @@ pub struct LinkMeasurement {
 }
 
 impl VoiceEvent {
+    /// Build a packet-drop event with the Host's count-dependent words.
+    #[must_use]
+    pub fn packets_dropped(scope: VoiceScope, reason: PacketDropReason, count: u64) -> Self {
+        Self::PacketsDropped {
+            scope,
+            reason,
+            count,
+            notice: reason.notice(count),
+        }
+    }
+
     /// The scope this event belongs to, or `None` for device changes,
     /// which are machine-wide.
     #[must_use]

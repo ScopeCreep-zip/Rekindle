@@ -9,7 +9,6 @@
 use rekindle_calls::signaling::deps::friend_shown_name;
 use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -150,11 +149,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn record_packet_drop(&self) {
-        self.state.voice_pkt_drops.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn packet_drops(&self) -> u64 {
-        self.state.voice_pkt_drops.load(Ordering::Relaxed)
+        self.state.voice_packet_drops.record_receive();
     }
 
     fn emit_voice_event(&self, event: VoiceSessionEvent) {
@@ -540,14 +535,14 @@ impl VoiceSessionDeps for VoiceAdapter {
         }
     }
 
-    fn emit_device_changed(&self, device_type: String, device_name: String, reason: String) {
+    fn emit_device_changed(&self, device_type: String, device_name: String, notice: String) {
         // No scope: a device can change with no call running at all.
         crate::event_dispatch::emit_subscription(
             &self.app_handle,
             &SubscriptionEvent::Voice(VoiceEvent::DeviceChanged {
                 device_type,
                 device_name,
-                reason,
+                notice,
             }),
         );
     }

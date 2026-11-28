@@ -12,7 +12,7 @@ use rekindle_types::key_format::pseudonym_hex;
 use rekindle_voice::VoiceSessionEvent;
 
 use rekindle_types::subscription_events::{
-    LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceScope,
+    LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceQuality, VoiceScope,
 };
 
 use crate::state::AppState;
@@ -24,7 +24,7 @@ use tauri::Manager;
 /// picture from this cache.
 #[derive(Debug, Clone)]
 pub struct VoiceQualityCache {
-    pub quality: String,
+    pub quality: VoiceQuality,
     pub rx_overflow_drops: u64,
     pub rx_late_drops: u64,
     pub rx_key_drops: u64,
@@ -36,7 +36,7 @@ pub struct VoiceQualityCache {
 impl Default for VoiceQualityCache {
     fn default() -> Self {
         Self {
-            quality: "good".to_string(),
+            quality: VoiceQuality::Good,
             rx_overflow_drops: 0,
             rx_late_drops: 0,
             rx_key_drops: 0,
@@ -76,7 +76,7 @@ pub(super) fn merge_quality_event(
     let mut cache = state.voice_quality_cache.lock();
     match event {
         E::ConnectionQuality { quality, link } => {
-            cache.quality.clone_from(quality);
+            cache.quality = *quality;
             // Only overwrite when this window carried a measurement; a
             // window with no report should not erase the last known
             // numbers, or the UI blinks empty between reports.
@@ -97,13 +97,12 @@ pub(super) fn merge_quality_event(
     }
     Some(VoiceEvent::ConnectionQuality {
         scope: scope.clone(),
-        quality: cache.quality.clone(),
+        quality: cache.quality,
+        notice: cache.quality.notice().into(),
         rx_overflow_drops: cache.rx_overflow_drops,
         rx_late_drops: cache.rx_late_drops,
         rx_key_drops: cache.rx_key_drops,
-        ingress_drops: state
-            .voice_ingress_drops_total
-            .load(std::sync::atomic::Ordering::Relaxed),
+        ingress_drops: state.voice_packet_drops.total_drops(),
         link: cache.link,
     })
 }
@@ -126,19 +125,6 @@ pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {
             scope: scope.clone(),
             target_pseudonym: peer_pubkey,
             muted,
-        },
-        VoiceSessionEvent::DeviceChanged {
-            device_type,
-            reason,
-        } => VoiceEvent::DeviceChanged {
-            device_type,
-            device_name: String::new(),
-            reason,
-        },
-        VoiceSessionEvent::PacketsDropped { count } => VoiceEvent::PacketsDropped {
-            scope: scope.clone(),
-            reason: "voice loop".into(),
-            count,
         },
         VoiceSessionEvent::UserJoined { .. }
         | VoiceSessionEvent::ConnectionQuality { .. }
@@ -223,7 +209,8 @@ pub(super) fn emit_local_joined_impl(
     for event in [
         VoiceEvent::ConnectionQuality {
             scope: scope.clone(),
-            quality: "good".to_string(),
+            quality: VoiceQuality::Good,
+            notice: VoiceQuality::Good.notice().into(),
             rx_overflow_drops: 0,
             rx_late_drops: 0,
             rx_key_drops: 0,

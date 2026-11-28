@@ -1,8 +1,8 @@
 //! `VoiceEvent` samples, covering both `VoiceScope`s.
 
 use rekindle_types::subscription_events::{
-    JoinHandshake, LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceMediaReady,
-    VoiceParticipant, VoiceScope,
+    JoinHandshake, LinkMeasurement, PacketDropReason, SubscriptionEvent, VoiceEvent,
+    VoiceMediaReady, VoiceParticipant, VoiceQuality, VoiceScope,
 };
 
 use crate::{community, id, pk, text, Sample};
@@ -237,7 +237,8 @@ fn connection_quality(suffix: &str, scope: VoiceScope) -> Sample {
         &format!("connectionQuality.{suffix}"),
         VoiceEvent::ConnectionQuality {
             scope,
-            quality: text("good"),
+            quality: VoiceQuality::Good,
+            notice: VoiceQuality::Good.notice().into(),
             rx_overflow_drops: 1,
             rx_late_drops: 2,
             rx_key_drops: 0,
@@ -284,16 +285,14 @@ fn local_session() -> Vec<Sample> {
             VoiceEvent::DeviceChanged {
                 device_type: text("input"),
                 device_name: text("USB Headset"),
-                reason: text("unplugged"),
+                notice: rekindle_types::audio::AudioDeviceChange::SavedDisconnected
+                    .notice()
+                    .into(),
             },
         ),
         ev(
             "packetsDropped",
-            VoiceEvent::PacketsDropped {
-                scope: room(),
-                reason: text("jitterOverflow"),
-                count: 9,
-            },
+            VoiceEvent::packets_dropped(room(), PacketDropReason::Ingress, 9),
         ),
         connection_quality("community", room()),
         connection_quality("dm", dm()),

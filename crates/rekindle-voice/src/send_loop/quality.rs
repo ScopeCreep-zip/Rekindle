@@ -18,6 +18,7 @@
 use std::time::{Duration, Instant};
 
 use rekindle_media_stats::{LinkState, LinkTracker, QualityScore, ReceptionMetrics};
+use rekindle_types::subscription_events::VoiceQuality;
 
 use super::VoiceSendLoop;
 use crate::receiver_report::VoiceReceiverReport;
@@ -45,13 +46,13 @@ fn link_severity(state: LinkState) -> u8 {
 /// `Recovering` are reported distinctly rather than collapsed into
 /// "poor": a user needs to see the difference between a call that is
 /// degraded and one that has dropped and is coming back.
-fn link_label(state: LinkState) -> &'static str {
+fn voice_quality(state: LinkState) -> VoiceQuality {
     match state {
-        LinkState::Good => "good",
-        LinkState::Fair => "fair",
-        LinkState::Poor => "poor",
-        LinkState::Lost => "lost",
-        LinkState::Recovering => "recovering",
+        LinkState::Good => VoiceQuality::Good,
+        LinkState::Fair => VoiceQuality::Fair,
+        LinkState::Poor => VoiceQuality::Poor,
+        LinkState::Lost => VoiceQuality::Lost,
+        LinkState::Recovering => VoiceQuality::Recovering,
     }
 }
 
@@ -282,15 +283,15 @@ impl VoiceSendLoop {
         let worst = self.worst_link();
         let (quality, loss_pct_u32) = if let Some(w) = worst.as_ref() {
             (
-                link_label(w.score.state),
+                voice_quality(w.score.state),
                 u32::from(w.metrics.loss_rate_q8.max(w.metrics.discard_rate_q8)) * 100 / 255,
             )
         } else {
             let local = self.local_failure_pct();
             let label = match local {
-                0..5 => "good",
-                5..15 => "fair",
-                _ => "poor",
+                0..5 => VoiceQuality::Good,
+                5..15 => VoiceQuality::Fair,
+                _ => VoiceQuality::Poor,
             };
             (label, local)
         };
@@ -304,7 +305,7 @@ impl VoiceSendLoop {
         let audio_bps = self.audio_bps;
         self.deps
             .emit_voice_event(VoiceSessionEvent::ConnectionQuality {
-                quality: quality.to_string(),
+                quality,
                 link: worst.map(|mut w| {
                     w.bitrate_bps = audio_bps;
                     w

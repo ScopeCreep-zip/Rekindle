@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    JoinHandshake, LinkMeasurement, PacketDropReason, VoiceEvent, VoiceMediaReady,
+    VoiceParticipant, VoiceQuality, VoiceScope,
+};
 
 fn community_scope() -> VoiceScope {
     VoiceScope::Community {
@@ -32,7 +35,7 @@ fn device_changes_are_machine_wide() {
     let event = VoiceEvent::DeviceChanged {
         device_type: "input".into(),
         device_name: "Yeti".into(),
-        reason: "unplugged".into(),
+        notice: "The saved audio device was disconnected.".into(),
     };
     assert!(
         event.scope().is_none(),
@@ -139,16 +142,13 @@ fn postcard_round_trips_every_variant() {
         VoiceEvent::DeviceChanged {
             device_type: "input".into(),
             device_name: "Yeti".into(),
-            reason: "user".into(),
+            notice: "The system default audio device changed.".into(),
         },
-        VoiceEvent::PacketsDropped {
-            scope: community_scope(),
-            reason: "voice loop".into(),
-            count: 12,
-        },
+        VoiceEvent::packets_dropped(community_scope(), PacketDropReason::ReceiveLoop, 12),
         VoiceEvent::ConnectionQuality {
             scope: community_scope(),
-            quality: "good".into(),
+            quality: VoiceQuality::Good,
+            notice: VoiceQuality::Good.notice().into(),
             rx_overflow_drops: 1,
             rx_late_drops: 2,
             rx_key_drops: 3,
@@ -175,7 +175,8 @@ fn postcard_round_trips_every_variant() {
         // `quality` came from local send-failure counts.
         VoiceEvent::ConnectionQuality {
             scope: community_scope(),
-            quality: "recovering".into(),
+            quality: VoiceQuality::Recovering,
+            notice: VoiceQuality::Recovering.notice().into(),
             rx_overflow_drops: 0,
             rx_late_drops: 0,
             rx_key_drops: 0,
@@ -218,4 +219,18 @@ fn json_shape_is_what_the_webview_parses() {
         serde_json::to_string(&dm).unwrap(),
         r#"{"joined":{"scope":{"dm":{"peerKey":"peer"}},"pseudonym":"p","displayName":"Ada","routeBlob":null}}"#
     );
+}
+
+#[test]
+fn quality_has_distinct_routing_codes_and_host_notices() {
+    for (quality, code, notice) in [
+        (VoiceQuality::Good, "good", "Good connection"),
+        (VoiceQuality::Fair, "fair", "Fair connection"),
+        (VoiceQuality::Poor, "poor", "Poor connection"),
+        (VoiceQuality::Lost, "lost", "Connection lost"),
+        (VoiceQuality::Recovering, "recovering", "Reconnecting"),
+    ] {
+        assert_eq!(serde_json::to_value(quality).unwrap(), code);
+        assert_eq!(quality.notice(), notice);
+    }
 }

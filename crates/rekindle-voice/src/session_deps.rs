@@ -17,6 +17,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use rekindle_types::subscription_events::VoiceQuality;
 
 use crate::error::VoiceError;
 
@@ -266,9 +267,6 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// VoiceEvent::PacketsDropped).
     fn record_packet_drop(&self);
 
-    /// Read the current packet-drop counter (for telemetry emit).
-    fn packet_drops(&self) -> u64;
-
     // --- Frontend emit ---
 
     /// Push a voice event to the frontend. The adapter maps each
@@ -492,10 +490,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     );
 
     /// Emit a `VoiceEvent::DeviceChanged` with the given fields.
-    /// Distinct from `emit_voice_event(VoiceSessionEvent::DeviceChanged)`
-    /// because the existing wire variant carries `device_name` which
-    /// the crate event doesn't surface.
-    fn emit_device_changed(&self, device_type: String, device_name: String, reason: String);
+    fn emit_device_changed(&self, device_type: String, device_name: String, notice: String);
 
     /// Emit a `NotificationEvent::SystemAlert` (title + body). Used
     /// by device hot-swap to surface "Audio Device Disconnected".
@@ -551,14 +546,10 @@ pub enum VoiceSessionEvent {
     UserSpeaking { peer_pubkey: String, speaking: bool },
     /// A participant muted/unmuted themselves.
     UserMuted { peer_pubkey: String, muted: bool },
-    /// Audio device changed (hot-swap).
-    DeviceChanged { device_type: String, reason: String },
-    /// Packet drops counter (telemetry — W14.4).
-    PacketsDropped { count: u64 },
     /// Connection quality summary (every 5 s from send_loop). Quality
     /// is `"good"` / `"fair"` / `"poor"` based on packet loss %.
     ConnectionQuality {
-        quality: String,
+        quality: VoiceQuality,
         /// What the far end measured, from its RFC 3550 receiver
         /// reports. `None` until a report arrives, in which case
         /// `quality` fell back to local send-failure counts — which

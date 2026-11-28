@@ -2746,6 +2746,7 @@
           "rFactor": 88,
           "rttMs": 80
         },
+        "notice": "Good connection",
         "quality": "good",
         "rxKeyDrops": 0,
         "rxLateDrops": 2,
@@ -2777,6 +2778,7 @@
           "rFactor": 88,
           "rttMs": 80
         },
+        "notice": "Good connection",
         "quality": "good",
         "rxKeyDrops": 0,
         "rxLateDrops": 2,
@@ -2808,7 +2810,7 @@
       "deviceChanged": {
         "deviceName": "USB Headset",
         "deviceType": "input",
-        "reason": "unplugged"
+        "notice": "saved device disconnected"
       }
     }
   },
@@ -2958,7 +2960,8 @@
     "voice": {
       "packetsDropped": {
         "count": 9,
-        "reason": "jitterOverflow",
+        "notice": "9 voice packets were dropped before playback processing.",
+        "reason": "ingress",
         "scope": {
           "community": {
             "channel": "vc_cccccccccccccccccccccccccccccccc",

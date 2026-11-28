@@ -573,7 +573,7 @@ fn native_video_error_wire() {
         envelope.payload,
         serde_json::json!({
             "type": "nativeVideoError",
-            "data": { "communityId": "c1", "channelId": "ch1", "message": "The camera stopped working." },
+            "data": { "communityId": "c1", "channelId": "ch1", "notice": "The camera stopped working." },
         })
     );
 }
