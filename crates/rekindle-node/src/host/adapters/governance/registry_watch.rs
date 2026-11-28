@@ -12,8 +12,7 @@
 //!
 //! The Host decides; the run is the presence poll's owner: the shell's own
 //! presence adapter until the poll moves into the Host (S8b), else the
-//! daemon's (`DaemonPresenceAdapter`), as
-//! [`spawn_presence_poll_tick_impl`](super::HostGovernance) does.
+//! daemon's (`DaemonPresenceAdapter`).
 
 use std::sync::Arc;
 

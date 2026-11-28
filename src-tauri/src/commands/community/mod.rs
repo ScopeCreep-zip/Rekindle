@@ -207,14 +207,16 @@ pub use polls::{
 pub use presence::{
     __cmd__get_community_members, __cmd__get_presence_policy, __cmd__send_channel_typing,
     __cmd__set_active_channel, __cmd__set_community_display_name, __cmd__set_presence_policy,
-    __cmd__update_community_profile, __tauri_command_name_get_community_members,
-    __tauri_command_name_get_presence_policy, __tauri_command_name_send_channel_typing,
-    __tauri_command_name_set_active_channel, __tauri_command_name_set_community_display_name,
-    __tauri_command_name_set_presence_policy, __tauri_command_name_update_community_profile,
+    __cmd__set_presence_policy_field, __cmd__update_community_profile,
+    __tauri_command_name_get_community_members, __tauri_command_name_get_presence_policy,
+    __tauri_command_name_send_channel_typing, __tauri_command_name_set_active_channel,
+    __tauri_command_name_set_community_display_name, __tauri_command_name_set_presence_policy,
+    __tauri_command_name_set_presence_policy_field, __tauri_command_name_update_community_profile,
 };
 pub use presence::{
     get_community_members, get_presence_policy, send_channel_typing, set_active_channel,
-    set_community_display_name, set_presence_policy, update_community_profile,
+    set_community_display_name, set_presence_policy, set_presence_policy_field,
+    update_community_profile,
 };
 pub use profile_blobs::{
     __cmd__get_community_avatar_data_url, __cmd__set_community_avatar, __cmd__set_community_banner,

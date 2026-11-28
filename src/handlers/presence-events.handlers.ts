@@ -127,87 +127,67 @@ export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
   });
 }
 
+function applyCommunityPresence(
+  communityId: string,
+  memberIdx: number,
+  snapshot: PresenceSnapshot
+): void {
+  if (snapshot.status !== null) {
+    setCommunityState("communities", communityId, "members", memberIdx, "status", snapshot.status);
+    refreshCommunityMembers(communityId);
+  }
+  if (snapshot.game === null) return;
+  const name = gameName(snapshot);
+  const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
+  setCommunityState(
+    "communities",
+    communityId,
+    "members",
+    memberIdx,
+    "gameInfo",
+    name === null
+      ? null
+      : {
+          gameName: name,
+          gameId: playing?.gameId ?? null,
+          startedAt: playing?.elapsedSeconds ?? null,
+          serverAddress: playing?.serverAddress ?? null,
+          iconKey: playing?.iconKey ?? null,
+          joinable: playing?.joinable ?? false,
+          joinableReason: playing?.joinableReason ?? null,
+        }
+  );
+}
+
 export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
     const observed = subject(event);
     if (observed === null) return;
     const { key, snapshot, isSelf } = observed;
-    // Nothing observed that this view renders.
     if (snapshot.status === null && snapshot.game === null) return;
+
     if (isSelf) {
-      // Our own presence changed (AA1): each community's member list is read
-      // again, and the Host builds our row there from its one own-presence
-      // source (views.rs), status and group alike; nothing is written here.
-      if (snapshot.status === null) return;
-      for (const communityId of Object.keys(communityState.communities))
-        refreshCommunityMembers(communityId);
+      if (snapshot.status !== null) {
+        for (const communityId of Object.keys(communityState.communities))
+          refreshCommunityMembers(communityId);
+      }
       return;
     }
 
-    // A community member event names its own community, so only that
-    // one needs scanning. A friend event carries no community, so every
-    // community is searched for a member with that key — the same peer
-    // can be both a friend and a co-member.
-    const communityIds =
-      "communityMemberChanged" in event
-        ? [event.communityMemberChanged.community]
-        : Object.keys(communityState.communities);
+    const memberEvent = "communityMemberChanged" in event ? event.communityMemberChanged : null;
+    const communityIds = memberEvent
+      ? [memberEvent.community]
+      : Object.keys(communityState.communities);
 
     for (const communityId of communityIds) {
       const community = communityState.communities[communityId];
       if (!community) continue;
-      const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
+      const memberIdx = community.members.findIndex((member) => member.pseudonymKey === key);
       if (memberIdx < 0) {
-        // A member the list does not hold yet: the event names its
-        // community, so re-read that list. A friend event names none, and
-        // a friend need not be a member of any community scanned.
-        if ("communityMemberChanged" in event) refreshForUnlistedMember(communityId, key);
+        if (memberEvent) refreshForUnlistedMember(communityId, key);
         continue;
       }
-
-      if (snapshot.status !== null) {
-        setCommunityState(
-          "communities",
-          communityId,
-          "members",
-          memberIdx,
-          "status",
-          snapshot.status
-        );
-        // A member that just went offline is no longer "in" any channel —
-        // clear their location so the channel presence badge stops counting
-        // them without waiting for the next full members re-fetch.
-        if (snapshot.status === "offline") {
-          setCommunityState("communities", communityId, "members", memberIdx, "location", null);
-        }
-        // Presence moves a member between the Host's groups.
-        refreshCommunityMembers(communityId);
-      }
-
-      // Only when a game was actually observed: a status-only ping
-      // must not clear a game the member is still playing.
-      if (snapshot.game !== null) {
-        const name = gameName(snapshot);
-        const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
-        setCommunityState(
-          "communities",
-          communityId,
-          "members",
-          memberIdx,
-          "gameInfo",
-          name === null
-            ? null
-            : {
-                gameName: name,
-                gameId: playing?.gameId ?? null,
-                startedAt: playing?.elapsedSeconds ?? null,
-                serverAddress: playing?.serverAddress ?? null,
-                iconKey: playing?.iconKey ?? null,
-                joinable: playing?.joinable ?? false,
-                joinableReason: playing?.joinableReason ?? null,
-              }
-        );
-      }
+      applyCommunityPresence(communityId, memberIdx, snapshot);
     }
   });
 }

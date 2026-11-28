@@ -1,12 +1,10 @@
 //! The host over a temp root with no node (plan D3.1).
 
-use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::*;
 use crate::host::fixture::temp_root;
-use crate::host::shell_hooks;
-use rekindle_ipc::{Caller, ConnId, HostApi};
+use rekindle_ipc::{Caller, HostApi};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
 use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};

@@ -68,33 +68,30 @@ impl HostGovernance {
         )
     }
 
-    /// Make `policy` our presence sharing consent in `community` (local
-    /// only, never published; architecture §10 / §16.3), kept on the
-    /// community and its row, and wake the card's game writer: the game our
-    /// card shares follows the consent, so hiding it reaches the card within
-    /// [`CARD_GAME_SETTLE`](crate::host::adapters::presence::card_game::CARD_GAME_SETTLE)
-    /// with no presence change (plan E3.4 S6).
+    /// Store the local consent and wake the beat and card writers after the
+    /// edit commits.
     ///
     /// # Errors
-    /// The community is not joined, or the policy does not serialize.
-    pub fn set_presence_policy(
+    /// The identity is locked, the community is missing or the write failed.
+    pub(crate) async fn edit_presence_policy(
         &self,
         community: &str,
-        policy: PresenceSharingPolicy,
+        update: impl FnOnce(&mut PresenceSharingPolicy) + Send + 'static,
     ) -> Result<(), String> {
-        let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
-        {
-            let mut map = self.ctx.communities.map().write();
-            let state = map.get_mut(community).ok_or("unknown community")?;
-            state.presence_policy = policy;
+        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
+        let changed = crate::host::session::record_presence_policy(
+            &db,
+            owner,
+            self.ctx.communities.clone(),
+            community.to_owned(),
+            update,
+        )
+        .await?;
+        if changed {
+            crate::host::adapters::presence::view::location_policy_changed(&self.ctx, community);
+            self.ctx.own_presence.card_game.notify_one();
+            crate::host::adapters::presence::refresh_beat(&self.ctx, community);
         }
-        crate::host::session::record_presence_policy(
-            &self.ctx.session,
-            &self.ctx.db,
-            community,
-            policy_json,
-        );
-        self.ctx.own_presence.card_game.notify_one();
         Ok(())
     }
 

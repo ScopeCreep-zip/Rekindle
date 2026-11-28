@@ -2,7 +2,7 @@
 
 use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use rekindle_types::dto::onboarding::{OnboardingConfigEdit, WelcomeScreenDto};
-use rekindle_types::presence::OnboardingAnswer;
+use rekindle_types::presence::{OnboardingAnswer, PresencePolicyField};
 use serde::{Deserialize, Serialize};
 
 use crate::message::SecurityLevel;
@@ -89,6 +89,15 @@ pub enum SettingsRequest {
 
     /// Our onboarding of a community is done.
     OnboardingComplete { community: String },
+
+    /// Read our presence sharing consent in a joined community.
+    CommunityGetPresencePolicy { community: String },
+
+    /// Change one presence consent field, keeping the other fields as stored.
+    CommunitySetPresencePolicyField {
+        community: String,
+        field: PresencePolicyField,
+    },
 }
 
 impl SettingsRequest {
@@ -108,6 +117,12 @@ impl SettingsRequest {
             }
             Self::CommunitySetPresencePolicy { .. } => {
                 ("CommunitySetPresencePolicy", Write, Authenticated)
+            }
+            Self::CommunityGetPresencePolicy { .. } => {
+                ("CommunityGetPresencePolicy", Query, Authenticated)
+            }
+            Self::CommunitySetPresencePolicyField { .. } => {
+                ("CommunitySetPresencePolicyField", Write, Authenticated)
             }
             Self::CommunitySetAvatar { .. } => ("CommunitySetAvatar", Write, Authenticated),
             Self::CommunitySetBanner { .. } => ("CommunitySetBanner", Write, Authenticated),
@@ -132,9 +147,11 @@ impl SettingsRequest {
             Self::OnboardingConfigGet { .. }
             | Self::WelcomeScreenGet { .. }
             | Self::CommunityAvatarGet { .. }
+            | Self::CommunityGetPresencePolicy { .. }
             | Self::CommunityPolicyGet { .. } => C::CommunitiesRead,
             Self::CommunityUpdateProfile { .. }
             | Self::CommunitySetDisplayName { .. }
+            | Self::CommunitySetPresencePolicyField { .. }
             | Self::CommunitySetPresencePolicy { .. }
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }
@@ -146,3 +163,7 @@ impl SettingsRequest {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "settings_tests.rs"]
+mod tests;

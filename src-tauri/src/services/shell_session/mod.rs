@@ -87,10 +87,6 @@ impl ShellHooks for ShellSession {
         );
     }
 
-    fn spawn_presence_poll_tick(&self, community_id: &str) {
-        governance::spawn_presence_poll_tick(&self.state, community_id);
-    }
-
     async fn presence_refresh(&self, community_id: &str) {
         if let Err(error) =
             crate::services::community::presence::presence_refresh(&self.state, community_id).await

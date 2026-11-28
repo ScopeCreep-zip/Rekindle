@@ -13,6 +13,7 @@ use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
 
+mod list;
 mod profile;
 mod roles;
 
@@ -117,7 +118,7 @@ pub async fn dispatch(
             let value = helpers::send(client, request).await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::List => list(client, mode).await,
+        CommunityCmd::List => list::dispatch(client, mode).await,
         CommunityCmd::Permissions => roles::permissions(client, mode).await,
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
@@ -286,43 +287,6 @@ pub async fn dispatch(
             crate::community_watch::watch(client, community.as_deref(), mode).await
         }
     }
-}
-
-async fn list(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    let value = community_ref::list(client).await?;
-    if mode.is_structured() {
-        return format::print_structured(&value, mode);
-    }
-    let rows = value
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .map(|c| {
-                    vec![
-                        c.get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("?")
-                            .to_string(),
-                        c.get("memberCount")
-                            .and_then(serde_json::Value::as_u64)
-                            .map_or("?".into(), |n| n.to_string()),
-                        c.get("channelCount")
-                            .and_then(serde_json::Value::as_u64)
-                            .map_or("?".into(), |n| n.to_string()),
-                        rekindle_client::fmt::abbreviate_key(
-                            c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
-                        ),
-                        removal_text(c.get("removed")),
-                    ]
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    table::print_table(
-        &["Name", "Members", "Channels", "Key", "Standing"],
-        &rows,
-        mode,
-    )
 }
 
 /// The active-channel request for a community already resolved to its anchor.

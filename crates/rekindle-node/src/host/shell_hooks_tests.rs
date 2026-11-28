@@ -1,7 +1,15 @@
 //! The Host's shell hooks: the stages a shell hears, the requests it refuses and
 //! the gossip the Host routes through it (split from `runtime_tests.rs`).
 
-use super::*;
+use std::sync::Arc;
+
+use rekindle_ipc::message::SecurityLevel;
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::{Caller, ConnId, HostApi as _};
+
+use super::{create_ann, offline_host, offline_host_with, seed_registry_community, status_of};
+use crate::daemon::DaemonState;
+use crate::host::{shell_hooks, Host};
 
 /// The hooks a test shell records, in order.
 #[derive(Default)]
@@ -59,7 +67,6 @@ impl shell_hooks::ShellHooks for Recorder {
     fn spawn_departure_rotation(&self, _community_id: &str, departed: &str) {
         self.0.lock().push(format!("rotation {departed}"));
     }
-    fn spawn_presence_poll_tick(&self, _community_id: &str) {}
     async fn presence_refresh(&self, _community_id: &str) {}
 
     fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
@@ -240,7 +247,6 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn own_gossip_signed(&self, _community_id: &str, _sender: &str, _dedup_key: &str) {}
         fn community_left(&self, _community_id: &str) {}
         fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
-        fn spawn_presence_poll_tick(&self, _community_id: &str) {}
         async fn presence_refresh(&self, _community_id: &str) {}
 
         fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}

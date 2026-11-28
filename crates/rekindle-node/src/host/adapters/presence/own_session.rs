@@ -15,23 +15,46 @@ use crate::daemon::dispatch::DaemonContext;
 /// Our session in `community`: our status and our game (the activity our
 /// consent may let out), the channel we are in, and now as last-active.
 pub(crate) fn own_session(ctx: &DaemonContext, community: &str) -> MemberSession {
+    own_session_with_policy(ctx, community).0
+}
+
+/// Snapshot the focused channel and the consent that governs it under one read lock.
+pub(crate) fn own_session_with_policy(
+    ctx: &DaemonContext,
+    community: &str,
+) -> (MemberSession, PresenceSharingPolicy) {
     let own = ctx.own_presence.view();
-    let location = (ctx.communities.map().read())
-        .get(community)
-        .and_then(|c| c.my_session_location.clone());
-    MemberSession {
-        status: own.status,
-        location,
-        activity: own.game.map(|game| game.game_name),
-        last_active: ctx.clock.now_secs(),
-    }
+    let (location, policy) = ctx.communities.map().read().get(community).map_or_else(
+        || (None, PresenceSharingPolicy::default()),
+        |state| {
+            (
+                state.my_session_location.clone(),
+                state.presence_policy.clone(),
+            )
+        },
+    );
+    (
+        MemberSession {
+            status: own.status,
+            location,
+            activity: own.game.map(|game| game.game_name),
+            last_active: ctx.clock.now_secs(),
+        },
+        policy,
+    )
 }
 
 /// Our sharing consent in `community`; default-deny in a community we do
 /// not hold.
 pub(crate) fn presence_policy(ctx: &DaemonContext, community: &str) -> PresenceSharingPolicy {
-    (ctx.communities.map().read())
+    stored_policy(ctx, community).unwrap_or_default()
+}
+
+/// The policy held for a joined community.
+pub(crate) fn stored_policy(ctx: &DaemonContext, community: &str) -> Option<PresenceSharingPolicy> {
+    ctx.communities
+        .map()
+        .read()
         .get(community)
         .map(|c| c.presence_policy.clone())
-        .unwrap_or_default()
 }
