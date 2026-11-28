@@ -38,23 +38,16 @@ unsound = "all"
 # dependency-audit.md), review by 2027-02-20, or as soon as a compatible
 # patched release exists, whichever comes first.
 ignore = [
-    # capnp 0.20.6 (rekindle-codec, direct). Affected: the safe
-    # `capnp::constant::Reader::get` and `capnp::schema::StructSchema::new`
-    # build readers from caller-supplied words without validation. Not
-    # reachable with untrusted data: our schemas (schemas/*.capnp) declare
-    # no pointer constants, so no `constant::Reader` exists, and
-    # `StructSchema::new` is called only by capnpc-generated code with the
-    # generator's own static `RAW_SCHEMA` (governance_op's dynamic_struct
-    # clear of `sig` included); received bytes go through the validating
-    # message readers, never through either function. Fixed in 0.24
-    # (semver-incompatible codegen); the 0.20 -> 0.24+ bump is its own step.
-    { id = "RUSTSEC-2025-0143", reason = "capnp: unsound constructors reached only with capnpc-generated static schemas; no pointer consts in our schemas; fix needs 0.24 codegen bump (review by 2027-02-20)" },
     # glib 0.18.5 (Linux only, via gtk/webkit2gtk 0.18 <- tauri/wry/tao).
     # Affected: `glib::VariantStrIter` (Variant::array_iter_str). Not
     # reachable: no crate in our tree calls it (grep of gtk 0.18.2, gio
     # 0.18.4, gdk 0.18.2, webkit2gtk 2.0.2 sources: only glib itself
     # defines it); our only glib use is `Cast` in src-tauri/src/platform.rs.
     # Fixed in glib 0.20, which tauri's GTK 3 stack cannot take.
+    # Re-checked 2026-11-27 (GHSA-wrw7-89jp-8q8g): no call to
+    # `array_iter_str`/`VariantStrIter` in gtk 0.18, gio 0.18, gdk 0.18,
+    # webkit2gtk 2, tao, wry, muda or our crates (src-tauri/src/platform.rs:168
+    # imports only `Cast`).
     { id = "RUSTSEC-2024-0429", reason = "glib: VariantStrIter is never called in our tree; gtk-rs 0.18 is pinned by tauri/wry's GTK 3 stack (review by 2027-02-20)" },
     # lru 0.7.8 (via reed-solomon-erasure 6.0.0, the latest release, which
     # pins lru ^0.7.8 <- rekindle-video FEC, in the desktop app). Advisory:
