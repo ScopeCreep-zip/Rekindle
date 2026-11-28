@@ -219,16 +219,21 @@
   }
 
   .account-bubble {
+    width: 80px;
+    position: relative;
+    border-radius: 8px;
+    transition: background var(--motion-duration-fast);
+  }
+
+  .account-bubble-select {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    width: 80px;
+    width: 100%;
     cursor: pointer;
-    position: relative;
     padding: 8px 4px;
-    border-radius: 8px;
-    transition: background var(--motion-duration-fast);
+    border-radius: inherit;
   }
 
   .account-bubble:hover {

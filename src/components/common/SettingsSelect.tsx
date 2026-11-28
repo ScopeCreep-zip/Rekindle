@@ -1,5 +1,5 @@
-import { Component } from "solid-js";
 import { Select } from "@kobalte/core/select";
+import { Component } from "solid-js";
 
 /** One choice: the value the caller persists and the text shown for it. */
 export interface SettingsSelectOption {

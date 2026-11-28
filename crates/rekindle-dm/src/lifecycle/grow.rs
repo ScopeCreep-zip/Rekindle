@@ -117,7 +117,7 @@ pub async fn grow<D: GroupDmDeps + ?Sized>(
     };
     let invite = group::build_invite(*group_id, &group.name, &roster, &next, &chain, plan, |m| {
         deps.sign_identity(m)
-    });
+    })?;
     let own = group::for_recipient(&invite, &me, mint)?;
     deps.put_rendezvous(group_id, &group::rendezvous_of(&own, &me)?)
         .await?;

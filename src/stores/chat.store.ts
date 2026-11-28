@@ -1,8 +1,7 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
-
-import type { Message as IpcMessage } from "../ipc/commands/types";
 import type { DeliveryRetry } from "../ipc/channels/chat_events";
+import type { Message as IpcMessage } from "../ipc/commands/types";
 
 type MessageStatus =
   | "sending"

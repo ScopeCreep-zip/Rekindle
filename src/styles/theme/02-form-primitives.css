@@ -200,6 +200,14 @@
     letter-spacing: 0.05em;
   }
 
+  /* The member list before the Host's first answer: no count, no rows,
+   * this one quiet line (MEMBERS - 0 was the empty list read as "none"). */
+  .member-list-loading {
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
   .member-item {
     display: flex;
     align-items: center;
@@ -255,10 +263,19 @@
 
   /* ─── Member profile popup ─── */
   .profile-popup {
-    position: fixed;
+    /* relative, not fixed: Kobalte positions and measures its own wrapper
+     * (strategy absolute) and copies this z-index onto it; a fixed popup
+     * left that wrapper empty, so it measured nothing and never slid the
+     * popup back inside the window. Kobalte places it only as it opens, so
+     * our profile editor is its own dialog (CommunityProfileEditor). */
+    position: relative;
     z-index: var(--z-popover);
     min-width: 200px;
-    max-width: 280px;
+    /* Never wider or taller than the window leaves it (Kobalte's
+     * fitViewport); a long card scrolls inside. */
+    max-width: min(280px, var(--kb-popper-content-available-width, 280px));
+    max-height: var(--kb-popper-content-available-height, 100vh);
+    overflow-y: auto;
     padding: 12px;
     background: var(--color-xfire-bg-primary);
     border: 1px solid var(--color-xfire-border);

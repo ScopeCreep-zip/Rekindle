@@ -1,11 +1,11 @@
 import { reconcile } from "solid-js/store";
 import { commands, type GroupDmView } from "../ipc/commands";
-import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
-import { transformDmMessage } from "../utils/transformers";
-import { errorMessage } from "../utils/error";
-import { awaitsExpiry } from "./disappearing.actions";
-import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 import { disappearingState } from "../stores/disappearing.store";
+import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
+import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
+import { errorMessage } from "../utils/error";
+import { transformDmMessage } from "../utils/transformers";
+import { awaitsExpiry } from "./disappearing.actions";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -47,8 +47,7 @@ export const handleAcceptGroupDm = (groupId: string) =>
   answer(() => commands.groupDmAccept(groupId));
 export const handleDeclineGroupDm = (groupId: string) =>
   answer(() => commands.groupDmDecline(groupId));
-export const handleLeaveGroupDm = (groupId: string) =>
-  answer(() => commands.groupDmLeave(groupId));
+export const handleLeaveGroupDm = (groupId: string) => answer(() => commands.groupDmLeave(groupId));
 /** Rename a group we created (plan E7.2 G7); the Host reviews it. */
 export const handleRenameGroupDm = (groupId: string, name: string) =>
   answer(() => commands.groupDmRename(groupId, name));
@@ -77,7 +76,7 @@ async function loadGroupRows(groupId: string, limit: number): Promise<boolean> {
     const newest = mapped.reduce((t, m) => Math.max(t, m.timestamp), 0);
     const stored = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
     const live = (held?.messages ?? []).filter(
-      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest,
+      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest
     );
     setGroupDmState("conversations", groupId, {
       messages: [...mapped, ...live],
@@ -100,7 +99,8 @@ export function handleGroupDisplayed(groupId: string): void {
       .groupDmMarkRead(groupId)
       .then(() => {
         const messages = groupDmState.conversations[groupId]?.messages ?? [];
-        if (awaitsExpiry(messages, disappearingState.timers[groupId])) void loadGroupRows(groupId, Math.max(50, messages.length));
+        if (awaitsExpiry(messages, disappearingState.timers[groupId]))
+          void loadGroupRows(groupId, Math.max(50, messages.length));
       })
       .catch((e) => {
         console.error("group_dm_mark_read failed", e);
@@ -111,7 +111,11 @@ export function handleGroupDisplayed(groupId: string): void {
 /** Send `body` to the group; once the Host commits its row, the stored
  *  history (with our queued echo) is read again, and its state then
  *  follows `sendStatus`. `null` on success, else the Host's error. */
-export async function handleSendGroupDm(groupId: string, body: string, replyTo: string | null = null): Promise<string | null> {
+export async function handleSendGroupDm(
+  groupId: string,
+  body: string,
+  replyTo: string | null = null
+): Promise<string | null> {
   try {
     // Nothing is drawn here: once the send commits, the Host publishes our
     // own row (`messageSent`, plan E6.11) to this window, upserted by its
@@ -129,7 +133,9 @@ export async function handleSendGroupDm(groupId: string, body: string, replyTo: 
 /** Our group composer changed: whether it holds text, in edit order and
  *  never swallowed (utils/draft_reports.ts). */
 export function handleGroupDraftChanged(groupId: string, body: string): void {
-  void sendDraftReport(`group:${groupId}`, () => commands.groupDmTyping(groupId, body.trim().length > 0));
+  void sendDraftReport(`group:${groupId}`, () =>
+    commands.groupDmTyping(groupId, body.trim().length > 0)
+  );
 }
 
 function failedClientId(groupId: string, messageId: number): string | undefined {

@@ -68,4 +68,4 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   notificationContent: "nameOnly",
 });
 
-export { settingsState, setSettingsState };
+export { setSettingsState, settingsState };

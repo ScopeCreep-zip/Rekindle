@@ -1,15 +1,15 @@
-import { Component, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { MessageAttachment } from "../../stores/chat.store";
+import { type Component, createMemo, createSignal, Show } from "solid-js";
 import {
   handleDownloadAttachment,
   handlePinAttachment,
   handleRevealAttachment,
 } from "../../actions/community.actions";
+import type { MessageAttachment } from "../../stores/chat.store";
 import { communityState } from "../../stores/community.store";
 import { deniedFor } from "../../utils/denied";
 import { formatSize } from "../../utils/formatting";
 import type { GlyphName } from "../common/glyph_art";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface AttachmentDisplayProps {
   communityId: string;
@@ -33,7 +33,9 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
 
   // Pinning is a community-wide setting: why we may not, in the Host's
   // words (CAPR manageCommunity), or null.
-  const pinDenied = createMemo(() => deniedFor(communityState.communities[props.communityId], "manageCommunity"));
+  const pinDenied = createMemo(() =>
+    deniedFor(communityState.communities[props.communityId], "manageCommunity")
+  );
 
   async function handleDownloadClick(): Promise<void> {
     if (downloading()) return;
@@ -42,7 +44,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
       await handleDownloadAttachment(
         props.communityId,
         props.channelId,
-        props.attachment.attachmentId,
+        props.attachment.attachmentId
       );
     } finally {
       setDownloading(false);
@@ -50,11 +52,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
   }
 
   async function handleRevealClick(): Promise<void> {
-    await handleRevealAttachment(
-      props.communityId,
-      props.channelId,
-      props.attachment.attachmentId,
-    );
+    await handleRevealAttachment(props.communityId, props.channelId, props.attachment.attachmentId);
   }
 
   async function handlePinClick(): Promise<void> {
@@ -77,6 +75,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         when={downloaded()}
         fallback={
           <button
+            type="button"
             class="attachment-card-btn"
             onClick={() => void handleDownloadClick()}
             disabled={downloading()}
@@ -88,6 +87,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         }
       >
         <button
+          type="button"
           class="attachment-card-btn"
           onClick={() => void handleRevealClick()}
           title="Show in folder"
@@ -97,6 +97,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         </button>
       </Show>
       <button
+        type="button"
         class={`attachment-card-pin-btn ${pinned() ? "attachment-card-pin-btn-active" : ""}`}
         onClick={() => void handlePinClick()}
         disabled={pinDenied() !== null}

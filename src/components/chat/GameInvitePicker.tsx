@@ -1,6 +1,6 @@
-import { Component, For, Show, createSignal, onMount } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import type { FavouriteServerView } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
 
 /** Invite this friend to one of our favourite servers (plan E7.2). Only
  *  the favourites the Host marks `invitable` are offered (not a hidden
@@ -31,8 +31,8 @@ const GameInvitePicker: Component<{ peerId: string; peerName: string }> = (props
         when={favourites().length > 0}
         fallback={
           <div class="settings-hint">
-            No server to invite to: add a favourite server under Settings,
-            and show friends the game you play (Privacy).
+            No server to invite to: add a favourite server under Settings, and show friends the game
+            you play (Privacy).
           </div>
         }
       >
@@ -51,7 +51,9 @@ const GameInvitePicker: Component<{ peerId: string; peerName: string }> = (props
           </For>
         </ul>
       </Show>
-      <div class="settings-hint" role="status">{status()}</div>
+      <div class="settings-hint" role="status">
+        {status()}
+      </div>
     </div>
   );
 };

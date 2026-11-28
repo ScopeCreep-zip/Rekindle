@@ -113,8 +113,8 @@ fn manifest(id: &str, name: &str, hash: String, cues: &[(SoundCue, String)]) -> 
             .to_owned(),
         license: SkinLicense::Text(
             "Xfire, Inc. sound pack (Xfire is defunct), used under the project owner's \
-             2026-10-15 ruling. Not covered by Rekindle's MIT licence; provenance is in the \
-             NOTICE beside the package."
+             2026-10-15 ruling. Not covered by Rekindle's MIT OR Apache-2.0 licence; \
+             provenance is in the NOTICE beside the package."
                 .to_owned(),
         ),
         source: Some(SkinSource {

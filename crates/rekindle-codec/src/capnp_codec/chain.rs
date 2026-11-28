@@ -47,8 +47,7 @@ fn read_pointer(r: chain_capnp::page_pointer::Reader<'_>) -> Result<PagePointer,
 }
 
 /// Participant record subkey `HEAD`: the newest page and the retire mark.
-#[must_use]
-pub fn encode_chain_head(head: &ChainHead) -> Vec<u8> {
+pub fn encode_chain_head(head: &ChainHead) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
@@ -63,8 +62,7 @@ pub fn encode_chain_head(head: &ChainHead) -> Vec<u8> {
 /// creates a record locally and writes nothing to the network (0.5.8
 /// `storage_manager/create_record.rs`), so a reader given the key of a record
 /// nobody has written finds no record at all; this value is the first write.
-#[must_use]
-pub fn encode_empty_chain_head() -> Vec<u8> {
+pub fn encode_empty_chain_head() -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
     pack(&builder)
@@ -96,8 +94,7 @@ pub fn decode_chain_head(bytes: &[u8]) -> Result<Option<ChainHead>, CodecError> 
 }
 
 /// A page's only subkey.
-#[must_use]
-pub fn encode_chain_page(page: &ChainPage) -> Vec<u8> {
+pub fn encode_chain_page(page: &ChainPage) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<chain_capnp::chain_page::Builder<'_>>();
@@ -105,7 +102,7 @@ pub fn encode_chain_page(page: &ChainPage) -> Vec<u8> {
             set_pointer(root.reborrow().init_prev(), prev);
         }
         root.set_first_seq(page.first_seq);
-        let len = u32::try_from(page.entries.len()).unwrap_or(u32::MAX);
+        let len = crate::capnp_codec::wire_len(page.entries.len())?;
         let mut list = root.init_entries(len);
         for (i, entry) in (0..len).zip(&page.entries) {
             list.set(i, entry);

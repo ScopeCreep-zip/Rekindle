@@ -19,7 +19,7 @@ fn signed_row(secret: u8) -> (Vec<u8>, String) {
 #[test]
 fn a_departure_row_is_our_signed_tombstone() {
     let key = rekindle_secrets::derive::derive_community_pseudonym(&[3; 32], "c1");
-    let row = departure_row(&key, 1_800_000_000);
+    let row = departure_row(&key, 1_800_000_000).unwrap();
     let me = hex::encode(key.verifying_key().to_bytes());
     assert_eq!(classify_superseding_row(&row, &me), SupersedingRow::Ours);
     let parsed: MemberPresence = serde_json::from_slice(&row).unwrap();

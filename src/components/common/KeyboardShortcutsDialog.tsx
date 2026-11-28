@@ -1,7 +1,8 @@
-import { Component, For, onCleanup, onMount } from "solid-js";
-import Modal from "./Modal";
-import { SHORTCUT_SECTIONS, isHelpChord, keyLabel } from "../../utils/keyboard_shortcuts";
+import { type Component, For, onCleanup, onMount } from "solid-js";
 import { setShortcutsHelpOpen, shortcutsHelpOpen } from "../../stores/shortcuts_help.store";
+import { isHelpChord, keyLabel, SHORTCUT_SECTIONS } from "../../utils/keyboard_shortcuts";
+import { createScrollFocus } from "../../utils/scroll_focus";
+import Modal from "./Modal";
 
 /**
  * The keyboard-shortcuts help dialog (wiring guide §13f): every shortcut
@@ -10,6 +11,8 @@ import { setShortcutsHelpOpen, shortcutsHelpOpen } from "../../stores/shortcuts_
  * list's action bar has a button for it.
  */
 const KeyboardShortcutsDialog: Component = () => {
+  const scrollFocus = createScrollFocus<HTMLElement>();
+
   function onKeyDown(e: KeyboardEvent): void {
     if (isHelpChord(e)) {
       e.preventDefault();
@@ -27,8 +30,13 @@ const KeyboardShortcutsDialog: Component = () => {
       size="md"
     >
       {/* The list scrolls on a short window: it is a named, focusable
-        * region so the keyboard can scroll it (SC 2.1.1). */}
-      <div class="shortcuts-help" role="region" aria-label="All shortcuts" tabIndex={0}>
+       * region so the keyboard can scroll it (SC 2.1.1). */}
+      <section
+        class="shortcuts-help"
+        aria-label="All shortcuts"
+        ref={scrollFocus.setElement}
+        tabIndex={scrollFocus.tabIndex()}
+      >
         <For each={SHORTCUT_SECTIONS}>
           {(section) => (
             <section class="shortcuts-help-section" aria-label={section.title}>
@@ -64,7 +72,7 @@ const KeyboardShortcutsDialog: Component = () => {
             </section>
           )}
         </For>
-      </div>
+      </section>
     </Modal>
   );
 };

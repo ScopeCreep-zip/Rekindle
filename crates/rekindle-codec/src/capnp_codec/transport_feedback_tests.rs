@@ -18,7 +18,7 @@ fn signed() -> TransportFeedback {
 #[test]
 fn round_trip_and_verify() {
     let fb = signed();
-    let decoded = TransportFeedback::decode(&fb.encode()).unwrap();
+    let decoded = TransportFeedback::decode(&fb.encode().unwrap()).unwrap();
     assert_eq!(decoded, fb);
     decoded.verify().unwrap();
 }

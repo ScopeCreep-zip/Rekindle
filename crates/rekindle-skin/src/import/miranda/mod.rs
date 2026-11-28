@@ -386,7 +386,8 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
             .to_owned(),
         license: SkinLicense::Text(
             "Third-party Miranda NG skin art under its author's terms. Not covered by Rekindle's \
-             MIT licence; provenance and every change are in the NOTICE beside the package."
+             MIT OR Apache-2.0 licence; provenance and every change are in the NOTICE \
+             beside the package."
                 .to_owned(),
         ),
         source: Some(SkinSource {

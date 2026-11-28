@@ -3,10 +3,11 @@
 
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_ipc::protocol::SettingsRequest;
+use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use rekindle_types::image_kind::ImageKind;
 
 pub(crate) use crate::host::adapters::governance::community_pictures::PictureSlot;
-pub(crate) use crate::host::adapters::governance::community_profile::{PolicyEdit, ProfileEdit};
+pub(crate) use crate::host::adapters::governance::community_profile::PolicyEdit;
 
 use super::{adapter, runtime_refused, state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -16,7 +17,7 @@ pub(crate) async fn handle_update_profile(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    edit: ProfileEdit,
+    edit: CommunityProfilePatch,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -36,7 +37,7 @@ pub(crate) async fn handle_set_display_name(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    name: &str,
+    name: ProfileField<String>,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -172,31 +173,13 @@ pub(crate) async fn route(
     request: SettingsRequest,
 ) -> IpcResponse {
     match request {
-        SettingsRequest::CommunityUpdateProfile {
-            community,
-            bio,
-            pronouns,
-            theme_color,
-            badges,
-            avatar_ref,
-            banner_ref,
-            custom_status,
-        } => {
-            let edit = ProfileEdit {
-                bio,
-                pronouns,
-                theme_color,
-                badges,
-                avatar_ref,
-                banner_ref,
-                custom_status,
-            };
-            handle_update_profile(ctx, state, &community, edit).await
+        SettingsRequest::CommunityUpdateProfile { community, patch } => {
+            handle_update_profile(ctx, state, &community, patch).await
         }
         SettingsRequest::CommunitySetDisplayName {
             community,
             display_name,
-        } => handle_set_display_name(ctx, state, &community, &display_name).await,
+        } => handle_set_display_name(ctx, state, &community, display_name).await,
         SettingsRequest::CommunitySetPresencePolicy { community, policy } => {
             handle_set_presence_policy(ctx, state, &community, policy)
         }

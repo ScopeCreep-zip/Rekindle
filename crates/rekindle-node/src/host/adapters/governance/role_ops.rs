@@ -108,6 +108,7 @@ pub fn role_displays(
             tag_colours: rekindle_skin::role_tag::colours(role.color, shown),
             permissions: role.permissions,
             position: role.position,
+            position_label: super::views::role_position_label(*id, role.position),
             hoist: role.hoist,
             mentionable: role.mentionable,
             self_assignable: role.self_assignable,

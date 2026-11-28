@@ -182,6 +182,7 @@ fn structure() -> Vec<Sample> {
                     },
                     permissions: rekindle_types::permissions::ALL,
                     position: 1,
+                    position_label: "1".into(),
                     hoist: true,
                     mentionable: true,
                     self_assignable: false,

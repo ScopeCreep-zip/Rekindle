@@ -10,7 +10,7 @@ import type { Message } from "../stores/chat.store";
 export function messageAnnouncement(
   message: Message,
   senderName: string,
-  removedByName: () => string,
+  removedByName: () => string
 ): string {
   const ts = new Date(message.timestamp).toLocaleTimeString(undefined, {
     hour: "numeric",

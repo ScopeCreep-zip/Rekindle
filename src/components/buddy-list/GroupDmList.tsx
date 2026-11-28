@@ -1,10 +1,10 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
-import { groupDmState } from "../../stores/group-dm.store";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   handleAcceptGroupDm,
   handleDeclineGroupDm,
   handleOpenGroupChat,
 } from "../../actions/group-dm.actions";
+import { groupDmState } from "../../stores/group-dm.store";
 
 // The buddy list's group DMs (plan E2.6): invites we have not answered,
 // with Accept (reviewed by the Host, TrustChanging) and Decline, then the
@@ -16,7 +16,7 @@ const GroupDmList: Component = () => {
   const groups = createMemo(() =>
     all()
       .filter((g) => !g.pending)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort((a, b) => a.name.localeCompare(b.name))
   );
 
   async function run(answer: Promise<string | null>): Promise<void> {
@@ -28,20 +28,23 @@ const GroupDmList: Component = () => {
   return (
     <Show when={all().length > 0}>
       <section class="group-dm-section" aria-label="Group chats">
-        <div class="pending-header"><span>Group Chats</span></div>
+        <div class="pending-header">
+          <span>Group Chats</span>
+        </div>
         <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
+          <div class="form-error" role="alert">
+            {error()}
+          </div>
         </Show>
         <For each={invites()}>
           {(invite) => (
-            <div class="pending-item" role="group" aria-label={`Invite to ${invite.name}`}>
+            <article class="pending-item" aria-label={`Invite to ${invite.name}`}>
               <div class="pending-info">
                 <span class="buddy-name">{invite.name}</span>
-                <span class="pending-message">
-                  {invite.members.map((m) => m.label).join(", ")}
-                </span>
+                <span class="pending-message">{invite.members.map((m) => m.label).join(", ")}</span>
               </div>
               <button
+                type="button"
                 class="pending-btn-accept"
                 aria-label={`Accept invite to ${invite.name}`}
                 onClick={() => void run(handleAcceptGroupDm(invite.groupId))}
@@ -49,18 +52,20 @@ const GroupDmList: Component = () => {
                 Accept
               </button>
               <button
+                type="button"
                 class="pending-btn-reject"
                 aria-label={`Decline invite to ${invite.name}`}
                 onClick={() => void run(handleDeclineGroupDm(invite.groupId))}
               >
                 Decline
               </button>
-            </div>
+            </article>
           )}
         </For>
         <For each={groups()}>
           {(group) => (
             <button
+              type="button"
               class="group-dm-row"
               onDblClick={() => handleOpenGroupChat(group.groupId)}
               onKeyDown={(e) => e.key === "Enter" && handleOpenGroupChat(group.groupId)}

@@ -1,6 +1,6 @@
-import { Component, For, Show, createMemo } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, For, Show } from "solid-js";
 import type { Channel, Member, VoiceChannelState } from "../../stores/community.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface StagePanelProps {
   channel: Channel;
@@ -25,15 +25,19 @@ interface StagePanelProps {
 const StagePanel: Component<StagePanelProps> = (props) => {
   // Names and fingerprints as the Host serves them (contracts VN1, VN2); a
   // key outside the member list is never shown, not even in part.
-  const memberOf = (pseudonymKey: string) => props.members.find((member) => member.pseudonymKey === pseudonymKey);
-  const memberName = (pseudonymKey: string): string => memberOf(pseudonymKey)?.displayName ?? "Unknown member";
+  const memberOf = (pseudonymKey: string) =>
+    props.members.find((member) => member.pseudonymKey === pseudonymKey);
+  const memberName = (pseudonymKey: string): string =>
+    memberOf(pseudonymKey)?.displayName ?? "Unknown member";
   // The fingerprint as a second line, only when the name is not already it.
   const memberMeta = (pseudonymKey: string): string => {
     const member = memberOf(pseudonymKey);
     return member && member.fingerprint !== member.displayName ? member.fingerprint : "";
   };
 
-  const speakers = createMemo(() => props.voiceChannel?.speakers ?? props.channel.stageSpeakers ?? []);
+  const speakers = createMemo(
+    () => props.voiceChannel?.speakers ?? props.channel.stageSpeakers ?? []
+  );
   const participants = createMemo(() => props.voiceChannel?.participants ?? []);
   const pendingRequests = createMemo(() => props.voiceChannel?.pendingRequests ?? []);
   const isSpeaker = createMemo(() => {
@@ -45,7 +49,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
     return Boolean(myPseudonymKey && pendingRequests().includes(myPseudonymKey));
   });
   const audience = createMemo(() =>
-    participants().filter((participant) => !speakers().includes(participant)),
+    participants().filter((participant) => !speakers().includes(participant))
   );
 
   return (
@@ -61,25 +65,30 @@ const StagePanel: Component<StagePanelProps> = (props) => {
           <Show
             when={props.isConnectedToChannel}
             fallback={
-              <button class="stage-panel-join-btn" onClick={props.onJoinStage}>
+              <button type="button" class="stage-panel-join-btn" onClick={props.onJoinStage}>
                 <SkinGlyph name="phone" />
                 Join stage
               </button>
             }
           >
-            <button class="stage-panel-leave-btn" onClick={props.onLeaveStage}>
+            <button type="button" class="stage-panel-leave-btn" onClick={props.onLeaveStage}>
               <SkinGlyph name="speaker.on" />
               Leave stage
             </button>
           </Show>
           <Show when={props.isConnectedToChannel && !isSpeaker()}>
             <button
+              type="button"
               class="stage-panel-request-btn"
               onClick={props.onRequestToSpeak}
               disabled={hasRaisedHand() || props.requestToSpeakDenied !== null}
               title={props.requestToSpeakDenied ?? undefined}
               aria-description={props.requestToSpeakDenied ?? undefined}
-              aria-label={hasRaisedHand() ? "Hand raised — waiting for moderator" : "Raise hand to request speaking"}
+              aria-label={
+                hasRaisedHand()
+                  ? "Hand raised — waiting for moderator"
+                  : "Raise hand to request speaking"
+              }
               aria-pressed={hasRaisedHand()}
             >
               <SkinGlyph name="mic.off" />
@@ -104,7 +113,10 @@ const StagePanel: Component<StagePanelProps> = (props) => {
             <SkinGlyph name="mic.on" />
             Speakers ({speakers().length})
           </div>
-          <Show when={speakers().length > 0} fallback={<div class="stage-panel-empty">No speakers yet.</div>}>
+          <Show
+            when={speakers().length > 0}
+            fallback={<div class="stage-panel-empty">No speakers yet.</div>}
+          >
             <div class="stage-panel-list">
               <For each={speakers()}>
                 {(speaker) => (
@@ -125,7 +137,10 @@ const StagePanel: Component<StagePanelProps> = (props) => {
             <SkinGlyph name="speaker.on" />
             Audience ({audience().length})
           </div>
-          <Show when={audience().length > 0} fallback={<div class="stage-panel-empty">No audience members connected.</div>}>
+          <Show
+            when={audience().length > 0}
+            fallback={<div class="stage-panel-empty">No audience members connected.</div>}
+          >
             <div class="stage-panel-list">
               <For each={audience()}>
                 {(participant) => (
@@ -148,7 +163,10 @@ const StagePanel: Component<StagePanelProps> = (props) => {
             <SkinGlyph name="mic.off" />
             Raised hands ({pendingRequests().length})
           </div>
-          <Show when={pendingRequests().length > 0} fallback={<div class="stage-panel-empty">No pending speak requests.</div>}>
+          <Show
+            when={pendingRequests().length > 0}
+            fallback={<div class="stage-panel-empty">No pending speak requests.</div>}
+          >
             <div class="stage-panel-list">
               <For each={pendingRequests()}>
                 {(requester) => (
@@ -156,11 +174,12 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                     <div>
                       <div class="stage-panel-member-name">{memberName(requester)}</div>
                       <Show when={memberMeta(requester)}>
-                      {(meta) => <div class="stage-panel-member-meta">{meta()}</div>}
-                    </Show>
+                        {(meta) => <div class="stage-panel-member-meta">{meta()}</div>}
+                      </Show>
                     </div>
                     <div class="stage-panel-request-actions">
                       <button
+                        type="button"
                         class="stage-panel-approve-btn"
                         onClick={() => props.onApproveRequest(requester)}
                         title="Approve request"
@@ -169,6 +188,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                         <SkinGlyph name="check" />
                       </button>
                       <button
+                        type="button"
                         class="stage-panel-deny-btn"
                         onClick={() => props.onDenyRequest(requester)}
                         title="Deny request"

@@ -1,6 +1,11 @@
-import { Component } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
-import { handleOpenDocs, handleQuit, handleReportBug, openSettingsTab } from "../../actions/app_menu.actions";
+import type { Component } from "solid-js";
+import {
+  handleOpenDocs,
+  handleQuit,
+  handleReportBug,
+  openSettingsTab,
+} from "../../actions/app_menu.actions";
 import { setBuddyListUI } from "../../stores/buddylist-ui.store";
 
 /**
@@ -30,7 +35,10 @@ const MenuBar: Component = () => {
   return (
     <Menubar class="menu-bar">
       <Menubar.Menu onOpenChange={(o) => menuDebug("Rekindle", o ? "open" : "close")}>
-        <Menubar.Trigger class="menu-bar-item" onPointerDown={() => menuDebug("Rekindle", "pointerdown")}>
+        <Menubar.Trigger
+          class="menu-bar-item"
+          onPointerDown={() => menuDebug("Rekindle", "pointerdown")}
+        >
           Rekindle
         </Menubar.Trigger>
         <Menubar.Portal>
@@ -38,10 +46,16 @@ const MenuBar: Component = () => {
             <Menubar.Item class="menu-dropdown-item" onSelect={() => openSettingsTab("profile")}>
               Profile
             </Menubar.Item>
-            <Menubar.Item class="menu-dropdown-item" onSelect={() => openSettingsTab("application")}>
+            <Menubar.Item
+              class="menu-dropdown-item"
+              onSelect={() => openSettingsTab("application")}
+            >
               Application
             </Menubar.Item>
-            <Menubar.Item class="menu-dropdown-item" onSelect={() => openSettingsTab("notifications")}>
+            <Menubar.Item
+              class="menu-dropdown-item"
+              onSelect={() => openSettingsTab("notifications")}
+            >
               Notifications
             </Menubar.Item>
             <Menubar.Item class="menu-dropdown-item" onSelect={() => openSettingsTab("audio")}>
@@ -66,7 +80,10 @@ const MenuBar: Component = () => {
 
       {/* Wave 12 W12.10 — group call entry point. */}
       <Menubar.Menu onOpenChange={(o) => menuDebug("Calls", o ? "open" : "close")}>
-        <Menubar.Trigger class="menu-bar-item" onPointerDown={() => menuDebug("Calls", "pointerdown")}>
+        <Menubar.Trigger
+          class="menu-bar-item"
+          onPointerDown={() => menuDebug("Calls", "pointerdown")}
+        >
           Calls
         </Menubar.Trigger>
         <Menubar.Portal>
@@ -82,7 +99,10 @@ const MenuBar: Component = () => {
       </Menubar.Menu>
 
       <Menubar.Menu onOpenChange={(o) => menuDebug("Help", o ? "open" : "close")}>
-        <Menubar.Trigger class="menu-bar-item" onPointerDown={() => menuDebug("Help", "pointerdown")}>
+        <Menubar.Trigger
+          class="menu-bar-item"
+          onPointerDown={() => menuDebug("Help", "pointerdown")}
+        >
           Help
         </Menubar.Trigger>
         <Menubar.Portal>

@@ -14,6 +14,7 @@ fn a_creator_join_names_its_own_anchor() {
         encode_root::<creator_join::Owned>(|mut b| {
             b.set_anchor(key('A').as_str());
             b.set_invite(invite);
+            Ok(())
         })
     };
     let link = |anchor: &str| {
@@ -24,9 +25,9 @@ fn a_creator_join_names_its_own_anchor() {
             "cd".repeat(32)
         )
     };
-    assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes(&link(&key('B')))).is_err());
-    assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes("hello")).is_err());
-    assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes(&link(&key('A')))).is_ok());
+    assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes(&link(&key('B'))).unwrap()).is_err());
+    assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes("hello").unwrap()).is_err());
+    assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes(&link(&key('A'))).unwrap()).is_ok());
 }
 
 /// A pseudonym or signature of the wrong length, or a name with a
@@ -37,11 +38,13 @@ fn bad_creator_bodies_are_refused() {
         b.set_anchor(key('A').as_str());
         b.set_pseudonym(&[1; 31]);
         b.set_signature(&[2; 64]);
+        Ok(())
     });
-    assert!(DirectBody::decode(DmTypeId::CreatorAccept, &accept).is_err());
+    assert!(DirectBody::decode(DmTypeId::CreatorAccept, &accept.unwrap()).is_err());
     let invite = encode_root::<creator_invite::Owned>(|mut b| {
         b.set_anchor(key('A').as_str());
         b.set_community_name("a\u{1b}b");
+        Ok(())
     });
-    assert!(DirectBody::decode(DmTypeId::CreatorInvite, &invite).is_err());
+    assert!(DirectBody::decode(DmTypeId::CreatorInvite, &invite.unwrap()).is_err());
 }

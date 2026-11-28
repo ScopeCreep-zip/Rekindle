@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Local-only community analytics — pure SQL aggregations against the device-local SQLite schema. Architecture §24.1."
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

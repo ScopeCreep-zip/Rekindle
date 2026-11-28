@@ -1,6 +1,6 @@
-import { Component, For, Match, Switch } from "solid-js";
-import { usePermissionCatalogue } from "../../../stores/permission_catalogue";
+import { type Component, For, Match, Switch } from "solid-js";
 import { hasBits } from "../../../ipc/permissions";
+import { usePermissionCatalogue } from "../../../stores/permission_catalogue";
 import { errorMessage } from "../../../utils/error";
 
 interface PermissionCheckboxListProps {
@@ -20,7 +20,9 @@ const PermissionCheckboxList: Component<PermissionCheckboxListProps> = (props) =
         </div>
       </Match>
       <Match when={catalogue.loading}>
-        <div class="settings-hint" role="status">Loading permissions…</div>
+        <div class="settings-hint" role="status">
+          Loading permissions…
+        </div>
       </Match>
       <Match when={catalogue()}>
         {(groups) => (

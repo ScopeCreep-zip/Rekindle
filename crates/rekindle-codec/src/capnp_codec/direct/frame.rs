@@ -117,8 +117,7 @@ pub struct SealedContent {
 
 impl DmFrame {
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         encode_root::<dm_frame::Owned>(|mut root| {
             root.set_type_id(self.type_id.as_u16());
             root.set_sender(&self.sender);
@@ -133,6 +132,7 @@ impl DmFrame {
                     b.set_signature(&s.signature);
                 }
             }
+            Ok(())
         })
     }
 
@@ -148,7 +148,8 @@ impl DmFrame {
         if bytes.len() >= MAX_APP_MESSAGE_LEN {
             return Err(CodecError::Deserialization(format!(
                 "a {}-byte frame is over the {MAX_APP_MESSAGE_LEN}-byte message cap",
-                bytes.len() + 1
+                // A slice is at most `isize::MAX` bytes: never saturates.
+                bytes.len().saturating_add(1)
             )));
         }
         let frame = decode_root::<dm_frame::Owned, _>(bytes, |root| {
@@ -270,8 +271,7 @@ fn read_pre_key_init(r: pre_key_init_body::Reader<'_>) -> Result<PreKeyInitBody,
 
 impl DmContent {
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         encode_root::<dm_content::Owned>(|mut root| {
             root.set_content_hint(match self.content_hint {
                 ContentHint::Default => WireHint::Default,
@@ -282,6 +282,7 @@ impl DmContent {
             root.set_payload(&self.payload);
             root.set_stream_seq(self.stream_seq);
             root.set_chain_seq(self.chain_seq);
+            Ok(())
         })
     }
 
@@ -308,12 +309,12 @@ impl DmContent {
 
 impl SealedContent {
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         encode_root::<sealed_content::Owned>(|mut root| {
             root.set_nonce(&self.nonce);
             root.set_sent_at_ms(self.sent_at_ms);
             root.set_payload(&self.payload);
+            Ok(())
         })
     }
 

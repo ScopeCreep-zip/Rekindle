@@ -38,7 +38,9 @@ use crate::origin_reserve::{
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).
-const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+pub const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+/// The owner role's position: above every other role, so it is always first.
+pub const OWNER_ROLE_POSITION: u32 = u32::MAX;
 /// `@everyone`: the all-zero RoleId.
 const EVERYONE_ROLE_ID: RoleId = RoleId([0u8; 16]);
 
@@ -85,7 +87,7 @@ pub(crate) fn genesis_entries(
             role_id: OWNER_ROLE_ID,
             name: "Owner".into(),
             permissions: permissions::ADMINISTRATOR,
-            position: u32::MAX,
+            position: OWNER_ROLE_POSITION,
             color: 0xC1_7C_17,
             hoist: true,
             mentionable: false,
@@ -300,7 +302,7 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
 ) -> Result<(GenesisCert, Vec<u8>), GovernanceRuntimeError> {
     let (k_a_text, k_a) = owner_signing_key(anchor, "anchor")?;
     let anchor_owner = k_a.verifying_key().to_bytes();
-    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner);
+    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner)?;
     let message = genesis_signing_bytes(&anchor.record_key, &unsigned);
     let signed = genesis::SignedGenesis {
         anchor_sig: k_a.sign(&message).to_bytes(),

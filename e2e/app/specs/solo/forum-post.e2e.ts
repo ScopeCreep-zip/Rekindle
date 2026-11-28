@@ -103,6 +103,21 @@ describe("forum post accepted as one request (FT1)", function () {
       probe.remove();
       return !!btn && getComputedStyle(btn).color === disabledColour;
     })) as boolean;
+    // Ari is a plain member: "Set topic…" is shown, disabled with the Host's
+    // reason, in the disabled text colour, not an active-looking link.
+    const topic = (await browser.execute(() => {
+      const el = document.querySelector(".community-channel-header .channel-topic");
+      const probe = document.createElement("span");
+      probe.style.color = "var(--color-xfire-text-disabled)";
+      document.body.appendChild(probe);
+      const disabledColour = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        disabled: el?.getAttribute("aria-disabled") === "true",
+        reason: (el?.getAttribute("title") ?? "").length > 0,
+        dimmed: !!el && getComputedStyle(el).color === disabledColour,
+      };
+    })) as { disabled: boolean; reason: boolean; dimmed: boolean };
     await shot("new-post-disabled");
     // The Host's own refusal, asked directly as the button would: its reason
     // is in words, never a permission bitmask or a channel id (FT1d).
@@ -122,11 +137,14 @@ describe("forum post accepted as one request (FT1)", function () {
     expect({
       disabledWithReason: reason.length > 0 && described === reason,
       dimmed,
+      topic,
+      // The empty forum states the Host's reason, never the invitation to post.
+      emptyState: (await (await shown(browser, ".forum-channel-empty-subtitle")).getText()).trim() === reason,
       refused: refusal.code,
       bitmask: /0x[0-9a-f]{4,}/i.test(refusal.message) || /0x[0-9a-f]{4,}/i.test(reason),
       channelId: refusal.message.includes(deniedId) || reason.includes(deniedId),
       cards: (await browser.$$(".forum-channel-thread-card")).length,
-    }).toEqual({ disabledWithReason: true, dimmed: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
+    }).toEqual({ disabledWithReason: true, dimmed: true, topic: { disabled: true, reason: true, dimmed: true }, emptyState: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
   });
 
   it("shows the accepted starter once, including after opening the thread again", async () => {

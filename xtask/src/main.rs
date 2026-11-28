@@ -86,6 +86,7 @@
 //!                                      id mapping and the built-in sound
 //!                                      banks (plan E7.7.3).
 //!     cargo xtask check-inline-modules No inline `mod name { … }` (gate item 1).
+//!     cargo xtask check-panic-lints    Peer-input crates deny the panic lints (gate item 3(a)).
 //!     cargo xtask outline-modules [--crate <name>]
 //!                                      Move each inline module body to
 //!                                      `<stem>_<name>.rs` (the fixer).
@@ -150,6 +151,7 @@ mod no_shape_ipc;
 mod outline_modules;
 mod overlay_layers;
 mod pair_model;
+mod panic_lints;
 mod perf;
 mod platform_floor;
 mod release_build;
@@ -315,6 +317,8 @@ enum Command {
     CheckWorkspaceLints,
     /// Verify no inline `mod name { … }` (bodies live in `<stem>_<name>.rs` files).
     CheckInlineModules,
+    /// Verify the peer-input crates deny the panic-class clippy lints.
+    CheckPanicLints,
     /// Move each inline module body to `<stem>_<name>.rs` beside its parent.
     OutlineModules {
         /// Only this workspace member (package name).
@@ -369,6 +373,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 (
                     "inline-modules",
                     Box::new(|| inline_modules::check_inline_modules(&root)),
+                ),
+                (
+                    "panic-lints",
+                    Box::new(|| panic_lints::check_panic_lints(&root)),
                 ),
                 (
                     "duplicate-constants",
@@ -586,6 +594,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::BaselineDuplication => duplication::write_baseline(&root),
         Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
         Command::CheckInlineModules => inline_modules::check_inline_modules(&root),
+        Command::CheckPanicLints => panic_lints::check_panic_lints(&root),
         Command::OutlineModules { krate } => {
             outline_modules::outline_modules(&root, krate.as_deref())
         }

@@ -201,6 +201,7 @@ impl App {
     }
 
     pub(crate) fn load_community_info(&self, community: &str) {
+        self.load_community_members(community);
         self.load_permission_catalogue();
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);

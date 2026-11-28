@@ -42,7 +42,7 @@ fn every_lobby_kind_round_trips_and_its_bytes_are_pinned() {
         .collect();
     assert_eq!(kinds, [0x0127, 0x0128, 0x0129, 0x012A, 0x012B]);
     for (body, golden) in goldens() {
-        let bytes = body.encode();
+        let bytes = body.encode().unwrap();
         assert_eq!(hex::encode(&bytes), golden, "{:?}", body.type_id());
         assert_eq!(
             DirectBody::decode(body.type_id(), &bytes),
@@ -71,10 +71,11 @@ fn a_launch_whose_server_is_not_an_address_is_dropped() {
         let bytes = encode_root::<crate::direct_capnp::lobby_launch::Owned>(|mut b| {
             b.set_lobby_id(LOBBY.as_slice());
             b.set_server(server);
+            Ok(())
         });
         assert!(
             matches!(
-                DirectBody::decode(DmTypeId::LobbyLaunch, &bytes),
+                DirectBody::decode(DmTypeId::LobbyLaunch, &bytes.unwrap()),
                 Err(CodecError::Deserialization(_))
             ),
             "{server:?}"
@@ -87,7 +88,8 @@ fn a_launch_whose_server_is_not_an_address_is_dropped() {
 fn a_short_lobby_id_or_game_zero_is_dropped() {
     let short = encode_root::<crate::direct_capnp::lobby_ref::Owned>(|mut b| {
         b.set_lobby_id([1; 15].as_slice());
-    });
+        Ok(())
+    }).unwrap();
     for kind in [
         DmTypeId::LobbyJoin,
         DmTypeId::LobbyLeave,
@@ -99,5 +101,5 @@ fn a_short_lobby_id_or_game_zero_is_dropped() {
         lobby_id: LOBBY,
         game_id: 0,
     });
-    assert!(DirectBody::decode(DmTypeId::LobbyOpen, &game_zero.encode()).is_err());
+    assert!(DirectBody::decode(DmTypeId::LobbyOpen, &game_zero.encode().unwrap()).is_err());
 }

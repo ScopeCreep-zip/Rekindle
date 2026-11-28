@@ -105,6 +105,8 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     transition: color var(--motion-duration-fast);
+    width: 100%;
+    text-align: left;
   }
 
   .category-header:hover {

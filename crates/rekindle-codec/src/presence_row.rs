@@ -17,11 +17,10 @@ use rekindle_types::presence::MemberPresence;
 /// empty payload would let anyone free anyone's slot
 /// (`MemberPresence::departed`). `status` is "offline" so a reader that
 /// predates `departed` still drops the member rather than showing a ghost.
-#[must_use]
 pub fn departure_row(
     pseudonym_signing_key: &rekindle_secrets::ed25519_dalek::SigningKey,
     now_secs: u64,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, crate::CodecError> {
     let mut presence = MemberPresence {
         pseudonym_key: rekindle_types::id::PseudonymKey(
             pseudonym_signing_key.verifying_key().to_bytes(),
@@ -36,7 +35,7 @@ pub fn departure_row(
         &presence.signing_bytes(),
     )
     .to_vec();
-    serde_json::to_vec(&presence).expect("a presence row always serializes")
+    serde_json::to_vec(&presence).map_err(|e| crate::CodecError::Serialization(e.to_string()))
 }
 
 /// Whose value superseded a write to our own presence slot.

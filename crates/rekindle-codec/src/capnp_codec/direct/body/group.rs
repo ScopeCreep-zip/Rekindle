@@ -62,10 +62,10 @@ impl std::fmt::Debug for GroupDmInvite {
 }
 
 /// Append `bytes` with its length (u32 big-endian) in front.
-fn put_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
-    let len = u32::try_from(bytes.len()).expect("a group invite field fits a u32 length");
-    out.extend_from_slice(&len.to_be_bytes());
+fn put_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), CodecError> {
+    out.extend_from_slice(&crate::capnp_codec::wire_len(bytes.len())?.to_be_bytes());
     out.extend_from_slice(bytes);
+    Ok(())
 }
 
 impl GroupDmInvite {
@@ -77,32 +77,29 @@ impl GroupDmInvite {
     /// and a signature over a secret would make it a transferable artifact.
     /// What admission reads (who is on the roster, under which records, in
     /// which rendezvous row) is signed.
-    #[must_use]
-    pub fn signing_bytes(&self) -> Vec<u8> {
+        pub fn signing_bytes(&self) -> Result<Vec<u8>, CodecError> {
         let mut out = rekindle_types::domains::GROUP_DM_INVITE.as_bytes().to_vec();
         out.extend_from_slice(&self.group_id);
-        put_len_prefixed(&mut out, self.name.as_bytes());
-        out.extend_from_slice(&list_len(&self.roster).to_be_bytes());
+        put_len_prefixed(&mut out, self.name.as_bytes())?;
+        out.extend_from_slice(&list_len(&self.roster)?.to_be_bytes());
         for member in &self.roster {
-            put_len_prefixed(&mut out, member.identity.as_bytes());
-            put_len_prefixed(&mut out, member.profile_record_key.as_bytes());
-            put_len_prefixed(&mut out, member.display_name.as_bytes());
+            put_len_prefixed(&mut out, member.identity.as_bytes())?;
+            put_len_prefixed(&mut out, member.profile_record_key.as_bytes())?;
+            put_len_prefixed(&mut out, member.display_name.as_bytes())?;
         }
-        put_len_prefixed(&mut out, self.creator_chain_key.as_bytes());
+        put_len_prefixed(&mut out, self.creator_chain_key.as_bytes())?;
         out.extend_from_slice(&self.epoch.to_be_bytes());
-        put_len_prefixed(&mut out, self.rendezvous_key.as_bytes());
-        put_len_prefixed(&mut out, &self.slots);
-        out
+        put_len_prefixed(&mut out, self.rendezvous_key.as_bytes())?;
+        put_len_prefixed(&mut out, &self.slots)?;
+        Ok(out)
     }
 
-    pub(super) fn write(&self, mut b: group_dm_invite::Builder<'_>) {
+    pub(super) fn write(&self, mut b: group_dm_invite::Builder<'_>) -> Result<(), CodecError> {
         b.set_group_id(&self.group_id);
         b.set_name(&self.name);
-        let mut roster = b.reborrow().init_roster(list_len(&self.roster));
-        for (i, member) in self.roster.iter().enumerate() {
-            let mut m = roster
-                .reborrow()
-                .get(u32::try_from(i).expect("a roster index fits a u32"));
+        let mut roster = b.reborrow().init_roster(list_len(&self.roster)?);
+        for (i, member) in (0u32..).zip(&self.roster) {
+            let mut m = roster.reborrow().get(i);
             m.set_identity(&member.identity);
             m.set_profile_record_key(&member.profile_record_key);
             m.set_display_name(&member.display_name);
@@ -115,6 +112,7 @@ impl GroupDmInvite {
         b.set_slot(self.slot);
         b.set_slot_writer(&self.slot_writer);
         b.set_slots(&self.slots);
+        Ok(())
     }
 
     /// A roster outside 3-8 members, a member that is not an identity key
@@ -292,8 +290,9 @@ pub struct GroupDmRosterGrow {
 }
 
 impl GroupDmRosterGrow {
-    pub(super) fn write(&self, b: group_dm_roster_grow::Builder<'_>) {
-        self.invite.write(b.init_invite());
+    pub(super) fn write(&self, b: group_dm_roster_grow::Builder<'_>) -> Result<(), CodecError> {
+        self.invite.write(b.init_invite())?;
+        Ok(())
     }
 
     pub(super) fn read(r: group_dm_roster_grow::Reader<'_>) -> Result<Self, CodecError> {

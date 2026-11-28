@@ -74,10 +74,10 @@ use roles::{
 
 /// Encode a single `GovernanceEntry` to packed Cap'n Proto bytes
 /// (used for direct serialization, e.g. SMPL subkey writes).
-pub fn encode_governance_entry(entry: &GovernanceEntry) -> Vec<u8> {
+pub fn encode_governance_entry(entry: &GovernanceEntry) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let root = builder.init_root::<schema::Builder<'_>>();
-    write_governance_entry(root, entry);
+    write_governance_entry(root, entry)?;
     pack(&builder)
 }
 

@@ -1,11 +1,11 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
-import type { Role } from "../../../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import { commands } from "../../../../ipc/commands";
 import { hasBits, togglePermBit } from "../../../../ipc/permissions";
+import type { Role } from "../../../../stores/community.store";
 import { usePermissionCatalogue } from "../../../../stores/permission_catalogue";
-import { errorMessage } from "../../../../utils/error";
 import { addToast } from "../../../../stores/toast.store";
+import { errorMessage } from "../../../../utils/error";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 interface ChannelOverwriteEditorProps {
   communityId: string;
@@ -32,7 +32,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         overwriteTargetType(),
         targetId,
         Number(overwriteAllow()),
-        Number(overwriteDeny()),
+        Number(overwriteDeny())
       );
       addToast(`Permission overwrite saved for #${props.channelName}`, "success");
     } catch (e) {
@@ -49,7 +49,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         props.communityId,
         props.channelId,
         overwriteTargetType(),
-        targetId,
+        targetId
       );
       setOverwriteAllow(0n);
       setOverwriteDeny(0n);
@@ -80,18 +80,20 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         >
           <option value="">Select target...</option>
           <For each={props.roles}>
-            {(role) => (
-              <option value={String(role.id)}>{role.name}</option>
-            )}
+            {(role) => <option value={String(role.id)}>{role.name}</option>}
           </For>
         </select>
       </div>
       <Show when={overwriteTargetId()}>
         <Show when={catalogue.error}>
-          <div class="settings-hint" role="status">Couldn't load the permission list: {errorMessage(catalogue.error)}</div>
+          <div class="settings-hint" role="status">
+            Couldn't load the permission list: {errorMessage(catalogue.error)}
+          </div>
         </Show>
         <Show when={catalogue.loading}>
-          <div class="settings-hint" role="status">Loading permissions…</div>
+          <div class="settings-hint" role="status">
+            Loading permissions…
+          </div>
         </Show>
         <div class="overwrite-perm-grid">
           <span class="overwrite-perm-header">Permission</span>
@@ -132,10 +134,10 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
           </For>
         </div>
         <div class="form-field-row">
-          <button class="form-btn-primary" onClick={handleSaveOverwrite}>
+          <button type="button" class="form-btn-primary" onClick={handleSaveOverwrite}>
             <SkinGlyph name="save" /> Save Overwrite
           </button>
-          <button class="form-btn-danger" onClick={handleDeleteOverwrite}>
+          <button type="button" class="form-btn-danger" onClick={handleDeleteOverwrite}>
             <SkinGlyph name="delete" /> Remove Overwrite
           </button>
         </div>

@@ -7,6 +7,12 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
   }
 
+  .chat-message-select-hit {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+  }
+
   .chat-message-select-checkbox {
     position: absolute;
     left: 8px;

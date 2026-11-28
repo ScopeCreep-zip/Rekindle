@@ -1,9 +1,9 @@
-import { Component, createSignal, Show } from "solid-js";
-import { authState } from "../../stores/auth.store";
-import { handleCopyPublicKey } from "../../actions/buddy.actions";
+import { type Component, createSignal, Show } from "solid-js";
 import { handleSetDisplayName, handleSetStatusMessage } from "../../actions/auth.actions";
-import StatusDot from "../status/StatusDot";
+import { handleCopyPublicKey } from "../../actions/buddy.actions";
+import { authState } from "../../stores/auth.store";
 import Avatar from "../common/Avatar";
+import StatusDot from "../status/StatusDot";
 import NotificationCenter from "./NotificationCenter";
 
 const UserIdentityBar: Component = () => {
@@ -15,7 +15,7 @@ const UserIdentityBar: Component = () => {
   function truncatedKey(): string {
     const key = authState.publicKey;
     if (!key) return "";
-    return key.slice(0, 8) + "..." + key.slice(-6);
+    return `${key.slice(0, 8)}...${key.slice(-6)}`;
   }
 
   function startEditing(): void {
@@ -63,23 +63,36 @@ const UserIdentityBar: Component = () => {
           avatarUrl={authState.avatarUrl ?? undefined}
         />
         <StatusDot status={authState.status} />
-        <Show when={!editing()} fallback={
-          <input
-            class="identity-bar-edit"
-            value={editValue()}
-            onInput={(e: InputEvent) => setEditValue((e.target as HTMLInputElement).value)}
-            onKeyDown={handleEditKeyDown}
-            onBlur={commitEdit}
-            autofocus
-          />
-        }>
-          <span class="identity-bar-name" onClick={startEditing} title="Click to edit display name">
+        <Show
+          when={!editing()}
+          fallback={
+            <input
+              class="identity-bar-edit"
+              value={editValue()}
+              onInput={(e: InputEvent) => setEditValue((e.target as HTMLInputElement).value)}
+              onKeyDown={handleEditKeyDown}
+              onBlur={commitEdit}
+              autofocus
+            />
+          }
+        >
+          <button
+            type="button"
+            class="identity-bar-name"
+            onClick={startEditing}
+            title="Click to edit display name"
+          >
             {authState.displayName ?? "Unknown"}
-          </span>
+          </button>
         </Show>
-        <span class="identity-bar-key" onClick={handleCopyPublicKey} title="Click to copy public key">
+        <button
+          type="button"
+          class="identity-bar-key"
+          onClick={handleCopyPublicKey}
+          title="Click to copy public key"
+        >
           {truncatedKey()}
-        </span>
+        </button>
         <Show when={authState.gameInfo}>
           {(game) => (
             <span class="identity-bar-game" title={`Playing ${game().gameName}`}>
@@ -89,24 +102,28 @@ const UserIdentityBar: Component = () => {
         </Show>
         <NotificationCenter />
       </div>
-      <Show when={!editingStatus()} fallback={
-        <input
-          class="identity-bar-status-msg-edit"
-          value={statusEditValue()}
-          onInput={(e: InputEvent) => setStatusEditValue((e.target as HTMLInputElement).value)}
-          onKeyDown={handleStatusKeyDown}
-          onBlur={commitStatusEdit}
-          placeholder="Set a status message..."
-          autofocus
-        />
-      }>
-        <div
+      <Show
+        when={!editingStatus()}
+        fallback={
+          <input
+            class="identity-bar-status-msg-edit"
+            value={statusEditValue()}
+            onInput={(e: InputEvent) => setStatusEditValue((e.target as HTMLInputElement).value)}
+            onKeyDown={handleStatusKeyDown}
+            onBlur={commitStatusEdit}
+            placeholder="Set a status message..."
+            autofocus
+          />
+        }
+      >
+        <button
+          type="button"
           class="identity-bar-status-msg"
           onClick={startEditingStatus}
           title="Click to set status message"
         >
           {authState.statusMessage || "Set a status message..."}
-        </div>
+        </button>
       </Show>
     </div>
   );

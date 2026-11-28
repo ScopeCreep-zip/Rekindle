@@ -33,13 +33,14 @@ pub struct DmAck {
 }
 
 impl DmAck {
-    pub(super) fn write(&self, mut b: dm_ack::Builder<'_>) {
+    pub(super) fn write(&self, mut b: dm_ack::Builder<'_>) -> Result<(), CodecError> {
         b.set_through(self.through);
         let mut seqs =
-            b.init_stream_seqs(u32::try_from(self.stream_seqs.len()).unwrap_or(u32::MAX));
+            b.init_stream_seqs(crate::capnp_codec::wire_len(self.stream_seqs.len())?);
         for (i, seq) in (0u32..).zip(&self.stream_seqs) {
             seqs.set(i, *seq);
         }
+        Ok(())
     }
 
     pub(super) fn read(r: dm_ack::Reader<'_>) -> Result<Self, CodecError> {

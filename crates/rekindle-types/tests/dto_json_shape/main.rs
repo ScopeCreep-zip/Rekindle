@@ -4,6 +4,7 @@
 //! shape (and per enum variant), every key camelCase, and the JSON equal to
 //! `tests/golden/dto.json` (`UPDATE_GOLDEN=1` after a deliberate change).
 
+mod community_profile;
 mod dm;
 #[path = "../common/json.rs"]
 mod json;
@@ -19,6 +20,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+    CommunityRoleView, RoleTagColours,
 };
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -264,6 +266,7 @@ fn samples() -> Map<String, Value> {
     friend_samples(&mut add);
     onboarding::samples(&mut add);
     skin::samples(&mut add);
+    community_profile::samples(&mut add);
     dm::samples(&mut add);
     servers::samples(&mut add, &pk('b'));
     local_search::samples(&mut add, &pk('c'));
@@ -424,6 +427,25 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             target_name: Some("Bea".into()),
             details: Some("spam".into()),
             timestamp: 7,
+        }),
+    );
+    add(
+        "community.roleView",
+        to(CommunityRoleView {
+            id: "ff".repeat(16),
+            name: "Owner".into(),
+            color: 0xc1_7c_17,
+            tag_colours: RoleTagColours {
+                dark: 0xc1_7c_17,
+                light: 0x99_61_12,
+            },
+            permissions: rekindle_types::permissions::ADMINISTRATOR.to_string(),
+            position: u32::MAX,
+            position_label: "Always first".into(),
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
         }),
     );
     add(

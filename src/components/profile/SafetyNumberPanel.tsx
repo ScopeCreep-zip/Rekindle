@@ -1,9 +1,9 @@
-import { Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
-import type { SafetyNumberView } from "../../ipc/commands/dto";
+import { type Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import { handleSetVerified } from "../../actions/verification.actions";
+import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { addToast } from "../../stores/toast.store";
-import { groupDigits } from "../../utils/safety_number";
 import { qrPath, qrSize } from "../../utils/qr";
+import { groupDigits } from "../../utils/safety_number";
 import VerifiedBadge from "./VerifiedBadge";
 
 /**
@@ -36,7 +36,10 @@ const SafetyNumberPanel: Component<{
   }
 
   return (
-    <Show when={props.view} fallback={<div class="sec-safety-number">Reading the safety number…</div>}>
+    <Show
+      when={props.view}
+      fallback={<div class="sec-safety-number">Reading the safety number…</div>}
+    >
       {(view) => (
         <section class="sec-safety-number" aria-label="Safety number">
           <div class="sec-safety-number-state">
@@ -49,13 +52,12 @@ const SafetyNumberPanel: Component<{
               verified again.
             </p>
           </Show>
-          <div
+          <figure
             class="sec-safety-number-digits"
-            role="group"
             aria-label={`Safety number ${groups().join(" ")}`}
           >
             <For each={groups()}>{(group) => <span aria-hidden="true">{group}</span>}</For>
-          </div>
+          </figure>
           {/* The Host always sends valid rows; if a reply ever does not
               draw, only the code says so, never the digits, the name or
               the badge above. */}
@@ -66,16 +68,16 @@ const SafetyNumberPanel: Component<{
               </p>
             }
           >
-          <svg
-            class="sec-safety-number-qr"
-            viewBox={`0 0 ${size()} ${size()}`}
-            shape-rendering="crispEdges"
-            role="img"
-            aria-label="Safety number QR code"
-          >
-            <rect class="sec-safety-number-qr-ground" width={size()} height={size()} />
-            <path class="sec-safety-number-qr-modules" d={qrPath(view().qrRows)} />
-          </svg>
+            <svg
+              class="sec-safety-number-qr"
+              viewBox={`0 0 ${size()} ${size()}`}
+              shape-rendering="crispEdges"
+              role="img"
+              aria-label="Safety number QR code"
+            >
+              <rect class="sec-safety-number-qr-ground" width={size()} height={size()} />
+              <path class="sec-safety-number-qr-modules" d={qrPath(view().qrRows)} />
+            </svg>
           </ErrorBoundary>
           <p class="sec-safety-number-hint">
             Compare these numbers with them in person or on a call you trust.

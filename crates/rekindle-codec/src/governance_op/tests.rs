@@ -466,7 +466,7 @@ fn unknown_and_retired_body_arms_are_reported() {
     root.set_device_key(&[1; 32]);
     root.set_sig(&[2; 64]);
     root.reborrow().init_body().init_obsolete_join_requested();
-    let bytes = crate::capnp_codec::pack(&builder);
+    let bytes = crate::capnp_codec::pack(&builder).unwrap();
     assert!(matches!(
         decode_op(&bytes),
         Err(CodecError::UnknownGovernanceArm(_))
@@ -491,7 +491,7 @@ fn unknown_and_retired_body_arms_are_reported() {
         .set_root(message.get_root::<governance_op::Reader<'_>>().unwrap())
         .unwrap();
     assert!(matches!(
-        decode_op(&crate::capnp_codec::pack(&repacked)),
+        decode_op(&crate::capnp_codec::pack(&repacked).unwrap()),
         Err(CodecError::UnknownGovernanceArm(_))
     ));
 }

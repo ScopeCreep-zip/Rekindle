@@ -1,15 +1,16 @@
 /* @refresh reload */
+
+import { createSignal, lazy, Match, onMount, Suspense, Switch } from "solid-js";
 import { render } from "solid-js/web";
-import { createSignal, onMount, Match, Switch, lazy, Suspense } from "solid-js";
 import "./styles/global.css";
 import AnnounceRegion from "./components/common/AnnounceRegion";
 import IntentDialog from "./components/common/IntentDialog";
-import ToastContainer from "./components/common/Toast";
 import KeyboardShortcutsDialog from "./components/common/KeyboardShortcutsDialog";
 import LocalSearchPanel from "./components/common/LocalSearchPanel";
-import { useWindowInactive } from "./hooks/useWindowInactive";
-import { useSkin } from "./hooks/useSkin";
+import ToastContainer from "./components/common/Toast";
 import { useAppearanceChord } from "./hooks/useAppearanceChord";
+import { useSkin } from "./hooks/useSkin";
+import { useWindowInactive } from "./hooks/useWindowInactive";
 
 // Lazy-load window components so each webview only compiles
 // the module tree it actually renders (login → 1 tree, not 6).

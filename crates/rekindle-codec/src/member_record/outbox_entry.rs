@@ -80,18 +80,18 @@ impl OutboxEntry {
         at: ChainPosition<'_>,
         kind: OutboxEntryKind,
         sealed: &[u8],
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>, CodecError> {
         let mut out = domains::OUTBOX_ENTRY.as_bytes().to_vec();
-        put_lp(&mut out, at.anchor.as_bytes());
+        put_lp(&mut out, at.anchor.as_bytes())?;
         out.extend_from_slice(&at.chain_seq.to_be_bytes());
-        put_lp(&mut out, self.prev.as_ref().map_or(&[][..], |p| &p[..]));
+        put_lp(&mut out, self.prev.as_ref().map_or(&[][..], |p| &p[..]))?;
         out.extend_from_slice(&self.channel_tag);
         out.extend_from_slice(&self.stream_seq.to_be_bytes());
         out.extend_from_slice(&self.generation.to_be_bytes());
         out.extend_from_slice(&self.committed_at.to_be_bytes());
         out.extend_from_slice(&(kind as u16).to_be_bytes());
-        put_lp(&mut out, sealed);
-        out
+        put_lp(&mut out, sealed)?;
+        Ok(out)
     }
 
     /// Sign by the author's pseudonym `author` at `at` and encode.
@@ -106,7 +106,7 @@ impl OutboxEntry {
         let sealed = serde_json::to_vec(&self.entry)
             .map_err(|e| CodecError::Serialization(format!("outbox entry: {e}")))?;
         let kind = kind_of(&self.entry);
-        let sig = sign(author, &self.signing_bytes(at, kind, &sealed));
+        let sig = sign(author, &self.signing_bytes(at, kind, &sealed)?);
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut b = builder.init_root::<outbox_entry::Builder<'_>>();
@@ -121,7 +121,7 @@ impl OutboxEntry {
         }
         // The size is the writer's check (`EntryTooLarge`, one sealed page)
         // and the decoder's bound.
-        Ok(pack(&builder))
+        pack(&builder)
     }
 }
 
@@ -166,7 +166,7 @@ pub fn decode_outbox_entry(
     };
     verify(
         author,
-        &decoded.signing_bytes(at, kind, sealed),
+        &decoded.signing_bytes(at, kind, sealed)?,
         b.get_sig().map_err(|e| capnp_err(&e))?,
         "outbox entry",
     )?;
