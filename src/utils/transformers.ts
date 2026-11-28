@@ -91,7 +91,7 @@ export function foldFriendSnapshot(
 
 /** Backend Message DTO → store Message: our own message's `status` comes
  *  from its stored `sendState`; optimistic sends set it themselves. */
-function transformMessage(m: IpcMessage): Message {
+export function transformMessage(m: IpcMessage): Message {
   const decryptionFailed = m.decryptionFailed ?? m.body === "(decryption failed)";
   return {
     id: m.id,

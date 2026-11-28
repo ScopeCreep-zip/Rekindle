@@ -12,6 +12,7 @@ import type { Undecryptable } from "../commands/types";
  * between the two) tells them apart.
  */
 
+import type { Message } from "../commands";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
 import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { CommunityEvent } from "./community_events";
@@ -277,14 +278,18 @@ export type ChannelMessageEvent =
         body: string;
       };
     }
-  /** A post's causal admission changed in `streamId` (a channel, or a
-   *  thread when `thread`): the window re-reads that history (contract CP1). */
+  /** A held post was judged, or a new one held (contract CP1): `row` is the
+   *  post as the Host's history read builds it now (body when admitted,
+   *  the Host's placeholder while pending or refused), for the window that
+   *  holds it to replace in place by `messageId`. */
   | {
       postAdmissionChanged: {
         community: string;
         streamId: string;
         thread: boolean;
         pending: boolean;
+        messageId: string;
+        row: Message;
       };
     }
   /** Deleted for members (plan E3.3 E4); `removedBy` is the moderator

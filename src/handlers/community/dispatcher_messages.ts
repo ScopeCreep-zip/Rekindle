@@ -1,5 +1,4 @@
 import { markChannelReadToLatest } from "../../actions/community/channels";
-import { handleLoadThreadMessages } from "../../actions/community/events_threads";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
 import { handleLoadChannelMessages } from "../../actions/community/messages";
 import { setTypingUsers } from "../../actions/community/shared";
@@ -14,7 +13,7 @@ import { communityState, setCommunityState } from "../../stores/community.store"
 import { holdEarlySendState } from "../../stores/early_send.store";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { addToast } from "../../stores/toast.store";
-import { transformHistoryGap } from "../../utils/transformers";
+import { transformHistoryGap, transformMessage } from "../../utils/transformers";
 
 type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 
@@ -298,9 +297,6 @@ function applySendStatus(channel: string, messageId: string, state: string, reas
   }
 }
 
-/** The page a CP1 re-read asks for: the Host's largest (MAX_PAGE, rekindle-node validation.rs). */
-const REREAD_PAGE = 100;
-
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {
   if ("unreadChanged" in event) {
     applyChannelUnread(event.unreadChanged);
@@ -333,17 +329,25 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.attachmentDownloaded.attachmentId
       );
     } else if ("postAdmissionChanged" in m) {
-      // CP1: a held post was judged (or a new one held): re-read the newest
-      // page of the channel or thread this window holds (the Host takes at
-      // most MAX_PAGE rows, validation.rs); mergeRead keeps the earlier
-      // scrollback the page does not reach. The Host's rows are the truth.
+      // CP1: a held post was judged, or a new one held (the Host announces a
+      // first hold only here). The event carries the post as the Host's
+      // history read builds it now: a loaded row is replaced in place, at any
+      // depth of scrollback; a new one inside the loaded window goes in by
+      // time. One older than the window is unloaded history, which the next
+      // read returns with the same view.
       const a = m.postAdmissionChanged;
-      if (a.thread) {
-        if (communityState.threadMessages[a.streamId]) {
-          void handleLoadThreadMessages(a.community, a.streamId, REREAD_PAGE);
-        }
-      } else if (communityState.channelMessages[a.streamId]) {
-        void handleLoadChannelMessages(a.streamId, REREAD_PAGE);
+      const list = a.thread ? "threadMessages" : "channelMessages";
+      const rows = communityState[list][a.streamId];
+      if (!rows) return;
+      const row = transformMessage(a.row);
+      const idx = rows.findIndex((r) => r.serverMessageId === a.messageId);
+      if (idx >= 0) {
+        setCommunityState(list, a.streamId, idx, row);
+      } else if (rows.length === 0 || row.timestamp >= rows[0].timestamp) {
+        setCommunityState(list, a.streamId, (prev) => {
+          const at = prev.findIndex((r) => r.timestamp > row.timestamp);
+          return at < 0 ? [...prev, row] : [...prev.slice(0, at), row, ...prev.slice(at)];
+        });
       }
     } else if ("expressionAssetReady" in m) {
       // Architecture §18.4 — the eager fetch landed; re-pull the
