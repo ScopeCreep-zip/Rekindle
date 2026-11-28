@@ -9,9 +9,9 @@ name: CodeQL
 
 on:
   push:
-    branches: [main]
+    branches: [codex/communities-merge-cli-claude-remote]
   pull_request:
-    branches: [main, "codex/**"]
+    branches: ["codex/**"]
   schedule:
     # Weekly — Sunday 03:30 UTC.
     - cron: "30 3 * * 0"

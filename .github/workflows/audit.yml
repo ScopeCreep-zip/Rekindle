@@ -24,9 +24,9 @@ name: Audit
 
 on:
   push:
-    branches: [main]
+    branches: [codex/communities-merge-cli-claude-remote]
   pull_request:
-    branches: [main, "codex/**"]
+    branches: ["codex/**"]
   schedule:
     # 04:13 UTC daily — staggered off the hour to spread runner load.
     - cron: "13 4 * * *"

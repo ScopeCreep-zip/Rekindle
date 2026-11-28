@@ -10,7 +10,7 @@ name: Dependency Review
 
 on:
   pull_request:
-    branches: [main, "codex/**"]
+    branches: ["codex/**"]
 
 permissions:
   contents: read

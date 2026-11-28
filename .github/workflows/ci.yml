@@ -21,14 +21,14 @@ name: CI
 
 on:
   # A pull request runs once, on pull_request. push covers only the long-lived
-  # branches a merge lands on (main and the integration branch); a push to a PR
+  # branch a merge lands on (the trunk, the default branch); a push to a PR
   # branch would otherwise start a second, identical run (GitHub: "If multiple
   # triggering events for your workflow occur at the same time, multiple workflow
   # runs will be triggered").
   push:
-    branches: [main, codex/communities-merge-cli-claude-remote]
+    branches: [codex/communities-merge-cli-claude-remote]
   pull_request:
-    branches: [main, "codex/**"]
+    branches: ["codex/**"]
   # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
   merge_group:
   workflow_dispatch:
