@@ -20,6 +20,10 @@ thiserror = { workspace = true }
 uuid = { version = "1", features = [ "v7", "serde" ] }
 zeroize = { version = "1", features = [ "serde" ] }
 
+[features]
+# `presence::fixture`: test builders for other crates' tests.
+fixture = [  ]
+
 [dev-dependencies]
 postcard = { version = "1", default-features = false, features = [ "use-std" ] }
 rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }

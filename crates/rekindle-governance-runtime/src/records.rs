@@ -53,7 +53,12 @@ pub(crate) async fn publish_created<D: GovernanceRuntimeDeps>(
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("derive publish slot: {e}")))?;
     let writer = deps.format_writer_keypair(slot.verifying_key().to_bytes(), slot.to_bytes());
     match deps
-        .set_dht_value(lease, last, Vec::new(), Some(writer))
+        .set_dht_value(
+            lease,
+            last,
+            Vec::new(),
+            Some(zeroize::Zeroizing::new(writer)),
+        )
         .await?
     {
         None => Ok(()),

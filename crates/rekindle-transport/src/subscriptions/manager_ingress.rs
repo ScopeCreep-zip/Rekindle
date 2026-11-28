@@ -88,7 +88,8 @@ impl SubscriptionManager {
     ///
     /// Single point of emission for ALL events regardless of source tier
     /// (watch, gossip, poll, or direct construction in on_value_change).
-    pub(super) fn process_event(&self, mut event: SubscriptionEvent) {
+    /// For gossip projected by the Host, admission precedes this call.
+    pub fn process_event(&self, mut event: SubscriptionEvent) {
         // Enrich: decrypt message bodies if MEK available, resolve display names
         self.enrich(&mut event);
         let now_ms = self.clock.now_ms();

@@ -349,8 +349,14 @@ impl Netsim {
     /// [`forge_write`](Self::forge_write) to prove that what the record
     /// carries is checked under the identity (plan E2.4's prekey record).
     #[must_use]
-    pub fn owner_keypair(&self, key: &str) -> Option<String> {
-        self.net.inner.lock().owners.get(key).cloned()
+    pub fn owner_keypair(&self, key: &str) -> Option<zeroize::Zeroizing<String>> {
+        self.net
+            .inner
+            .lock()
+            .owners
+            .get(key)
+            .cloned()
+            .map(rekindle_secrets::record_writer::RecordWriterSecret::into_zeroizing)
     }
 
     /// Whether `node` holds `key` open in its local store (Veilid's

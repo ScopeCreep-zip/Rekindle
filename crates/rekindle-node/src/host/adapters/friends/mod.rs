@@ -120,7 +120,7 @@ impl HostFriends {
             .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))?;
         let entry = rekindle_vault::typed::owner_keys::OwnerEntry {
             record_key: record_key.to_string(),
-            keypair: owner_keypair.to_string(),
+            keypair: zeroize::Zeroizing::new(owner_keypair.to_owned()),
         };
         rekindle_vault::typed::owner_keys::persist_inbox_owner(vault, &entry)
             .map_err(|e| FriendError::Failed(format!("inbox owner not saved: {e}")))
@@ -440,7 +440,7 @@ impl FriendHost for HostFriends {
             .as_ref()
             .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))?;
         rekindle_vault::typed::owner_keys::load_inbox_owner(vault, record_key)
-            .map(|entry| entry.map(|entry| zeroize::Zeroizing::new(entry.keypair.clone())))
+            .map(|entry| entry.map(|entry| entry.keypair))
             .map_err(|e| FriendError::Failed(format!("reply inbox owner not read: {e}")))
     }
 

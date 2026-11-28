@@ -20,7 +20,7 @@ async fn publish_writes_empty_last_slot_under_its_derived_writer() {
             *lease == LeaseId(7)
                 && *subkey == 254
                 && value.is_empty()
-                && writer.as_deref() == Some(hex::encode(expected).as_str())
+                && writer.as_ref().map(|key| key.as_str()) == Some(hex::encode(expected).as_str())
         })
         .times(1)
         .returning(|_, _, _, _| Ok(None));

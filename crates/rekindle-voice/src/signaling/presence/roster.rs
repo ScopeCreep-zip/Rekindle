@@ -4,13 +4,31 @@
 
 use std::sync::Arc;
 
+use rekindle_types::subscription_events::JoinHandshake;
+
 use rekindle_codec::community::envelope::{MediaSessionKey, VoiceRosterEntry};
 
-use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
+use crate::signaling::deps::{CommunityVoiceEvent, VoiceRosterParticipant, VoiceSignalingDeps};
 use crate::signaling::media_keys;
 use crate::transport::VoiceTransport;
 
-use super::join::send_confirmed_if_first;
+use super::join::{advance_handshake, send_confirmed_if_first};
+
+/// Project transport membership into a roster with the Host's current names.
+pub(in crate::signaling) fn named_roster(
+    deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    mut members: Vec<String>,
+) -> Vec<VoiceRosterParticipant> {
+    members.sort_unstable();
+    members
+        .into_iter()
+        .map(|pseudonym_key| VoiceRosterParticipant {
+            display_name: deps.member_shown_name(community_id, &pseudonym_key),
+            pseudonym_key,
+        })
+        .collect()
+}
 
 /// Build the roster a present member broadcasts to a joiner. Routes
 /// come straight from the transport (the route each peer advertised in
@@ -25,7 +43,14 @@ pub(super) async fn roster_entries(
     my_pk: &str,
     transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
 ) -> Vec<VoiceRosterEntry> {
-    let peers = transport.lock().await.peer_named_entries();
+    let peers = transport.lock().await.peer_entries();
+    let peers = peers
+        .into_iter()
+        .map(|(key, route)| {
+            let name = deps.member_shown_name(community_id, &key);
+            (key, route, Some(name))
+        })
+        .collect();
     let mut entries = build_roster_entries(
         my_pk,
         deps.our_media_route_blob(),
@@ -98,13 +123,14 @@ pub(in crate::signaling) fn handle_voice_roster(
     deps.emit_event(CommunityVoiceEvent::VoiceRoster {
         community_id: community_id.to_string(),
         channel_id: channel_id.clone(),
-        participants: participants
-            .iter()
-            .map(|e| crate::signaling::deps::VoiceRosterParticipant {
-                pseudonym_key: e.pseudonym_key.clone(),
-                display_name: e.display_name.clone(),
-            })
-            .collect(),
+        participants: named_roster(
+            &**deps,
+            community_id,
+            participants
+                .iter()
+                .map(|e| e.pseudonym_key.clone())
+                .collect(),
+        ),
     });
 
     // §10.6 channel scoping — only absorb roster routes for the
@@ -124,22 +150,19 @@ pub(in crate::signaling) fn handle_voice_roster(
         .spawn_or_drop("voice roster apply", async move {
             let (added, members) = {
                 let mut t = transport.lock().await;
-                let mut added: Vec<(String, Option<String>)> = Vec::new();
+                let mut added = Vec::new();
                 for entry in &participants {
                     if !entry.route_blob.is_empty()
                         && entry.pseudonym_key != my_pk
-                        && t.add_peer(
-                            &entry.pseudonym_key,
-                            &entry.route_blob,
-                            entry.display_name.as_deref(),
-                        )
+                        && t.add_peer(&entry.pseudonym_key, &entry.route_blob)
                     {
-                        added.push((entry.pseudonym_key.clone(), entry.display_name.clone()));
+                        added.push(entry.pseudonym_key.clone());
                     }
                 }
-                (added, t.roster_participants())
+                (added, t.peer_keys())
             };
-            for (pseudonym_key, display_name) in added {
+            let members = named_roster(&*deps_task, &cid, members);
+            for pseudonym_key in added {
                 // Plan C7.20 — every roster add hands the peer our key,
                 // as the join and ack paths do.
                 crate::signaling::media_keys::on_peer_added(
@@ -153,9 +176,9 @@ pub(in crate::signaling) fn handle_voice_roster(
                 deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
                     community_id: cid.clone(),
                     channel_id: channel_id.clone(),
+                    display_name: deps_task.member_shown_name(&cid, &pseudonym_key),
                     pseudonym_key,
                     present: true,
-                    display_name,
                     roster: members.clone(),
                 });
             }
@@ -165,15 +188,15 @@ pub(in crate::signaling) fn handle_voice_roster(
             deps_task.advertise_media_capabilities(&cid, &channel_id);
             // Roster receipt is leg-2 evidence too: a member built and
             // sent it because they saw our VoiceJoin. Advance + confirm.
-            if transport.lock().await.advance_handshake_seen() {
-                deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                    community_id: cid.clone(),
-                    channel_id: channel_id.clone(),
-                    state: "seen".to_string(),
-                    peer: None,
-                    display_name: None,
-                });
-            }
+            advance_handshake(
+                &*deps_task,
+                &cid,
+                &channel_id,
+                &transport,
+                JoinHandshake::Seen,
+                None,
+            )
+            .await;
             send_confirmed_if_first(&*deps_task, &cid, &channel_id, &transport).await;
         });
 }

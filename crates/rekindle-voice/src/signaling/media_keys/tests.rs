@@ -44,6 +44,9 @@ struct Peer {
     drop_calls: AtomicUsize,
     scope: Arc<rekindle_lifecycle::SessionScope>,
     outbox: Arc<Outbox>,
+    shown_names: Mutex<HashMap<String, String>>,
+    events: Mutex<Vec<CommunityVoiceEvent>>,
+    mesh: Mutex<Vec<CommunityEnvelope>>,
 }
 
 /// The host's `media_key` rows, as `(session, client_id, sealed)`.
@@ -89,6 +92,9 @@ impl Peer {
             drop_calls: AtomicUsize::new(0),
             scope: rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {})),
             outbox: Arc::default(),
+            shown_names: Mutex::default(),
+            events: Mutex::default(),
+            mesh: Mutex::default(),
         });
         net.lock().insert(peer.route.clone(), Arc::downgrade(&peer));
         peer
@@ -107,7 +113,7 @@ impl Peer {
     async fn roster(&self, peers: &[&Arc<Peer>]) {
         let mut t = self.transport.lock().await;
         for peer in peers {
-            t.add_peer(&peer.id(), &peer.route, None);
+            t.add_peer(&peer.id(), &peer.route);
             let announced = our_session_key(&***peer, COMMUNITY, CHANNEL);
             let signed = SignedSessionKey {
                 key: announced.key,
@@ -271,7 +277,9 @@ impl VoiceSignalingDeps for Peer {
     fn media_key_outbox(&self) -> Arc<dyn MediaKeyOutbox> {
         Arc::clone(&self.outbox) as Arc<dyn MediaKeyOutbox>
     }
-    fn send_to_mesh(&self, _: &str, _: &CommunityEnvelope) {}
+    fn send_to_mesh(&self, _: &str, envelope: &CommunityEnvelope) {
+        self.mesh.lock().push(envelope.clone());
+    }
     fn advertise_media_capabilities(&self, _: &str, _: &str) {}
     fn send_to_channel(&self, _: &str, _: &str, _: &CommunityEnvelope) {}
     fn my_display_name(&self) -> Option<String> {
@@ -286,7 +294,12 @@ impl VoiceSignalingDeps for Peer {
     }
     fn start_mcu_loop(&self) {}
     async fn stop_mcu_loop(&self) {}
-    fn emit_event(&self, _: CommunityVoiceEvent) {}
+    fn member_shown_name(&self, _: &str, member: &str) -> String {
+        self.shown_names.lock()[member].clone()
+    }
+    fn emit_event(&self, event: CommunityVoiceEvent) {
+        self.events.lock().push(event);
+    }
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
         Arc::clone(&self.scope)
     }
@@ -496,6 +509,10 @@ async fn community_departure_drops_the_member_and_rotates() {
     carol.roster(&[&alice]).await;
     let before = alice.sender_keys().send_key(Instant::now());
 
+    alice
+        .shown_names
+        .lock()
+        .extend([(bob.id(), "Bob".into()), (carol.id(), "Carol".into())]);
     crate::signaling::member_departed(&alice.deps(), COMMUNITY, &bob.id());
     alice.settle().await;
 
@@ -541,5 +558,7 @@ fn hosts_route_the_handshake_and_not_the_keys() {
     }
 }
 
+mod join_snapshot;
 mod outbox;
+mod roster_names;
 mod sealing;

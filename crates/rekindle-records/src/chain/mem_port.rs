@@ -96,7 +96,7 @@ impl RecordPort for MemPort {
         &self,
         schema: &RecordSchema,
         owner: Option<&str>,
-    ) -> Result<(LeaseId, String, String), PortError> {
+    ) -> Result<(LeaseId, String, zeroize::Zeroizing<String>), PortError> {
         let mut mem = self.0.lock();
         if let Some((key, subkey, data)) = mem.on_create.take() {
             mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(data);
@@ -110,7 +110,7 @@ impl RecordPort for MemPort {
             (owner.clone(), vec![None; schema.subkey_count()]),
         );
         mem.leases.insert(id, (key.clone(), Some(owner.clone())));
-        Ok((LeaseId(id), key, owner))
+        Ok((LeaseId(id), key, zeroize::Zeroizing::new(owner)))
     }
 
     fn key_of(&self, lease: LeaseId) -> Option<String> {
@@ -310,7 +310,7 @@ impl RecordPort for MemPort {
 }
 
 /// A port with one participant record: its key and owner keypair.
-pub(super) async fn participant() -> (MemPort, String, String) {
+pub(super) async fn participant() -> (MemPort, String, zeroize::Zeroizing<String>) {
     let port = MemPort::default();
     let (lease, key, owner) = port.create(&schema::dm_participant(), None).await.unwrap();
     port.release(lease).await;

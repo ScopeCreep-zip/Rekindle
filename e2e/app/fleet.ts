@@ -501,3 +501,27 @@ export async function peerKick(peer: Peer, anchor: string, member: string): Prom
 export async function peerPostChannel(peer: Peer, community: string, channel: string, text: string): Promise<void> {
   await peer.cli(["channel", "send", "-c", community, "-C", channel, "-m", text]);
 }
+
+/** `peer`'s id for channel `name` in community `community` (`channel list`): the 32-hex id the voice and channel commands take. */
+export async function peerChannelId(peer: Peer, community: string, name: string): Promise<string> {
+  const channels = (await peer.cli(["channel", "list", "-c", community])) as { id: string; name: string }[] | null;
+  const id = (channels ?? []).find((c) => c.name === name)?.id;
+  if (!id) throw new Error(`${peer.displayName}: no channel named ${name} in ${community} (${JSON.stringify((channels ?? []).map((c) => c.name))})`);
+  return voiceChannelId(id);
+}
+
+/** `id` if it is a channel id (32 hex), else a refusal naming what was passed: the voice commands take ids, never names. */
+function voiceChannelId(id: string): string {
+  if (!/^[0-9a-f]{32}$/i.test(id)) throw new Error(`a voice channel is named by its 32-hex id, not "${id}" (resolve it with peerChannelId)`);
+  return id;
+}
+
+/** `peer` joins voice channel `channelId` (32 hex) of `community` by CLI, and stays joined. */
+export async function peerVoiceJoin(peer: Peer, community: string, channelId: string): Promise<void> {
+  await peer.cli(["voice", "join", "--community", community, "--channel", voiceChannelId(channelId)]);
+}
+
+/** `peer` leaves the voice channel it is in. */
+export async function peerVoiceLeave(peer: Peer): Promise<void> {
+  await peer.cli(["voice", "leave"]);
+}
