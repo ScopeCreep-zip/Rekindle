@@ -5,9 +5,8 @@ import {
   handleUploadSoundboardSound,
   handleUploadSticker,
 } from "../../actions/community.actions";
-import { hasPermission, servedPermissions, USE_SOUNDBOARD } from "../../ipc/permissions";
 import { communityState } from "../../stores/community.store";
-import { deniedFor } from "../../utils/denied";
+import { channelDeniedFor, deniedFor } from "../../utils/denied";
 
 type ExpressionTab = "emoji" | "sticker" | "soundboard";
 
@@ -83,16 +82,17 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   });
 
   // The backend's base flags (plan E3.2 S9): expressions are community-wide.
-  const myPerms = createMemo(() => servedPermissions(community()));
 
   // Whether we may add an expression of any kind, sounds included, as the
   // Host says (never-hide; the validator admits them all on one rule).
   const uploadDenied = createMemo(() => deniedFor(community(), "createExpressions"));
 
-  // Architecture §10.9 — soundboard play requires USE_SOUNDBOARD;
-  // backend re-validates on every received SoundboardPlay envelope so
-  // a member with the perm revoked mid-session can't keep playing.
-  const canPlaySoundboard = createMemo(() => hasPermission(myPerms(), USE_SOUNDBOARD));
+  // Architecture §10.9 — soundboard play needs useSoundboard in the voice
+  // channel we are in, as the Host serves it (CAPR); the backend
+  // re-validates every received SoundboardPlay envelope.
+  const canPlaySoundboard = createMemo(
+    () => channelDeniedFor(community(), props.activeVoiceChannelId, "useSoundboard") === null
+  );
 
   async function uploadEmoji(): Promise<void> {
     const input = document.createElement("input");

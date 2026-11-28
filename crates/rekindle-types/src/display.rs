@@ -195,6 +195,8 @@ pub struct RoleDisplay {
     pub tag_colours: crate::dto::community::RoleTagColours,
     pub permissions: u64,
     pub position: u32,
+    /// The position as presented to users, supplied by the Host.
+    pub position_label: String,
     /// Show members with this role in a separate sidebar group.
     pub hoist: bool,
     /// Whether `@role` pings everyone holding it.

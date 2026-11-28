@@ -543,6 +543,9 @@ pub enum IpcRequest {
     /// Reload authorization policy from disk.
     PolicyReload,
 
+    /// The static role-editor permission catalogue, available in any state.
+    PermissionCatalogue,
+
     #[cfg(all(feature = "webdriver-test", debug_assertions))]
     WebdriverPostSkippingLocalPermission {
         channel: String,

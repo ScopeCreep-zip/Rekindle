@@ -5,6 +5,8 @@ use crate::host::gate::Acknowledged;
 use crate::host::shell_hooks::EndReason;
 use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse};
 
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
+
 use super::{
     admin, friends, identity, keys, lifecycle, own, quick_wipe, status, voice, Caller,
     DaemonContext,
@@ -114,6 +116,7 @@ async fn route(
             crate::host::webdriver::release_governance_ops(ctx, &community).await
         }
         IpcRequest::Community(request) => community::route(ctx, state, request).await,
+        IpcRequest::PermissionCatalogue => IpcResponse::ok(&PermissionCatalogue::current()),
         // ── File transfers (plan E7.2 G12) ──
         IpcRequest::Transfer(request) => super::transfers::route(ctx, request).await,
         // ── Local search (plan E7.2 G11) ──

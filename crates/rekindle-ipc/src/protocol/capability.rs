@@ -171,6 +171,7 @@ impl IpcRequest {
             | Self::Lock
             | Self::Logout
             | Self::Status
+            | Self::PermissionCatalogue
             | Self::Shutdown
             | Self::IdentityCreate { .. }
             | Self::IdentityList

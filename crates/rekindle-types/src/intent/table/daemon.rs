@@ -288,6 +288,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("AuditVerify", None),
     ("AuditExport", Some(IntentKind::AuditExport)),
     ("LinkOpen", Some(IntentKind::OpenExternalUrl)),
+    ("PermissionCatalogue", None),
     ("RoleList", None),
     ("RoleCreate", Some(IntentKind::CreateRole)),
     ("RoleUpdate", Some(IntentKind::EditRole)),

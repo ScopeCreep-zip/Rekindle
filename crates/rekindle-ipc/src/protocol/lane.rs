@@ -116,6 +116,7 @@ impl IpcRequest {
                 ("WebdriverReleaseGovernanceOps", Write, Authenticated)
             }
             Self::Community(request) => request.class(),
+            Self::PermissionCatalogue => ("PermissionCatalogue", Query, Open),
             Self::Transfer(request) => request.class(),
             Self::LocalSearch { .. } => ("LocalSearch", Query, Authenticated),
             Self::Servers(request) => request.class(),

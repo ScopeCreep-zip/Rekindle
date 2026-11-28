@@ -286,6 +286,9 @@ export function transformCommunityDetail(c: {
     tagColours: { dark: number; light: number };
     permissions: string;
     position: number;
+    /** The position as the Host presents it (contract PN1: the owner role reads
+     *  "Always first", never the raw sentinel). */
+    positionLabel: string;
     hoist: boolean;
     mentionable: boolean;
     selfAssignable?: boolean;

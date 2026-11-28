@@ -22,6 +22,7 @@ use tokio::sync::oneshot;
 
 use crate::eval_channel::EvalResultRegistry;
 use crate::platform::alert_state::AlertStateManager;
+use crate::platform::executor_util::within_script_timeout;
 use crate::platform::macos_convert::{
     self, describe_ns_error, image_to_png_base64, ns_object_to_json,
 };
@@ -377,7 +378,8 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
             .state::<Arc<EvalResultRegistry>>()
             .inner()
             .clone();
-        let mut rx = registry.register(id.clone());
+        // Released however this call ends, including a drop mid-await.
+        let (_registration, mut rx) = registry.register_pending(id.clone());
 
         // id is alphanumeric + '_', so it needs no escaping in the JS string literal below.
         let wrapper = format!(
@@ -393,13 +395,12 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
         const MAX_ATTEMPTS: usize = 3;
         // After a reclaim, wait this long for a racing message-handler post before re-running.
         const RECLAIM_GRACE: std::time::Duration = std::time::Duration::from_millis(750);
-        let deadline =
-            tokio::time::Instant::now() + std::time::Duration::from_millis(self.timeouts.script);
         let channel_closed = || WebDriverErrorResponse::unknown_error("Eval result channel closed");
 
-        // Retry only when WebKit reclaims the completion before a result was delivered; `timeout_at`
-        // bounds the whole sequence, so `Elapsed` (below) is the single script-timeout path.
-        let settled = tokio::time::timeout_at(deadline, async {
+        // Retry only when WebKit reclaims the completion before a result was delivered; the
+        // session's script timeout bounds the whole sequence (`within_script_timeout`, the one bound
+        // every execute path goes through), so its expiry is the single script-timeout path.
+        within_script_timeout(self.script_timeout_ms(), async {
             for attempt in 0..MAX_ATTEMPTS {
                 let fail_rx = self
                     .dispatch_eval_attempt(&wrapper, &id, &registry, attempt)
@@ -423,14 +424,7 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
             }
             Err(WebDriverErrorResponse::script_timeout()) // unreachable: the final attempt returns above
         })
-        .await;
-
-        let result =
-            settled.unwrap_or_else(|_elapsed| Err(WebDriverErrorResponse::script_timeout()));
-        if result.is_err() {
-            registry.cancel(&id);
-        }
-        result
+        .await
     }
 
     // =========================================================================

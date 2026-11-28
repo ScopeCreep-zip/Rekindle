@@ -287,6 +287,7 @@ pub(crate) async fn select(
         | IpcRequest::PolicyReload
         | IpcRequest::VoiceLeave
         | IpcRequest::Status
+        | IpcRequest::PermissionCatalogue
         | IpcRequest::IdentityList
         | IpcRequest::IdentityShow
         | IpcRequest::PrekeyStatus

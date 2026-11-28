@@ -1,4 +1,6 @@
-use super::*;
+use crate::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
+
+use super::GovernanceEvent;
 
 fn role() -> RoleDisplay {
     RoleDisplay {
@@ -11,6 +13,7 @@ fn role() -> RoleDisplay {
         },
         permissions: crate::permissions::ALL,
         position: 1,
+        position_label: "1".into(),
         hoist: true,
         mentionable: false,
         self_assignable: false,
