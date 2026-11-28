@@ -382,15 +382,14 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await shot("two-held-reviews");
 
     // Answered (cancelled): the dialog answers the review it shows (its
-    // holdId). The re-enrolment comes back at the next unlock, below.
-    const outcome = await resolveIntent(browser, {
-      passphrase: me.passphrase,
-      cancel: true,
-      appearMs: NET_WAIT_MS,
-    });
-    console.log(`[reenrol] review outcome: ${outcome}`);
-    expect(outcome).toBe("cancelled");
-    // Only the re-enrolment resolved: the session reset is now the review on show.
+    // holdId). The re-enrolment comes back at the next unlock, below. Its
+    // Cancel is pressed directly: the dialog stays open, showing the session
+    // reset still held, so resolveIntent's wait for it to close cannot hold.
+    await (await shown(browser, ".intent-dialog .sec-btn-secondary", NET_WAIT_MS)).click();
+    console.log("[reenrol] the re-enrolment review was cancelled");
+    // Only the re-enrolment resolved: the session reset is now the review on
+    // show. A second re-enrolment review in its place (a duplicate raise) is
+    // named as such.
     let next = "";
     await waitUntil(
       async () => {
@@ -403,8 +402,14 @@ describe("a restored copy re-enrols the device: the original is told and offered
         return next !== "" && !next.includes("this device's key in every community");
       },
       NET_WAIT_MS,
-      "after the re-enrolment was answered the session reset review never showed"
-    );
+      ""
+    ).catch(() => {
+      throw new Error(
+        next.includes("this device's key in every community")
+          ? "after its Cancel a re-enrolment review is still on show: a duplicate raise, not the held session reset"
+          : `after the re-enrolment was answered the session reset review never showed (on show: ${next.slice(0, 200) || "nothing"})`
+      );
+    });
     console.log(`[reenrol] next held review: ${next.slice(0, 300)}`);
     await shot("session-reset-review-after-answer");
     // Cancelled, it leaves too.
