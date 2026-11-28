@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use rekindle_types::subscription_events::{Cursor, StreamFrame};
+use rekindle_types::subscription_events::{Cursor, StreamFrame, SubscriptionEvent};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -79,7 +79,7 @@ async fn run(
         let Some(bytes) = encode(&state, &frame) else {
             continue;
         };
-        if tx.send(bytes).await.is_err() {
+        if !queue_frame(&tx, bytes, &frame).await {
             return;
         }
     }
@@ -115,3 +115,23 @@ fn encode(state: &ServerState, frame: &StreamFrame) -> Option<Vec<u8>> {
         }
     }
 }
+
+/// Queue an already sequenced frame. A full queue sheds video hints and
+/// preserves the cursor of the next admitted event.
+async fn queue_frame(tx: &mpsc::Sender<Vec<u8>>, bytes: Vec<u8>, frame: &StreamFrame) -> bool {
+    if let StreamFrame::Event(sequenced) = frame {
+        if let SubscriptionEvent::Video(event) = &sequenced.event {
+            if event.can_shed() {
+                return !matches!(
+                    tx.try_send(bytes),
+                    Err(mpsc::error::TrySendError::Closed(_))
+                );
+            }
+        }
+    }
+    tx.send(bytes).await.is_ok()
+}
+
+#[cfg(test)]
+#[path = "stream_tests.rs"]
+mod tests;

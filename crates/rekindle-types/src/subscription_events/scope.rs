@@ -10,6 +10,8 @@
 //! The match is exhaustive with no wildcard, so a new event variant does
 //! not compile until it has a scope.
 
+use crate::media::MediaScope;
+
 use super::{
     ChannelMessageEvent, CryptoEvent, FriendEvent, MembershipEvent, PresenceEvent, SocialEvent,
     SubscriptionEvent, SystemEvent, TypingContext, TypingEvent, UnreadContext, VoiceScope,
@@ -127,6 +129,13 @@ impl SubscriptionEvent {
             },
             // Device changes (`scope() == None`) are machine-wide.
             Self::Voice(e) => e.scope().map_or(EventScope::Device, EventScope::voice),
+            // A direct call's video is the peer's; a channel's the community's.
+            Self::Video(e) => match e.scope() {
+                MediaScope::DirectCall { peer } => EventScope::Peer(peer.clone()),
+                MediaScope::Channel { community_id, .. } => {
+                    EventScope::Community(community_id.clone())
+                }
+            },
             Self::Governance(e) => EventScope::Community(e.community().to_owned()),
             Self::Social(e) => EventScope::Community(social_community(e).to_owned()),
             // Our own mute names no call: it is this device's.

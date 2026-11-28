@@ -528,3 +528,52 @@ fn route_pause_resume_and_deaths_warning_reach_the_buddy_list_on_network_status(
         assert_eq!(WebviewEvent::Subscription(e).channel(), "network-status");
     }
 }
+
+#[test]
+fn scoped_video_facts_use_the_video_channel_and_scope_audience() {
+    use rekindle_types::media::MediaScope;
+    use rekindle_types::subscription_events::VideoEvent;
+
+    let call = WebviewEvent::Subscription(SubscriptionEvent::Video(VideoEvent::BitrateTarget {
+        scope: MediaScope::DirectCall { peer: PK.into() },
+        kbps: 800,
+    }));
+    assert_eq!(call.channel(), "video-event");
+    assert!(call.audience().includes("call-0123456789ab"));
+    assert!(call.audience().includes("chat-3f1a9c0b7e2d4f6a"));
+    assert!(!call.audience().includes("chat-0000000000000000"));
+    assert!(!call.audience().includes("community-browser"));
+
+    let channel = sub(SubscriptionEvent::Video(VideoEvent::BitrateTarget {
+        scope: MediaScope::Channel {
+            community_id: REC.into(),
+            channel_id: GROUP.into(),
+        },
+        kbps: 800,
+    }));
+    assert!(channel.includes("community-browser"));
+    assert!(!channel.includes("call-0123456789ab"));
+}
+
+#[test]
+fn native_video_error_wire() {
+    let event = WebviewEvent::NativeVideoError {
+        window: "community-3f1a9c0b7e2d4f6a".into(),
+        community_id: "c1".into(),
+        channel_id: "ch1".into(),
+        message: "camera unplugged".into(),
+    };
+    assert!(event.audience().includes("community-3f1a9c0b7e2d4f6a"));
+    assert!(!event.audience().includes("community-browser"));
+    assert!(!event.audience().includes("buddy-list"));
+    let envelope = event.envelope(None).unwrap();
+    assert_eq!(envelope.channel, "community-event");
+    assert_eq!(envelope.cursor, None);
+    assert_eq!(
+        envelope.payload,
+        serde_json::json!({
+            "type": "nativeVideoError",
+            "data": { "communityId": "c1", "channelId": "ch1", "message": "camera unplugged" },
+        })
+    );
+}

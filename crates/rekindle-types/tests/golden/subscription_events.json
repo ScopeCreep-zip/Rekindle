@@ -2600,6 +2600,119 @@
       "count": 1
     }
   },
+  "video.bitrateTarget": {
+    "video": {
+      "bitrateTarget": {
+        "kbps": 1200,
+        "scope": {
+          "directCall": {
+            "peer": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      }
+    }
+  },
+  "video.codecIncompatible": {
+    "video": {
+      "codecIncompatible": {
+        "peers": [
+          {
+            "displayName": "Eve",
+            "sender": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        ],
+        "scope": {
+          "channel": {
+            "channelId": "11111111111111111111111111111111",
+            "communityId": "VLD0:ccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      }
+    }
+  },
+  "video.envelopeRejected": {
+    "video": {
+      "envelopeRejected": {
+        "displayName": "Fern",
+        "reason": "bad signature",
+        "scope": {
+          "channel": {
+            "channelId": "11111111111111111111111111111111",
+            "communityId": "VLD0:ccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        "sender": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    }
+  },
+  "video.keyframeRequest.channel": {
+    "video": {
+      "keyframeRequest": {
+        "scope": {
+          "channel": {
+            "channelId": "11111111111111111111111111111111",
+            "communityId": "VLD0:ccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        "sender": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "streamId": "5555555555555555"
+      }
+    }
+  },
+  "video.keyframeRequest.directCall": {
+    "video": {
+      "keyframeRequest": {
+        "scope": {
+          "directCall": {
+            "peer": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "sender": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "streamId": "6666666666666666"
+      }
+    }
+  },
+  "video.sessionConfig": {
+    "video": {
+      "sessionConfig": {
+        "config": {
+          "decoder": {
+            "optimizeForLatency": true
+          },
+          "encoder": {
+            "codec": "vp9",
+            "maxFps": 30,
+            "maxHeight": 720,
+            "maxWidth": 1280,
+            "scalabilityMode": "l1t2"
+          }
+        },
+        "scope": {
+          "channel": {
+            "channelId": "11111111111111111111111111111111",
+            "communityId": "VLD0:ccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      }
+    }
+  },
+  "video.topologyChange": {
+    "video": {
+      "topologyChange": {
+        "lamport": 7,
+        "reason": "relay elected",
+        "relayHost": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scope": {
+          "channel": {
+            "channelId": "11111111111111111111111111111111",
+            "communityId": "VLD0:ccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        "sender": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "streamId": "5555555555555555"
+      }
+    }
+  },
   "voice.connectionQuality.community": {
     "voice": {
       "connectionQuality": {

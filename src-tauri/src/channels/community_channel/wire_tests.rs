@@ -125,26 +125,6 @@ fn video_bitrate_target_wire() {
     );
 }
 
-#[test]
-fn native_video_error_wire() {
-    let ev = CommunityEvent::NativeVideoError(NativeVideoErrorEvent {
-        community_id: "c1".into(),
-        channel_id: "ch1".into(),
-        message: "camera unplugged".into(),
-    });
-    assert_eq!(
-        serde_json::to_value(&ev).unwrap(),
-        json!({
-            "type": "nativeVideoError",
-            "data": {
-                "communityId": "c1",
-                "channelId": "ch1",
-                "message": "camera unplugged"
-            }
-        })
-    );
-}
-
 #[tokio::test]
 async fn video_envelope_rejected_wire() {
     let test = host_with_card().await;

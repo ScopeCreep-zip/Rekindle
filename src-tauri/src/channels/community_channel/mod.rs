@@ -2,9 +2,9 @@ use serde::Serialize;
 
 mod dto;
 pub use dto::{
-    NativeVideoErrorEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
-    VideoCodecIncompatiblePeer, VideoEnvelopeRejectedEvent, VideoKeyframeRequestEvent,
-    VideoSessionConfigEvent, VideoTopologyChangeEvent,
+    VideoBitrateTargetEvent, VideoCodecIncompatibleEvent, VideoCodecIncompatiblePeer,
+    VideoEnvelopeRejectedEvent, VideoKeyframeRequestEvent, VideoSessionConfigEvent,
+    VideoTopologyChangeEvent,
 };
 
 /// Events streamed from Rust to the frontend for community operations.
@@ -53,8 +53,6 @@ pub enum CommunityEvent {
     /// The allocator's video encoder target (see
     /// [`VideoBitrateTargetEvent`]).
     VideoBitrateTarget(VideoBitrateTargetEvent),
-    /// Native capture session died (see [`NativeVideoErrorEvent`]).
-    NativeVideoError(NativeVideoErrorEvent),
     /// Phase F — video envelope rejected at the receive boundary (see
     /// [`VideoEnvelopeRejectedEvent`]).
     VideoEnvelopeRejected(VideoEnvelopeRejectedEvent),

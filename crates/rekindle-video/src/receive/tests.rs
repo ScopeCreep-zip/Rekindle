@@ -88,7 +88,7 @@ fn valid_fragment_signature_reaches_frame_ready() {
         calls
             .events
             .iter()
-            .any(|e| matches!(e, VideoEvent::FrameReady { .. })),
+            .any(|e| matches!(e, VideoFlowEvent::FrameReady { .. })),
         "signed + decryptable single-fragment frame must emit FrameReady"
     );
     assert_eq!(
@@ -200,7 +200,7 @@ fn a_missing_sender_key_fires_one_debounced_request() {
         calls
             .events
             .iter()
-            .all(|e| !matches!(e, VideoEvent::FrameReady { .. })),
+            .all(|e| !matches!(e, VideoFlowEvent::FrameReady { .. })),
         "undecryptable frames never reach the frontend"
     );
 }
@@ -304,7 +304,7 @@ fn keyframe_request_resets_stream_and_emits_event() {
     let calls = deps.calls.lock();
     assert!(matches!(
         calls.events[0],
-        VideoEvent::KeyframeRequest { .. }
+        VideoFlowEvent::KeyframeRequest { .. }
     ));
 }
 
@@ -332,7 +332,7 @@ fn media_capabilities_maps_to_event() {
         0,
     );
     let calls = deps.calls.lock();
-    let VideoEvent::MediaCapabilities {
+    let VideoFlowEvent::MediaCapabilities {
         ref encode_codecs,
         ref decode_codecs,
         ..
@@ -371,7 +371,10 @@ fn topology_change_higher_lamport_accepted() {
     );
     let calls = deps.calls.lock();
     assert_eq!(calls.events.len(), 1);
-    assert!(matches!(calls.events[0], VideoEvent::TopologyChange { .. }));
+    assert!(matches!(
+        calls.events[0],
+        VideoFlowEvent::TopologyChange { .. }
+    ));
 }
 
 #[test]

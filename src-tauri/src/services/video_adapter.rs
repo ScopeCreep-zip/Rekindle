@@ -10,7 +10,7 @@ use std::sync::Arc;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::key_format::{pseudonym_hex, KeyFormatError};
-use rekindle_video::{VideoDeps, VideoEvent};
+use rekindle_video::{VideoDeps, VideoFlowEvent};
 
 use crate::channels::{CommunityEvent, VideoCodecIncompatibleEvent, VideoCodecIncompatiblePeer};
 use crate::state::AppState;
@@ -32,7 +32,7 @@ impl VideoAdapter {
 /// channel-media envelope that failed `verify_envelope`, built outside the
 /// receive pipeline by the gossip ingest core (`services/veilid/app_message`,
 /// plan GI4), which returns it for its caller to emit; `map_video_event`
-/// maps the pipeline's own `VideoEvent::EnvelopeRejected` through it.
+/// maps the pipeline's own `VideoFlowEvent::EnvelopeRejected` through it.
 #[must_use]
 pub fn rejection_event(
     state: &AppState,
@@ -138,13 +138,13 @@ impl VideoDeps for VideoAdapter {
         state_helpers::next_message_lamport(&self.state, community_id)
     }
 
-    fn emit_event(&self, event: VideoEvent) {
+    fn emit_event(&self, event: VideoFlowEvent) {
         // Phase 11 Tier 1 — high-throughput reassembled frames bypass the
         // `community-event` bus and go straight to the per-community
         // `ipc::Channel` the video panel registered. The low-rate control
         // events (acks, keyframe requests, topology, capabilities) stay on
         // the event bus.
-        if let VideoEvent::FrameReady {
+        if let VideoFlowEvent::FrameReady {
             community_id,
             sender_pseudonym,
             stream_id,
@@ -178,7 +178,7 @@ impl VideoDeps for VideoAdapter {
         // event stream as the cap update that produced it. The aggregator
         // emit and the raw cap emit both ride the existing dispatch queue
         // — order is preserved.
-        if let VideoEvent::MediaCapabilities {
+        if let VideoFlowEvent::MediaCapabilities {
             community_id,
             sender_pseudonym,
             channel_id,
@@ -212,7 +212,7 @@ impl VideoDeps for VideoAdapter {
         // (force-key-unit into vp8enc); the event still flows to the
         // frontend, where forceKeyframe is a no-op for stream ids the
         // webview sender doesn't own.
-        if let VideoEvent::KeyframeRequest { stream_id, .. } = &event {
+        if let VideoFlowEvent::KeyframeRequest { stream_id, .. } = &event {
             let _ = crate::services::native_video::on_keyframe_request(&self.state, stream_id);
         }
         // `None` for receiver feedback the backend consumed above
@@ -240,7 +240,7 @@ impl VideoDeps for VideoAdapter {
     }
 }
 
-/// Translate a `VideoEvent` into the frontend payload, or `None` when
+/// Translate a `VideoFlowEvent` into the frontend payload, or `None` when
 /// the frontend has no use for it.
 ///
 /// `MediaCapabilities` returns `None`: it is receiver feedback the backend
@@ -250,18 +250,18 @@ impl VideoDeps for VideoAdapter {
 /// This is the rule the architecture already applies to audio: feedback
 /// plumbing stays inside whichever process owns the codec. See
 /// `docs/plans/video-media-engine.md`.
-fn map_video_event(state: &AppState, event: VideoEvent) -> Option<CommunityEvent> {
+fn map_video_event(state: &AppState, event: VideoFlowEvent) -> Option<CommunityEvent> {
     Some(match event {
         // Phase 11 Tier 1 — frames are routed to the per-community
         // `ipc::Channel` in `emit_event` before this mapper runs, so a
         // `FrameReady` here means the dispatch invariant was violated.
-        VideoEvent::FrameReady { .. } => {
+        VideoFlowEvent::FrameReady { .. } => {
             unreachable!("FrameReady is forwarded to the video ipc::Channel in emit_event")
         }
         // Receiver feedback the backend consumes itself — see the doc
         // comment above.
-        VideoEvent::MediaCapabilities { .. } => return None,
-        VideoEvent::KeyframeRequest {
+        VideoFlowEvent::MediaCapabilities { .. } => return None,
+        VideoFlowEvent::KeyframeRequest {
             community_id,
             sender_pseudonym,
             channel_id,
@@ -272,7 +272,7 @@ fn map_video_event(state: &AppState, event: VideoEvent) -> Option<CommunityEvent
             channel_id,
             stream_id: hex::encode(stream_id),
         }),
-        VideoEvent::TopologyChange {
+        VideoFlowEvent::TopologyChange {
             community_id,
             sender_pseudonym,
             channel_id,
@@ -294,7 +294,7 @@ fn map_video_event(state: &AppState, event: VideoEvent) -> Option<CommunityEvent
         // verification failure. The frontend listens on
         // `community-event` and shows a toast / status pill instead of
         // requiring a grep through Rust logs to detect the condition.
-        VideoEvent::EnvelopeRejected {
+        VideoFlowEvent::EnvelopeRejected {
             community_id,
             sender_pseudonym,
             reason,

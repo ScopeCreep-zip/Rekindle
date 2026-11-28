@@ -74,11 +74,11 @@ pub async fn start_native_video(
     track_label: String,
     device_label: Option<String>,
     state: State<'_, SharedState>,
-    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<String, String> {
     crate::services::native_video::start(
         state.inner(),
-        &app,
+        window.label(),
         &community_id,
         &channel_id,
         &track_label,

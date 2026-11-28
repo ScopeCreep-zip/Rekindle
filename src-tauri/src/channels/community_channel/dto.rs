@@ -62,21 +62,6 @@ pub struct VideoBitrateTargetEvent {
     pub channel_id: String,
     pub kbps: u32,
 }
-
-/// The native capture session died asynchronously (camera unplugged,
-/// pipeline failure) — the panel reverts the camera toggle and surfaces
-/// the message. Emitted by the native `rekindle-video-capture` pump on
-/// every platform it runs (Linux GStreamer; macOS/Windows nokhwa+libvpx);
-/// the webview encode path reports its own failures inline via `setError`
-/// instead. The frontend TS union keeps the variant unconditionally.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeVideoErrorEvent {
-    pub community_id: String,
-    pub channel_id: String,
-    pub message: String,
-}
-
 /// Phase F — a gossiped video envelope failed signature or shape
 /// verification at the receive boundary. Surfaced to the UI so the
 /// asymmetric-drop case (one peer rejects, the other doesn't) is

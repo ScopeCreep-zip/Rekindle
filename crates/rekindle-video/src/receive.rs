@@ -3,9 +3,9 @@
 //! Routes inbound `ControlPayload::Video*` variants from the directed
 //! channel-peer transport: fragment + parity fragment ingest into the
 //! per-community reassembler, then MEK-decrypt the assembled frame and
-//! emit `VideoEvent::FrameReady`. The other control variants
+//! emit `VideoFlowEvent::FrameReady`. The other control variants
 //! (KeyframeRequest, TopologyChange, MediaCapabilities) map 1:1 to their
-//! VideoEvent variants. Congestion feedback is not video's: the route's
+//! VideoFlowEvent variants. Congestion feedback is not video's: the route's
 //! transport feedback covers every media datagram (plan E4.3.3).
 //!
 //! Architecture §10.6 reader-validates gate: every payload carries the
@@ -20,7 +20,7 @@ use rekindle_codec::community::envelope::{
 };
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 
-use crate::deps::{VideoDeps, VideoEvent};
+use crate::deps::{VideoDeps, VideoFlowEvent};
 use crate::reassembler::ReassembledFrame;
 use crate::reassembly_state::VideoReassemblyState;
 use crate::{VideoFragment, VideoParityFragment};
@@ -44,7 +44,7 @@ pub fn video_payload_channel(payload: &ControlPayload) -> Option<&str> {
 /// Dispatch entry point — routed from the src-tauri Veilid control
 /// receiver when any video-flavoured `ControlPayload` arrives. Each
 /// variant either ingests fragments (which can produce a reassembled
-/// frame → emit FrameReady) or passes directly to a VideoEvent.
+/// frame → emit FrameReady) or passes directly to a VideoFlowEvent.
 pub fn handle_video_payload<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
@@ -222,7 +222,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 "keyframe request received"
             );
             reassembly.reset_stream(community_id, stream_id, sender_pseudonym);
-            deps.emit_event(VideoEvent::KeyframeRequest {
+            deps.emit_event(VideoFlowEvent::KeyframeRequest {
                 community_id: community_id.to_string(),
                 sender_pseudonym: sender_pseudonym.to_string(),
                 channel_id,
@@ -254,7 +254,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             // Discard any partial frames buffered against the previous
             // relay so the next frame from the new relay starts clean.
             reassembly.reset_stream(community_id, stream_id, sender_pseudonym);
-            deps.emit_event(VideoEvent::TopologyChange {
+            deps.emit_event(VideoFlowEvent::TopologyChange {
                 community_id: community_id.to_string(),
                 sender_pseudonym: sender_pseudonym.to_string(),
                 channel_id,
@@ -273,7 +273,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             supports_optimize_for_latency,
             supported_scalability_modes,
         } => {
-            deps.emit_event(VideoEvent::MediaCapabilities {
+            deps.emit_event(VideoFlowEvent::MediaCapabilities {
                 community_id: community_id.to_string(),
                 sender_pseudonym: sender_pseudonym.to_string(),
                 channel_id,
@@ -307,7 +307,7 @@ fn fragment_signature_valid(sender_hex: &str, to_sign: &[u8], signature: &[u8]) 
 }
 
 /// Decrypt a reassembled frame under its sender's own media key (plan
-/// C7.20) and emit `VideoEvent::FrameReady` with the plaintext payload.
+/// C7.20) and emit `VideoFlowEvent::FrameReady` with the plaintext payload.
 /// The channel gate in `handle_video_payload` already guarantees the frame
 /// belongs to the channel we're actively in. The frame names its sender's
 /// key index; a key we lack is requested from that sender (debounced).
@@ -381,7 +381,7 @@ fn emit_frame_ready<D: VideoDeps>(
         sender_pseudonym = %sender_pseudonym,
         "frame reassembled"
     );
-    deps.emit_event(VideoEvent::FrameReady {
+    deps.emit_event(VideoFlowEvent::FrameReady {
         community_id: community_id.to_string(),
         sender_pseudonym: sender_pseudonym.to_string(),
         stream_id: frame.stream_id,

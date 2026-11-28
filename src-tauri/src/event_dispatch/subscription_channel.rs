@@ -22,6 +22,7 @@ pub(super) fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
         SubscriptionEvent::System(SystemEvent::SkinShell { .. }) => "skin-shell-event",
         SubscriptionEvent::Voice(_) => "voice-event",
+        SubscriptionEvent::Video(_) => "video-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the
         // chat handlers.

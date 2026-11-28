@@ -33,6 +33,7 @@ mod social;
 mod system;
 mod transfer;
 mod typing;
+mod video;
 mod voice;
 
 use std::collections::BTreeSet;
@@ -180,6 +181,11 @@ const FAMILIES: &[Family] = &[
         names: INTENT_PENDING_NAMES,
         nested: &[],
     },
+    Family {
+        tag: "video",
+        names: video::NAMES,
+        nested: video::NESTED,
+    },
 ];
 
 /// What one sample exercises: its family tag, its variant name and the
@@ -245,6 +251,7 @@ fn classify(event: &SubscriptionEvent) -> Classified {
             vec![unread_context_name(context)],
         ),
         SubscriptionEvent::IntentPending(_) => ("intentPending", "intentPending", vec![]),
+        SubscriptionEvent::Video(e) => ("video", video::variant_name(e), video::nested_names(e)),
     };
     Classified {
         tag,
@@ -291,6 +298,7 @@ fn all_samples() -> Vec<Sample> {
     all.extend(network::samples());
     all.extend(system::samples());
     all.extend(transfer::samples());
+    all.extend(video::samples());
     all.extend(unread_samples());
     all.push((
         "intentPending.intentPending".to_owned(),
@@ -552,4 +560,9 @@ fn unread_changed_is_covered() {
 #[test]
 fn intent_pending_is_covered() {
     check_family("intentPending");
+}
+
+#[test]
+fn video_family_is_covered() {
+    check_family("video");
 }

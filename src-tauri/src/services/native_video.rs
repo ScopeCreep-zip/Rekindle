@@ -196,7 +196,7 @@ async fn reopen(
 /// window, which reverts the camera toggle and shows `message`.
 fn fail_session(
     state: &AppState,
-    app: &tauri::AppHandle,
+    window: &str,
     community_id: &str,
     channel_id: &str,
     message: String,
@@ -208,13 +208,14 @@ fn fail_session(
         "native capture failed — stopping session"
     );
     state.native_video.active.lock().take();
-    crate::event_dispatch::emit_community(
-        app,
-        crate::channels::CommunityEvent::NativeVideoError(crate::channels::NativeVideoErrorEvent {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
+    crate::event_dispatch::emit_from_state(
+        state,
+        crate::event_dispatch::WebviewEvent::NativeVideoError {
+            window: window.to_owned(),
+            community_id: community_id.to_owned(),
+            channel_id: channel_id.to_owned(),
             message,
-        }),
+        },
     );
 }
 
@@ -223,7 +224,7 @@ fn fail_session(
 /// (`camera busy: …`, `camera-session-active`, …).
 pub async fn start(
     state: &Arc<AppState>,
-    app: &tauri::AppHandle,
+    window: &str,
     community_id: &str,
     channel_id: &str,
     track_label: &str,
@@ -300,7 +301,7 @@ pub async fn start(
     // The pump: frames out, preview out, control (stop, keyframe,
     // bitrate) in.
     let pump_state = Arc::clone(state);
-    let pump_app = app.clone();
+    let pump_window = window.to_owned();
     let pump_community = community_id.to_string();
     let pump_channel = channel_id.to_string();
     let pump_stream_hex = stream_id_hex.clone();
@@ -357,7 +358,7 @@ pub async fn start(
                                     Err(message) => {
                                         fail_session(
                                             &pump_state,
-                                            &pump_app,
+                                            &pump_window,
                                             &pump_community,
                                             &pump_channel,
                                             message,
@@ -377,7 +378,7 @@ pub async fn start(
                         session.stop();
                         fail_session(
                             &pump_state,
-                            &pump_app,
+                            &pump_window,
                             &pump_community,
                             &pump_channel,
                             message,

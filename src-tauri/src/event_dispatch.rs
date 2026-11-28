@@ -15,7 +15,7 @@
 //! D3.2), which gives it a cursor; [`spawn_host_stream`] delivers the
 //! host's stream to the windows, and a window that reloads asks the host
 //! for what followed its last cursor (`subscribe_events`). The shell-only
-//! variants (`Lifecycle`, `PairingLinkRefused`, `SettingsSwitchTab`)
+//! variants (`Lifecycle`, `PairingLinkRefused`, `SettingsSwitchTab`, `NativeVideoError`)
 //! and the legacy `Community` shape are delivered live from
 //! the local queue and never replayed; a reloading window reads that
 //! history through `hydrateState()`.
@@ -59,6 +59,13 @@ pub enum WebviewEvent {
     SettingsSwitchTab(SettingsTab),
     /// A community-window event in the desktop's legacy shape.
     Community(CommunityEvent),
+    /// The native camera pump failed in the window that started it.
+    NativeVideoError {
+        window: String,
+        community_id: String,
+        channel_id: String,
+        message: String,
+    },
     /// Show `channel` in the open community window labelled `window` (plan
     /// E7.2 A: the skin's Show Voice on a community voice session).
     CommunityFocusChannel { window: String, channel: String },
@@ -80,7 +87,7 @@ impl WebviewEvent {
             Self::Lifecycle { .. } => "lifecycle-event",
             Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
-            Self::Community(_) => "community-event",
+            Self::Community(_) | Self::NativeVideoError { .. } => "community-event",
             Self::CommunityFocusChannel { .. } => "community-focus-channel",
         }
     }
@@ -95,6 +102,15 @@ impl WebviewEvent {
             Self::PairingLinkRefused => Ok(serde_json::Value::Null),
             Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
             Self::Community(e) => serde_json::to_value(e),
+            Self::NativeVideoError {
+                community_id,
+                channel_id,
+                message,
+                ..
+            } => Ok(serde_json::json!({
+                "type": "nativeVideoError",
+                "data": { "communityId": community_id, "channelId": channel_id, "message": message },
+            })),
             Self::CommunityFocusChannel { channel, .. } => serde_json::to_value(channel),
         }
     }
@@ -111,7 +127,9 @@ impl WebviewEvent {
             // community's events go to every one of them (each filters by
             // its selection) and to the buddy list's community list.
             Self::Community(_) => communities(),
-            Self::CommunityFocusChannel { window, .. } => Audience::labels([window.clone()]),
+            Self::CommunityFocusChannel { window, .. } | Self::NativeVideoError { window, .. } => {
+                Audience::labels([window.clone()])
+            }
         }
     }
 
@@ -247,8 +265,8 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
             EventScope::Peer(peer) => {
                 let audience = buddy_list().with_labels(labels::peer_labels(&peer));
-                // A DM call's media and voice state also drive its call window.
-                if matches!(event, SubscriptionEvent::Voice(_)) {
+                // A DM call's media, voice and video state also drive its call window.
+                if matches!(event, SubscriptionEvent::Voice(_) | SubscriptionEvent::Video(_)) {
                     audience.with_kinds(&[WindowKind::Call])
                 } else {
                     audience

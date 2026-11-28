@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rekindle_types::subscription_events::StreamFrame;
+use rekindle_types::subscription_events::{StreamFrame, SubscriptionEvent};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
@@ -38,12 +38,22 @@ struct EventQueue {
 }
 
 impl EventQueue {
-    fn push(&mut self, frame: StreamFrame) {
+    async fn push(&mut self, frame: StreamFrame) {
         if self.lagging {
             if self.tx.try_send(StreamFrame::InvalidSession).is_ok() {
                 self.lagging = false;
             }
             return;
+        }
+        if let StreamFrame::Event(sequenced) = &frame {
+            if let SubscriptionEvent::Video(event) = &sequenced.event {
+                if event.can_shed() {
+                    let _ = self.tx.try_send(frame);
+                } else {
+                    let _ = self.tx.send(frame).await;
+                }
+                return;
+            }
         }
         match self.tx.try_send(frame) {
             Ok(()) => {}
@@ -467,7 +477,7 @@ async fn route_inbound(
                 tracing::debug!(correlation_id = %corr_id, "response for unknown request");
             }
         }
-        BusPayload::Event(frame) => events.push(frame),
+        BusPayload::Event(frame) => events.push(frame).await,
         BusPayload::Media(frame) => {
             // Compressed video frame — hand to the bounded, drop-oldest media
             // channel the consumer took via take_media_receiver(). The queue

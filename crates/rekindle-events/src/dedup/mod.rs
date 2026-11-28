@@ -75,6 +75,7 @@ impl EventDedup {
         // UnreadChanged is always emitted — it's a computed aggregate, not a network event.
         // Transfers and post admission changes come from local state.
         // Each change may legitimately repeat the same event payload.
+        // Repeated video facts (such as keyframe requests) are independent events.
         if matches!(
             event,
             SubscriptionEvent::UnreadChanged { .. }
@@ -82,6 +83,7 @@ impl EventDedup {
                 | SubscriptionEvent::ChannelMessage(
                     ChannelMessageEvent::PostAdmissionChanged { .. }
                 )
+                | SubscriptionEvent::Video(_)
         ) {
             return true;
         }
@@ -191,6 +193,10 @@ fn hash_event(event: &SubscriptionEvent, now_ms: u64) -> [u8; 32] {
         SubscriptionEvent::Transfer(_) => {
             hasher.update(b"transfer");
         }
+        // Nor for video facts.
+        SubscriptionEvent::Video(_) => {
+            hasher.update(b"video");
+        }
         // Each review has its own id: two are never the same action.
         SubscriptionEvent::IntentPending(review) => {
             hasher.update(review.intent_id.to_string().as_bytes());
@@ -219,6 +225,7 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Transfer(_) => "tf",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
         SubscriptionEvent::IntentPending(_) => "ip",
+        SubscriptionEvent::Video(_) => "vd",
     }
 }
 

@@ -56,7 +56,7 @@ pub struct ReassembledFrame {
     pub frame_seq: u32,
     pub keyframe: bool,
     /// Codec tag carried by the frame's fragments — forwarded on
-    /// `VideoEvent::FrameReady` so the frontend configures the right
+    /// `VideoFlowEvent::FrameReady` so the frontend configures the right
     /// decoder.
     pub codec: Codec,
     pub timestamp: u32,
