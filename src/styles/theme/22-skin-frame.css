@@ -39,6 +39,7 @@
     place-content: center;
     min-block-size: 100vh;
     padding: 1rem;
+    color: var(--color-xfire-text-primary);
     background: var(--color-xfire-bg-dark);
   }
 }

@@ -1,9 +1,9 @@
 import { createSignal, onCleanup } from "solid-js";
 import { subscribeSkinApplyFailed, subscribeSkinEvents } from "../ipc/channels";
 import { commands } from "../ipc/commands";
-import { Channel } from "../ipc/invoke";
 import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
+import { Channel } from "../ipc/invoke";
 import { addToast } from "../stores/toast.store";
 
 /// The shown skin's window outlines (plan SK2-S2): set with the sheet that
@@ -91,16 +91,16 @@ export function useSkin(): void {
   let received = false;
   const frame = framedWindow();
   if (frame) {
+    // Hidden until this document's first committed skin (applySkin clears it
+    // before the commit that lets native reveal the window); a deadline
+    // failure shows the error instead.
     document.documentElement.dataset.skinOpening = "";
-    void (async () => {
-      let error = await commands.waitSkinOpen(false);
-      if (stopped) return;
-      if (error === null) {
-        delete document.documentElement.dataset.skinOpening;
-        error = await commands.waitSkinOpen(true);
-      }
-      if (error !== null && !stopped) showOpeningError(error);
-    })().catch(logSkinError);
+    void commands
+      .waitSkinOpen(true)
+      .then((error) => {
+        if (error !== null && !stopped) showOpeningError(error);
+      })
+      .catch(logSkinError);
   }
   const apply = (skin: SkinApplied | null): void => {
     if (!openingFailed) void applySkin(skin, frame).catch(logSkinError);
@@ -187,12 +187,17 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
       addToast(message);
     }
   });
-  await commands.startSkinApply(serial, skin.id, expired);
   let href: string | null = null;
   try {
+    await commands.startSkinApply(serial, skin.id, expired);
     if (attempt.signal.aborted) return;
     await untilAborted(commitSkin(skin, shown, frame, attempt.signal), attempt.signal);
-    if (!attempt.signal.aborted) href = skin.tokensHref;
+    if (!attempt.signal.aborted) {
+      href = skin.tokensHref;
+      // Displayable before the commit below, which is what lets native
+      // reveal the window: its first shown frame is the skinned page.
+      if (frame && !openingFailed) delete document.documentElement.dataset.skinOpening;
+    }
   } catch (error) {
     if (attempt.signal.aborted) return;
     if (error instanceof SkinImageError) {
@@ -260,7 +265,9 @@ async function commitSkin(
 function untilAborted(work: Promise<void>, signal: AbortSignal): Promise<void> {
   return Promise.race([
     work,
-    new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
+    new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true })
+    ),
   ]);
 }
 
@@ -301,15 +308,23 @@ function linkSheet(href: string, signal: AbortSignal): Promise<HTMLLinkElement> 
       next.remove();
     };
     signal.addEventListener("abort", cancel, { once: true });
-    next.addEventListener("load", () => {
-      loading = null;
-      signal.removeEventListener("abort", cancel);
-      resolve(next);
-    }, { once: true, signal });
-    next.addEventListener("error", () => {
-      cancel();
-      reject(new Error(`${href} failed to load`));
-    }, { once: true, signal });
+    next.addEventListener(
+      "load",
+      () => {
+        loading = null;
+        signal.removeEventListener("abort", cancel);
+        resolve(next);
+      },
+      { once: true, signal }
+    );
+    next.addEventListener(
+      "error",
+      () => {
+        cancel();
+        reject(new Error(`${href} failed to load`));
+      },
+      { once: true, signal }
+    );
     document.head.appendChild(next);
   });
 }
