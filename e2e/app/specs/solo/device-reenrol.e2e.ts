@@ -369,7 +369,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     );
     // The probe really saw the channel (a wrapper on invoke once saw nothing):
     // every delivery it logged before the gate, by kind.
-    const seen = (await pageLog(browser)).split("\n").filter((l) => /^\+\d+ms /.test(l));
+    const seen = (await pageLog(browser)).split(" ; ").filter((line) => /^\+\d+ms /.test(line));
     console.log(
       `[reenrol] probe saw ${seen.length} channel deliveries before the gate, ${seen.filter((l) => / event /.test(l)).length} of them acceptSessionReset`
     );
