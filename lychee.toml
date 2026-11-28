@@ -76,6 +76,16 @@ include_fragments = "none"
 # Run only over markdown — code comments are out of scope for now.
 extensions = ["md"]
 
+# github.com fails to render file pages of ryanoasis/nerd-fonts (a very large repository): its
+# blob page for license-audit.md at tag v3.3.0 answers 503 on every request, while the same file
+# is served from raw.githubusercontent.com. Check that same file at the same ref there, so the
+# verbatim LICENSE-NerdFonts.md and our NOTICE.md keep their links and a missing file still fails.
+# (lychee v0.24.2 remap: regex replace_all, lychee-lib/src/remap.rs.)
+remap = [
+  "^https://github\\.com/ryanoasis/nerd-fonts/blob/-/(.+)$ https://raw.githubusercontent.com/ryanoasis/nerd-fonts/HEAD/$1",
+  "^https://github\\.com/ryanoasis/nerd-fonts/blob/(.+)$ https://raw.githubusercontent.com/ryanoasis/nerd-fonts/$1",
+]
+
 # github.com throttles automated page fetches from CI runners and answers 503
 # (lychee fetches a blob URL's HTML; the token only backs a repo-metadata
 # fallback). Pace requests to it instead of accepting 503 or excluding it, so a
