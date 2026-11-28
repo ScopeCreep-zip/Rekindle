@@ -176,3 +176,59 @@ async fn rotation_routes_reconciles_the_joiners_first_write() {
         "a reader sees the joiner's current General route in M/6"
     );
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn rotation_routes_retries_a_failed_write_without_another_rotation() {
+    use rekindle_codec::member_record::{routes::decode_member_routes, RecordScope};
+    use rekindle_netsim::{Fault, Records, Writes};
+    use rekindle_records::port::RouteClass;
+    use rekindle_types::dht_layout::member_record::ROUTES;
+    use rekindle_types::id::PseudonymKey;
+
+    let community = Community::of(1, 4422).await;
+    let record = crate::invite_unpublished::creator_record(&community);
+    let p = PseudonymKey::from_hex_lossy(&community.pseudonym(0).await);
+    let routes = &community.nodes[0].routes;
+    let old = routes.own_blob(RouteClass::General).unwrap();
+    let attempts = || community.sim.app_sets_at(0, &record, ROUTES);
+    let before = attempts();
+    let previous = community.sim.network_get(&record, ROUTES).unwrap();
+    community.sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Subkey {
+            subkey: ROUTES,
+            record: Some(Records::Key(record.clone())),
+        },
+    });
+    routes.replace_own_class(RouteClass::General);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(30), || async {
+            routes
+                .own_blob(RouteClass::General)
+                .is_some_and(|route| route != old)
+                && attempts() > before
+        })
+        .await,
+        "the writer attempted the new route while sets fail"
+    );
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert_eq!(community.sim.network_get(&record, ROUTES), Some(previous));
+    let replacement = routes.own_blob(RouteClass::General).unwrap();
+    community.sim.fault(Fault::Heal);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(30), || async {
+            let Some(value) = community.sim.network_get(&record, ROUTES) else {
+                return false;
+            };
+            let at = RecordScope {
+                community_id: &community.anchor,
+                member_record: &record,
+            };
+            decode_member_routes(&value.data, at, &p.0)
+                .is_ok_and(|read| read.general == replacement)
+        })
+        .await,
+        "the retry publishes the replacement without another route event"
+    );
+    assert_eq!(routes.own_blob(RouteClass::General), Some(replacement));
+}

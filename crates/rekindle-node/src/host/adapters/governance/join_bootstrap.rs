@@ -13,7 +13,6 @@
 
 use rekindle_governance_runtime::op_log::HeldOp;
 use rekindle_governance_runtime::{BootstrapJoiner, GovernanceRuntimeError};
-use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
@@ -130,10 +129,7 @@ impl HostGovernance {
     /// The inviter's pseudonym: the member whose record is `inviter_record`
     /// in the merged state.
     fn inviter_of(&self, community: &str, inviter_record: &str) -> Option<PseudonymKey> {
-        let state = self.ctx.communities.governance_state(community)?;
-        (state.members.iter())
-            .find(|(_, m)| m.member_record == inviter_record)
-            .map(|(p, _)| p.clone())
+        self.author_of_record(community, inviter_record)
     }
 
     /// The inviter's current route from its `M`/6 (forced: it changes when
@@ -145,46 +141,9 @@ impl HostGovernance {
         community: &str,
         inviter_record: &str,
     ) -> Option<Vec<u8>> {
-        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
         let inviter = self.inviter_of(community, inviter_record)?;
-        let owner = self
-            .ctx
-            .communities
-            .governance_state(community)?
-            .members
-            .get(&inviter)?
-            .member_record_owner
-            .clone();
-        let port = self.record_port().ok()?;
-        let read = rekindle_governance_runtime::member_routes::read_member_route_at(
-            &*port,
-            community,
-            inviter_record,
-            &inviter,
-            rekindle_governance_runtime::member_routes::RoutePin::Joined(&owner),
-        )
-        .await;
-        match read {
-            // Taken into the member route cache as every `M`/6 read is
-            // (plan E3.4 S4); a dead route still published one re-fetch
-            // gap after its death is probed here, before this attempt
-            // decides whether it may call (plan RH1r-c S2/S3).
-            Ok(Some((seq, route))) => {
-                let route = Some(route).filter(|r| !r.is_empty())?;
-                if self.observe_route(community, &inviter, seq, route.clone())
-                    == DeadRouteVerdict::Probe
-                {
-                    self.probe_member_route(community, &inviter, seq, route.clone())
-                        .await;
-                }
-                Some(route)
-            }
-            Ok(None) => None,
-            Err(error) => {
-                tracing::debug!(community, %error, "the inviter's route was not read");
-                None
-            }
-        }
+        self.read_inviter_device_route(community, &inviter, inviter_record)
+            .await
     }
 
     /// One bootstrap exchange: `joined` (our `MemberJoined`) to the inviter

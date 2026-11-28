@@ -8,8 +8,10 @@
 //! set the frontend's report defines (`rekindle_presence::community::
 //! on_screen`).
 
+use rekindle_governance_runtime::member_card::member_device_records;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::port::OpenIntent;
+use rekindle_types::id::PseudonymKey;
 
 use super::HostGovernance;
 
@@ -85,10 +87,13 @@ impl HostGovernance {
             .members()
             .filter(|m| only.is_none_or(|only| only.contains(m)))
             .filter(|m| Some(m.as_str()) != me)
-            .filter_map(|m| {
-                let (_, entry) = state.members.iter().find(|(p, _)| p.to_hex() == *m)?;
-                (!community.watch_ring.contains_key(&entry.member_record))
-                    .then(|| (m.clone(), entry.member_record.clone()))
+            .flat_map(|member| {
+                let author = PseudonymKey::from_hex_lossy(member);
+                member_device_records(state, community_id, &author)
+                    .into_iter()
+                    .filter(|at| !community.watch_ring.contains_key(at.record))
+                    .map(|at| (member.clone(), at.record.to_owned()))
+                    .collect::<Vec<_>>()
             })
             .collect()
     }

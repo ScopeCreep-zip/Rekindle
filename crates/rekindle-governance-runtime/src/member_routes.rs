@@ -17,10 +17,10 @@
 //! the inviter rewrites `M`/6 on every new route (the route publisher,
 //! `rekindle-node` `member_routes_loop`).
 //!
-//! **Owner** ([`RoutePin`], plan E3.4 S4). A member's route is read from the
-//! record its merged `MemberJoined` names and refused unless the record's
-//! descriptor owner is the `memberRecordOwner` that op names
-//! (`crate::member_card::read_pinned`). The joiner has no `MemberJoined` to
+//! **Owner** ([`RoutePin`], plan E3.4 S4). A device's route is read from
+//! its effective record. The descriptor owner must match its membership
+//! or device endorsement (`crate::member_card::read_pinned`).
+//! The joiner has no merged endorsement to
 //! pin its inviter's record against before its walk; it needs none: the
 //! record key is the hash of the owner key and the schema
 //! (`veilid-core/src/veilid_api/types/dht/derivation.rs:57-69`), and the key
@@ -32,13 +32,15 @@ use rekindle_records::port::{OpenIntent, RecordPort};
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::id::PseudonymKey;
 
-use crate::member_card::{read_pinned_value, write_subkey, MemberRecordRef, OwnRecord};
+use crate::member_card::{
+    read_pinned_value, write_republished_subkey, MemberRecordRef, OwnRecord, SubkeyWriteError,
+};
 
 /// What fixes the owner of the record a route is read from.
 #[derive(Debug, Clone, Copy)]
 pub enum RoutePin<'a> {
-    /// A member's record, pinned to the `memberRecordOwner` its merged
-    /// `MemberJoined` names.
+    /// An effective device record, pinned to the owner from MemberJoined
+    /// or its device endorsement.
     Joined(&'a str),
     /// The inviter's record named by the invite's code-authenticated
     /// secrets, whose key already fixes the owner (the joiner's pre-walk
@@ -56,7 +58,7 @@ pub async fn write_routes(
     own: &OwnRecord<'_>,
     blob: &[u8],
     now_ms: u64,
-) -> Result<(), String> {
+) -> Result<(), SubkeyWriteError> {
     let at = RecordScope {
         community_id: own.community_id,
         member_record: own.record,
@@ -66,8 +68,8 @@ pub async fn write_routes(
         issued_at: now_ms,
     }
     .encode(at, own.pseudonym)
-    .map_err(|e| format!("member routes: {e}"))?;
-    write_subkey(port, own, member_record::ROUTES, bytes).await
+    .map_err(|e| SubkeyWriteError::Failed(format!("member routes: {e}")))?;
+    write_republished_subkey(port, own, member_record::ROUTES, bytes).await
 }
 
 /// A member's current general route blob, read from `M(member)`/6 (forced)

@@ -177,6 +177,21 @@ impl HostGovernance {
                     // E3.4 S4): a ring member's later changes arrive by
                     // the watch.
                     host.read_member_routes(&community, &record, lease).await;
+                    // A further device may have published its card before
+                    // we learned and watched its record.
+                    if host
+                        .author_of_record(&community, &record)
+                        .is_some_and(|author| {
+                            host.governance_state_impl(&community).is_some_and(|state| {
+                                state
+                                    .members
+                                    .get(&author)
+                                    .is_some_and(|member| member.member_record != record)
+                            })
+                        })
+                    {
+                        host.ring_card_moved(&community, &record).await;
+                    }
                 }
             }
         });

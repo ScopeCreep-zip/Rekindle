@@ -185,10 +185,11 @@ pub(crate) struct NodeSlot {
     /// The gets the node's app sent to the network (`DhtPort::get` not
     /// answered from the local copy), by record key, for a scenario that a
     /// read costs only the gets it needs.
-    pub app_gets: HashMap<String, u64>,
+    pub app_gets: HashMap<(String, u32), u64>,
     /// The sets the node's app asked for (`DhtPort::set`), for a scenario
     /// that a stall starts no burst of writes.
     pub app_sets: u64,
+    pub app_sets_at: HashMap<(String, u32), u64>,
     /// Of [`Self::app_sets`], those that asked for the local copy again at
     /// its seq (a same-seq re-send, such as the pool's own-write
     /// republish): an observation, never a behaviour.
@@ -250,6 +251,7 @@ impl NodeSlot {
             app_network_inspects: HashMap::new(),
             app_gets: HashMap::new(),
             app_sets: 0,
+            app_sets_at: HashMap::new(),
             app_resends: 0,
             app_calls: 0,
             pools: Vec::new(),
@@ -328,9 +330,13 @@ impl Inner {
 }
 
 impl Network {
-    /// Count one network get `node`'s app sent for `key` (`app_gets`).
-    pub(crate) fn count_app_get(&self, node: usize, key: &str) {
-        tally(&mut self.inner.lock().nodes[node].app_gets, key);
+    /// Count a network get for this record and subkey.
+    pub(crate) fn count_app_get(&self, node: usize, key: &str, subkey: u32) {
+        let mut inner = self.inner.lock();
+        *inner.nodes[node]
+            .app_gets
+            .entry((key.to_owned(), subkey))
+            .or_default() += 1;
     }
 
     /// Count one inspect `node`'s app sent for `key` (`app_inspects`).
@@ -579,7 +585,7 @@ pub(crate) fn pair(a: usize, b: usize) -> (usize, usize) {
     }
 }
 
-/// One more of `key` in a per-record tally (`app_inspects`, `app_gets`).
+/// One more of `key` in a per-record tally (`app_inspects`).
 fn tally(counts: &mut HashMap<String, u64>, key: &str) {
     *counts.entry(key.to_string()).or_default() += 1;
 }

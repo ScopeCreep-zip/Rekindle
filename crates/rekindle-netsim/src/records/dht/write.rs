@@ -18,7 +18,15 @@ impl SimDht {
         writer: Option<&WriterKey>,
         min_seq: Option<u32>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
-        self.net.inner.lock().nodes[self.node].app_sets += 1;
+        {
+            let mut inner = self.net.inner.lock();
+            let node = &mut inner.nodes[self.node];
+            node.app_sets += 1;
+            *node
+                .app_sets_at
+                .entry((key.to_owned(), subkey))
+                .or_default() += 1;
+        }
         let opened = self.opened(key)?;
         let writer = writer
             .map(|w| w.keypair().clone())

@@ -184,9 +184,9 @@ impl HostGovernance {
     /// strictly newer read of a dead blob makes it usable again (plan RV1g
     /// B3), and the same seq one re-fetch gap after its death asks for a
     /// probe (plan RH1r-c S2/S3, `route_probe`).
-    pub(crate) fn route_read_at(&self, blob: &[u8], seq: u64) -> DeadRouteVerdict {
+    pub(crate) fn route_read_at(&self, record: &str, blob: &[u8], seq: u64) -> DeadRouteVerdict {
         self.transport().map_or(DeadRouteVerdict::NotDead, |node| {
-            node.liveness().route_read_at(blob, seq)
+            node.liveness().route_read_on(record, blob, seq)
         })
     }
 

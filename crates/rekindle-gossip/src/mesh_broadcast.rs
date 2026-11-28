@@ -229,7 +229,7 @@ pub(crate) async fn send_to_one_peer<D: GossipDeps>(
             "route stale, attempting DHT re-resolve",
         );
         let resolved = deps
-            .resolve_peer_route_from_dht(&community_id, &peer.pseudonym_key)
+            .resolve_peer_route_from_dht(&community_id, &peer.pseudonym_key, &peer.route_blob)
             .await;
         if let Some(ref blob) = resolved {
             let status = deps

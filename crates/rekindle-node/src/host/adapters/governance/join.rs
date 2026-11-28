@@ -133,8 +133,12 @@ impl HostGovernance {
         // row, tried until a member answers, since no member learns of a
         // joiner it has not merged (`join_bootstrap`).
         let inviter_record = &outcome.invite.inviter_member_record;
+        let route = self
+            .inviter_route(&id, inviter_record)
+            .await
+            .unwrap_or_default();
         match self
-            .bootstrap_exchange(&id, &outcome.inviter_route, inviter_record, &outcome.joined)
+            .bootstrap_exchange(&id, &route, inviter_record, &outcome.joined)
             .await
         {
             super::join_bootstrap::Exchange::Merged => self.announce_standing_join(&id, &outcome),

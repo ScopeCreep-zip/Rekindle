@@ -124,6 +124,7 @@ struct Entry {
 #[derive(Default)]
 pub(super) struct Republish {
     entries: Mutex<BTreeMap<(String, u32), Entry>>,
+    cancelled: Arc<Mutex<BTreeSet<(String, u32)>>>,
     changed: tokio::sync::Notify,
     started: AtomicBool,
 }
@@ -182,16 +183,23 @@ impl RecordPool {
             return;
         }
         let now = Instant::now();
-        self.republish.entries.lock().insert(
-            (key.to_owned(), subkey),
-            Entry {
-                data,
-                writer,
-                since: now,
-                sent: 0,
-                due: now + wait_after(0),
-            },
-        );
+        let slot = (key.to_owned(), subkey);
+        {
+            let mut entries = self.republish.entries.lock();
+            if self.republish.cancelled.lock().contains(&slot) {
+                return;
+            }
+            entries.insert(
+                slot,
+                Entry {
+                    data,
+                    writer,
+                    since: now,
+                    sent: 0,
+                    due: now + wait_after(0),
+                },
+            );
+        }
         self.start_republish();
         self.republish.changed.notify_one();
     }
@@ -200,6 +208,19 @@ impl RecordPool {
     #[must_use]
     pub fn republishing(&self) -> Vec<(String, u32)> {
         self.republish.entries.lock().keys().cloned().collect()
+    }
+
+    /// Retire queued re-sends for this record. A write that finishes
+    /// concurrently cannot re-register them.
+    pub fn cancel_republish(&self, record: &str, subkeys: &[u32]) {
+        let mut entries = self.republish.entries.lock();
+        let mut cancelled = self.republish.cancelled.lock();
+        for &subkey in subkeys {
+            let slot = (record.to_owned(), subkey);
+            entries.remove(&slot);
+            cancelled.insert(slot);
+        }
+        self.republish.changed.notify_one();
     }
 
     fn start_republish(&self) {
@@ -365,12 +386,16 @@ impl RecordPool {
     /// still holds it from `writer`. The record is leased by the caller.
     async fn resend(&self, key: &str, subkey: u32, data: Vec<u8>, writer: WriterKey) -> Resent {
         let key = key.to_owned();
+        let cancelled = Arc::clone(&self.republish.cancelled);
         let result = self
             .run("dht republish", move |backend| async move {
                 // Only the bytes our copy holds at its seq: any other value
                 // would be written at the next seq, over a newer write.
                 let local = backend.get(&key, subkey, false).await?;
                 if !local.is_some_and(|v| v.data == data && v.writer == writer.public) {
+                    return Ok(Resent::Superseded);
+                }
+                if cancelled.lock().contains(&(key.clone(), subkey)) {
                     return Ok(Resent::Superseded);
                 }
                 let settled = backend

@@ -1,96 +1,162 @@
-//! The Host's member routes (plan E3.4 S4, "Routes"), on both modes: each
-//! member's verified `M`/6 route in its community's
-//! [`MemberRouteCache`](rekindle_presence::community::MemberRouteCache),
-//! fed by a ring change or a `HeadAdvanced` hint naming subkey 6
-//! (`watch`, `head_advanced`) and by a pinned cold read on first use
-//! (`rekindle_governance_runtime::member_routes::read_member_route_at`,
-//! `RoutePin::Joined`). Every Host call to a member goes through
-//! [`HostGovernance::call_member_route`]: a `RouteUnusable` or a call
-//! timeout (Veilid 0.5.8 loses a call into a released route as a timeout)
-//! forgets the route and re-reads `M`/6 exactly once; only a changed blob
-//! is called again, and an unchanged one is a visible `Unreachable`, never
-//! a retry loop (the outbox row's own retry decides any later attempt).
+//! The Host's owner-pinned M/6 reader and S4 member-call recovery.
+
+use std::sync::Arc;
 
 use rekindle_codec::member_record::{routes::decode_member_routes, RecordScope};
 use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+use rekindle_governance_runtime::member_card::member_device_records;
 use rekindle_governance_runtime::member_routes::{read_member_route_at, RoutePin};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+use rekindle_presence::community::RouteVersion;
 use rekindle_records::lease::LeaseId;
 use rekindle_route::dead_routes::DeadRouteVerdict;
+use rekindle_transport::route_trace::blob_tag;
 use rekindle_types::dht_layout::member_record::ROUTES;
 use rekindle_types::id::PseudonymKey;
+use rekindle_utils::log_scrub::tag;
+use tokio::sync::Mutex;
+use tokio::time::Instant;
 
-use super::HostGovernance;
+use super::{member_calls::FailedRoute, HostGovernance};
 
-/// Why a call to a member did not land.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum MemberCallError {
-    /// The member is not in the roster, or its record holds no route.
-    #[error("the member has no route")]
-    NoRoute,
-    /// The route was unusable or the call to it was lost, and `M`/6 held
-    /// no newer one (or the newer one failed too).
-    #[error("the member is unreachable: its route failed and no newer one is published")]
-    Unreachable,
-    /// The call itself failed.
-    #[error("the call failed: {0}")]
-    Call(String),
+/// A device record and the descriptor owner pinned by its endorsement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RouteRecord {
+    pub record: String,
+    pub owner: String,
+}
+
+pub(super) fn trace_route(
+    control_type: &str,
+    record: &str,
+    version: Option<&RouteVersion>,
+    read_disposition: &str,
+) {
+    tracing::debug!(
+        control_type,
+        record_tag = %tag(record),
+        route_tag = version.map(|r| blob_tag(&r.blob)),
+        seq = version.map(|r| r.seq),
+        read_disposition,
+        "member route resolution"
+    );
 }
 
 impl HostGovernance {
-    /// Take `author`'s verified route blob at DHT `seq` into `community`'s
-    /// cache, unless the transport still knows it dead after this read
-    /// (plan RV1g B3: only a strictly newer seq revives a dead blob); the
-    /// read's verdict, a probe due included ([`DeadRouteVerdict::Probe`]).
-    pub(super) fn observe_route(
-        &self,
-        community: &str,
-        author: &PseudonymKey,
-        seq: u64,
-        blob: Vec<u8>,
-    ) -> DeadRouteVerdict {
-        let seen = self.route_read_at(&blob, seq);
-        let dead = self.route_declared_dead(&blob);
-        self.take_route(community, author, seq, blob, seen, dead);
-        seen
+    pub(super) fn route_records(&self, community: &str, author: &PseudonymKey) -> Vec<RouteRecord> {
+        let map = self.ctx.communities.map().read();
+        let Some(state) = map.get(community).and_then(|c| c.governance_state.as_ref()) else {
+            return Vec::new();
+        };
+        member_device_records(state, community, author)
+            .into_iter()
+            .map(|at| RouteRecord {
+                record: at.record.to_owned(),
+                owner: at.owner.to_owned(),
+            })
+            .collect()
     }
 
-    /// [`Self::observe_route`] off a caller that does not wait on a probe:
-    /// one it asks for runs on the community's scope.
-    fn observe_route_or_probe(
+    pub(super) fn binding_of_record(
         &self,
         community: &str,
-        author: &PseudonymKey,
-        seq: u64,
-        blob: Vec<u8>,
-    ) {
-        if self.observe_route(community, author, seq, blob.clone()) == DeadRouteVerdict::Probe {
-            self.spawn_member_route_probe(community, author, seq, blob);
+        record: &str,
+    ) -> Option<(PseudonymKey, RouteRecord)> {
+        let author = self.author_of_record(community, record)?;
+        let binding = self
+            .route_records(community, &author)
+            .into_iter()
+            .find(|at| at.record == record)?;
+        Some((author, binding))
+    }
+
+    pub(super) fn cached_route(&self, community: &str, record: &str) -> Option<RouteVersion> {
+        let map = self.ctx.communities.map().read();
+        map.get(community)?.member_routes.get(record).cloned()
+    }
+
+    pub(super) fn route_read_lock(&self, community: &str, record: &str) -> Option<Arc<Mutex<()>>> {
+        let mut map = self.ctx.communities.map().write();
+        Some(map.get_mut(community)?.member_routes.read_lock(record))
+    }
+
+    pub(super) fn may_read_route(&self, community: &str, record: &str, now: Instant) -> bool {
+        let map = self.ctx.communities.map().read();
+        map.get(community)
+            .is_some_and(|c| c.member_routes.may_reread(record, now))
+    }
+
+    /// Install a verified version before consulting transport liveness.
+    /// Obsolete reads have no effect on either liveness or the cache.
+    fn observe_route(
+        &self,
+        community: &str,
+        record: &str,
+        version: &RouteVersion,
+        failed_blob: Option<&[u8]>,
+        control: &str,
+    ) -> Option<DeadRouteVerdict> {
+        let (seen, disposition) = {
+            let mut map = self.ctx.communities.map().write();
+            let cache = &mut map.get_mut(community)?.member_routes;
+            if !cache.verify(record, version) {
+                trace_route(control, record, Some(version), "stale");
+                return None;
+            }
+            let seen = self.route_read_at(record, &version.blob, version.seq);
+            let dead = self.route_declared_dead(&version.blob);
+            let unchanged = Some(version.blob.as_slice()) == failed_blob;
+            if !unchanged || dead {
+                cache.set_usable(record, version, !dead);
+            }
+            let disposition = if unchanged {
+                "unchanged"
+            } else if dead {
+                "dead"
+            } else {
+                "usable"
+            };
+            (seen, disposition)
+        };
+        trace_route(control, record, Some(version), disposition);
+        if seen == DeadRouteVerdict::Cleared {
+            self.drain_pending_mesh(community);
         }
+        Some(seen)
     }
 
-    /// Read `record`'s routes (`M`/6) through `lease`, forced through the
-    /// hinted read (a ValueChange carries only its first subkey's value,
-    /// veilid-core 0.5.8 `veilid_state.rs:334-336`), verify them under the
-    /// record's member and cache them; the DHT seq read.
+    /// Read the watched subkey through its hinted lease, checking the
+    /// merged binding's owner before using the value.
     pub(super) async fn read_member_routes(
         &self,
         community: &str,
         record: &str,
         lease: LeaseId,
     ) -> Option<u64> {
-        let author = self.author_of_record(community, record)?;
+        let (author, binding) = self.binding_of_record(community, record)?;
+        if self.record_port().ok()?.owner_of(lease).ok()? != binding.owner {
+            return None;
+        }
         let (seq, bytes) = self.read_hinted_value(lease, ROUTES).await.ok().flatten()?;
         let at = RecordScope {
             community_id: community,
             member_record: record,
         };
         let routes = decode_member_routes(&bytes, at, &author.0).ok()?;
-        self.observe_route_or_probe(community, &author, seq, routes.general);
-        Some(seq)
+        if self.binding_of_record(community, record)?.1 != binding {
+            return None;
+        }
+        let version = RouteVersion {
+            seq,
+            blob: routes.general,
+        };
+        let seen = self.observe_route(community, record, &version, None, "watch");
+        if seen == Some(DeadRouteVerdict::Probe) {
+            self.spawn_member_route_probe(community, record, version);
+        }
+        seen.map(|_| seq)
     }
 
-    /// A ring change naming the routes (subkey 6): read them into the cache.
     pub(super) async fn ring_route_moved(&self, community: &str, record: &str) {
         let lease = {
             let map = self.ctx.communities.map().read();
@@ -102,46 +168,135 @@ impl HostGovernance {
         }
     }
 
-    /// Read `member`'s routes cold from the record its merged `MemberJoined`
-    /// names, pinned to that op's owner, into the cache; the blob read,
-    /// unless it is empty or the transport knows it dead (plan RV1g B1).
+    /// One pinned read. A read returning a retired binding or an older
+    /// version cannot schedule a probe or return that version to a caller.
+    pub(super) async fn read_route_pinned(
+        &self,
+        community: &str,
+        author: &PseudonymKey,
+        binding: &RouteRecord,
+        failed_blob: Option<&[u8]>,
+        control: &str,
+        wait_for_probe: bool,
+    ) -> Option<RouteVersion> {
+        let record = &binding.record;
+        let port = self.record_port().ok()?;
+        let read = read_member_route_at(
+            &*port,
+            community,
+            record,
+            author,
+            RoutePin::Joined(&binding.owner),
+        )
+        .await;
+        let version = match read {
+            Ok(Some((seq, blob))) => RouteVersion { seq, blob },
+            Ok(None) => {
+                trace_route(control, record, None, "missing");
+                return None;
+            }
+            Err(error) => {
+                trace_route(control, record, None, "read_failed");
+                tracing::debug!(community, %error, "member route read failed");
+                return None;
+            }
+        };
+        if self.binding_of_record(community, record)?.1 != *binding {
+            trace_route(control, record, Some(&version), "binding_changed");
+            return None;
+        }
+        let seen = self.observe_route(community, record, &version, failed_blob, control)?;
+        if seen == DeadRouteVerdict::Probe {
+            if wait_for_probe {
+                self.probe_member_route(community, record, &version).await;
+            } else {
+                self.spawn_member_route_probe(community, record, version.clone());
+            }
+        }
+        self.cached_route(community, record)
+            .filter(|held| *held == version)
+    }
+
+    /// Read a member's effective routes once, preferring the record that
+    /// issued the invite when it is still effective. The historical
+    /// invitation record remains the proof locator.
+    pub(super) async fn read_inviter_device_route(
+        &self,
+        community: &str,
+        author: &PseudonymKey,
+        inviter_record: &str,
+    ) -> Option<Vec<u8>> {
+        let mut bindings = self.route_records(community, author);
+        bindings.sort_by_key(|binding| binding.record != inviter_record);
+        for binding in bindings {
+            if let Some(version) = self
+                .read_route_pinned(community, author, &binding, None, "bootstrap", true)
+                .await
+            {
+                return Some(version.blob);
+            }
+        }
+        None
+    }
+
+    /// Read M/6 once for each effective binding until one answers with a
+    /// usable route, under D8's per-record cap.
     pub(crate) async fn read_route_cold(
         &self,
         community: &str,
         member: &PseudonymKey,
     ) -> Option<Vec<u8>> {
-        let (_, blob) = self.read_route_pinned(community, member).await?;
-        Some(blob).filter(|b| !b.is_empty() && !self.route_declared_dead(b))
+        for binding in self.route_records(community, member) {
+            if let Some(route) = self
+                .route_for_record(community, member, &binding, "resolve")
+                .await
+            {
+                return Some(route.blob);
+            }
+        }
+        None
     }
 
-    /// [`Self::read_route_cold`]'s pinned read: the seq and blob as read.
-    async fn read_route_pinned(
+    pub(super) async fn route_for_record(
         &self,
         community: &str,
         member: &PseudonymKey,
-    ) -> Option<(u64, Vec<u8>)> {
-        let (record, owner) = {
-            let state = self.ctx.communities.governance_state(community)?;
-            let m = state.members.get(member)?;
-            (m.member_record.clone(), m.member_record_owner.clone())
-        };
-        let port = self.record_port().ok()?;
-        let pin = RoutePin::Joined(&owner);
-        match read_member_route_at(&*port, community, &record, member, pin).await {
-            Ok(Some((seq, blob))) => {
-                self.observe_route_or_probe(community, member, seq, blob.clone());
-                Some((seq, blob))
+        binding: &RouteRecord,
+        control: &str,
+    ) -> Option<RouteVersion> {
+        if let Some(cached) = self.cached_route(community, &binding.record) {
+            if !self.route_declared_dead(&cached.blob) {
+                trace_route(control, &binding.record, Some(&cached), "cached");
+                return Some(cached);
             }
-            Ok(None) => None,
-            Err(error) => {
-                tracing::debug!(community, %error, "a member's route was not read");
-                None
-            }
+            return self
+                .reread_route(
+                    community,
+                    member,
+                    binding,
+                    FailedRoute::Version(&cached),
+                    control,
+                )
+                .await;
         }
+        let lock = self.route_read_lock(community, &binding.record)?;
+        let _reading = lock.lock().await;
+        if let Some(cached) = self
+            .cached_route(community, &binding.record)
+            .filter(|version| !self.route_declared_dead(&version.blob))
+        {
+            trace_route(control, &binding.record, Some(&cached), "cached");
+            return Some(cached);
+        }
+        if !self.may_read_route(community, &binding.record, Instant::now()) {
+            trace_route(control, &binding.record, None, "capped");
+            return None;
+        }
+        self.read_route_pinned(community, member, binding, None, control, false)
+            .await
     }
 
-    /// `member`'s route in `community`: the cached one, else a pinned read
-    /// of its `M`/6. `None` for a non-member or a record with no routes.
+    /// Resolve a member's route for a send.
     pub(crate) async fn member_route(
         &self,
         community: &str,
@@ -150,141 +305,20 @@ impl HostGovernance {
         if !self.is_key_reader(community, member) {
             return None;
         }
-        let cached = {
-            let map = self.ctx.communities.map().read();
-            map.get(community)
-                .and_then(|c| c.member_routes.get(member).map(<[u8]>::to_vec))
-        };
-        match cached {
-            Some(blob) if !self.route_declared_dead(&blob) => Some(blob),
-            Some(_) => {
-                self.forget_dead_routes(community);
-                self.read_route_cold(community, member).await
-            }
-            None => self.read_route_cold(community, member).await,
-        }
+        self.read_route_cold(community, member).await
     }
 
-    /// `app_call` `member` in `community` with `payload` (unframed,
-    /// sealed) at its route ([`Self::member_route`]). On `RouteUnusable`
-    /// or a timeout ([`super::lifecycle::RouteCallError::rereads_route`]) the route is
-    /// forgotten and `M`/6 re-read once; the call is retried once only
-    /// when that read holds a different blob.
-    ///
-    /// # Errors
-    /// [`MemberCallError`].
-    pub(crate) async fn call_member_route(
-        &self,
-        community: &str,
-        member: &PseudonymKey,
-        payload: Vec<u8>,
-    ) -> Result<Vec<u8>, MemberCallError> {
-        let route = self
-            .member_route(community, member)
-            .await
-            .ok_or(MemberCallError::NoRoute)?;
-        match self.call_route_typed(&route, payload.clone()).await {
-            Ok(reply) => return Ok(reply),
-            Err(e) if e.rereads_route() => {}
-            Err(e) => return Err(MemberCallError::Call(e.to_string())),
-        }
-        let fresh = self.reread_route(community, member).await;
-        let Some(fresh) = fresh.filter(|b| *b != route) else {
-            self.forget_route(community, member);
-            tracing::warn!(
-                community,
-                "a member is unreachable: its route failed and M/6 holds no newer one"
-            );
-            return Err(MemberCallError::Unreachable);
-        };
-        match self.call_route_typed(&fresh, payload).await {
-            Ok(reply) => Ok(reply),
-            Err(e) if e.rereads_route() => {
-                self.forget_route(community, member);
-                tracing::warn!(
-                    community,
-                    "a member is unreachable: its new route failed too"
-                );
-                Err(MemberCallError::Unreachable)
-            }
-            Err(e) => Err(MemberCallError::Call(e.to_string())),
-        }
-    }
-
-    /// A send to `member`'s cached route failed: forget it and read its
-    /// `M`/6 once, pinned (the one re-read a dropped hint costs). The new
-    /// route, or `None` when the read holds no usable one (nothing, the
-    /// blob that failed, or one the transport knows dead); then D8's cap
-    /// (`rekindle_presence::community::reread_cap`) holds the next re-read
-    /// off the network until its window passes or a newer seq arrives.
-    async fn reread_route(&self, community: &str, member: &PseudonymKey) -> Option<Vec<u8>> {
-        let now = tokio::time::Instant::now();
-        let may = {
-            let map = self.ctx.communities.map().read();
-            map.get(community)
-                .is_some_and(|c| c.member_routes.may_reread(member, now))
-        };
-        if !may {
-            self.forget_route(community, member);
-            tracing::debug!(community, "a member's M/6 re-read is capped (D8)");
-            return None;
-        }
-        let failed = self.forget_route(community, member);
-        let read = self.read_route_pinned(community, member).await;
-        let mut map = self.ctx.communities.map().write();
-        let c = map.get_mut(community)?;
-        let dead = |blob: &[u8]| self.route_declared_dead(blob);
-        c.member_routes
-            .reread(member, failed.as_deref(), read, dead, now)
-    }
-
-    /// [`Self::reread_route`] by pseudonym hex, for the gossip mesh's
-    /// re-resolve after a failed send (both modes' `GossipDeps`): `None`
-    /// for a non-member or a record with no routes.
-    pub async fn reread_member_route(&self, community: &str, member_hex: &str) -> Option<Vec<u8>> {
-        let member = super::moderation::pseudonym(member_hex)?;
-        if !self.is_key_reader(community, &member) {
-            return None;
-        }
-        self.reread_route(community, &member).await
-    }
-
-    /// Read `M`/6 once, pinned, for every roster member of `community`
-    /// but us whose route is not cached yet (plan E3.4 S4: the rotator
-    /// fills its cache before a key is distributed, so a member outside
-    /// the watch ring is not left out by a cold cache).
+    /// Read a route for every roster member who has none cached.
     pub async fn fill_member_routes(&self, community: &str) {
-        let cold: Vec<PseudonymKey> = {
-            let roster = self.roster_others(community);
-            let map = self.ctx.communities.map().read();
-            let Some(c) = map.get(community) else {
-                return;
-            };
-            roster
-                .into_iter()
-                .filter(|p| c.member_routes.get(p).is_none())
-                .collect()
-        };
-        let reads = cold.iter().map(|p| self.read_route_cold(community, p));
-        futures::future::join_all(reads).await;
-    }
-
-    /// Forget `member`'s cached route (the transport said it is unusable);
-    /// the blob that was held.
-    fn forget_route(&self, community: &str, member: &PseudonymKey) -> Option<Vec<u8>> {
-        let mut map = self.ctx.communities.map().write();
-        map.get_mut(community)
-            .and_then(|c| c.member_routes.forget(member))
-    }
-
-    /// Forget every cached route of `community` the transport knows dead
-    /// (Veilid's `RouteChange`, or timed-out calls; plan RV1g B3).
-    fn forget_dead_routes(&self, community: &str) {
-        let mut map = self.ctx.communities.map().write();
-        if let Some(c) = map.get_mut(community) {
-            c.member_routes
-                .forget_blobs(|blob| self.route_declared_dead(blob));
-        }
+        let cold: Vec<_> = self
+            .roster_others(community)
+            .into_iter()
+            .filter(|member| {
+                self.cached_member_route(community, &member.to_hex())
+                    .is_none()
+            })
+            .collect();
+        futures::future::join_all(cold.iter().map(|p| self.read_route_cold(community, p))).await;
     }
 
     /// Our pseudonym in `community`, derived from the identity.
@@ -294,42 +328,48 @@ impl HostGovernance {
             .map(|key| PseudonymKey(key.verifying_key().to_bytes()))
     }
 
-    /// The members of `community`'s roster other than us (joined, not
-    /// departed, not banned).
     fn roster_others(&self, community: &str) -> Vec<PseudonymKey> {
         let me = self.me_in(community);
         let Some(state) = self.ctx.communities.governance_state(community) else {
             return Vec::new();
         };
-        (state.members.keys())
-            .filter(|p| !state.is_departed(p) && !state.bans.contains(*p))
-            .filter(|p| me.as_ref() != Some(*p))
+        state
+            .members
+            .keys()
+            .filter(|p| {
+                !state.is_departed(p) && !state.bans.contains(*p) && me.as_ref() != Some(*p)
+            })
             .cloned()
             .collect()
     }
 
-    /// Every roster member of `community` but us with a cached route
-    /// (pseudonym hex, blob): the recipients of a key rotation (plan E3.4
-    /// S4: every member with a route, not only those seen online).
+    /// Each roster member with an effective cached route.
     #[must_use]
     pub fn routed_members(&self, community: &str) -> Vec<(String, Vec<u8>)> {
-        self.forget_dead_routes(community);
-        let roster = self.roster_others(community);
-        let map = self.ctx.communities.map().read();
-        map.get(community)
-            .map(|c| c.member_routes.routes_for(&roster))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(p, blob)| (p.to_hex(), blob))
+        let me = self.me_in(community);
+        let mut map = self.ctx.communities.map().write();
+        let Some(c) = map.get_mut(community) else {
+            return Vec::new();
+        };
+        let Some(state) = &c.governance_state else {
+            return Vec::new();
+        };
+        let cache = &mut c.member_routes;
+        cache.forget_blobs(|blob| self.route_declared_dead(blob));
+        state
+            .members
+            .keys()
+            .filter(|member| me.as_ref() != Some(*member))
+            .filter_map(|member| {
+                let route = member_device_records(state, community, member)
+                    .into_iter()
+                    .find_map(|binding| cache.get(binding.record))?;
+                Some((member.to_hex(), route.blob.clone()))
+            })
             .collect()
     }
 
-    /// [`Self::routed_members`] who may be present now (plan E3.4 S5's mesh
-    /// peers: roster ∩ `M`/6 ∩ not shown offline): a member whose beat shows
-    /// them present, or one whose beat has not reached us yet. A member only
-    /// an expired, `Offline` or `Departed` beat shows is left out; an unknown
-    /// one is not offline (a joiner's first beat can arrive after a post it
-    /// must hear). The members a voice session or a file fetch can reach.
+    /// Routed members whose beats allow them to be present.
     #[must_use]
     pub fn reachable_members(&self, community: &str) -> Vec<(String, Vec<u8>)> {
         let mut members = self.routed_members(community);
@@ -339,49 +379,59 @@ impl HostGovernance {
         members
     }
 
-    /// `member_hex`'s cached route in `community`, for a caller that cannot
-    /// wait for a read; `None` when not cached or not a member.
+    /// A cached route on an effective record.
     #[must_use]
     pub fn cached_member_route(&self, community: &str, member_hex: &str) -> Option<Vec<u8>> {
         let member = super::moderation::pseudonym(member_hex)?;
-        if !self.is_key_reader(community, &member) {
-            return None;
-        }
         let map = self.ctx.communities.map().read();
-        map.get(community)
-            .and_then(|c| c.member_routes.get(&member).map(<[u8]>::to_vec))
+        let c = map.get(community)?;
+        let state = c.governance_state.as_ref()?;
+        state.members.get(&member)?;
+        member_device_records(state, community, &member)
+            .into_iter()
+            .find_map(|binding| c.member_routes.get(binding.record))
+            .map(|route| route.blob.clone())
     }
 
-    /// [`Self::call_member_route`] by pseudonym hex.
-    ///
-    /// # Errors
-    /// [`MemberCallError`]; `NoRoute` for a malformed pseudonym.
-    pub(crate) async fn call_member_hex(
-        &self,
-        community: &str,
-        member_hex: &str,
-        payload: Vec<u8>,
-    ) -> Result<Vec<u8>, MemberCallError> {
-        let member = super::moderation::pseudonym(member_hex).ok_or(MemberCallError::NoRoute)?;
-        self.call_member_route(community, &member, payload).await
-    }
-
-    /// The netsim's entry to one member call (plan E3.4 S4 netsim B):
-    /// [`Self::call_member_hex`] as it is, built only with the
-    /// `netsim-entry` feature, which only this crate's own dev-dependency
-    /// turns on (production calls a member only through the MEK answer,
-    /// the key transfer, files and voice).
-    ///
-    /// # Errors
-    /// [`MemberCallError`].
+    /// Deliver a verified version as a delayed replica read in the simulator.
     #[cfg(feature = "netsim-entry")]
-    pub async fn netsim_call_member(
+    pub fn netsim_observe_route_value(
         &self,
         community: &str,
-        member_hex: &str,
-        payload: Vec<u8>,
-    ) -> Result<Vec<u8>, MemberCallError> {
-        self.call_member_hex(community, member_hex, payload).await
+        record: &str,
+        value: &rekindle_records::port::RecordValue,
+    ) -> bool {
+        let Some((author, binding)) = self.binding_of_record(community, record) else {
+            return false;
+        };
+        if value.writer != binding.owner {
+            return false;
+        }
+        let at = RecordScope {
+            community_id: community,
+            member_record: record,
+        };
+        let Ok(decoded) = decode_member_routes(&value.data, at, &author.0) else {
+            return false;
+        };
+        let version = RouteVersion {
+            seq: u64::from(value.seq),
+            blob: decoded.general,
+        };
+        self.observe_route(community, record, &version, None, "netsim_read")
+            .is_some()
+    }
+
+    /// Deliver a route death on this simulator reader.
+    #[cfg(feature = "netsim-entry")]
+    pub fn netsim_declare_member_route_dead(&self, community: &str, blob: Vec<u8>) {
+        if let Ok(transport) = self.transport() {
+            transport.liveness().declare_dead_by_veilid(&[blob]);
+        }
+        if let Some(c) = self.ctx.communities.map().write().get_mut(community) {
+            c.member_routes
+                .forget_blobs(|blob| self.route_declared_dead(blob));
+        }
     }
 }
 

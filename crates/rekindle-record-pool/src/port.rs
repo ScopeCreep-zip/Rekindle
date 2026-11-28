@@ -106,6 +106,10 @@ impl RecordPort for RecordPool {
         RecordPool::set_republished(self, lease, subkey, data, writer).await
     }
 
+    fn cancel_republish(&self, record: &str, subkeys: &[u32]) {
+        RecordPool::cancel_republish(self, record, subkeys);
+    }
+
     async fn inspect(
         &self,
         lease: LeaseId,

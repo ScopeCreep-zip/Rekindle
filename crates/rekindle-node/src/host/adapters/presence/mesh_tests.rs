@@ -54,12 +54,49 @@ fn still_held(host: &crate::host::Host) -> Option<usize> {
         .map(|g| g.pending_mesh_broadcasts.len())
 }
 
+fn peer_state() -> rekindle_governance::state::GovernanceState {
+    use rekindle_governance::op::OpStamp;
+    use rekindle_governance::state::{GovernanceState, MemberState};
+    use rekindle_governance_runtime::device_signer::first_endorsement;
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+    use rekindle_types::governance::{AdmissionMode, GenesisCert};
+
+    let p = SigningKey::from_bytes(&[0x42; 32]);
+    let d = SigningKey::from_bytes(&[0x43; 32]);
+    let peer = PseudonymKey(p.verifying_key().to_bytes());
+    let record = "VLD0:peer";
+    let owner = "VLD0:owner";
+    let mut state = GovernanceState::default();
+    state.members.insert(
+        peer.clone(),
+        MemberState {
+            member_record: record.into(),
+            member_record_owner: owner.into(),
+            joined: OpStamp::MIN,
+        },
+    );
+    state.devices.seed_genesis(
+        "c1",
+        &GenesisCert {
+            name: "c1".into(),
+            policy: AdmissionMode::Open,
+            initial_roles: Vec::new(),
+            creator_pseudonym: peer,
+            creator_member_record: record.into(),
+            creator_member_record_owner: owner.into(),
+            created_at: 0,
+            additional_creators: Vec::new(),
+            predecessor: None,
+            creator_device: Some(first_endorsement(&p, "c1", &d, record, owner)),
+        },
+    );
+    state
+}
+
 /// A drain takes the held queue (plan E3.4 S5, JP1b): what it sent is
 /// gone, so a second drain (the next beat's) finds nothing to resend.
 #[tokio::test]
 async fn a_drain_takes_the_held_queue() {
-    use rekindle_governance::op::OpStamp;
-    use rekindle_governance::state::{GovernanceState, MemberState};
     use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 
     use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_community};
@@ -69,21 +106,16 @@ async fn a_drain_takes_the_held_queue() {
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
     let governance = HostGovernance::new(std::sync::Arc::clone(&host.ctx));
-    let peer = PseudonymKey([0x42; 32]);
-    let mut state = GovernanceState::default();
-    state.members.insert(
-        peer.clone(),
-        MemberState {
-            member_record: "VLD0:peer".into(),
-            member_record_owner: String::new(),
-            joined: OpStamp::MIN,
-        },
-    );
-    governance.set_governance_state("c1", state);
+    governance.set_governance_state("c1", peer_state());
     {
         let mut map = host.ctx.communities.map().write();
         let c1 = map.get_mut("c1").expect("seeded");
-        c1.member_routes.observe(&peer, 1, vec![7]);
+        let route = rekindle_presence::community::RouteVersion {
+            seq: 1,
+            blob: vec![7],
+        };
+        c1.member_routes.verify("VLD0:peer", &route);
+        c1.member_routes.set_usable("VLD0:peer", &route, true);
         let gossip = c1.gossip.get_or_insert_with(Default::default);
         gossip.pending_mesh_broadcasts.push_back(held());
         gossip.pending_mesh_broadcasts.push_back(held());
@@ -103,10 +135,7 @@ async fn a_drain_takes_the_held_queue() {
 /// move; one still dead caches nothing and sends nothing.
 #[tokio::test]
 async fn a_cleared_dead_route_drains_the_held_broadcasts() {
-    use rekindle_governance::op::OpStamp;
-    use rekindle_governance::state::{GovernanceState, MemberState};
     use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
-    use rekindle_route::dead_routes::DeadRouteVerdict;
 
     use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_community};
 
@@ -115,17 +144,7 @@ async fn a_cleared_dead_route_drains_the_held_broadcasts() {
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
     let governance = HostGovernance::new(std::sync::Arc::clone(&host.ctx));
-    let peer = PseudonymKey([0x42; 32]);
-    let mut state = GovernanceState::default();
-    state.members.insert(
-        peer.clone(),
-        MemberState {
-            member_record: "VLD0:peer".into(),
-            member_record_owner: String::new(),
-            joined: OpStamp::MIN,
-        },
-    );
-    governance.set_governance_state("c1", state);
+    governance.set_governance_state("c1", peer_state());
     {
         let mut map = host.ctx.communities.map().write();
         let c1 = map.get_mut("c1").expect("seeded");
@@ -138,14 +157,25 @@ async fn a_cleared_dead_route_drains_the_held_broadcasts() {
         "the dead route left the mesh empty"
     );
 
-    governance.take_route("c1", &peer, 1, vec![7], DeadRouteVerdict::Held, true);
+    let route = rekindle_presence::community::RouteVersion {
+        seq: 1,
+        blob: vec![7],
+    };
+    host.ctx
+        .communities
+        .map()
+        .write()
+        .get_mut("c1")
+        .unwrap()
+        .member_routes
+        .verify("VLD0:peer", &route);
     assert!(
         governance.mesh_peers("c1").is_empty(),
         "still dead: not cached"
     );
     assert_eq!(still_held(&host), Some(2), "still dead: nothing sent");
 
-    governance.take_route("c1", &peer, 1, vec![7], DeadRouteVerdict::Cleared, false);
+    assert!(governance.take_probed_route("c1", "VLD0:peer", &route));
     assert_eq!(
         governance.mesh_peers("c1").len(),
         1,

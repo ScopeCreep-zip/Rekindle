@@ -40,7 +40,7 @@ struct Dead {
     at: Instant,
     /// The record seq of the first read after the death; a strictly higher
     /// one clears the entry.
-    seen_seq: Option<u64>,
+    seen_seq: HashMap<String, u64>,
     /// When it was last handed out for a probe.
     probed: Option<Instant>,
 }
@@ -76,7 +76,7 @@ impl DeadRoutes {
                 blob.to_vec(),
                 Dead {
                     at: now,
-                    seen_seq: None,
+                    seen_seq: HashMap::new(),
                     probed: None,
                 },
             );
@@ -108,13 +108,24 @@ impl DeadRoutes {
     /// clears it, and the baseline seq read again one [`REFETCH_GAP`] after
     /// the death or the last probe asks for a probe ([`DeadRouteVerdict`]).
     pub fn observe(&mut self, blob: &[u8], seq: u64, now: Instant) -> DeadRouteVerdict {
+        self.observe_at("", blob, seq, now)
+    }
+
+    /// Observe a version scoped to the record that published it.
+    pub fn observe_at(
+        &mut self,
+        record: &str,
+        blob: &[u8],
+        seq: u64,
+        now: Instant,
+    ) -> DeadRouteVerdict {
         if !self.is_dead(blob, now) {
             return DeadRouteVerdict::NotDead;
         }
         let Some(d) = self.dead.get_mut(blob) else {
             return DeadRouteVerdict::NotDead;
         };
-        let seen = *d.seen_seq.get_or_insert(seq);
+        let seen = *d.seen_seq.entry(record.to_owned()).or_insert(seq);
         if seq > seen {
             self.dead.remove(blob);
             return DeadRouteVerdict::Cleared;

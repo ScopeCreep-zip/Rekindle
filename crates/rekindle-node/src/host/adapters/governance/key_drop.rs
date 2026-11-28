@@ -152,6 +152,10 @@ impl HostGovernance {
         let lease = dht_writes::acquire_str(&node, own.record, Some(own.writer), OpenIntent::Hold)
             .await
             .map_err(|e| e.to_string())?;
+        if !self.is_publication_record(community_id, own.record) {
+            dht_writes::release(&node, lease).await;
+            return Err("device publication binding changed".into());
+        }
         let written =
             dht_writes::set_own_leased_str(&node, lease, KEY_DROP, value, Some(own.writer)).await;
         dht_writes::release(&node, lease).await;

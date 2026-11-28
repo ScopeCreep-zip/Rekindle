@@ -200,6 +200,10 @@ impl RecordPort for MemPort {
         self.set(lease, subkey, data, writer).await
     }
 
+    fn cancel_republish(&self, _record: &str, _subkeys: &[u32]) {
+        // The in-memory port has no scheduled re-sends.
+    }
+
     async fn set_durable(
         &self,
         _: LeaseId,

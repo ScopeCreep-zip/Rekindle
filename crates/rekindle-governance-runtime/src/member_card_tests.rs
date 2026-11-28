@@ -115,20 +115,45 @@ fn a_refresh_reads_every_card_but_ours_and_the_named() {
     use rekindle_governance::state::{GovernanceState, MemberState};
     use rekindle_types::id::PseudonymKey;
 
+    use rekindle_types::governance::{AdmissionMode, GenesisCert};
+
     let mut state = GovernanceState::default();
+    let mut members = Vec::new();
     for i in 0..3u8 {
+        let p = SigningKey::from_bytes(&[i; 32]);
+        let d = SigningKey::from_bytes(&[i + 10; 32]);
+        let member = PseudonymKey(p.verifying_key().to_bytes());
+        let record = format!("M{i}");
+        let owner = format!("o{i}");
         state.members.insert(
-            PseudonymKey([i; 32]),
+            member.clone(),
             MemberState {
-                member_record: format!("M{i}"),
-                member_record_owner: format!("o{i}"),
+                member_record: record.clone(),
+                member_record_owner: owner.clone(),
                 joined: rekindle_governance::op::OpStamp::MIN,
             },
         );
+        let endorsement = crate::device_signer::first_endorsement(&p, "C", &d, &record, &owner);
+        state.devices.seed_genesis(
+            "C",
+            &GenesisCert {
+                name: "C".into(),
+                policy: AdmissionMode::Open,
+                initial_roles: Vec::new(),
+                creator_pseudonym: member.clone(),
+                creator_member_record: record,
+                creator_member_record_owner: owner,
+                created_at: 0,
+                additional_creators: Vec::new(),
+                predecessor: None,
+                creator_device: Some(endorsement),
+            },
+        );
+        members.push(member);
     }
-    let own = PseudonymKey([1; 32]);
-    let named = PseudonymKey([2; 32]);
-    let read: Vec<&str> = super::cards_to_read(&state, "C", Some(&own), |p| *p == named)
+    let own = &members[1];
+    let named = &members[2];
+    let read: Vec<&str> = super::cards_to_read(&state, "C", Some(own), |p| p == named)
         .iter()
         .map(|m| m.record)
         .collect();

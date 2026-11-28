@@ -88,7 +88,12 @@ impl GossipDeps for MockDeps {
             .reliability
             .push((c.to_string(), peer.to_string(), success));
     }
-    async fn resolve_peer_route_from_dht(&self, _c: &str, peer: &str) -> Option<Vec<u8>> {
+    async fn resolve_peer_route_from_dht(
+        &self,
+        _c: &str,
+        peer: &str,
+        _failed_blob: &[u8],
+    ) -> Option<Vec<u8>> {
         self.state.lock().fresh_routes.get(peer).cloned()
     }
     fn resolve_gate(&self) -> &crate::resolve_gate::ResolveGate {
