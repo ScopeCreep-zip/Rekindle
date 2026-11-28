@@ -211,9 +211,9 @@ fn walk(
     build: &impl Fn(&BTreeMap<String, TokenValue>) -> Result<Vec<u8>, ImportError>,
     changes: &mut Vec<Change>,
 ) -> Result<Result<(), Unsettled>, ImportError> {
-    let check = |bytes: &[u8]| validate::check_trial(bytes, BASE_TABLE);
+    let mut import_trial = validate::ImportTrial::default();
     loop {
-        let err = match check(&build(tokens)?) {
+        let err = match import_trial.check(&build(tokens)?, BASE_TABLE) {
             Ok(()) => return Ok(Ok(())),
             Err(e) => e,
         };
@@ -250,7 +250,7 @@ fn walk(
             let mut trial = tokens.clone();
             let walked = lightness_walk(original, up, |c| {
                 trial.insert(target.clone(), color(c));
-                Ok(match check(&build(&trial)?) {
+                Ok(match import_trial.check(&build(&trial)?, BASE_TABLE) {
                     Ok(()) => true,
                     Err(e) => !same(&e),
                 })

@@ -44,60 +44,112 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
 /// # Errors
 /// The first rule the package breaks, naming the entry.
 pub fn run_on(bytes: &[u8], table: &[TokenEntry]) -> Result<Canonical, SkinError> {
-    let checked = check(bytes, table, PngEncoding::Canonical)?;
-    output::package(
-        &checked.manifest,
-        &checked.tokens,
-        &checked.images,
-        &checked.sounds,
-    )
-}
-
-/// Test a candidate's rules before encoding PNGs and writing the final pack.
-pub(crate) fn check_trial(bytes: &[u8], table: &[TokenEntry]) -> Result<(), SkinError> {
-    check(bytes, table, PngEncoding::Trial).map(|_| ())
-}
-
-struct Checked {
-    manifest: SkinManifest,
-    tokens: BTreeMap<String, BTreeMap<String, TokenValue>>,
-    images: BTreeMap<String, Vec<u8>>,
-    sounds: BTreeMap<String, Vec<u8>>,
-}
-
-fn check(bytes: &[u8], table: &[TokenEntry], png: PngEncoding) -> Result<Checked, SkinError> {
     let package = package::read(bytes)?;
-    let manifest = manifest::parse(&package)?;
+    let (manifest, parsed) = parse(&package)?;
+    let assets = Assets::check(&package, &manifest, PngEncoding::Canonical)?;
+    check_colours(&manifest, &parsed, &assets, table)?;
+    output::package(&manifest, &parsed, &assets.images, &assets.sounds)
+}
+
+/// Checks every candidate of one import's colour walk. The strict ZIP and
+/// manifest walk and the token parser still run on every candidate.
+#[derive(Default)]
+pub(crate) struct ImportTrial {
+    checked: Option<TrialAssets>,
+}
+
+struct TrialAssets {
+    files: BTreeMap<String, Vec<u8>>,
+    assets: Assets,
+}
+
+impl ImportTrial {
+    pub(crate) fn check(&mut self, bytes: &[u8], table: &[TokenEntry]) -> Result<(), SkinError> {
+        let package = package::read(bytes)?;
+        let (manifest, parsed) = parse(&package)?;
+        // The token names validated by manifest::parse are root JSON files.
+        // Assets, cues and placed art use the manifest and the other files,
+        // all of whose names and bytes must match before this reuse.
+        let source = || {
+            package
+                .files()
+                .filter(|(name, _)| !parsed.contains_key(*name))
+        };
+        let cached = self.checked.as_ref().filter(|checked| {
+            source().eq(checked
+                .files
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice())))
+        });
+        if let Some(checked) = cached {
+            return check_colours(&manifest, &parsed, &checked.assets, table);
+        }
+        let assets = Assets::check(&package, &manifest, PngEncoding::Trial)?;
+        let result = check_colours(&manifest, &parsed, &assets, table);
+        let files = source()
+            .map(|(name, data)| (name.to_owned(), data.to_vec()))
+            .collect();
+        self.checked = Some(TrialAssets { files, assets });
+        result
+    }
+}
+
+type TokenFiles = BTreeMap<String, BTreeMap<String, TokenValue>>;
+
+fn parse(package: &package::Package<'_>) -> Result<(SkinManifest, TokenFiles), SkinError> {
+    let manifest = manifest::parse(package)?;
     let mut parsed = BTreeMap::new();
     for v in &manifest.variants {
         let file = package.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         parsed.insert(v.tokens.clone(), tokens::parse(&v.tokens, file)?);
     }
-    let images = images::validate_with(&package, &manifest, png)?;
-    let sounds = sounds::validate(&package, &manifest)?;
-    // The served form is what is checked: a pack whose tree leaves no room
-    // for the Host's placements is refused (design `sk2a` §3). What is
-    // written is the author's manifest, so the package stays its own.
-    let mut served = manifest.clone();
-    // The Disabled copies the serve draws are checked with the art they
-    // are drawn as, never written into the package.
-    let mut drawn = images.clone();
-    drawn.extend(manifest::place(&mut served, &package)?);
-    shape::check(&served, &drawn)?;
+    Ok((manifest, parsed))
+}
+
+struct Assets {
+    served: SkinManifest,
+    images: BTreeMap<String, Vec<u8>>,
+    sounds: BTreeMap<String, Vec<u8>>,
+}
+
+impl Assets {
+    fn check(
+        package: &package::Package<'_>,
+        manifest: &SkinManifest,
+        png: PngEncoding,
+    ) -> Result<Self, SkinError> {
+        let images = images::validate_with(package, manifest, png)?;
+        let sounds = sounds::validate(package, manifest)?;
+        // The served form is what is checked: a pack whose tree leaves no
+        // room for the Host's placements is refused (design `sk2a` §3).
+        // The Disabled copies are checked with the art they are drawn as.
+        let mut served = manifest.clone();
+        let mut drawn = images.clone();
+        drawn.extend(manifest::place(&mut served, package)?);
+        shape::check(&served, &drawn)?;
+        Ok(Self {
+            served,
+            images,
+            sounds,
+        })
+    }
+}
+
+fn check_colours(
+    manifest: &SkinManifest,
+    parsed: &TokenFiles,
+    assets: &Assets,
+    table: &[TokenEntry],
+) -> Result<(), SkinError> {
     for v in &manifest.variants {
         let skin = parsed.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         let base = Base::of(v.base, v.contrast);
         let resolved = resolve(table, base, skin);
         access::validate(&v.tokens, base, &resolved)?;
-        regions::validate(&served, &images, &resolved)?;
-        access::icons::validate(&served, &images, base, &resolved)?;
+        regions::validate(&assets.served, &assets.images, &resolved)?;
+        access::icons::validate(&assets.served, &assets.images, base, &resolved)?;
     }
-    Ok(Checked {
-        manifest,
-        tokens: parsed,
-        images,
-        sounds,
-    })
+    Ok(())
 }
 
 #[cfg(test)]
