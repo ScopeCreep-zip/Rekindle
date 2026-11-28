@@ -545,6 +545,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
 
+    deps.member_record_published(&anchor_key, own.record, &profile.route);
     deps.ensure_files_cache_open(&anchor_key);
     deps.persist_discovered_registry_members(
         &anchor_key,

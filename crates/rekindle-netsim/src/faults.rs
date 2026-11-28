@@ -19,6 +19,12 @@ pub enum Fault {
     /// can; the writer hears `Ok(None)`, as [`Fault::WritePartial`]), until
     /// [`Fault::Heal`]; its other writes are unaffected.
     WriteFails { node: usize, of: Writes },
+    /// Add latency before the selected writes reach their replicas.
+    WriteStalls {
+        node: usize,
+        of: Writes,
+        stall: std::time::Duration,
+    },
     /// Every set by the node that `of` selects reaches only the
     /// `accepting` replicas closest to the record, which store it, until
     /// [`Fault::Heal`]. `0 < accepting < get_value_count`: Veilid counts a
@@ -361,6 +367,14 @@ impl Netsim {
                     .faults
                     .write_limits
                     .insert((node, of), 0);
+            }
+            Fault::WriteStalls { node, of, stall } => {
+                self.net
+                    .inner
+                    .lock()
+                    .faults
+                    .write_stalls
+                    .insert((node, of), stall);
             }
             Fault::WritePartial {
                 node,

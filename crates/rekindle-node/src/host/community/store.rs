@@ -90,6 +90,7 @@ pub struct CommunityStore {
     /// Every community's unlock barrier and the governance writes it holds
     /// (plan E3.2 S7d-keys.8).
     barriers: Arc<rekindle_governance_runtime::unlock_barrier::UnlockBarriers>,
+    pub(crate) member_routes_changed: Arc<tokio::sync::Notify>,
 }
 
 impl CommunityStore {
@@ -111,6 +112,7 @@ impl CommunityStore {
             card_refreshes: Arc::default(),
             held_changes: Arc::default(),
             barriers: Arc::default(),
+            member_routes_changed: Arc::default(),
         }
     }
 

@@ -138,6 +138,10 @@ pub struct CommunityState {
     /// member route source on both modes.
     #[serde(skip)]
     pub member_routes: rekindle_presence::community::MemberRouteCache,
+    /// Fresh initialization owns M/6 until it finishes the record.
+    pub(crate) initializing_member_routes: bool,
+    /// The device record and blob last published in this session.
+    pub(crate) written_member_route: Option<(String, Vec<u8>)>,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

@@ -124,6 +124,8 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
 
     fn set_governance_state(&self, community_id: &str, state: GovernanceState);
     fn insert_community(&self, community: CommunityInsert);
+    /// Record the first published route of a newly initialized member record.
+    fn member_record_published(&self, _community: &str, _record: &str, _route: &[u8]) {}
     /// The next `seq` of our beat in `community_id`: `communities.beat_seq`
     /// advanced by one and persisted before it is returned, so a beat
     /// number is never reused across restarts (plan E3.4 S1).

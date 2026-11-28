@@ -95,6 +95,7 @@ impl HostGovernance {
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
+        self.begin_member_record(&id);
         self.supersede_own_removal(&id).await;
         // Joined from a hint: partial until the backfill rebuild holds the
         // cut (plan E3.2 S7c.8 (1)), marked before any op is stored so a
@@ -333,6 +334,7 @@ impl HostGovernance {
             publish_ops,
         )
         .await?;
+        self.finish_member_record(community, own.record, &profile.route);
         Ok(queued.load(std::sync::atomic::Ordering::Relaxed))
     }
 

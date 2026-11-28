@@ -10,7 +10,7 @@
 //! A membership created later writes its own first `M`/6 with its record
 //! (`member_card::publish_own_record`).
 
-use std::collections::BTreeMap;
+use std::time::Duration;
 
 use rekindle_codec::member_record::{BeatState, RecordScope};
 use rekindle_governance_runtime::member_card::{write_own_beat, OwnBeat, OwnRecord};
@@ -23,6 +23,8 @@ use tokio_util::sync::CancellationToken;
 use super::HostGovernance;
 use crate::host::adapters::presence;
 
+const ROUTE_RETRY: Duration = Duration::from_secs(10);
+
 pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
     let routes = match host.transport() {
         Ok(transport) => transport.routes(),
@@ -32,43 +34,83 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
         }
     };
     let mut general = routes.own_state(RouteClass::General);
-    // The blob last written to each community's `M`/6 this unlock.
-    let mut written: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let changed = &host.ctx.communities.member_routes_changed;
     loop {
         let state = general.borrow_and_update().clone();
-        // A withdrawal writes the empty route (plan RV1g): a joiner's
-        // bootstrap reads an empty `M`/6 as no route.
         let blob = match state {
             RouteState::Available { blob } => Some(blob),
-            RouteState::Withdrawn => Some(Vec::new()),
             _ => None,
         };
+        let mut retry = false;
         if let Some(blob) = blob {
-            for community_id in host.sync_targets() {
+            for community in host.sync_targets() {
                 if stop.is_cancelled() {
                     return;
                 }
-                if written.get(&community_id) == Some(&blob) {
+                let Ok(keys) = host.own_record_keys(&community) else {
+                    continue;
+                };
+                if !host.route_needs_write(&community, &keys.record, &blob) {
                     continue;
                 }
-                match host.publish_own_routes(&community_id, &blob).await {
-                    Ok(()) => {
-                        written.insert(community_id, blob.clone());
-                    }
+                match host.publish_own_routes(&community, &keys, &blob).await {
+                    Ok(()) => host.note_published_route(&community, &keys.record, &blob),
                     Err(error) => {
-                        tracing::warn!(community = %community_id, %error, "member routes not written");
+                        retry = true;
+                        tracing::warn!(%community, %error, "member routes not written");
                     }
                 }
             }
         }
-        match stop.run_until_cancelled(general.changed()).await {
-            Some(Ok(())) => {}
-            Some(Err(_)) | None => return,
+        tokio::select! {
+            () = stop.cancelled() => return,
+            result = general.changed() => if result.is_err() { return },
+            () = changed.notified() => {},
+            () = tokio::time::sleep(ROUTE_RETRY), if retry => {},
         }
     }
 }
 
 impl HostGovernance {
+    pub(super) fn begin_member_record(&self, community: &str) {
+        if let Some(state) = self.ctx.communities.map().write().get_mut(community) {
+            state.initializing_member_routes = true;
+            state.written_member_route = None;
+        }
+    }
+
+    pub(super) fn finish_member_record(&self, community: &str, record: &str, blob: &[u8]) {
+        if let Some(state) = self.ctx.communities.map().write().get_mut(community) {
+            state.initializing_member_routes = false;
+            state.written_member_route = Some((record.to_owned(), blob.to_vec()));
+        }
+        self.ctx.communities.member_routes_changed.notify_one();
+    }
+
+    fn route_needs_write(&self, community: &str, record: &str, blob: &[u8]) -> bool {
+        self.ctx
+            .communities
+            .map()
+            .read()
+            .get(community)
+            .is_some_and(|state| {
+                !state.initializing_member_routes
+                    && !state.written_member_route.as_ref().is_some_and(
+                        |(written_record, written_blob)| {
+                            written_record == record && written_blob == blob
+                        },
+                    )
+            })
+    }
+
+    fn note_published_route(&self, community: &str, record: &str, blob: &[u8]) {
+        if let Some(state) = self.ctx.communities.map().write().get_mut(community) {
+            if !state.initializing_member_routes {
+                state.written_member_route = Some((record.to_owned(), blob.to_vec()));
+            }
+        }
+    }
+
     /// Our member record in `community_id`, as the join or create recorded
     /// it (`communities.my_member_record`, ADR 0011): never our merged
     /// roster's entry, which our own `MemberLeft` removes while the leave's
@@ -103,8 +145,12 @@ impl HostGovernance {
     ///
     /// # Errors
     /// We hold no member record or keys there, or the write failed.
-    async fn publish_own_routes(&self, community_id: &str, blob: &[u8]) -> Result<(), String> {
-        let keys = self.own_record_keys(community_id)?;
+    async fn publish_own_routes(
+        &self,
+        community_id: &str,
+        keys: &OwnRecordKeys,
+        blob: &[u8],
+    ) -> Result<(), String> {
         let port = self.record_port().map_err(|e| e.to_string())?;
         write_routes(
             &*port,
