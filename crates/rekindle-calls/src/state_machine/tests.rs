@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use rekindle_secrets::sframe::SframeSender;
-use rekindle_types::subscription_events::CallEvent;
+use rekindle_types::subscription_events::{CallEvent, CallOutcome, FocusReason};
 
 use super::{
     CallInput, CallStateMachine, CallTimer, Effect, InboundInvite, OutgoingCall, CALL_SUPERSEDED,
@@ -192,6 +192,22 @@ fn a_forged_end_or_decline_from_a_third_key_is_ignored() {
         .iter()
         .any(|e| matches!(e, Effect::StopVoiceSession { call_id, .. } if call_id == "c2")));
     assert!(active.get("c2").is_none());
+    assert!(matches!(
+        emitted(&real)[..],
+        [CallEvent::Ended { notice, peer_reason: Some(reason), .. }]
+            if notice == &CallOutcome::Ended.notice() && reason == "hangup"
+    ));
+    let declined = sm.apply(CallInput::DeclineReceived {
+        call_id: "c1".into(),
+        from: BOB_KEY.into(),
+        reason: "Call ended: urgent security alert".into(),
+        now_ms: T0,
+    });
+    assert!(matches!(
+        emitted(&declined)[..],
+        [CallEvent::Declined { notice, peer_reason: Some(reason), .. }]
+            if notice == &CallOutcome::Declined.notice() && reason == "Call ended: urgent security alert"
+    ));
 }
 
 #[test]
@@ -236,11 +252,18 @@ fn a_duplicate_invite_re_rings_and_an_ended_one_never_rings() {
         emitted(&again).is_empty(),
         "it does not ring the user again"
     );
-    sm.apply(CallInput::LocalDecline {
+    let declined = sm.apply(CallInput::LocalDecline {
         call_id: "c1".into(),
         reason: "no".into(),
         now_ms: T0 + 2_000,
     });
+    assert!(matches!(
+        emitted(&declined)[..],
+        [CallEvent::Declined {
+            peer_reason: None,
+            ..
+        }]
+    ));
     let resent = sm.apply(invite("c1", ALICE, false, T0 + 3_000));
     assert!(resent.is_empty(), "{resent:?}");
 }
@@ -257,11 +280,13 @@ fn an_invite_during_a_call_with_another_peer_is_busy() {
 fn a_new_invite_from_the_same_peer_supersedes_the_stale_call() {
     let mut sm = active_with_bob("c1");
     let effects = sm.apply(invite("c2", BOB_KEY, false, T0 + 5_000));
-    let ended = emitted(&effects).into_iter().any(|e| {
-        matches!(e, CallEvent::Ended { call_id, reason } if call_id == "c1" && reason == CALL_SUPERSEDED)
-    });
+    let ended = emitted(&effects).into_iter().any(
+        |e| matches!(e, CallEvent::Ended { call_id, peer_reason: None, .. } if call_id == "c1"),
+    );
     assert!(ended, "{effects:?}");
-    assert!(has_end_sent(&effects, "c1"));
+    assert!(effects.iter().any(|effect|
+        matches!(effect, Effect::SendCallEnd { call_id, reason, .. } if call_id == "c1" && reason == CALL_SUPERSEDED)
+    ));
     // The stale call's media stops before the new call rings.
     let stop = effects
         .iter()
@@ -367,10 +392,16 @@ fn consent_expiry_ends_the_call() {
         last_inbound_media_ms: Some(T0 + 20_000),
         now_ms: T0 + 50_000,
     });
-    assert!(emitted(&expired)
-        .iter()
-        .any(|e| matches!(e, CallEvent::Ended { reason, .. } if reason == CONNECTION_LOST)));
-    assert!(has_end_sent(&expired, "c1"));
+    assert!(emitted(&expired).iter().any(|e| matches!(
+        e,
+        CallEvent::Ended {
+            peer_reason: None,
+            ..
+        }
+    )));
+    assert!(expired.iter().any(|effect|
+        matches!(effect, Effect::SendCallEnd { call_id, reason, .. } if call_id == "c1" && reason == CONNECTION_LOST)
+    ));
     assert!(sm.get("c1").is_none());
 }
 
@@ -393,9 +424,13 @@ fn the_callee_accepts_once_its_media_is_up() {
     assert!(up
         .iter()
         .any(|e| matches!(e, Effect::PresentActiveCall { .. })));
-    assert!(up.iter().any(
-        |e| matches!(e, Effect::FocusConversation { reason, .. } if reason == "call-accepted")
-    ));
+    assert!(up.iter().any(|e| matches!(
+        e,
+        Effect::FocusConversation {
+            reason: FocusReason::CallAccepted,
+            ..
+        }
+    )));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! [`Effect`]: what the interpreter does after an input.
 
-use rekindle_types::subscription_events::CallEvent;
+use rekindle_types::subscription_events::{CallEvent, FocusReason};
 
 use crate::state::CallKind;
 
@@ -103,6 +103,6 @@ pub enum Effect {
         call_id: String,
         peer: String,
         display_name: String,
-        reason: String,
+        reason: FocusReason,
     },
 }

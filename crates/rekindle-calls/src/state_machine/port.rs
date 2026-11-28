@@ -107,10 +107,12 @@ pub async fn interpret<P: CallPort + ?Sized>(port: &P, effect: Effect) -> Option
             let committed = port
                 .commit_invite(&recipient, &call_id, body, expires_at_ms)
                 .await;
-            committed.err().map(|e| CallInput::LocalUnreachable {
-                call_id,
-                reason: format!("call invite not committed: {e}"),
-                now_ms: port.now_ms(),
+            committed.err().map(|error| {
+                tracing::debug!(call = %call_id, %error, "call invite not committed");
+                CallInput::LocalUnreachable {
+                    call_id,
+                    now_ms: port.now_ms(),
+                }
             })
         }
         Effect::SendCallEnd {

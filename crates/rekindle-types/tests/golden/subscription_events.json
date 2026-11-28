@@ -26,7 +26,8 @@
     "call": {
       "declined": {
         "callId": "call_99999999999999999999999999999999",
-        "reason": "busy"
+        "notice": "Call declined",
+        "peerReason": "busy"
       }
     }
   },
@@ -34,7 +35,8 @@
     "call": {
       "ended": {
         "callId": "call_99999999999999999999999999999999",
-        "reason": "hangup"
+        "notice": "Call ended",
+        "peerReason": "hangup"
       }
     }
   },
@@ -170,7 +172,8 @@
   "call.timedOut": {
     "call": {
       "timedOut": {
-        "callId": "call_99999999999999999999999999999999"
+        "callId": "call_99999999999999999999999999999999",
+        "notice": "Call timed out — no answer"
       }
     }
   },
@@ -178,7 +181,7 @@
     "call": {
       "unreachable": {
         "callId": "call_99999999999999999999999999999999",
-        "reason": "no_route"
+        "notice": "Could not reach the other caller"
       }
     }
   },

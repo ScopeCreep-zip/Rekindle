@@ -2,7 +2,7 @@
 //! `EndAll`), the peer's `CallEnd`, media up and down, consent checks, and
 //! in-call media state and reactions.
 
-use rekindle_types::subscription_events::{CallEvent, DirectCallInfo};
+use rekindle_types::subscription_events::{CallEvent, CallOutcome, DirectCallInfo, FocusReason};
 
 use super::{
     CallStateMachine, CallTimer, Effect, CALL_END_DEADLINE_MS, CALL_SUPERSEDED, CONNECTION_LOST,
@@ -30,7 +30,8 @@ impl CallStateMachine {
         }
         effects.push(Effect::Emit(CallEvent::Ended {
             call_id: call_id.into(),
-            reason: reason.into(),
+            notice: CallOutcome::Ended.notice(),
+            peer_reason: None,
         }));
         if held.voice_up() {
             effects.push(Effect::StopVoiceSession {
@@ -97,7 +98,8 @@ impl CallStateMachine {
         }
         effects.push(Effect::Emit(CallEvent::Ended {
             call_id: call_id.into(),
-            reason,
+            notice: CallOutcome::Ended.notice(),
+            peer_reason: (!reason.is_empty()).then_some(reason),
         }));
         effects
     }
@@ -149,7 +151,7 @@ impl CallStateMachine {
                 call_id: call_id.into(),
                 peer,
                 display_name: held.display_name.clone(),
-                reason: "call-accepted".into(),
+                reason: FocusReason::CallAccepted,
             },
         ]);
         effects
@@ -191,7 +193,8 @@ impl CallStateMachine {
             },
             Effect::Emit(CallEvent::Ended {
                 call_id: call_id.into(),
-                reason: reason.into(),
+                notice: CallOutcome::Ended.notice(),
+                peer_reason: None,
             }),
         ]
     }

@@ -9,13 +9,15 @@ use crate::signaling::lifecycle::CALL_SUPERSEDED;
 use crate::signaling::registry::CallRegistry;
 use crate::state::{CallKind, CallStatus};
 
-fn ended(deps: &MockDeps) -> Vec<(String, String)> {
+fn ended(deps: &MockDeps) -> Vec<(String, Option<String>)> {
     deps.emitted_events()
         .into_iter()
         .filter_map(|e| match e {
             CallSignalEvent::CallEnded {
-                call_id, reason, ..
-            } => Some((call_id, reason)),
+                call_id,
+                peer_reason,
+                ..
+            } => Some((call_id, peer_reason)),
             _ => None,
         })
         .collect()
@@ -34,10 +36,7 @@ async fn the_stale_calls_end_never_stops_the_new_calls_media() {
     seed_outgoing_call(&deps, "new", &peer, CallKind::Audio);
 
     handle_accept_received(deps.as_ref(), &peer, "new", &peer_x25519_pub_bytes(), &[]).await;
-    assert_eq!(
-        ended(&deps),
-        vec![("old".to_string(), CALL_SUPERSEDED.to_string())]
-    );
+    assert_eq!(ended(&deps), vec![("old".to_string(), None)]);
     assert_eq!(deps.media.owner().as_deref(), Some("new"));
 
     handle_end_received(deps.as_ref(), &peer, "old", CALL_SUPERSEDED.into()).await;

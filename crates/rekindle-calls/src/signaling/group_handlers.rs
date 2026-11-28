@@ -383,7 +383,7 @@ pub fn handle_participant_left<D: CallSignalingDeps + ?Sized>(
             registry.remove(call_id);
             deps.emit_event(CallSignalEvent::GroupCallEnded {
                 call_id: call_id.to_string(),
-                reason,
+                peer_reason: (!reason.is_empty()).then_some(reason),
             });
             "ring cancelled"
         }

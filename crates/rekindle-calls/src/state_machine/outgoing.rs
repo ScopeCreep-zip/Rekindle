@@ -1,7 +1,7 @@
 //! Caller-side inputs: placing a call, its ring timeout, an unreachable
 //! peer, and the callee's ringing, accept and decline.
 
-use rekindle_types::subscription_events::CallEvent;
+use rekindle_types::subscription_events::{CallEvent, CallOutcome, FocusReason};
 
 use super::{kind_str, CallStateMachine, CallTimer, Effect, Held, OutgoingCall};
 use crate::signaling::outbound::RING_DURATION_MS;
@@ -70,7 +70,7 @@ impl CallStateMachine {
                 call_id,
                 peer,
                 display_name: peer_display_name,
-                reason: "call-started".into(),
+                reason: FocusReason::CallStarted,
             },
         ]
     }
@@ -92,13 +92,14 @@ impl CallStateMachine {
             },
             Effect::Emit(CallEvent::TimedOut {
                 call_id: call_id.into(),
+                notice: CallOutcome::TimedOut.notice(),
             }),
         ]
     }
 
     /// The invite never left (no session, no route): no missed-call row,
     /// the peer never saw it.
-    pub(super) fn apply_unreachable(&mut self, call_id: &str, reason: String) -> Vec<Effect> {
+    pub(super) fn apply_unreachable(&mut self, call_id: &str) -> Vec<Effect> {
         let outgoing = self
             .active
             .get(call_id)
@@ -116,7 +117,7 @@ impl CallStateMachine {
             },
             Effect::Emit(CallEvent::Unreachable {
                 call_id: call_id.into(),
-                reason,
+                notice: CallOutcome::Unreachable.notice(),
             }),
         ]
     }
@@ -199,7 +200,8 @@ impl CallStateMachine {
             },
             Effect::Emit(CallEvent::Declined {
                 call_id: call_id.into(),
-                reason,
+                notice: CallOutcome::Declined.notice(),
+                peer_reason: (!reason.is_empty()).then_some(reason),
             }),
         ]
     }

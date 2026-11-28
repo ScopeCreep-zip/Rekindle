@@ -6,7 +6,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rekindle_codec::capnp_codec::direct::DirectBody;
 use rekindle_secrets::sframe::SframeSender;
-use rekindle_types::subscription_events::CallEvent;
+use rekindle_types::subscription_events::{CallEvent, CallOutcome, FocusReason};
 
 use super::{invite, local_accept, ALICE, BOB_KEY, T0};
 use crate::error::CallError;
@@ -131,11 +131,15 @@ async fn an_invite_that_cannot_be_committed_is_unreachable() {
     assert!(sm.get("c1").is_none());
     let events = port.events.lock();
     assert!(matches!(events.first(), Some(CallEvent::Started { .. })));
-    assert!(events.iter().any(
-        |e| matches!(e, CallEvent::FocusConversation { reason, .. } if reason == "call-started")
-    ));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        CallEvent::FocusConversation {
+            reason: FocusReason::CallStarted,
+            ..
+        }
+    )));
     assert!(
-        matches!(events.last(), Some(CallEvent::Unreachable { call_id, .. }) if call_id == "c1")
+        matches!(events.last(), Some(CallEvent::Unreachable { call_id, notice }) if call_id == "c1" && notice == &CallOutcome::Unreachable.notice())
     );
     assert!(port.calls.lock().contains(&"settle c1 false".to_string()));
 }

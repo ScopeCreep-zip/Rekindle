@@ -58,6 +58,37 @@ pub struct CallParticipant {
     pub is_self: bool,
 }
 
+/// A call outcome whose display text is served by the Host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallOutcome {
+    Declined,
+    TimedOut,
+    Unreachable,
+    Ended,
+}
+
+impl CallOutcome {
+    /// The Host's words for this outcome, which the shell displays as served.
+    #[must_use]
+    pub fn notice(self) -> String {
+        match self {
+            Self::Declined => "Call declined",
+            Self::TimedOut => "Call timed out — no answer",
+            Self::Unreachable => "Could not reach the other caller",
+            Self::Ended => "Call ended",
+        }
+        .to_owned()
+    }
+}
+
+/// A routing hint for the shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FocusReason {
+    CallStarted,
+    CallAccepted,
+}
+
 /// Call lifecycle and in-call signalling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -117,18 +148,30 @@ pub enum CallEvent {
         group_id: Option<String>,
     },
 
-    /// The peer declined.
-    Declined { call_id: String, reason: String },
+    /// The invite was declined.
+    Declined {
+        call_id: String,
+        notice: String,
+        /// Untrusted peer content, when received from the wire. Render only
+        /// as quoted user text in-app. Never use in an OS notification (F-4).
+        peer_reason: Option<String>,
+    },
 
     /// Nobody answered here, and the call is now a missed-call row.
     Missed { call_id: String, from: String },
 
     /// The ring expired before anyone answered.
-    TimedOut { call_id: String },
+    TimedOut { call_id: String, notice: String },
 
     /// The call is over. Covers 1:1 and group alike — the desktop's two
     /// variants for this had identical fields.
-    Ended { call_id: String, reason: String },
+    Ended {
+        call_id: String,
+        notice: String,
+        /// Untrusted peer content, when received from the wire. Render only
+        /// as quoted user text in-app. Never use in an OS notification (F-4).
+        peer_reason: Option<String>,
+    },
 
     /// A participant's media toggles changed mid-call.
     MediaStateChanged {
@@ -170,16 +213,15 @@ pub enum CallEvent {
     /// Our outbound call never reached the peer: its invite could not be
     /// committed or sent (no session, no route). No missed-call row, since
     /// the peer never saw it.
-    Unreachable { call_id: String, reason: String },
+    Unreachable { call_id: String, notice: String },
 
     /// Bring the conversation with `peer_key` forward, because call
-    /// `call_id` started or was answered (`reason`: `"call-started"`,
-    /// `"call-accepted"`).
+    /// `call_id` started or was answered.
     FocusConversation {
         call_id: String,
         peer_key: String,
         peer_display_name: String,
-        reason: String,
+        reason: FocusReason,
     },
 }
 
@@ -196,7 +238,7 @@ impl CallEvent {
             | Self::Connected { call_id, .. }
             | Self::Declined { call_id, .. }
             | Self::Missed { call_id, .. }
-            | Self::TimedOut { call_id }
+            | Self::TimedOut { call_id, .. }
             | Self::Unreachable { call_id, .. }
             | Self::FocusConversation { call_id, .. }
             | Self::Ended { call_id, .. }

@@ -6,6 +6,7 @@
 
 use rekindle_calls::signaling::CallSignalEvent;
 use rekindle_calls::state::CallKind;
+use rekindle_types::subscription_events::{CallEvent, CallOutcome};
 
 use super::CallsAdapter;
 
@@ -83,30 +84,48 @@ impl CallsAdapter {
                 );
             }
             CallSignalEvent::CallDeclined {
-                call_id, reason, ..
+                call_id,
+                peer_reason,
+                ..
             } => {
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Declined { call_id, reason },
+                    CallEvent::Declined {
+                        call_id,
+                        notice: CallOutcome::Declined.notice(),
+                        peer_reason: (!peer_reason.is_empty()).then_some(peer_reason),
+                    },
                 );
             }
             // One arm for both: a call ending is the same fact
             // whether it had two participants or ten, and the desktop's
             // two variants had identical fields.
             CallSignalEvent::CallEnded {
-                call_id, reason, ..
+                call_id,
+                peer_reason,
+                ..
             }
-            | CallSignalEvent::GroupCallEnded { call_id, reason } => {
+            | CallSignalEvent::GroupCallEnded {
+                call_id,
+                peer_reason,
+            } => {
                 crate::windows::retire_call_window(&self.app_handle, &call_id);
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Ended { call_id, reason },
+                    CallEvent::Ended {
+                        call_id,
+                        notice: CallOutcome::Ended.notice(),
+                        peer_reason,
+                    },
                 );
             }
             CallSignalEvent::CallTimedOut { call_id, .. } => {
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
+                    CallEvent::TimedOut {
+                        call_id,
+                        notice: CallOutcome::TimedOut.notice(),
+                    },
                 );
             }
             CallSignalEvent::CallMissed {

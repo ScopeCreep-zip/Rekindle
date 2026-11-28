@@ -2,7 +2,7 @@
 //! glare), the local accept and decline, and the ring timeout.
 
 use crate::signaling::handlers::BUSY;
-use rekindle_types::subscription_events::CallEvent;
+use rekindle_types::subscription_events::{CallEvent, CallOutcome};
 use x25519_dalek::StaticSecret;
 
 use super::{
@@ -171,7 +171,8 @@ impl CallStateMachine {
         });
         effects.push(Effect::Emit(CallEvent::Ended {
             call_id: call_id.into(),
-            reason: GLARE_RESOLVED.into(),
+            notice: CallOutcome::Ended.notice(),
+            peer_reason: None,
         }));
         effects
     }
@@ -208,7 +209,8 @@ impl CallStateMachine {
                     decline(&peer, call_id, &reason),
                     Effect::Emit(CallEvent::Ended {
                         call_id: call_id.into(),
-                        reason,
+                        notice: CallOutcome::Ended.notice(),
+                        peer_reason: None,
                     }),
                 ];
             }
@@ -232,7 +234,7 @@ impl CallStateMachine {
         ]
     }
 
-    pub(super) fn apply_local_decline(&mut self, call_id: &str, reason: String) -> Vec<Effect> {
+    pub(super) fn apply_local_decline(&mut self, call_id: &str, reason: &str) -> Vec<Effect> {
         let incoming = self
             .active
             .get(call_id)
@@ -244,10 +246,11 @@ impl CallStateMachine {
             Effect::CancelTimers {
                 call_id: call_id.into(),
             },
-            decline(&held.call.peer_pubkey, call_id, &reason),
+            decline(&held.call.peer_pubkey, call_id, reason),
             Effect::Emit(CallEvent::Declined {
                 call_id: call_id.into(),
-                reason,
+                notice: CallOutcome::Declined.notice(),
+                peer_reason: None,
             }),
         ]
     }

@@ -4,7 +4,8 @@ use rekindle_types::dto::skin_action::Capability;
 use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
 use rekindle_types::subscription_events::{
-    CallEvent, NetworkEvent, OwnRecordsPhase, SubscriptionEvent, VoiceEvent, VoiceScope,
+    CallEvent, CallOutcome, NetworkEvent, OwnRecordsPhase, SubscriptionEvent, VoiceEvent,
+    VoiceScope,
 };
 
 use super::actions::{Launchers, Selections};
@@ -244,7 +245,8 @@ fn call_end_resets_the_self_mute() {
     assert_eq!(mute_caps(&inputs), (false, true));
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Ended {
         call_id: "c1".into(),
-        reason: "hangup".into(),
+        notice: CallOutcome::Ended.notice(),
+        peer_reason: None,
     }));
     assert_eq!(
         mute_caps(&inputs),
@@ -354,7 +356,8 @@ fn show_call_takes_the_call_then_the_voice_session() {
     );
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Ended {
         call_id: "c1".into(),
-        reason: "hangup".into(),
+        notice: CallOutcome::Ended.notice(),
+        peer_reason: None,
     }));
     assert_eq!(inputs.show_call(), session);
     inputs.fold(&voice(VoiceEvent::Left {

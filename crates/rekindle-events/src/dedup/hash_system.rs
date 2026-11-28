@@ -3,7 +3,7 @@
 use rekindle_types::dto::infoview::InfoviewEvent;
 use rekindle_types::dto::skin_library::SkinApplyFailure;
 use rekindle_types::subscription_events::{
-    CallEvent, NetworkEvent, NotificationEvent, SystemEvent,
+    CallEvent, FocusReason, NetworkEvent, NotificationEvent, SystemEvent,
 };
 
 pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
@@ -305,21 +305,15 @@ pub(super) fn hash_call(h: &mut blake3::Hasher, c: &CallEvent) {
         CallEvent::Started { .. } => h.update(b"started"),
         CallEvent::GroupStarted { .. } => h.update(b"groupStarted"),
         CallEvent::Connected { .. } => h.update(b"connected"),
-        CallEvent::Declined { reason, .. } => {
-            h.update(b"declined|");
-            h.update(reason.as_bytes())
-        }
+        CallEvent::Declined { .. } => h.update(b"declined"),
         CallEvent::Missed { .. } => h.update(b"missed"),
         CallEvent::TimedOut { .. } => h.update(b"timedout"),
         CallEvent::Unreachable { .. } => h.update(b"unreachable"),
-        CallEvent::FocusConversation { reason, .. } => {
-            h.update(b"focus|");
-            h.update(reason.as_bytes())
-        }
-        CallEvent::Ended { reason, .. } => {
-            h.update(b"ended|");
-            h.update(reason.as_bytes())
-        }
+        CallEvent::FocusConversation { reason, .. } => match reason {
+            FocusReason::CallStarted => h.update(b"focus|call-started"),
+            FocusReason::CallAccepted => h.update(b"focus|call-accepted"),
+        },
+        CallEvent::Ended { .. } => h.update(b"ended"),
         // Media toggles and reactions repeat within one call, so they
         // carry their payload into the hash — two different reactions
         // are two events, not a duplicate.

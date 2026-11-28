@@ -1,10 +1,37 @@
 //! Tests for [`super::EventDedup`] and [`super::hash_event`].
 
 use super::*;
-use rekindle_types::subscription_events::{FriendEvent, TypingContext, TypingEvent, UnreadContext};
+use rekindle_types::subscription_events::{
+    CallEvent, CallOutcome, FocusReason, FriendEvent, TypingContext, TypingEvent, UnreadContext,
+};
 
 /// A fixed clock reading: dedup is a pure function of the events and `now`.
 const NOW_MS: u64 = 1_700_000_000_000;
+
+#[test]
+fn call_dedup_uses_lifecycle_steps_and_distinguishes_focus_reasons() {
+    let declined = |peer_reason| {
+        SubscriptionEvent::Call(CallEvent::Declined {
+            call_id: "c1".into(),
+            notice: CallOutcome::Declined.notice(),
+            peer_reason,
+        })
+    };
+    let focus = |reason| {
+        SubscriptionEvent::Call(CallEvent::FocusConversation {
+            call_id: "c1".into(),
+            peer_key: "pk".into(),
+            peer_display_name: "Ada".into(),
+            reason,
+        })
+    };
+    let mut dedup = EventDedup::new(100, 300);
+    assert!(dedup.check(&declined(None), NOW_MS));
+    assert!(!dedup.check(&declined(Some("busy".into())), NOW_MS));
+    assert!(dedup.check(&focus(FocusReason::CallStarted), NOW_MS));
+    assert!(dedup.check(&focus(FocusReason::CallAccepted), NOW_MS));
+    assert!(!dedup.check(&focus(FocusReason::CallStarted), NOW_MS));
+}
 
 #[test]
 fn time_buckets_come_from_the_callers_clock() {

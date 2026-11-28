@@ -34,9 +34,11 @@ async fn ending_the_session_ends_every_call() {
         .iter()
         .filter_map(|e| match e {
             CallSignalEvent::CallEnded {
-                call_id, reason, ..
+                call_id,
+                peer_reason,
+                ..
             } => {
-                assert_eq!(reason, "signed out");
+                assert_eq!(peer_reason, &None);
                 Some(call_id.as_str())
             }
             CallSignalEvent::GroupCallEnded { call_id, .. } => Some(call_id.as_str()),

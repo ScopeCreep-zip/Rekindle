@@ -54,17 +54,18 @@ pub enum CallSignalEvent {
         kind: CallKind,
         expires_at_ms: u64,
     },
-    /// Peer declined our invite (or invite-side decline).
+    /// Peer declined our invite.
     CallDeclined {
         call_id: String,
         peer_public_key: String,
-        reason: String,
+        peer_reason: String,
     },
-    /// Either side ended an active call.
+    /// Either side ended the call.
     CallEnded {
         call_id: String,
         peer_public_key: String,
-        reason: String,
+        /// Untrusted wire text when the peer ended the call.
+        peer_reason: Option<String>,
         voice_was_up: bool,
     },
     /// 30s ring timeout fired without an accept (outgoing side).
@@ -127,9 +128,10 @@ pub enum CallSignalEvent {
         peer_public_key: String,
         reason: String,
     },
-    /// Local user ended the call (or last participant left). Adapter
-    /// emits `ChatEvent::GroupCallEnded` — distinct from
-    /// `GroupCallParticipantLeft` which is fan-out gossip about
-    /// someone else leaving.
-    GroupCallEnded { call_id: String, reason: String },
+    /// We ended the call or the initiator cancelled the ring.
+    GroupCallEnded {
+        call_id: String,
+        /// Untrusted wire text when the initiator cancelled the ring.
+        peer_reason: Option<String>,
+    },
 }

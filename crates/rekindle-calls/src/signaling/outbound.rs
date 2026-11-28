@@ -463,7 +463,7 @@ pub(super) async fn end_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     drop(removed);
     deps.emit_event(CallSignalEvent::GroupCallEnded {
         call_id: call_id.to_string(),
-        reason: reason.clone(),
+        peer_reason: None,
     });
     for peer in &recipients {
         let left = DirectBody::GroupCallParticipantLeft(GroupCallParticipantLeft {

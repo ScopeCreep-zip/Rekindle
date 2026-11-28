@@ -206,12 +206,13 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     // Derive call_key. On failure, drop the call + emit CallEnded.
     let call_key = match crate::derive_call_key(&my_secret, acceptor_x25519_pub, call_id) {
         Ok(k) => k,
-        Err(e) => {
+        Err(error) => {
+            tracing::debug!(call = %call_id, %error, "could not derive call key");
             registry.remove(call_id);
             deps.emit_event(CallSignalEvent::CallEnded {
                 call_id: call_id.to_string(),
                 peer_public_key: peer_pubkey,
-                reason: format!("derive call_key: {e}"),
+                peer_reason: None,
                 voice_was_up: false,
             });
             return;
@@ -240,7 +241,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         deps.emit_event(CallSignalEvent::CallEnded {
             call_id: call_id.to_string(),
             peer_public_key: peer_pubkey,
-            reason: format!("voice session failed: {e}"),
+            peer_reason: None,
             voice_was_up: false,
         });
         return;
@@ -285,7 +286,7 @@ pub async fn handle_decline_received<D: CallSignalingDeps + ?Sized>(
         deps.emit_event(CallSignalEvent::CallDeclined {
             call_id: call_id.to_string(),
             peer_public_key: sender_hex.to_string(),
-            reason,
+            peer_reason: reason,
         });
     }
 }
@@ -342,7 +343,7 @@ pub async fn handle_end_received<D: CallSignalingDeps + ?Sized>(
     deps.emit_event(CallSignalEvent::CallEnded {
         call_id: call_id.to_string(),
         peer_public_key: sender_hex.to_string(),
-        reason,
+        peer_reason: (!reason.is_empty()).then_some(reason),
         voice_was_up: was_voice_up,
     });
 }
@@ -439,7 +440,7 @@ async fn cancel_outgoing_for_glare<D: CallSignalingDeps + ?Sized>(
     deps.emit_event(CallSignalEvent::CallEnded {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.to_string(),
-        reason: "glare-resolved".into(),
+        peer_reason: None,
         voice_was_up: was_voice_up,
     });
 }

@@ -16,6 +16,7 @@ use rekindle_calls::state::CallKind;
 use rekindle_calls::CallError;
 use rekindle_codec::capnp_codec::direct::DirectBody;
 use rekindle_types::group_dm::GroupCallRoster;
+use rekindle_types::subscription_events::{CallEvent, CallOutcome};
 
 use super::CallsAdapter;
 use crate::state_helpers;
@@ -251,7 +252,10 @@ impl CallSignalingDeps for CallsAdapter {
                 }
                 crate::event_dispatch::emit_call(
                     &app,
-                    rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
+                    CallEvent::TimedOut {
+                        call_id,
+                        notice: CallOutcome::TimedOut.notice(),
+                    },
                 );
             },
         );

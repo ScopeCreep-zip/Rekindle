@@ -1,4 +1,4 @@
-use super::{CallEvent, CallParticipant, DirectCallInfo};
+use super::{CallEvent, CallOutcome, CallParticipant, DirectCallInfo, FocusReason};
 
 #[test]
 fn a_group_call_connects_without_a_peer() {
@@ -50,16 +50,50 @@ fn postcard_round_trips_every_variant() {
     }
 }
 
-/// Pins the JSON `src/ipc/channels/call_events.ts` parses.
+#[test]
+fn host_serves_the_call_outcome_notices() {
+    assert_eq!(CallOutcome::Declined.notice(), "Call declined");
+    assert_eq!(CallOutcome::TimedOut.notice(), "Call timed out — no answer");
+    assert_eq!(
+        CallOutcome::Unreachable.notice(),
+        "Could not reach the other caller"
+    );
+    assert_eq!(CallOutcome::Ended.notice(), "Call ended");
+}
+
+#[test]
+fn focus_reasons_serialize_as_kebab_case_codes() {
+    for (reason, expected) in [
+        (FocusReason::CallStarted, "call-started"),
+        (FocusReason::CallAccepted, "call-accepted"),
+    ] {
+        let event = CallEvent::FocusConversation {
+            call_id: "c1".into(),
+            peer_key: "pk".into(),
+            peer_display_name: "Ada".into(),
+            reason,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["focusConversation"]["reason"], expected);
+        let bytes = postcard::to_allocvec(&event).unwrap();
+        let round_trip = postcard::from_bytes::<CallEvent>(&bytes).unwrap();
+        assert!(
+            matches!(round_trip, CallEvent::FocusConversation { reason: actual, .. } if actual == reason)
+        );
+    }
+}
+
+/// Pins the JSON `src/ipc/channels/chat_events.ts` parses.
 #[test]
 fn json_shape_is_what_the_webview_parses() {
     let event = CallEvent::Ended {
         call_id: "c1".into(),
-        reason: "hangup".into(),
+        notice: CallOutcome::Ended.notice(),
+        peer_reason: None,
     };
     assert_eq!(
         serde_json::to_string(&event).unwrap(),
-        r#"{"ended":{"callId":"c1","reason":"hangup"}}"#
+        r#"{"ended":{"callId":"c1","notice":"Call ended","peerReason":null}}"#
     );
 
     let connected = CallEvent::Connected {
@@ -128,7 +162,8 @@ fn sample_events() -> Vec<CallEvent> {
         },
         CallEvent::Declined {
             call_id: "c".into(),
-            reason: "busy".into(),
+            notice: CallOutcome::Declined.notice(),
+            peer_reason: Some("busy".into()),
         },
         CallEvent::Missed {
             call_id: "c".into(),
@@ -136,20 +171,22 @@ fn sample_events() -> Vec<CallEvent> {
         },
         CallEvent::TimedOut {
             call_id: "c".into(),
+            notice: CallOutcome::TimedOut.notice(),
         },
         CallEvent::Unreachable {
             call_id: "c".into(),
-            reason: "invite not committed".into(),
+            notice: CallOutcome::Unreachable.notice(),
         },
         CallEvent::FocusConversation {
             call_id: "c".into(),
             peer_key: "pk".into(),
             peer_display_name: "Ada".into(),
-            reason: "call-started".into(),
+            reason: FocusReason::CallStarted,
         },
         CallEvent::Ended {
             call_id: "c".into(),
-            reason: "hangup".into(),
+            notice: CallOutcome::Ended.notice(),
+            peer_reason: None,
         },
         CallEvent::MediaStateChanged {
             call_id: "c".into(),

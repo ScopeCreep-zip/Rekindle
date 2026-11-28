@@ -13,13 +13,15 @@ use crate::signaling::lifecycle::{
 use crate::signaling::registry::CallRegistry;
 use crate::state::{CallKind, CallStatus};
 
-fn ended(deps: &MockDeps) -> Vec<(String, String)> {
+fn ended(deps: &MockDeps) -> Vec<(String, Option<String>)> {
     deps.emitted_events()
         .into_iter()
         .filter_map(|e| match e {
             CallSignalEvent::CallEnded {
-                call_id, reason, ..
-            } => Some((call_id, reason)),
+                call_id,
+                peer_reason,
+                ..
+            } => Some((call_id, peer_reason)),
             _ => None,
         })
         .collect()
@@ -88,7 +90,7 @@ async fn a_hang_up_ends_locally_before_the_network() {
             .is_err(),
         "the mock commit hangs"
     );
-    assert_eq!(ended(&deps), vec![("c1".to_string(), String::new())]);
+    assert_eq!(ended(&deps), vec![("c1".to_string(), None)]);
     assert!(!deps.registry.contains("c1"));
     assert_eq!(deps.with(|s| s.shutdowns), 1);
 }
@@ -126,12 +128,12 @@ async fn consent_expires_after_thirty_silent_seconds() {
     });
     let check = check_consent(deps.as_ref(), "c1", now - 120_000).await;
     assert_eq!(check, ConsentCheck::Expired);
-    assert_eq!(
-        ended(&deps),
-        vec![("c1".to_string(), CONNECTION_LOST.to_string())]
-    );
+    assert_eq!(ended(&deps), vec![("c1".to_string(), None)]);
     assert!(!deps.registry.contains("c1"));
     assert_eq!(deps.with(|s| (s.shutdowns, s.committed.len())), (1, 1));
+    assert!(deps.with(|s| matches!(&s.committed[0].1,
+        DirectBody::CallEnd(CallClosed { reason, .. }) if reason == CONNECTION_LOST
+    )));
 }
 
 /// (b) Before the first packet the window runs from the call's start, and
@@ -181,12 +183,12 @@ async fn a_new_invite_from_our_call_peer_supersedes_the_stale_call() {
     let peer = "bb".repeat(32);
     seed_call(&deps, "old", &peer, CallStatus::Active);
     invite(&deps, &peer, "new").await;
-    assert_eq!(
-        ended(&deps),
-        vec![("old".to_string(), CALL_SUPERSEDED.to_string())]
-    );
+    assert_eq!(ended(&deps), vec![("old".to_string(), None)]);
     assert!(!deps.registry.contains("old"));
     assert_eq!(incoming(&deps), vec!["new".to_string()]);
+    assert!(deps.with(|s| matches!(&s.committed[0].1,
+        DirectBody::CallEnd(CallClosed { reason, .. }) if reason == CALL_SUPERSEDED
+    )));
     assert_eq!(deps.with(|s| s.shutdowns), 1);
 }
 

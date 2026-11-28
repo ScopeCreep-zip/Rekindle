@@ -67,7 +67,6 @@ pub enum CallInput {
     /// The invite could not be committed or sent: the peer is unreachable.
     LocalUnreachable {
         call_id: String,
-        reason: String,
         now_ms: u64,
     },
     AcceptReceived {

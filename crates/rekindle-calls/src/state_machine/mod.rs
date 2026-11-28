@@ -56,7 +56,7 @@ pub const TEMP_MUTED_DECLINE: &str = "user is unavailable";
 pub const GLARE_OTHER_LOSES: &str = "glare-resolved-other-loses";
 /// The `CallEnd` reason the glare loser sends for its own outgoing call.
 pub const GLARE_WE_LOST: &str = "glare-resolved-we-lost";
-/// The local `Ended` reason of the outgoing call lost to glare.
+/// Why the local media stops when the outgoing call loses to glare.
 pub const GLARE_RESOLVED: &str = "glare-resolved";
 
 /// One held call and what the machine needs beside [`CallState`].
@@ -126,9 +126,7 @@ impl CallStateMachine {
             CallInput::LocalDialingTimeout { call_id, .. } => {
                 self.apply_dialing_timeout(&call_id, now_ms)
             }
-            CallInput::LocalUnreachable {
-                call_id, reason, ..
-            } => self.apply_unreachable(&call_id, reason),
+            CallInput::LocalUnreachable { call_id, .. } => self.apply_unreachable(&call_id),
             CallInput::AcceptReceived {
                 call_id,
                 from,
@@ -160,7 +158,7 @@ impl CallStateMachine {
             } => self.apply_local_accept(&call_id, my_x25519_secret, video_decode_codecs),
             CallInput::LocalDecline {
                 call_id, reason, ..
-            } => self.apply_local_decline(&call_id, reason),
+            } => self.apply_local_decline(&call_id, &reason),
             CallInput::LocalIncomingTimeout { call_id, .. } => {
                 self.apply_incoming_timeout(&call_id, now_ms)
             }

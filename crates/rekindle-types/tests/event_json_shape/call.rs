@@ -3,7 +3,7 @@
 //! webview distinguishes.
 
 use rekindle_types::subscription_events::{
-    CallEvent, CallParticipant, DirectCallInfo, SubscriptionEvent,
+    CallEvent, CallOutcome, CallParticipant, DirectCallInfo, FocusReason, SubscriptionEvent,
 };
 
 use crate::{id, pk, text, Sample};
@@ -142,7 +142,8 @@ fn setup() -> Vec<Sample> {
             "declined",
             CallEvent::Declined {
                 call_id: call_id(),
-                reason: text("busy"),
+                notice: CallOutcome::Declined.notice(),
+                peer_reason: Some(text("busy")),
             },
         ),
         ev(
@@ -152,12 +153,18 @@ fn setup() -> Vec<Sample> {
                 from: pk('b'),
             },
         ),
-        ev("timedOut", CallEvent::TimedOut { call_id: call_id() }),
+        ev(
+            "timedOut",
+            CallEvent::TimedOut {
+                call_id: call_id(),
+                notice: CallOutcome::TimedOut.notice(),
+            },
+        ),
         ev(
             "unreachable",
             CallEvent::Unreachable {
                 call_id: call_id(),
-                reason: text("no_route"),
+                notice: CallOutcome::Unreachable.notice(),
             },
         ),
         ev(
@@ -166,7 +173,7 @@ fn setup() -> Vec<Sample> {
                 call_id: call_id(),
                 peer_key: pk('b'),
                 peer_display_name: text("Bob"),
-                reason: text("call-started"),
+                reason: FocusReason::CallStarted,
             },
         ),
     ]
@@ -178,7 +185,8 @@ fn in_call() -> Vec<Sample> {
             "ended",
             CallEvent::Ended {
                 call_id: call_id(),
-                reason: text("hangup"),
+                notice: CallOutcome::Ended.notice(),
+                peer_reason: Some(text("hangup")),
             },
         ),
         ev(

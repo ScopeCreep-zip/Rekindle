@@ -56,7 +56,7 @@ pub(crate) async fn end_locally<D: CallSignalingDeps + ?Sized>(
     deps.emit_event(CallSignalEvent::CallEnded {
         call_id: call_id.to_string(),
         peer_public_key: peer.clone(),
-        reason: reason.to_string(),
+        peer_reason: None,
         voice_was_up: was_voice_up,
     });
     if was_voice_up {
