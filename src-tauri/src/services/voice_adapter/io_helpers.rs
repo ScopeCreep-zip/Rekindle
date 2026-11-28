@@ -1,10 +1,9 @@
 //! Phase 14.r split — small I/O helpers reached by `deps_impl`.
 //!
 //! Each helper is a free fn used by exactly one trait method:
-//! `restart_audio_devices`, `resolve_peer_route`, `load_member_names`,
+//! `restart_audio_devices`, `resolve_peer_route`,
 //! `broadcast_media_capabilities`, `send_receiver_report`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::state::AppState;
@@ -95,33 +94,6 @@ pub(super) fn log_voice_membership_impl(
             &pseudo,
         );
     }
-}
-
-pub(super) async fn load_community_member_names_impl(
-    state: &Arc<AppState>,
-    community_id: Option<&str>,
-) -> HashMap<String, String> {
-    let Some(cid) = community_id else {
-        return HashMap::new();
-    };
-    let Ok(pool) = state.db.current() else {
-        return HashMap::new();
-    };
-    let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
-        return HashMap::new();
-    };
-    let cid_owned = cid.to_string();
-    crate::db_helpers::db_call(&pool, move |conn| {
-        rekindle_db::repo::members::display_names(conn, &owner_key, &cid_owned)
-    })
-    .await
-    .map_or_else(
-        |e| {
-            tracing::warn!(error = %e, "member display names unreadable");
-            HashMap::new()
-        },
-        |names| names.into_iter().collect(),
-    )
 }
 
 /// Ship a signed receiver report back to the peer whose stream it

@@ -22,21 +22,25 @@ mod events;
 pub(crate) use events::ROSTER_STATE;
 mod media_keys;
 pub use media_keys::{install_carrier as install_media_key_carrier, HostMediaKeyOutbox};
-use rekindle_db::Db;
 
 pub struct VoiceSignalingAdapter {
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
+    governance: rekindle_node::host::adapters::governance::HostGovernance,
 }
 
 impl VoiceSignalingAdapter {
-    /// `_pool` accepted to match the construction shape of the other
-    /// Phase-14 adapters (calls, voice, dm) even though signaling
-    /// doesn't reach SQLite directly — `persist_hand_raise` goes
-    /// through `services::community::persist_hand_raise(&AppState, ...)`.
-    #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, _pool: Db) -> Arc<Self> {
-        Arc::new(Self { state, app_handle })
+    pub fn new(
+        state: Arc<AppState>,
+        app_handle: tauri::AppHandle,
+    ) -> Result<Arc<Self>, rekindle_db::NotLoggedIn> {
+        state.db.current()?;
+        let governance = state_helpers::host_governance(&state)?;
+        Ok(Arc::new(Self {
+            state,
+            app_handle,
+            governance,
+        }))
     }
 }
 
@@ -51,11 +55,10 @@ pub fn handle_voice_signaling(
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    let Ok(pool) = state.db.current() else {
-        tracing::debug!("voice signaling: no identity database — dropped");
+    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
+        tracing::debug!("voice signaling: no unlocked Host");
         return;
     };
-    let adapter = VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
     let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     let cid = community_id.to_string();
     let sender = sender_pseudonym.to_string();
@@ -76,11 +79,10 @@ pub fn member_departed(
     community_id: &str,
     departed: &str,
 ) {
-    let Ok(pool) = state.db.current() else {
+    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
         return;
     };
-    let deps: Arc<dyn VoiceSignalingDeps> =
-        VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
+    let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     rekindle_voice::signaling::member_departed(&deps, community_id, departed);
 }
 
@@ -94,11 +96,10 @@ pub async fn answer_media_key_call(
     payload: &rekindle_codec::community::envelope::ControlPayload,
 ) -> Vec<u8> {
     use rekindle_codec::community::envelope::ControlPayload;
-    let Ok(pool) = state.db.current() else {
+    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
         return b"ACK".to_vec();
     };
-    let deps: Arc<dyn VoiceSignalingDeps> =
-        VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
+    let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     match payload {
         ControlPayload::VoiceMediaKey { .. } => {
             rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
@@ -421,6 +422,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 "voice signaling directed send failed",
             );
         }
+    }
+
+    fn member_shown_name(&self, community_id: &str, pseudonym: &str) -> String {
+        self.governance.member_shown_name(community_id, pseudonym)
     }
 
     fn my_display_name(&self) -> Option<String> {
