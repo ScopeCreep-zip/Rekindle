@@ -12,12 +12,15 @@
 
 use std::collections::BTreeMap;
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::member_record::head_advanced::HeadAdvanced;
 use rekindle_codec::member_record::{BeatState, RecordScope};
 use rekindle_governance_runtime::member_card::{write_own_beat, OwnBeat, OwnRecord};
 use rekindle_governance_runtime::member_routes::write_routes;
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_presence::community::seal_extras;
 use rekindle_records::port::{RouteClass, RouteState};
+use rekindle_types::dht_layout::member_record::BEAT;
 use tokio_util::sync::CancellationToken;
 
 use super::HostGovernance;
@@ -133,6 +136,12 @@ impl HostGovernance {
             .next_beat_seq(community_id)
             .await
             .map_err(|e| format!("beat seq: {e}"))?;
+        let (session, policy) = presence::own_session_with_policy(&self.ctx, community_id);
+        let state = if state.is_present() && !policy.share_online {
+            BeatState::Offline
+        } else {
+            state
+        };
         // A present beat says our voice channel (the shell's until E4.1, the
         // Host's own on `rekindled`)
         // and carries our extras sealed from our own session and consent
@@ -144,8 +153,6 @@ impl HostGovernance {
                 community_id,
                 member_record: &keys.record,
             };
-            let session = presence::own_session(&self.ctx, community_id);
-            let policy = presence::presence_policy(&self.ctx, community_id);
             let extras = seal_extras(session, &policy, key.as_ref(), at, &*self.ctx.rng);
             let voice_channel =
                 presence::session_presence(&self.ctx).active_voice_channel(community_id);
@@ -177,21 +184,29 @@ impl HostGovernance {
             .write_own_beat(community_id, BeatState::Offline)
             .await?;
         tracing::debug!(seq, "quit beat written; gossiping its hint");
-        let keys = self.own_record_keys(community_id)?;
-        let hint = rekindle_codec::member_record::head_advanced::HeadAdvanced {
-            author: keys.pseudonym.verifying_key().to_bytes(),
-            member_record: keys.record.clone(),
-            subkey: rekindle_types::dht_layout::member_record::BEAT,
-            seq,
-        };
-        let hint = hint
-            .encode(community_id, &keys.pseudonym)
-            .map_err(|e| format!("quit hint: {e}"))?;
-        let envelope = rekindle_codec::community::envelope::CommunityEnvelope::control(
-            rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { hint },
-        );
-        self.send_before_teardown(community_id, &envelope).await;
+        let hint = self.own_beat_hint(community_id, seq)?;
+        self.send_before_teardown(community_id, &hint).await;
         Ok(())
+    }
+
+    /// The signed hint for a successfully written beat.
+    pub(crate) fn own_beat_hint(
+        &self,
+        community_id: &str,
+        seq: u64,
+    ) -> Result<CommunityEnvelope, String> {
+        let keys = self.own_record_keys(community_id)?;
+        let hint = HeadAdvanced {
+            author: keys.pseudonym.verifying_key().to_bytes(),
+            member_record: keys.record,
+            subkey: BEAT,
+            seq,
+        }
+        .encode(community_id, &keys.pseudonym)
+        .map_err(|e| format!("beat hint: {e}"))?;
+        Ok(CommunityEnvelope::control(ControlPayload::HeadAdvanced {
+            hint,
+        }))
     }
 
     /// Our member record in `community_id` and the keys that write and sign

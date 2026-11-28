@@ -25,7 +25,7 @@ use ratatui::Frame;
 use rekindle_types::display::{CommunityDetail, RoleDisplay};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
-use rekindle_types::presence::SessionLocation;
+use rekindle_types::presence::{SessionLocation, ShareScope};
 use rekindle_utils::text::sanitize_for_display;
 
 use super::View;
@@ -41,6 +41,7 @@ pub struct CommunityInfoView {
     community: String,
     /// Loaded community detail (None until CommandResult arrives).
     detail: Option<CommunityDetail>,
+    share_location: Option<ShareScope>,
     members: Vec<CommunityMemberView>,
     /// Whether data is loading.
     loading: bool,
@@ -58,6 +59,7 @@ impl CommunityInfoView {
             focus: FocusRing::new(vec![FocusId::CommunityInfoPanel]),
             community,
             detail: None,
+            share_location: None,
             members: Vec::new(),
             loading: true,
             selected_channel: 0,
@@ -149,6 +151,14 @@ impl CommunityInfoView {
                 Span::raw(our_key),
                 Span::styled("  Roles: ", Style::new().dim()),
                 Span::raw(roles_str),
+            ]),
+            Line::from(vec![
+                Span::styled("  Share location: ", Style::new().dim()),
+                Span::raw(match self.share_location {
+                    Some(ShareScope::Members) => "On",
+                    Some(ShareScope::None) => "Off",
+                    None => "Unknown",
+                }),
             ]),
             Line::from(vec![
                 Span::styled("  Active channel: ", Style::new().dim()),
@@ -296,7 +306,7 @@ impl View for CommunityInfoView {
         let role_height = role_count.saturating_add(2).min(area.height / 4);
 
         let [meta_area, channels_area, roles_area] = Layout::vertical([
-            Constraint::Length(9),
+            Constraint::Length(10),
             Constraint::Length(channel_height),
             Constraint::Min(role_height),
         ])
@@ -396,6 +406,11 @@ impl View for CommunityInfoView {
             CommandResult::CommunityInfoLoaded { detail } if detail.anchor == self.community => {
                 self.detail = Some(detail);
                 self.loading = false;
+            }
+            CommandResult::CommunityPresencePolicyLoaded { community, policy }
+                if community == self.community =>
+            {
+                self.share_location = Some(policy.share_location);
             }
             CommandResult::PermissionCatalogueLoaded(catalogue) => {
                 self.catalogue = Some(catalogue);

@@ -13,7 +13,7 @@ It complements [`vulnerability-disclosure.md`](vulnerability-disclosure.md)
 ## 1. Severity classification
 
 | Severity | Definition | Response time |
-|----------|-----------|---------------|
+| ---------- | ----------- | --------------- |
 | **P0** — Critical | Active exploitation, key compromise, RCE, or auth bypass. Users actively at risk now. | Acknowledge in **2 hours**, hotfix in **48 hours**. |
 | **P1** — High | High-impact CVE in critical dependency (CISA KEV match, exploitable RCE, plaintext leak). No active exploitation. | Acknowledge in **24 hours**, patch in **7 days**. |
 | **P2** — Medium | Logic flaw, info-disclosure with limited scope, denial-of-service against a single user. | Acknowledge in **3 days**, patch in **30 days**. |
@@ -26,7 +26,7 @@ are resolved by erring toward the higher severity.
 ## 2. Communication channels
 
 | Channel | When |
-|---------|------|
+| --------- | ------ |
 | **GitHub Security Advisories** | Always. Every confirmed P0/P1 gets an advisory, drafted private and published when the fix ships. |
 | **`security@scopecreep.zip`** | Initial reporter contact, ongoing coordination with security researchers, PGP-encrypted exchange when sensitive details apply. |
 | **Public release notes / `CHANGELOG.md`** | Every fixed advisory gets a one-line entry referencing the GHSA ID. |

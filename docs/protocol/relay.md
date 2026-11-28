@@ -72,7 +72,7 @@ Alice            Carol (mutual friend, volunteer relay)         Bob
 ### Privacy properties
 
 | Property | Mechanism |
-|----------|-----------|
+| ---------- | ----------- |
 | Alice cannot identify which friend is relaying | Bob's relay pool publishes opaque route blobs padded with dummies. Alice picks a random entry; the route is by definition opaque. |
 | Carol does not know who Alice is | The envelope arrives via Alice's private route. Carol sees only `{target_route, encrypted_inner_payload}` plus the route metadata — no sender identity. |
 | Carol cannot read the content | The inner payload is encrypted to Bob's identity key. Carol forwards bytes; she does not have the decryption key. |
@@ -109,7 +109,7 @@ every slot looks identical at the wire level.
 ### Latency
 
 | Path | Latency | When used |
-|------|---------|-----------|
+| ------ | --------- | ----------- |
 | Direct route alive | 50–150 ms | Default |
 | Stale route → strand relay | 60–100 ms | Direct fails; one hop through Carol |
 | DHT fallback (no relay) | 200–500 ms | No relay available; Alice writes to Bob's mailbox DHT record |
@@ -273,7 +273,7 @@ periodic background fetch.
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | **Strand Relay**: volunteer / revoke an offer | `src-tauri/src/services/relay/offer.rs` |
 | **Strand Relay**: received-offer pool persistence | `src-tauri/src/services/relay/pool.rs` |
 | **Strand Relay**: forward an envelope | `src-tauri/src/services/relay/forward.rs` |

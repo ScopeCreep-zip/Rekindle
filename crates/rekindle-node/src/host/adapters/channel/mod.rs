@@ -22,6 +22,8 @@ use rekindle_records::port::RecordPort;
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::governance::HostGovernance;
 
+mod admission;
+
 mod blocks;
 pub(crate) mod changes;
 pub mod deps_impl;
@@ -51,6 +53,8 @@ mod thread_refusal;
 #[derive(Clone)]
 pub struct HostChannel {
     gov: HostGovernance,
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    skip_local_post_permission: bool,
 }
 
 impl crate::host::Host {
@@ -64,13 +68,27 @@ impl crate::host::Host {
 impl HostChannel {
     /// The channel adapter over `gov`'s Host.
     pub(crate) fn of_governance(gov: &HostGovernance) -> Self {
-        Self { gov: gov.clone() }
+        Self {
+            gov: gov.clone(),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            skip_local_post_permission: false,
+        }
     }
 
     /// The channel adapter over `ctx`.
     pub(crate) fn new(ctx: &DaemonContext) -> Self {
         Self {
             gov: crate::daemon::dispatch::adapter(ctx),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            skip_local_post_permission: false,
+        }
+    }
+
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    pub(crate) fn for_post_skipping_local_permission(ctx: &DaemonContext) -> Self {
+        Self {
+            skip_local_post_permission: true,
+            ..Self::new(ctx)
         }
     }
 
@@ -250,7 +268,7 @@ pub(crate) fn release_waiting_posts(gov: &HostGovernance, community_id: &str) {
     if gov.context().outbox.channel_posts().is_none() {
         return;
     }
-    let channel = HostChannel { gov: gov.clone() };
+    let channel = HostChannel::of_governance(gov);
     let community = community_id.to_owned();
     let releases = gov.context().outbox.channel_release_lock();
     rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(gov).spawn_or_drop(

@@ -119,10 +119,7 @@ impl HostGovernance {
             member_record: record,
         };
         let beat = decode_presence_beat(&bytes, at, &author.0).ok()?;
-        let observed = view::observe(&self.ctx, community_id, &author, &beat, arrived_at);
-        if let Some(sealed) = &beat.extras {
-            view::take_extras(&self.ctx, at, &author, beat.seq, sealed);
-        }
+        let observed = view::observe(&self.ctx, at, &author, &beat, arrived_at);
         if observed.state_changed {
             self.mesh_member_moved(community_id, &author).await;
         }

@@ -79,6 +79,7 @@ pub struct ChannelMessageRow {
 /// its chain seq and linked to the stream by its tag.
 #[derive(Debug, Clone)]
 pub struct OutboxItem {
+    pub admission: Option<rekindle_types::dto::channel_message::PostAdmission>,
     pub author: rekindle_types::id::PseudonymKey,
     /// The per-(author, stream) seq, frozen at creation: an author's ops
     /// are ordered by it (rules E1, R1).

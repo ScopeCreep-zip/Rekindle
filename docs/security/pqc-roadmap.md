@@ -13,7 +13,7 @@ primitives in line with the wider messaging-app ecosystem.
 ## 1. Current state
 
 | Purpose | Primitive | Quantum status |
-|---------|-----------|----------------|
+| --------- | ----------- | ---------------- |
 | Identity / signatures | Ed25519 | Classical-secure; **not PQ-secure** |
 | Key agreement (1:1, DM, MEK wrap, IPC bus) | X25519 (within Signal PQXDH and the Double Ratchet, ECDH for DMs, Noise IK) | **Not PQ-secure** for the ratchet, the IPC bus and MEK wrapping; the 1:1 session's initial agreement is hybrid (PQXDH rev. 3 adds ML-KEM-768, E2.3) |
 | Symmetric content encryption | AES-256-GCM | PQ-secure with 256-bit key (Grover halves effective security to ~128 bits — still adequate) |
@@ -179,7 +179,7 @@ When picking the ML-KEM Rust crate for Phase 2/3:
 Candidates as of late 2025:
 
 | Crate | Notes |
-|-------|-------|
+| ------- | ------- |
 | `ml-kem` (RustCrypto) | Pure Rust, follows RustCrypto patterns we already use for `aes-gcm` / `chacha20poly1305`. Best fit if API stabilises in time. |
 | `pqcrypto-mlkem` | Wraps the reference C implementation. Production-tested but uses C bindings — adds an `unsafe` surface. |
 | `liboqs-rust` | OQS Project's Rust binding. Comprehensive PQ-suite coverage; same FFI tradeoff as pqcrypto. |

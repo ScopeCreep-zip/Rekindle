@@ -105,7 +105,7 @@ The supported version is **`main`** (and the active feature branches
 listed in [`docs/roadmap.md`](docs/roadmap.md)).
 
 | Version | Supported |
-|---------|-----------|
+| --------- | ----------- |
 | `main` | Yes |
 | `codex/communities-*` (active feature branches) | Yes |
 | Anything older | No |

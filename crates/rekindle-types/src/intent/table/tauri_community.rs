@@ -201,6 +201,10 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_presence_policy", Some(IntentKind::SetPresencePolicy)),
     ("get_presence_policy", None),
     (
+        "set_presence_policy_field",
+        Some(IntentKind::SetPresencePolicy),
+    ),
+    (
         "update_community_profile",
         Some(IntentKind::UpdateCommunityProfile),
     ),

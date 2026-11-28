@@ -1,5 +1,7 @@
 //! `ChannelMessageEvent` samples.
 
+use rekindle_types::dto::channel_message::{ChannelMessageView, PostAdmission};
+use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{
     ChannelMessageEvent, ConversationContext, SubscriptionEvent,
 };
@@ -8,6 +10,7 @@ use crate::{channel, community, id, pk, text, Sample};
 
 pub const NAMES: &[&str] = &[
     "new",
+    "postAdmissionChanged",
     "edited",
     "deleted",
     "channelSendStatus",
@@ -27,6 +30,7 @@ pub const NAMES: &[&str] = &[
 pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
     match e {
         ChannelMessageEvent::New { .. } => "new",
+        ChannelMessageEvent::PostAdmissionChanged { .. } => "postAdmissionChanged",
         ChannelMessageEvent::Edited { .. } => "edited",
         ChannelMessageEvent::Deleted { .. } => "deleted",
         ChannelMessageEvent::ChannelSendStatus { .. } => "channelSendStatus",
@@ -131,6 +135,42 @@ pub fn samples() -> Vec<Sample> {
                 message_id: id("msg_", '1'),
                 state: rekindle_types::message::SendState::Sent,
                 reason: None,
+            },
+        ),
+        ev(
+            "postAdmissionChanged",
+            ChannelMessageEvent::PostAdmissionChanged {
+                community: community(),
+                stream_id: channel(),
+                thread: false,
+                message_id: id("msg_", '1'),
+                pending: true,
+                row: Box::new(ChannelMessageView {
+                    id: 0,
+                    sender_id: pk('b'),
+                    body: String::new(),
+                    admission: Some(PostAdmission::Pending {
+                        text: "Waiting to verify that this post was allowed.".into(),
+                    }),
+                    decryption_failed: false,
+                    undecryptable: None,
+                    automod_blurred: false,
+                    timestamp: 1_700_000_000_000,
+                    is_own: false,
+                    server_message_id: Some(id("msg_", '1')),
+                    reactions: None,
+                    pinned: None,
+                    poll: None,
+                    forwarded_from_author: None,
+                    forwarded_from_name: None,
+                    attachment: None,
+                    flags: 0,
+                    send_state: SendState::Delivered,
+                    failure_reason: None,
+                    edited_at: None,
+                    removed_by: None,
+                    history_gap_through: None,
+                }),
             },
         ),
         ev(

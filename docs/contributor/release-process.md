@@ -84,7 +84,7 @@ check-sidecars` fails if the overlay, the release workflow, this page or
 This produces:
 
 | Platform | Output |
-|----------|--------|
+| ---------- | -------- |
 | Windows | `src-tauri/target/release/bundle/nsis/Rekindle_X.Y.Z_x64-setup.exe` |
 | macOS | `src-tauri/target/release/bundle/dmg/Rekindle_X.Y.Z_aarch64.dmg` (and x86_64) |
 | Linux | `src-tauri/target/release/bundle/appimage/Rekindle_X.Y.Z_amd64.AppImage` and `bundle/deb/rekindle_X.Y.Z_amd64.deb` |
@@ -99,7 +99,7 @@ The minimum supported OS versions are set by the webview each
 platform renders in:
 
 | Platform | Floor | Where it is set |
-|----------|-------|-----------------|
+| ---------- | ------- | ----------------- |
 | macOS | 14 Sonoma (system WebKit, Safari 16.4 or later) | `src-tauri/tauri.conf.json` `bundle.macOS.minimumSystemVersion` (`LSMinimumSystemVersion` in the bundle's `Info.plist`) |
 | Linux | WebKitGTK 4.1, version 2.40 or later | `src-tauri/tauri.conf.json` `bundle.linux.deb.depends` (`libwebkit2gtk-4.1-0 (>= 2.40)`) and `bundle.linux.rpm.depends` (`webkit2gtk4.1 >= 2.40`) |
 | Windows | Evergreen WebView2 (Chromium 111 or later; the Evergreen runtime updates itself) | `vite.config.ts` `build.target` |
@@ -136,7 +136,7 @@ CSS still contains its `@layer` statements.
 ## Signing
 
 | Platform | Signing target |
-|----------|----------------|
+| ---------- | ---------------- |
 | Windows | Authenticode signature on the NSIS installer (once the project has a code-signing certificate) |
 | macOS | Apple Developer ID + notarisation (once the project has a Developer ID) |
 | Linux | Detached PGP signature on each artifact |

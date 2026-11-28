@@ -16,7 +16,7 @@ ratchet: the signed envelope each track wraps around a DM before
 ## The two wire formats
 
 | Layer | Desktop track | Daemon track |
-|---|---|---|
+| --- | --- | --- |
 | Framing | raw JSON bytes (`serde_json::to_vec(&envelope)`, `src-tauri/src/services/message_service/transport.rs:139`) | type-tagged frame: `frame::encode(TypeId, postcard(SignedPayload))` (`crates/rekindle-transport/src/broadcast/send.rs` `send_dm`) |
 | Envelope struct | `MessageEnvelope { sender_key, timestamp, nonce, payload, signature }` (`crates/rekindle-protocol/src/messaging/envelope.rs`) | `SignedPayload { sender_key_hex, timestamp, seq, correlation_id, payload, signature }` (`crates/rekindle-transport/src/crypto/envelope.rs`) |
 | Signature domain | Ed25519 over serde_json of a signable struct (`timestamp \|\| nonce \|\| payload`) | Ed25519 over `timestamp(8 LE) \|\| seq(8 LE) \|\| correlation_id_len(4 LE) \|\| correlation_id \|\| payload` |

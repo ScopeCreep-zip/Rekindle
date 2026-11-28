@@ -94,7 +94,7 @@ Independent of anything upstream, these exist **twice**, in two crates,
 maintained separately:
 
 | Function | Daemon track | Desktop track |
-|---|---|---|
+| --- | --- | --- |
 | `derive_community_pseudonym` | `rekindle-transport/src/crypto/pseudonym.rs` | `rekindle-crypto/src/group/pseudonym.rs` |
 | `pseudonym_to_x25519` | same | same |
 | `wrap_mek` | `rekindle-transport/src/crypto/mek.rs:118` | `rekindle-crypto/src/group/mek_distribution.rs` |

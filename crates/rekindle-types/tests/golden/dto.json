@@ -29,6 +29,15 @@
     "length": 12,
     "state": "intact"
   },
+  "channel.admission.pending": {
+    "status": "pending",
+    "text": "Waiting to verify that this post was allowed."
+  },
+  "channel.admission.refused": {
+    "reason": "missingPermission",
+    "reasonText": "This post was refused because the author did not have permission to post here.",
+    "status": "refused"
+  },
   "channel.message": {
     "attachment": {
       "attachmentId": "att_1",
@@ -1011,6 +1020,24 @@
     "idle": "active",
     "status": "busy",
     "statusMessage": "fragging"
+  },
+  "presencePolicyField.lastSeen": {
+    "lastSeen": "coarse"
+  },
+  "presencePolicyField.shareActivity": {
+    "shareActivity": "none"
+  },
+  "presencePolicyField.shareLocation": {
+    "shareLocation": "members"
+  },
+  "presencePolicyField.shareOnline": {
+    "shareOnline": false
+  },
+  "presenceSharingPolicy": {
+    "lastSeen": "hidden",
+    "shareActivity": "none",
+    "shareLocation": "none",
+    "shareOnline": true
   },
   "serversView": {
     "categories": [

@@ -260,6 +260,7 @@ async fn pending_of<D: ChannelMessagingDeps>(
         }),
     };
     let pending = PendingEntry {
+        governance_cut: post.governance_cut.clone(),
         channel_tag: sealed.channel_tag,
         stream_seq: item.stream_seq,
         generation: sealed.generation,

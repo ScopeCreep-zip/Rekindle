@@ -111,7 +111,7 @@ pub enum CommunityCmd {
         /// Channel name or ID.
         channel: Option<String>,
         /// Focus a voice channel.
-        #[arg(long)]
+        #[arg(long, requires = "channel")]
         voice: bool,
     },
 

@@ -3,7 +3,7 @@
 //! daemon stores channel messages too).
 
 use rekindle_types::message::SendState;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use crate::row::get;
 
@@ -104,7 +104,6 @@ pub fn row_id_by_message_id(
     channel_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<i64>> {
-    use rusqlite::OptionalExtension as _;
     conn.query_row(
         "SELECT id FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
@@ -134,7 +133,6 @@ pub fn held(
     channel_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<HeldMessage>> {
-    use rusqlite::OptionalExtension as _;
     conn.query_row(
         "SELECT automod_blurred, deleted_at IS NOT NULL FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
@@ -194,7 +192,6 @@ pub fn reply_row_id(
     channel_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<i64>> {
-    use rusqlite::OptionalExtension as _;
     let row: Option<Option<i64>> = conn
         .query_row(
             "SELECT reply_to_id FROM messages \
@@ -227,7 +224,6 @@ pub fn find_by_message_id(
     channel_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<ForwardSource>> {
-    use rusqlite::OptionalExtension as _;
     conn.query_row(
         "SELECT m.sender_key, m.body, p.message_id FROM messages m \
          LEFT JOIN messages p ON p.id = m.reply_to_id \
@@ -256,7 +252,6 @@ pub fn notify_fields(
     owner_key: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<(bool, u32)>> {
-    use rusqlite::OptionalExtension;
     conn.query_row(
         "SELECT mentions_me, flags FROM messages \
          WHERE owner_key = ?1 AND conversation_type = 'channel' AND message_id = ?2 LIMIT 1",
@@ -306,54 +301,75 @@ pub fn page(
     before: Option<i64>,
     limit: u32,
 ) -> rusqlite::Result<Vec<StoredChannelMessage>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
-                attachment_json, flags, send_state, failure_reason, edited_at, deleted_by, \
-                history_gap_through, undecryptable_reason \
-         FROM messages \
-         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
-           AND (deleted_at IS NULL OR deleted_by IS NOT NULL) AND (?3 IS NULL OR timestamp < ?3) \
+    let mut stmt = conn.prepare(&format!(
+        "{VISIBLE_CHANNEL_ROWS} AND (?3 IS NULL OR timestamp < ?3)
          ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?4",
-    )?;
-    let rows = stmt.query_map(params![owner_key, channel_id, before, limit], |row| {
-        let stored: String = get(row, "send_state")?;
-        let send_state = SendState::parse(&stored).ok_or_else(|| {
-            rusqlite::Error::FromSqlConversionFailure(
-                0,
-                rusqlite::types::Type::Text,
-                format!("unknown send state {stored}").into(),
-            )
-        })?;
-        Ok(StoredChannelMessage {
-            id: get(row, "id")?,
-            sender_key: get(row, "sender_key")?,
-            body: get(row, "body")?,
-            automod_blurred: get::<i64>(row, "automod_blurred")? != 0,
-            timestamp: get(row, "timestamp")?,
-            message_id: get(row, "message_id")?,
-            forwarded_from_author: get(row, "forwarded_from_author")?,
-            attachment_json: get(row, "attachment_json")?,
-            flags: get(row, "flags")?,
-            send_state,
-            failure_reason: get(row, "failure_reason")?,
-            edited_at: get(row, "edited_at")?,
-            removed_by: get(row, "deleted_by")?,
-            history_gap_through: get::<Option<i64>>(row, "history_gap_through")?
-                .map(u64::try_from)
-                .transpose()
-                .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Integer,
-                        Box::new(e),
-                    )
-                })?,
-            undecryptable_reason: get(row, "undecryptable_reason")?,
-        })
-    })?;
+    ))?;
+    let rows = stmt.query_map(params![owner_key, channel_id, before, limit], decode_row)?;
     let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;
     out.reverse();
     Ok(out)
+}
+
+const VISIBLE_CHANNEL_ROWS: &str =
+    "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author,
+            attachment_json, flags, send_state, failure_reason, edited_at, deleted_by,
+            history_gap_through, undecryptable_reason
+     FROM messages
+     WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel'
+       AND (deleted_at IS NULL OR deleted_by IS NOT NULL)";
+
+/// The visible row for one author's post, independent of pagination.
+///
+/// # Errors
+/// The query failed or the row is malformed.
+pub fn visible_post(
+    conn: &Connection,
+    post: super::channel_admission::Post<'_>,
+) -> rusqlite::Result<Option<StoredChannelMessage>> {
+    conn.query_row(
+        &format!("{VISIBLE_CHANNEL_ROWS} AND sender_key = ?3 AND message_id = ?4"),
+        params![post.owner, post.stream, post.sender, post.message],
+        decode_row,
+    )
+    .optional()
+}
+
+fn decode_row(row: &Row<'_>) -> rusqlite::Result<StoredChannelMessage> {
+    let stored: String = get(row, "send_state")?;
+    let send_state = SendState::parse(&stored).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            format!("unknown send state {stored}").into(),
+        )
+    })?;
+    Ok(StoredChannelMessage {
+        id: get(row, "id")?,
+        sender_key: get(row, "sender_key")?,
+        body: get(row, "body")?,
+        automod_blurred: get::<i64>(row, "automod_blurred")? != 0,
+        timestamp: get(row, "timestamp")?,
+        message_id: get(row, "message_id")?,
+        forwarded_from_author: get(row, "forwarded_from_author")?,
+        attachment_json: get(row, "attachment_json")?,
+        flags: get(row, "flags")?,
+        send_state,
+        failure_reason: get(row, "failure_reason")?,
+        edited_at: get(row, "edited_at")?,
+        removed_by: get(row, "deleted_by")?,
+        history_gap_through: get::<Option<i64>>(row, "history_gap_through")?
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Integer,
+                    Box::new(e),
+                )
+            })?,
+        undecryptable_reason: get(row, "undecryptable_reason")?,
+    })
 }
 
 /// Our post `message_id` of a channel did not reach its readers: it reads

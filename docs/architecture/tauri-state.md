@@ -15,7 +15,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Identity, Veilid, and Lifecycle
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `identity` | `Arc<RwLock<Option<IdentityState>>>` | Logged-in user identity, set after vault unlock |
 | `identity_secret` | `Mutex<Option<[u8; 32]>>` | Ed25519 secret bytes for signing |
 | `keystore` | `crate::keystore::KeystoreHandle` | VaultStore handle (`rekindle-vault` SQLCipher) |
@@ -37,7 +37,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Persistent Stores
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `audit_chain` | `Mutex<Option<rekindle_audit::AuditChain>>` | Tamper-evident BLAKE3-keyed audit chain. MAC key lives in the vault under `("audit", "mac_key")`. See [`audit-chain.md`](audit-chain.md). |
 | `friend_store` | `Arc<RwLock<Option<Arc<dyn rekindle_transport::FriendStore>>>>` | SQLite-backed friend authority used by `rekindle-transport`'s receive path |
 | `channel_write_retry_tx` | `Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>` | Queued SMPL channel-message write handle |
@@ -45,7 +45,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Friends, Friendship, Presence
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `friends` | `Arc<RwLock<HashMap<String, FriendState>>>` | Friend state by pubkey |
 | `unwatched_friends` | `RwLock<HashSet<String>>` | Friends whose DHT watch failed; `sync_service` polls them with `force_refresh=true` |
 | `pre_away_status` | `RwLock<Option<UserStatus>>` | Status before auto-away (restored on activity) |
@@ -53,7 +53,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Communities & Channels
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `communities` | `Arc<RwLock<HashMap<String, CommunityState>>>` | Community state by community ID |
 | `mek_cache` | `Mutex<HashMap<String, MediaEncryptionKey>>` | Legacy community-level MEK cache |
 | `channel_mek_cache` | `Mutex<HashMap<(String, String), MediaEncryptionKey>>` | Per-channel MEK cache, keyed by `(community_id, channel_id)` |
@@ -67,7 +67,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## DMs and Calls
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `dm_mek_cache` | `Mutex<HashMap<String, rekindle_dm::DmMekChain>>` | DM MEK chain — genesis plus every materialised generation |
 | `active_calls` | `Arc<dyn rekindle_calls::signaling::CallRegistry>` | Phase 14.q call registry trait object — every chat / DM / community call goes through this surface |
 | `group_calls` | `Arc<Mutex<HashMap<String, GroupCallState>>>` | Group call state by group ID |
@@ -76,7 +76,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Voice, Video, Files
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `voice_engine` | `VoiceEngineHandle` | Engine + transport + send / recv / MCU / device-monitor task handles |
 | `voice_packet_tx` | `Arc<RwLock<Option<mpsc::Sender<VoicePacket>>>>` | Routes inbound voice packets from dispatch loop to receive loop |
 | `voice_packet_rx_staged` | `parking_lot::Mutex<…>` | Pre-staged voice receiver hot before the call window opens |
@@ -92,7 +92,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Relay, Push Relay, Notifications
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `relay_health` | `…` | Per-relay circuit breaker |
 | `relay_probe_cooldown` | `Mutex<HashMap<String, u64>>` | Strand Relay status-probe cooldown |
 | `relay_reliability_dirty` | `Mutex<HashSet<(String, String)>>` | Mutual Aid §14.5 dirty set (flushed to SQLite every 30 s) |
@@ -101,7 +101,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Event Dispatch and Journal (Phase 23.A)
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `event_dispatch` | `Arc<crate::event_dispatch::EventDispatch>` | Single-source emit router for every Rust → Frontend event. See [`event-dispatch.md`](event-dispatch.md). |
 | `event_journal` | `Arc<EventJournal<WebviewEvent>>` | 10 k-capacity FIFO of journaled webview events, replayed to a window that reloads (`subscribe_events`) |
 | `event_router` | `crate::event_router::WebviewRouter` | Per-window event channels; see [`event-dispatch.md`](event-dispatch.md) |
@@ -110,7 +110,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 ## Idempotency
 
 | Field | Type | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `idempotency` | `Arc<IdempotencyCache<Result<(), String>>>` | LRU + TTL cache for `Result<(), String>`-returning mutating commands |
 | `idempotency_string` | `Arc<IdempotencyCache<Result<String, String>>>` | LRU + TTL cache for `Result<String, String>`-returning commands |
 
@@ -127,7 +127,7 @@ service: `shutdown_tx`, `sync_shutdown_tx`,
 `state/` is a directory; helper types are split by concern:
 
 | File | Contents |
-|---|---|
+| --- | --- |
 | `state/app_state.rs` | `AppState` struct definition + constructors |
 | `state/circuit.rs` | `CircuitBreakerState`, transition logic |
 | `state/community.rs` | `CommunityState`, member-cache types |
@@ -143,7 +143,7 @@ value goes through these helpers; writing still touches `AppState`
 fields directly via the appropriate runtime/adapter.
 
 | Module | Purpose |
-|---|---|
+| --- | --- |
 | `state_helpers/identity.rs` | Identity lookups, pubkey / display-name / device |
 | `state_helpers/friends.rs` | Friend lookup, status, presence |
 | `state_helpers/communities.rs` | Community lookup, member roles, channel access checks |

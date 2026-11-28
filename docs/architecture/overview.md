@@ -57,7 +57,7 @@ for the dual-boundary rationale, and
 ## Layer Responsibilities
 
 | Layer | Responsibility |
-|-------|---------------|
+| ------- | --------------- |
 | SolidJS Frontend | Render state, forward user actions, no business logic |
 | Tauri IPC Bridge | Route commands, manage windows / tray, emit events, host AppState |
 | Pure Rust Crates | Protocol logic, cryptography, gossip mesh, governance CRDT, voice — zero Tauri dependency, parameterised over `Deps` traits |
@@ -71,7 +71,7 @@ inventory is [`crates.md`](crates.md); per-crate detail is
 [`crates-tier-detail.md`](crates-tier-detail.md). Summary:
 
 | Tier | Crate(s) | Role |
-|------|----------|------|
+| ------ | ---------- | ------ |
 | 1 | `rekindle-types` | Shared IDs, enums, error taxonomy. Zero deps on other rekindle crates. |
 | 2 | `rekindle-secrets`, `rekindle-vault`, `rekindle-audit` | All key material (`secrets`), SQLCipher persistent store (`vault`), tamper-evident BLAKE3 keyed hash chain (`audit`). The sole crypto / persistence boundary. |
 | 3 | `rekindle-codec`, `rekindle-records`, `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics`, `rekindle-image` | Signed envelope build / verify, DHT record lifecycle, event dedup + journal, command idempotency, MEK cascade rotation, local-only analytics, the one limited image decoder. |
@@ -211,7 +211,7 @@ schemas/                              Cap'n Proto schema definitions
 ## IPC Patterns
 
 | Pattern | Direction | Mechanism | Use Cases |
-|---------|-----------|-----------|-----------|
+| --- | --- | --- | --- |
 | Commands | Frontend → Rust | `invoke()` / `#[tauri::command]` | Login, send message, add friend, change status |
 | Events | Rust → Frontend | typed `WebviewEvent` via `event_dispatch.rs` → `event_router` → each window's `tauri::ipc::Channel` | Incoming messages, presence updates, typing indicators |
 
@@ -234,7 +234,7 @@ SolidJS `Switch` component in `main.tsx` reads
 component.
 
 | Window | Label | Path | Notes |
-|--------|-------|------|-------|
+| -------- | ------- | ------ | ------- |
 | Login | `login` | `/login` | 380 × 480, declared in `tauri.conf.json` |
 | Buddy List | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
 | Chat | `chat-{pubkey prefix}`, `chat-{record-key prefix}` | `/chat?peer={key}`, `/chat?group={key}` | One per 1:1 conversation or group DM |

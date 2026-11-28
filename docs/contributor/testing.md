@@ -125,7 +125,7 @@ table names exactly the ignored tests whose reason mentions
 ### Where to put new tests
 
 | Test target | Location |
-|-------------|----------|
+| ------------- | ---------- |
 | Pure-logic primitives | Unit tests in the same file (`#[cfg(test)] mod tests`) |
 | Cross-module integration within a crate | `tests/` directory of the crate |
 | Multi-crate integration | `src-tauri/src/services/<feature>/tests.rs` or similar |
@@ -182,7 +182,7 @@ WebDriver server embedded in it. The mechanism:
 `pnpm test:app` runs two configs in sequence:
 
 | Config | Specs | What runs |
-|--------|-------|-----------|
+| --- | --- | --- |
 | `e2e/app/wdio.conf.ts` | `e2e/app/specs/solo/` | One user: identity, window layout, the friends list |
 | `e2e/app/wdio.peers.conf.ts` | `e2e/app/specs/peers/` | Multiremote `alice` and `bob`, two apps talking to each other |
 
@@ -239,7 +239,7 @@ forced-colors (never active in WebKit).
 ### When to use which
 
 | Scenario | Use |
-|----------|-----|
+| ---------- | ----- |
 | Backend logic | `cargo test --workspace` |
 | Several nodes, faults, ordering | `cargo test -p rekindle-node --test netsim` |
 | Cryptographic round trip | `cargo test --workspace` |

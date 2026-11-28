@@ -15,7 +15,7 @@ channel messaging, voice, DMs).
 ## 1. Records
 
 | Record | Kind | Owner | Contents |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Anchor `A` | DFLT(1) | none: the creation key is discarded after one write | subkey 0 `GenesisCert` (`dht_layout::community_anchor::GENESIS_CERT`) |
 | Member record `M` | DFLT(8) | `K_M(p)`, a key only that member holds (`VaultKey::MemberRecordOwner`) | 0 card, 1 presence beat, 2 op-log head, 3 frontier, 4 outbox, 5 history ad, 6 routes (`dht_layout::member_record`) |
 | Sealed page | DFLT(1) | discarded after one write | an op-log or channel-outbox page (`dht_layout::sealed_page`) |
@@ -271,7 +271,7 @@ its own (`rekindle-types/src/governance/entry.rs`). Segments, the grants'
 slot claim in E3.4.
 
 | Community size | Registry segments | Governance segments | Channel segments |
-|----------------|-------------------|---------------------|------------------|
+| ---------------- | ------------------- | --------------------- | ------------------ |
 | ≤ 255 | 1 | 1 | 1 per channel |
 | 256–510 | 2 | 2 | On demand (lazy, deferred to C1-2) |
 | 511–765 | 3 | 3 | On demand |
@@ -290,7 +290,7 @@ over the union.
 ### What ships today (C1)
 
 | Concern | Mechanism |
-|---------|-----------|
+| --------- | ----------- |
 | Membership discovery | `services/community/segments.rs::segment_descriptors` lists every active segment from merged governance state. Presence poll iterates all segments. |
 | Admin expansion | `expand_community_segment` writes a `SegmentAdded` entry that creates the new SMPL records. |
 | Slot claim | `services/community/join/flow.rs` walks segment descriptors in order, claims the first free slot in any segment. |
@@ -328,7 +328,7 @@ sharding.
 ## Where the code lives
 
 | Concern | Location |
-|---|---|
+| --- | --- |
 | Op types, `GenesisCert`, `Frontier` | `crates/rekindle-types/src/governance/op.rs` |
 | Op and member-record codecs | `crates/rekindle-codec/src/governance_op/`, `crates/rekindle-codec/src/member_record/` |
 | Pure merge, power, checkpoints, checksum | `crates/rekindle-governance/src/{merge,power.rs,checkpoint,checksum}` |

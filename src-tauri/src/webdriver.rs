@@ -21,10 +21,18 @@
 
 use std::sync::{Arc, OnceLock};
 
+use axum::extract::State;
+use axum::routing::post;
+use axum::{Json, Router};
 use rekindle_db::paths::DataRoot;
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::{Caller, HostApi};
 use rekindle_utils::IdleSource;
+use serde::Deserialize;
 use tauri::plugin::TauriPlugin;
-use tauri::Runtime;
+use tauri::{AppHandle, Manager, Runtime};
+
+use crate::state::SharedState;
 
 /// The variable naming the walk's data root.
 pub const DATA_ROOT_ENV: &str = "REKINDLE_WDIO_DATA_ROOT";
@@ -57,7 +65,51 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .and_then(|p| p.parse::<u16>().ok())
         .filter(|p| *p != 0)
         .expect("TAURI_WEBDRIVER_PORT must name the walk's loopback port");
-    tauri_plugin_wdio_webdriver::init_with_port(port)
+    tauri_plugin_wdio_webdriver::init_with_routes(port, governance_routes)
+}
+
+fn governance_routes<R: Runtime>(app: AppHandle<R>) -> Router {
+    Router::new()
+        .route("/wdio/hold-governance-ops", post(hold_governance_ops::<R>))
+        .route(
+            "/wdio/release-governance-ops",
+            post(release_governance_ops::<R>),
+        )
+        .with_state(app)
+}
+
+#[derive(Deserialize)]
+struct GovernanceCommunity {
+    community: String,
+}
+
+async fn hold_governance_ops<R: Runtime>(
+    State(app): State<AppHandle<R>>,
+    Json(GovernanceCommunity { community }): Json<GovernanceCommunity>,
+) -> Json<IpcResponse> {
+    governance_request(&app, IpcRequest::WebdriverHoldGovernanceOps { community }).await
+}
+
+async fn release_governance_ops<R: Runtime>(
+    State(app): State<AppHandle<R>>,
+    Json(GovernanceCommunity { community }): Json<GovernanceCommunity>,
+) -> Json<IpcResponse> {
+    governance_request(
+        &app,
+        IpcRequest::WebdriverReleaseGovernanceOps { community },
+    )
+    .await
+}
+
+async fn governance_request<R: Runtime>(
+    app: &AppHandle<R>,
+    request: IpcRequest,
+) -> Json<IpcResponse> {
+    let state = app.state::<SharedState>();
+    let Some(host) = state.host.current() else {
+        return Json(IpcResponse::error(409, "the app Host is still starting"));
+    };
+    Json(host.call(Caller::shell(), request).await)
 }
 
 /// The variable fixing the idle time the Host reads, in seconds.

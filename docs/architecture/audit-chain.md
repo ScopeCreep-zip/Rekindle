@@ -78,7 +78,7 @@ Both hosts hold the unlocked identity's chain in a
 both call one I/O layer:
 
 | Module | Responsibility |
-|---|---|
+| --- | --- |
 | `rekindle_node::host::audit` | `restore` (unlock), `append`, `verify`, `export`, `record_unlock_failures`, `close` (lock) |
 | `rekindle_db::repo::audit` | SQLite reads / writes against `audit_entries`, with tests against the real schema (tamper, truncation, owner isolation) |
 | `rekindle_audit::{restore, verify}` | The tail-anchor rule and the end-to-end check, with typed outcomes |
@@ -133,7 +133,7 @@ shows it. `restore_chain` compares the two at unlock with
 `rekindle_audit::TailCheck`:
 
 | Anchor vs stored tail | Result |
-|---|---|
+| --- | --- |
 | no anchor (new identity) | `Unanchored`: resume from the stored tail |
 | equal | `Clean` |
 | anchor behind | `CatchUp`: an append's vault write was lost (logout or crash between the two writes); resume from the stored tail, and the boot-time verify re-MACs the gap |

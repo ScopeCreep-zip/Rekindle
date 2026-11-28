@@ -2,13 +2,17 @@
 
 use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::dto::channel_message::PostAdmission;
 use rekindle_types::message::SendState;
 use rekindle_types::message::{ChannelPost, PostEntry};
 
 use super::policy::ThreadMessageView;
-use super::support::{open_thread_body, thread_replies, thread_scope, uuid_simple};
+use super::support::{thread_replies, thread_scope, uuid_simple};
 use crate::deps::{ChannelMessagingDeps, OutboxItem, PendingThreadReply};
 use crate::error::ChannelError;
+use crate::outbox_seal::open_entry_body;
+use crate::send::BodyPosition;
 
 /// A thread reply we sent: what a receiver's `ThreadMessagePosted`
 /// carries besides the body, so our own frontends get the same event, and
@@ -89,6 +93,7 @@ pub(super) fn prepare_reply<D: ChannelMessagingDeps>(
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
     let timestamp = deps.now_secs();
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_owned(),
         channel: reply.thread_id.to_owned(),
         message: reply.message_id.clone(),
@@ -168,7 +173,7 @@ impl HistoryReply<'_> {
 /// order, authors by pseudonym at equal times.
 ///
 /// # Errors
-/// The thread is unknown.
+/// The thread is unknown or the pending replies could not be loaded.
 pub async fn load_thread_messages<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -208,26 +213,21 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
         .into_iter()
         .skip(first)
         .map(|reply| match reply {
-            HistoryReply::Verified(item, message) => {
-                let body = open_thread_body(deps, community_id, scope, thread_id, item, message);
-                let is_own = own == Some(&message.sender_pseudonym);
-                ThreadMessageView {
-                    is_own,
-                    send_state: if is_own {
-                        SendState::Sent
-                    } else {
-                        SendState::Delivered
-                    },
-                    sender_pseudonym: message.sender_pseudonym.clone(),
-                    decryption_failed: body.is_none(),
-                    body: body.unwrap_or_default(),
-                    timestamp_ms: message.timestamp,
-                    server_message_id: message.message_id.clone(),
-                    mek_generation: Some(message.mek_generation),
+            HistoryReply::Verified(item, message) => verified_reply_view(
+                deps,
+                scope,
+                BodyPosition {
+                    anchor: community_id,
+                    channel_id: thread_id,
+                    author: &item.author.0,
                     stream_seq: item.stream_seq,
-                }
-            }
+                },
+                message,
+                item.admission.clone(),
+                own == Some(&message.sender_pseudonym),
+            ),
             HistoryReply::Pending { reply, author } => ThreadMessageView {
+                admission: None,
                 is_own: true,
                 send_state: reply.send_state,
                 sender_pseudonym: author,
@@ -240,6 +240,47 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
             },
         })
         .collect())
+}
+
+/// Project one verified outbox reply as it appears in thread history.
+pub fn verified_reply_view<D: ChannelMessagingDeps>(
+    deps: &D,
+    scope: KeyScope,
+    position: BodyPosition<'_>,
+    message: &ChannelMessage,
+    admission: Option<PostAdmission>,
+    is_own: bool,
+) -> ThreadMessageView {
+    let stream_seq = position.stream_seq;
+    let body = if admission.is_none() {
+        open_entry_body(
+            &*deps.keys(),
+            position.anchor,
+            scope,
+            message.mek_generation,
+            position,
+            &message.ciphertext,
+        )
+        .and_then(|body| String::from_utf8(body).ok())
+    } else {
+        None
+    };
+    ThreadMessageView {
+        decryption_failed: admission.is_none() && body.is_none(),
+        admission,
+        is_own,
+        send_state: if is_own {
+            SendState::Sent
+        } else {
+            SendState::Delivered
+        },
+        sender_pseudonym: message.sender_pseudonym.clone(),
+        body: body.unwrap_or_default(),
+        timestamp_ms: message.timestamp,
+        server_message_id: message.message_id.clone(),
+        mek_generation: Some(message.mek_generation),
+        stream_seq,
+    }
 }
 
 #[cfg(test)]

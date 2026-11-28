@@ -202,8 +202,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         _community_id: &str,
         _extras: &SessionExtras,
     ) -> Option<EncryptedSessionExtras> {
-        // Nothing to encrypt: `presence_policy` shares neither location
-        // nor activity.
+        // The daemon publishes policy-filtered extras in the member beat.
         None
     }
 
@@ -212,10 +211,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         _community_id: &str,
         _encrypted: &EncryptedSessionExtras,
     ) -> Option<SessionExtras> {
-        // Peers' extras are readable in principle, but the daemon has no
-        // consumer for a location or activity signal — no roster UI, no
-        // notifications. Decrypting to discard it would be spending a
-        // MEK operation for nothing.
+        // Peer locations are opened and served from verified beats.
         None
     }
 

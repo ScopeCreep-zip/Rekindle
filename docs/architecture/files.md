@@ -238,7 +238,7 @@ File paths never cross the IPC boundary. The webview names an
 attachment by `(community, channel, attachment id)`; Rust does the rest.
 
 | Action | Command | What happens |
-|---|---|---|
+| --- | --- | --- |
 | Attach | `upload_attachment` | Native file picker (parented to the window), `tokio::fs::read`, chunk + encrypt + announce. Returns the attachment id, or `null` on cancel. |
 | Download | `download_attachment` | Native save dialog with the uploader's filename passed through `rekindle_files::sanitize_filename` (OWASP rules: last path component, no controls/bidi/reserved characters, no leading `.`/`-`, Windows device stems prefixed, ≤ 255 bytes). Then `fetch_attachment_to_cache` → `assemble_attachment` → write, and the path is stored on the message row. |
 | Show in folder | `reveal_downloaded_attachment` | Looks the stored path up in `messages.attachment_json` and calls the opener's `reveal_item_in_dir`. Nothing is ever opened or executed. |
@@ -268,7 +268,7 @@ Tracked in [`../roadmap.md`](../roadmap.md).
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | Chunker + Merkle root | `crates/rekindle-files/src/chunker.rs` |
 | Manifest validation | `crates/rekindle-files/src/manifest.rs` |
 | Verification (per-chunk + per-offer) | `crates/rekindle-files/src/verify.rs` |

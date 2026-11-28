@@ -76,6 +76,7 @@ fn a_scan_holds_no_proc_stat_files() {
             })
             .unwrap_or(0)
     }
+    let _scan = crate::test_support::process_scan();
     let mut sys = super::process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     assert!(!sys.processes().is_empty(), "the scan found processes");

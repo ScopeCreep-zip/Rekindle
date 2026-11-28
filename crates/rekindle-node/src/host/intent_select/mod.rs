@@ -138,6 +138,13 @@ pub(crate) async fn select(
         | IpcRequest::DisappearingSet { .. } => {
             group_dm::selection(ctx, request, &mut s).await?;
         }
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverPostSkippingLocalPermission { channel, .. } => {
+            community::select_channel_post(ctx, channel, &mut s)?;
+        }
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverHoldGovernanceOps { .. }
+        | IpcRequest::WebdriverReleaseGovernanceOps { .. } => {}
         IpcRequest::Community(request) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }

@@ -152,7 +152,7 @@ participate in the multi-device CRDT.
 Merge rules per subkey:
 
 | Subkey | Strategy | Notes |
-|--------|----------|-------|
+| -------- | ---------- | ------- |
 | 0 — manifest | LWW per logical entity (community, friend, DM thread) | Adds and removes are merged; ties broken by `(updated_at, device_id)`. |
 | 1 — read state | Max-Register per channel | Highest known Lamport wins per channel. Matches the user's intuition: marking-read on any device "wins". |
 | 2 — preferences | LWW per setting key | Same tiebreak as manifest. |
@@ -267,7 +267,7 @@ pairing flow again.
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | Crate-level sync primitives | `crates/rekindle-sync/src/{fetch,history,inspect,stream,verify,warming,watch}.rs` |
 | Personal record lifecycle | `src-tauri/src/services/cross_device_sync/record.rs` |
 | Pairing handshake (both directions) | `src-tauri/src/services/cross_device_sync/pairing.rs` |

@@ -39,6 +39,9 @@
 // `rekindle_utils::text::{prefix, abbreviate}` instead (plan C2).
 #![deny(clippy::string_slice)]
 
+#[cfg(all(feature = "webdriver-test", not(debug_assertions)))]
+compile_error!("the webdriver-test feature is for debug builds only");
+
 pub mod client;
 pub mod error;
 pub mod event_router;

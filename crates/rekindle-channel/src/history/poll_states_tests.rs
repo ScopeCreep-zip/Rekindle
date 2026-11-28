@@ -35,6 +35,7 @@ fn shown(author: u8) -> (String, String) {
 
 fn item(author: u8, seq: u64, at: u64, entry: ChannelRecordEntry) -> OutboxItem {
     OutboxItem {
+        admission: None,
         author: PseudonymKey([author; 32]),
         stream_seq: seq,
         committed_at: at,

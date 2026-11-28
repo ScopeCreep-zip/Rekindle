@@ -20,8 +20,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_codec::member_record::{BeatState, PresenceBeat, BEAT_PERIOD_MS};
-use rekindle_types::presence::SessionExtras;
+use rekindle_codec::member_record::{BeatState, PresenceBeat, SealedExtras, BEAT_PERIOD_MS};
 
 use crate::deps::VoicePresenceRow;
 
@@ -79,10 +78,8 @@ struct Entry {
     seen_at: u64,
     /// The beat's voice channel.
     voice_channel: Option<String>,
-    /// The beat's extras, opened with our community key and filtered by
-    /// our sharing policy (`None` when absent, sealed under a generation we
-    /// don't hold, or not shared back).
-    extras: Option<SessionExtras>,
+    /// The verified beat's extras, still sealed.
+    extras: Option<SealedExtras>,
 }
 
 impl Entry {
@@ -141,7 +138,7 @@ impl BeatView {
             shown,
             seen_at: now_ms,
             voice_channel: beat.voice_channel.clone(),
-            extras: None,
+            extras: beat.extras.clone(),
         };
         let voice_changed = held.as_ref().and_then(Entry::voice_claim) != entry.voice_claim();
         self.members.insert(member.to_owned(), entry);
@@ -153,18 +150,13 @@ impl BeatView {
         }
     }
 
-    /// Keep `extras`, opened from `member`'s beat `seq`, while that beat is
-    /// the one held.
-    pub fn set_extras(&mut self, member: &str, seq: u64, extras: Option<SessionExtras>) {
-        if let Some(entry) = self.members.get_mut(member).filter(|e| e.seq == seq) {
-            entry.extras = extras;
-        }
-    }
-
-    /// `member`'s opened extras, when its beat carried ones we can read.
+    /// The latest verified live beat's sealed extras.
     #[must_use]
-    pub fn extras(&self, member: &str) -> Option<&SessionExtras> {
-        self.members.get(member).and_then(|e| e.extras.as_ref())
+    pub fn sealed_extras(&self, member: &str) -> Option<&SealedExtras> {
+        self.members
+            .get(member)
+            .filter(|entry| entry.shown.is_present())
+            .and_then(|entry| entry.extras.as_ref())
     }
 
     /// Every member's voice claim, for the voice roster reconcile: the

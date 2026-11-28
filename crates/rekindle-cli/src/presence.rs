@@ -1,9 +1,9 @@
 //! Our own presence, profile, game, settings and audit log: one request each to the
 //! host, which owns them (plan E1.1).
 
-use rekindle_ipc::protocol::{IpcRequest, ServersRequest};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, ServersRequest, SettingsRequest};
 use rekindle_types::image_kind::ImageKind;
-use rekindle_types::presence::SessionStatus;
+use rekindle_types::presence::{PresencePolicyField, SessionStatus};
 
 use crate::cli::{AuditCmd, GameCmd, PresenceCmd, PresenceStatus, ProfileCmd, SettingsCmd, Switch};
 use crate::helpers;
@@ -79,7 +79,20 @@ pub async fn dispatch_settings(
     client: &DaemonClient,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
-    let request = match cmd {
+    let value = helpers::send(client, settings_request(cmd)).await?;
+    format::print_structured(&value, mode)
+}
+
+pub(crate) fn settings_request(cmd: &SettingsCmd) -> IpcRequest {
+    let edit = |community: &String, field| {
+        IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunitySetPresencePolicyField {
+                community: community.clone(),
+                field,
+            },
+        ))
+    };
+    match cmd {
         SettingsCmd::ReadReceipts { state } => IpcRequest::SetReadReceiptsEnabled {
             enabled: matches!(state, Switch::On),
         },
@@ -93,12 +106,26 @@ pub async fn dispatch_settings(
         SettingsCmd::ShareGame { state } => IpcRequest::SetShareCurrentGame {
             enabled: matches!(state, Switch::On),
         },
+        SettingsCmd::ShareLocation {
+            community,
+            state: Some(state),
+        } => edit(
+            community,
+            PresencePolicyField::ShareLocation(state.members()),
+        ),
+        SettingsCmd::ShareLocation {
+            community,
+            state: None,
+        } => IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunityGetPresencePolicy {
+                community: community.clone(),
+            },
+        )),
+        SettingsCmd::PresencePolicy { community, field } => edit(community, field.into()),
         SettingsCmd::ActivityLog { state } => IpcRequest::SetKeepActivityLog {
             enabled: matches!(state, Switch::On),
         },
-    };
-    let value = helpers::send(client, request).await?;
-    format::print_structured(&value, mode)
+    }
 }
 
 pub async fn dispatch_game(

@@ -35,7 +35,7 @@ days."
 ### 2. Vulnerability disclosures
 
 | Severity | Received | Confirmed | Patched | Median time-to-patch |
-|----------|----------|-----------|---------|---------------------|
+| ---------- | ---------- | ----------- | --------- | --------------------- |
 | P0 — Critical | N | N | N | D days |
 | P1 — High | N | N | N | D days |
 | P2 — Medium | N | N | N | D days |
@@ -45,7 +45,7 @@ days."
 Per-incident detail (one row per published GHSA):
 
 | GHSA | Title | Severity | Reported | Patched | Reporter |
-|------|-------|----------|----------|---------|----------|
+| --- | --- | --- | --- | --- | --- |
 | GHSA-xxxx-xxxx-xxxx | <title> | P? | YYYY-MM-DD | YYYY-MM-DD | <reporter handle or "anonymous"> |
 
 For each, link to the published advisory and to the post-mortem if
@@ -54,7 +54,7 @@ one was written.
 ### 3. Dependency updates
 
 | Ecosystem | Routine bumps (Dependabot) | Security-driven bumps | Manual / breaking | Total |
-|-----------|----------------------------|----------------------|-------------------|-------|
+| ----------- | ---------------------------- | ---------------------- | ------------------- | ------- |
 | Cargo | N | N | N | N |
 | npm / pnpm | N | N | N | N |
 | GitHub Actions | N | N | N | N |
@@ -63,13 +63,13 @@ CISA KEV catalog matches detected by `kev-check.yml` and how they
 were resolved:
 
 | KEV CVE | Affected dep | Status | Resolution |
-|---------|--------------|--------|------------|
+| --- | --- | --- | --- |
 | CVE-YYYY-NNNN | <crate>@<version> | affected / unaffected | <patch date or VEX rationale> |
 
 ### 4. Releases and SBOMs
 
 | Tag | Date | Highlights | SBOM |
-|-----|------|-----------|------|
+| --- | --- | --- | --- |
 | vX.Y.Z | YYYY-MM-DD | Major points | SBOM: `https://github.com/ScopeCreep-zip/Rekindle/releases/download/vX.Y.Z/rekindle-cargo-sbom.cdx.json` |
 
 ### 5. Standards alignment progress
@@ -77,7 +77,7 @@ were resolved:
 Movement against [`standards-mapping.md`](standards-mapping.md):
 
 | Standard | Year start | Year end | Notes |
-|----------|-----------|----------|-------|
+| ---------- | ----------- | ---------- | ------- |
 | OWASP ASVS 5.0 (target L2) | <status> | <status> | <commentary> |
 | OWASP DASVS 1.0 | <status> | <status> | <commentary> |
 | OWASP SCVS (target L2) | <status> | <status> | <commentary> |
@@ -103,7 +103,7 @@ CISA Secure by Design Principle 7 reporting. Track which classes of
 vulnerability were eliminated, and which still appear.
 
 | Class | Year start count | Year end count | How |
-|-------|-----------------|---------------|-----|
+| ------- | ----------------- | --------------- | ----- |
 | `unwrap()` panic surface | N | N | systematic replacement with `?` and `expect_or_return` |
 | `unsafe` blocks | N | N | added `// SAFETY:` annotations / refactored to safe API |
 | Plaintext fallbacks | 0 | 0 | architecturally impossible — refused by design |
@@ -112,7 +112,7 @@ vulnerability were eliminated, and which still appear.
 ### 7. Code health metrics
 
 | Metric | Year start | Year end |
-|--------|-----------|----------|
+| -------- | ----------- | ---------- |
 | Workspace crates | N | N |
 | Public IPC commands | N | N |
 | Test count (cargo test --workspace) | N | N |

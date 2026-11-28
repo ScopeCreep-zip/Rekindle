@@ -15,7 +15,7 @@ and where to ask for help.
 ## Getting started
 
 | Step | Command |
-|------|---------|
+| ------ | --------- |
 | Enter the dev shell (Konductor / Nix flake) | `nix develop .#frontend` |
 | Install JS deps | `pnpm install` |
 | Run the desktop app in dev mode | `pnpm tauri dev` |

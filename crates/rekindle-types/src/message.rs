@@ -16,6 +16,9 @@ pub struct ChannelPost {
     /// change's own row id; its target is in [`PostEntry`]).
     pub message: String,
     pub entry: PostEntry,
+    /// Governance heads captured when the Host queued the post.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub governance_cut: Vec<crate::governance::OpRef>,
 }
 
 /// What a `channel_post` row writes.
@@ -118,6 +121,12 @@ impl PostEntry {
             self,
             Self::Message | Self::Forward { .. } | Self::Attachment { .. }
         )
+    }
+
+    /// Whether this entry creates a post that readers authorize at its cut.
+    #[must_use]
+    pub fn needs_governance_cut(&self) -> bool {
+        self.has_row() || matches!(self, Self::ThreadReply { .. })
     }
 
     /// The poll a poll op (create, vote, close) is of: a vote or close

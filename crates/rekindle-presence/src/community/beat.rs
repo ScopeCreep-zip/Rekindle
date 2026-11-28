@@ -14,7 +14,7 @@
 //!   explicit write does not move the schedule: beats go out at the same
 //!   rate whatever the user does.
 //! - **Voice** (plan E3.4 S8-pre): a voice join or leave
-//!   ([`BeatEngine::voice_changed`]) writes that community's beat at once;
+//!   ([`BeatEngine::refresh_community`]) writes that community's beat at once;
 //!   the sink fills its `voiceChannel`.
 //! - **Invisible.** A status that hides presence
 //!   ([`crate::hides_presence`]) writes one `Offline` beat when picked (the
@@ -73,6 +73,11 @@ pub trait BeatSink: Send + Sync {
     /// # Errors
     /// The beat was not written.
     async fn write_beat(&self, community: &str, state: BeatState) -> Result<(), String>;
+    /// Write an explicitly refreshed beat, then hint its new sequence.
+    ///
+    /// # Errors
+    /// The beat was not written or its hint could not be encoded.
+    async fn write_refreshed_beat(&self, community: &str, state: BeatState) -> Result<(), String>;
     /// Write our quit's `Offline` beat in `community` and tell its members
     /// at once (a `HeadAdvanced` hint, plan E3.4 "Constant rate").
     ///
@@ -118,7 +123,7 @@ impl BeatEngine {
         self.explicit.notify_one();
     }
 
-    /// We joined or left a voice channel in `community`: its beat is
+    /// Our session or consent changed in `community`: its beat is
     /// written at once, saying the status we hold (an explicit action, plan
     /// E3.4 "Constant rate"). Nothing is written while a hiding status
     /// holds, after our `Departed` beat, or in a community we hold no
@@ -126,14 +131,14 @@ impl BeatEngine {
     ///
     /// # Errors
     /// The beat was not written.
-    pub async fn voice_changed(&self, community: &str) -> Result<(), String> {
+    pub async fn refresh_community(&self, community: &str) -> Result<(), String> {
         let mut schedule = self.schedule.lock().await;
         self.reconcile(&mut schedule);
         if schedule.hidden || !schedule.due.contains_key(community) {
             return Ok(());
         }
         match scheduled_state(self.sink.status()) {
-            Some(state) => self.sink.write_beat(community, state).await,
+            Some(state) => self.sink.write_refreshed_beat(community, state).await,
             None => Ok(()),
         }
     }
