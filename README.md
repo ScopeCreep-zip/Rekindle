@@ -118,15 +118,15 @@ the desktop shell.
 
 ## Tech Stack
 
-| Layer | Technology |
-| --- | --- |
-| App Framework | [Tauri 2](https://v2.tauri.app/) (Rust + webview) |
-| Frontend | [SolidJS](https://www.solidjs.com/) + [Tailwind 4](https://tailwindcss.com/) |
-| Network | [Veilid](https://veilid.com/) (DHT storage, P2P message routing) |
-| Encryption | Signal Protocol (implemented from the [Signal specifications](https://signal.org/docs/)), XChaCha20-Poly1305, AES-256-GCM |
-| Serialization | [Cap'n Proto](https://capnproto.org/) (wire format) |
-| Voice | [Opus](https://opus-codec.org/) codec, [cpal](https://github.com/RustAudio/cpal) audio I/O |
-| Storage | SQLite (chat history), `rekindle-vault` (SQLCipher-backed, double-encrypted secrets), DHT (presence/keys) |
+| Layer           | Technology                                                        |
+|-----------------|-------------------------------------------------------------------|
+| App Framework   | [Tauri 2](https://v2.tauri.app/) (Rust + webview)                 |
+| Frontend        | [SolidJS](https://www.solidjs.com/) + [Tailwind 4](https://tailwindcss.com/) |
+| Network         | [Veilid](https://veilid.com/) (DHT storage, P2P message routing) |
+| Encryption      | Signal Protocol (implemented from the [Signal specifications](https://signal.org/docs/)), XChaCha20-Poly1305, AES-256-GCM |
+| Serialization   | [Cap'n Proto](https://capnproto.org/) (wire format)              |
+| Voice           | [Opus](https://opus-codec.org/) codec, [cpal](https://github.com/RustAudio/cpal) audio I/O |
+| Storage         | SQLite (chat history), `rekindle-vault` (SQLCipher-backed, double-encrypted secrets), DHT (presence/keys) |
 | Dev Environment | [Konductor](https://github.com/braincraftio/konductor) (Nix flake) |
 
 ## Project Structure
@@ -268,7 +268,7 @@ For new contributors, the entry points are:
 Headline reads:
 
 | Topic | Document |
-| ------- | ---------- |
+|-------|----------|
 | System architecture | [`docs/architecture/overview.md`](docs/architecture/overview.md) |
 | Chiral-network communities (v2.0) | [`docs/architecture/communities.md`](docs/architecture/communities.md) |
 | Network protocol & wire formats | [`docs/protocol/overview.md`](docs/protocol/overview.md) |
@@ -286,9 +286,9 @@ Copyright (c) 2026 Kali Jackson and Kathryn Morgan
 Licensed under either of
 
 - Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+  ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
 - MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+  ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
 
