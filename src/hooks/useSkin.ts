@@ -187,10 +187,11 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
       addToast(message);
     }
   });
+  let attemptId: string | null = null;
   let href: string | null = null;
   try {
-    await commands.startSkinApply(serial, skin.id, expired);
-    if (attempt.signal.aborted) return;
+    attemptId = await commands.startSkinApply(serial, skin.id, expired);
+    if (attemptId === null || attempt.signal.aborted) return;
     await untilAborted(commitSkin(skin, shown, frame, attempt.signal), attempt.signal);
     if (!attempt.signal.aborted) {
       href = skin.tokensHref;
@@ -208,7 +209,7 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
     logSkinError(error);
   } finally {
     attempt.abort();
-    await commands.finishSkinApply(serial, href);
+    if (attemptId !== null) await commands.finishSkinApply(attemptId, href);
   }
 }
 

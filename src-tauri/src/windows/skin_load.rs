@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -25,8 +26,12 @@ enum Opening {
     Failed,
 }
 
+// A document restart resets its local serial. Native attempt IDs are
+// independent of a document and survive window label reuse.
+static NEXT_APPLY_ID: AtomicU64 = AtomicU64::new(1);
+
 struct Apply {
-    serial: u32,
+    id: String,
     skin: String,
     stop: CancellationToken,
 }
@@ -75,6 +80,42 @@ impl Default for State {
             staged: false,
             opening: watch::channel(Opening::Waiting).0,
         }
+    }
+}
+
+impl State {
+    fn new_document(&mut self) {
+        self.apply = None;
+        self.serial = 0;
+        self.gate.new_document();
+        self.opening = watch::channel(Opening::Waiting).0;
+    }
+
+    fn begin_apply(&mut self, serial: u32, skin: String) -> Option<(String, CancellationToken)> {
+        if serial <= self.serial {
+            return None;
+        }
+        let id = NEXT_APPLY_ID.fetch_add(1, Ordering::Relaxed).to_string();
+        let stop = CancellationToken::new();
+        self.serial = serial;
+        self.apply = Some(Apply {
+            id: id.clone(),
+            skin,
+            stop: stop.clone(),
+        });
+        Some((id, stop))
+    }
+
+    /// Complete only the native attempt that the document started.
+    fn finish_apply(&mut self, attempt_id: &str, href: Option<String>, now: Instant) -> bool {
+        if self.apply.take_if(|apply| apply.id == attempt_id).is_none() {
+            return false;
+        }
+        if let Some(href) = href {
+            self.gate.commit(href, now);
+            return true;
+        }
+        false
     }
 }
 
@@ -141,10 +182,7 @@ pub(super) fn page_started(window: &WebviewWindow) {
         // The error window stays in its terminal state until the user closes it.
         return;
     }
-    state.apply = None;
-    state.serial = 0;
-    state.gate.new_document();
-    state.opening = watch::channel(Opening::Waiting).0;
+    state.new_document();
     drop(state);
     if framed(window) && window.is_visible().unwrap_or(false) {
         request(window, Show::Raise);
@@ -375,23 +413,14 @@ pub(crate) fn start_apply(
     serial: u32,
     skin: String,
     expired: Channel<&'static str>,
-) {
+) -> Option<String> {
     let load = load(window);
-    let stop = CancellationToken::new();
     let mut state = load.state.lock();
     if state.gate.failed() {
         let _ = expired.send(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE);
-        return;
+        return None;
     }
-    if serial <= state.serial {
-        return;
-    }
-    state.serial = serial;
-    state.apply = Some(Apply {
-        serial,
-        skin,
-        stop: stop.clone(),
-    });
+    let (id, stop) = state.begin_apply(serial, skin)?;
     drop(state);
     let target = window.clone();
     let end = Instant::now() + LOAD_LIMIT;
@@ -406,6 +435,7 @@ pub(crate) fn start_apply(
             }
         }
     });
+    Some(id)
 }
 
 async fn expired_apply(load: &Load, stop: &CancellationToken) -> Option<Apply> {
@@ -428,22 +458,17 @@ async fn expired_apply(load: &Load, stop: &CancellationToken) -> Option<Apply> {
     }
 }
 
-pub(crate) fn finish_apply(window: &WebviewWindow, serial: u32, href: Option<String>) {
+pub(crate) fn finish_apply(window: &WebviewWindow, attempt_id: &str, href: Option<String>) {
     let load = load(window);
-    let mut state = load.state.lock();
-    if state
-        .apply
-        .as_ref()
-        .is_none_or(|apply| apply.serial != serial)
-    {
-        return;
-    }
-    state.apply = None;
-    if let Some(href) = href {
-        state.gate.commit(href, Instant::now());
-        drop(state);
-        if framed(window) {
-            enqueue(window, &load);
-        }
+    let committed = load
+        .state
+        .lock()
+        .finish_apply(attempt_id, href, Instant::now());
+    if committed && framed(window) {
+        enqueue(window, &load);
     }
 }
+
+#[cfg(test)]
+#[path = "skin_load_tests.rs"]
+mod tests;

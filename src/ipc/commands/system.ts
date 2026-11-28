@@ -73,9 +73,9 @@ export const systemCommands = {
   getSkin: (id: string | null = null) => hostInvoke<SkinApplied>("get_skin", { id }),
   waitSkinOpen: () => invoke<string | null>("wait_skin_open"),
   startSkinApply: (serial: number, skin: string, expired: Channel<string>) =>
-    invoke<void>("start_skin_apply", { serial, skin, expired }),
-  finishSkinApply: (serial: number, href: string | null) =>
-    invoke<void>("finish_skin_apply", { serial, href }),
+    invoke<string | null>("start_skin_apply", { serial, skin, expired }),
+  finishSkinApply: (attemptId: string, href: string | null) =>
+    invoke<void>("finish_skin_apply", { attemptId, href }),
   // Settings → Appearance: Host calls. A library skin chosen goes on
   // trial; the Host reverts it unless `keepSkin` keeps it.
   listSkins: () => hostInvoke<SkinLibrary>("list_skins"),

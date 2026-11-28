@@ -284,13 +284,13 @@ pub async fn start_skin_apply(
     serial: u32,
     skin: String,
     expired: tauri::ipc::Channel<&'static str>,
-) {
-    crate::windows::skin_load::start_apply(&window, serial, skin, expired);
+) -> Option<String> {
+    crate::windows::skin_load::start_apply(&window, serial, skin, expired)
 }
 
 /// A completed apply cancels its watchdog. A committed sheet also joins
 /// the native allocation at the reveal gate.
 #[tauri::command]
-pub async fn finish_skin_apply(window: WebviewWindow, serial: u32, href: Option<String>) {
-    crate::windows::skin_load::finish_apply(&window, serial, href);
+pub async fn finish_skin_apply(window: WebviewWindow, attempt_id: String, href: Option<String>) {
+    crate::windows::skin_load::finish_apply(&window, &attempt_id, href);
 }
