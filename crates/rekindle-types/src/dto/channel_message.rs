@@ -127,6 +127,66 @@ impl From<UndecryptableReason> for Undecryptable {
     }
 }
 
+/// A post whose causal permission check has yet to admit it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum PostAdmission {
+    Pending {
+        /// What every frontend tells the user while the Host checks the post.
+        text: String,
+    },
+    Refused {
+        reason: PostRefusal,
+        reason_text: String,
+    },
+}
+
+impl From<PostRefusal> for PostAdmission {
+    fn from(reason: PostRefusal) -> Self {
+        Self::Refused {
+            reason,
+            reason_text: reason.text().to_owned(),
+        }
+    }
+}
+
+/// Why a post did not pass its causal permission check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PostRefusal {
+    MissingCut,
+    NotMember,
+    TimedOut,
+    UnknownStream,
+    MissingPermission,
+}
+
+impl PostRefusal {
+    /// What every frontend tells the user, in the Host's words.
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::MissingCut => {
+                "This post was refused because it was missing proof that it was allowed."
+            }
+            Self::NotMember => {
+                "This post was refused because the author was not a community member at the time."
+            }
+            Self::TimedOut => "This post was refused because the author was in a timeout.",
+            Self::UnknownStream => {
+                "This post was refused because its channel or thread was unknown."
+            }
+            Self::MissingPermission => {
+                "This post was refused because the author did not have permission to post here."
+            }
+        }
+    }
+}
+
 /// One channel message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,6 +196,9 @@ pub struct ChannelMessageView {
     /// The sender's pseudonym.
     pub sender_id: String,
     pub body: String,
+    /// Causal admission status, present for placeholders without a body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admission: Option<PostAdmission>,
     /// The body did not open under the generation it names: a frontend
     /// must not render `body` as the sender's words.
     #[serde(default)]

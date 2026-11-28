@@ -255,9 +255,9 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
 ) -> Result<(JoinerRecord, String), GovernanceRuntimeError> {
     let info = deps.create_record(&schema::member_record()).await?;
     deps.release_record(info.lease).await;
-    let text = Zeroizing::new(info.owner_keypair.clone().ok_or_else(|| {
+    let text = info.owner_keypair.clone().ok_or_else(|| {
         GovernanceRuntimeError::Adapter("join: the member record has no owner keypair".into())
-    })?);
+    })?;
     let (public, _) = keypair_text::parse_keypair_text(&text)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("member record owner: {e}")))?;
     let owner = keypair_text::public_key_text(&public);

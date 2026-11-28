@@ -1,14 +1,14 @@
-import { Component, Show } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import { setVoiceState, voiceState } from "../../../stores/voice.store";
+import { type Component, Show } from "solid-js";
 import {
-  handleToggleMute,
-  handleToggleDeafen,
   handleLeaveVoice,
+  handleToggleDeafen,
+  handleToggleMute,
 } from "../../../actions/voice.actions";
 import { q8ToPercent } from "../../../ipc/channels/voice_events";
-import SoundboardPanel from "../SoundboardPanel";
+import { setVoiceState, voiceState } from "../../../stores/voice.store";
+import SkinGlyph from "../../common/SkinGlyph";
 import ReactionsTray from "../ReactionsTray";
+import SoundboardPanel from "../SoundboardPanel";
 
 /// Bottom-centred call controls for the main-pane call stage. Every voice
 /// control has room here (the old sidebar strip clipped at ~180px): mute,
@@ -58,10 +58,7 @@ const CallControlBar: Component<{
   };
   return (
     <div class="call-control-bar">
-      <div
-        class="call-control-quality"
-        title={qualityTooltip()}
-      >
+      <div class="call-control-quality" title={qualityTooltip()}>
         <span
           class="call-control-quality-dot"
           classList={{
@@ -70,8 +67,7 @@ const CallControlBar: Component<{
               voiceState.connectionQuality === "fair" ||
               voiceState.connectionQuality === "recovering",
             "call-control-quality-poor":
-              voiceState.connectionQuality === "poor" ||
-              voiceState.connectionQuality === "lost",
+              voiceState.connectionQuality === "poor" || voiceState.connectionQuality === "lost",
           }}
           aria-hidden="true"
         />
@@ -83,6 +79,7 @@ const CallControlBar: Component<{
 
       <div class="call-control-group">
         <button
+          type="button"
           class={`voice-btn ${voiceState.isMuted ? "voice-btn-active" : ""}`}
           onClick={handleToggleMute}
           title={voiceState.isMuted ? "Unmute" : "Mute"}
@@ -92,6 +89,7 @@ const CallControlBar: Component<{
           <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
         </button>
         <button
+          type="button"
           class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
           onClick={handleToggleDeafen}
           title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
@@ -101,6 +99,7 @@ const CallControlBar: Component<{
           <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
         </button>
         <button
+          type="button"
           class={`voice-btn ${voiceState.cameraOn ? "voice-btn-active" : ""}`}
           onClick={() => setVoiceState("cameraOn", !voiceState.cameraOn)}
           title={
@@ -116,6 +115,7 @@ const CallControlBar: Component<{
           <SkinGlyph name={voiceState.cameraOn ? "video" : "video-off"} />
         </button>
         <button
+          type="button"
           class={`voice-btn ${voiceState.screenShareOn ? "voice-btn-active" : ""}`}
           onClick={() => setVoiceState("screenShareOn", !voiceState.screenShareOn)}
           title={
@@ -137,6 +137,7 @@ const CallControlBar: Component<{
         <ReactionsTray />
         <Show when={props.onPip}>
           <button
+            type="button"
             class="voice-btn"
             onClick={() => props.onPip?.()}
             title="Picture-in-picture"
@@ -146,6 +147,7 @@ const CallControlBar: Component<{
           </button>
         </Show>
         <button
+          type="button"
           class={`voice-btn ${props.chatOpen ? "voice-btn-active" : ""}`}
           onClick={() => props.onToggleChat()}
           title={props.chatOpen ? "Hide chat" : "Show chat"}
@@ -158,6 +160,7 @@ const CallControlBar: Component<{
 
       <div class="call-control-group">
         <button
+          type="button"
           class="voice-btn voice-btn-disconnect"
           onClick={handleLeaveVoice}
           title="Disconnect"

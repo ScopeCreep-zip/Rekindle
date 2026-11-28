@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Rekindle daemon — IPC bus, state management, and Veilid bridge"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -152,16 +152,16 @@ netsim-scale = [  ]
 # `HostGovernance::netsim_call_member`); only this crate's own
 # dev-dependency below turns it on, so no production build has it.
 netsim-entry = [  ]
-# The real-app suite's damaged-post switch (plan E7.14,
-# `host::webdriver`): only `rekindle-desktop`'s own `webdriver-test`
-# feature turns it on, in a debug build (`lib.rs` compile_error!), never a
-# release one (`cargo xtask check-webdriver-release`).
-webdriver-test = [  ]
+# Real-app test hooks (host::webdriver), enabled explicitly by the desktop
+# and fleet test builds. Debug only (cargo xtask check-webdriver-release).
+webdriver-test = [ "rekindle-ipc/webdriver-test" ]
 
 [dev-dependencies]
 rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
-# Itself, for the `netsim-entry` feature the netsim scenarios call.
-rekindle-node = { path = ".", features = [ "netsim-entry" ] }
+# Itself, for the `netsim-entry` feature the netsim scenarios call. Use a
+# distinct alias so Cargo resolves `rekindle-node/webdriver-test` to the
+# selected package in multi-package builds, rather than to this dev edge.
+rekindle_node = { package = "rekindle-node", path = ".", features = [ "netsim-entry" ] }
 # The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }

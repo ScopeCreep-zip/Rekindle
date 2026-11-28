@@ -192,7 +192,7 @@ pub struct CommunityState {
     /// Registry segment owner keypair for writing member index/MEK vault.
     /// Veilid `KeyPair::to_string()` format. Required to add/remove members.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_owner_keypair: Option<String>,
+    pub registry_owner_keypair: Option<zeroize::Zeroizing<String>>,
 
     /// Slot seed for deriving member SMPL keypairs.
     /// Every member holds it from its invite (`InviteSecrets.slot_seed`).

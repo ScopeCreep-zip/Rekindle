@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Command-line frontend for Rekindle, a client of the rekindled daemon"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -14,6 +14,9 @@ workspace = true
 # `rekindle-desktop` and the terminal UI `rekindle-tui` (plan C3).
 name = "rekindle"
 path = "src/main.rs"
+
+[features]
+webdriver-test = [ "rekindle-ipc/webdriver-test" ]
 
 [dependencies]
 anyhow = { workspace = true }

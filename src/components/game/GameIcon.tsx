@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 
 // Plan E7.2 "Game icons": the backend resolves each game's icon key

@@ -1,7 +1,8 @@
 //! The community settings: our per-community profile and pictures, the policy, onboarding and the welcome screen (plan E3.1), carried as `CommunityRequest::Settings`.
 
+use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use rekindle_types::dto::onboarding::{OnboardingConfigEdit, WelcomeScreenDto};
-use rekindle_types::presence::OnboardingAnswer;
+use rekindle_types::presence::{OnboardingAnswer, PresencePolicyField};
 use serde::{Deserialize, Serialize};
 
 use crate::message::SecurityLevel;
@@ -10,29 +11,17 @@ use crate::protocol::{AgentCapability, Lane};
 /// A community settings request.
 #[derive(Clone, Serialize, Deserialize)]
 pub enum SettingsRequest {
-    /// Our per-community profile: bio, pronouns, theme color, badges and
-    /// the avatar and banner hashes. Published with our presence.
-    /// Every field is a change: absent keeps it, an empty value (`""`,
-    /// `[]`) clears it (plan E3.4 S6), so a partial update never wipes
-    /// another field.
+    /// Edit our own community profile. Each field can stay, clear, or be set.
     CommunityUpdateProfile {
         community: String,
-        bio: Option<String>,
-        pronouns: Option<String>,
-        theme_color: Option<u32>,
-        badges: Option<Vec<String>>,
-        avatar_ref: Option<String>,
-        banner_ref: Option<String>,
-        /// Our card's custom status (plan E3.4 S6).
-        custom_status: Option<String>,
+        patch: CommunityProfilePatch,
     },
 
-    /// Our name in one community, on our card (`M`/0, plan E3.4 S6); `""`
-    /// clears it (readers show our short pseudonym fingerprint). Never the
-    /// identity's name.
+    /// Our name on the community card. Clearing restores the short pseudonym
+    /// fingerprint.
     CommunitySetDisplayName {
         community: String,
-        display_name: String,
+        display_name: ProfileField<String>,
     },
 
     /// Our presence sharing consent in one community (local only, never
@@ -100,6 +89,15 @@ pub enum SettingsRequest {
 
     /// Our onboarding of a community is done.
     OnboardingComplete { community: String },
+
+    /// Read our presence sharing consent in a joined community.
+    CommunityGetPresencePolicy { community: String },
+
+    /// Change one presence consent field, keeping the other fields as stored.
+    CommunitySetPresencePolicyField {
+        community: String,
+        field: PresencePolicyField,
+    },
 }
 
 impl SettingsRequest {
@@ -119,6 +117,12 @@ impl SettingsRequest {
             }
             Self::CommunitySetPresencePolicy { .. } => {
                 ("CommunitySetPresencePolicy", Write, Authenticated)
+            }
+            Self::CommunityGetPresencePolicy { .. } => {
+                ("CommunityGetPresencePolicy", Query, Authenticated)
+            }
+            Self::CommunitySetPresencePolicyField { .. } => {
+                ("CommunitySetPresencePolicyField", Write, Authenticated)
             }
             Self::CommunitySetAvatar { .. } => ("CommunitySetAvatar", Write, Authenticated),
             Self::CommunitySetBanner { .. } => ("CommunitySetBanner", Write, Authenticated),
@@ -143,9 +147,11 @@ impl SettingsRequest {
             Self::OnboardingConfigGet { .. }
             | Self::WelcomeScreenGet { .. }
             | Self::CommunityAvatarGet { .. }
+            | Self::CommunityGetPresencePolicy { .. }
             | Self::CommunityPolicyGet { .. } => C::CommunitiesRead,
             Self::CommunityUpdateProfile { .. }
             | Self::CommunitySetDisplayName { .. }
+            | Self::CommunitySetPresencePolicyField { .. }
             | Self::CommunitySetPresencePolicy { .. }
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }
@@ -157,3 +163,7 @@ impl SettingsRequest {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "settings_tests.rs"]
+mod tests;

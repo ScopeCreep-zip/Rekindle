@@ -15,7 +15,7 @@ fn pseudo(b: u8) -> PseudonymKey {
 }
 
 fn round_trip(entry: &GovernanceEntry) {
-    let decoded = decode_governance_entry(&encode_governance_entry(entry))
+    let decoded = decode_governance_entry(&encode_governance_entry(entry).unwrap())
         .expect("admission entry must decode");
     assert_eq!(&decoded, entry);
 }
@@ -133,7 +133,7 @@ fn a_member_left_without_its_heads_is_refused() {
     let mut builder = capnp::message::Builder::new_default();
     let root = builder.init_root::<schema::Builder<'_>>();
     root.init_member_left();
-    let bytes = crate::capnp_codec::pack(&builder);
+    let bytes = crate::capnp_codec::pack(&builder).unwrap();
     assert!(matches!(
         decode_governance_entry(&bytes),
         Err(CodecError::Deserialization(_))
@@ -156,7 +156,7 @@ fn a_slot_head_without_its_digest_is_refused() {
         if let Some(digest) = digest {
             head.set_digest(digest);
         }
-        let bytes = crate::capnp_codec::pack(&builder);
+        let bytes = crate::capnp_codec::pack(&builder).unwrap();
         assert!(matches!(
             decode_governance_entry(&bytes),
             Err(CodecError::Deserialization(_))
@@ -171,7 +171,7 @@ fn retired_arms_decode_to_unknown() {
     let mut builder = capnp::message::Builder::new_default();
     let mut root = builder.init_root::<schema::Builder<'_>>();
     root.reborrow().init_obsolete_admission_policy();
-    let bytes = crate::capnp_codec::pack(&builder);
+    let bytes = crate::capnp_codec::pack(&builder).unwrap();
     assert!(matches!(
         decode_governance_entry(&bytes),
         Err(CodecError::UnknownGovernanceArm(_))
@@ -179,7 +179,7 @@ fn retired_arms_decode_to_unknown() {
     let mut builder = capnp::message::Builder::new_default();
     let root = builder.init_root::<schema::Builder<'_>>();
     root.init_obsolete_join_requested();
-    let bytes = crate::capnp_codec::pack(&builder);
+    let bytes = crate::capnp_codec::pack(&builder).unwrap();
     assert!(matches!(
         decode_governance_entry(&bytes),
         Err(CodecError::UnknownGovernanceArm(_))

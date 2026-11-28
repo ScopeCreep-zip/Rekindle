@@ -55,7 +55,6 @@ const REPUSH_MIN: Duration = Duration::from_secs(2);
 const REPUSH_MAX: Duration = Duration::from_secs(60);
 
 /// A durable write that has not landed yet.
-#[derive(Debug)]
 pub(super) struct HeldWrite {
     data: Vec<u8>,
     /// The write's own writer, when not the record's sticky one. In memory
@@ -63,6 +62,12 @@ pub(super) struct HeldWrite {
     writer: Option<WriterKey>,
     attempts: u32,
     due: Instant,
+}
+
+impl std::fmt::Debug for HeldWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HeldWrite(<redacted>)")
+    }
 }
 
 /// One due re-push, copied out of the held map.

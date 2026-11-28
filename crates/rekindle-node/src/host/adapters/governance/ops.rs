@@ -103,6 +103,46 @@ pub(crate) fn held_ops(ops: Vec<StoredOp>, heads: &[DeviceHead]) -> Result<Vec<H
         .collect()
 }
 
+/// Store the op and advance the device head in the caller's transaction.
+pub(crate) fn store_op_and_head(
+    conn: &rekindle_db::rusqlite::Connection,
+    owner: &str,
+    community: &str,
+    op: &HeldOp,
+    signed_here: bool,
+) -> rekindle_db::rusqlite::Result<()> {
+    let author = hex::encode(op.author.0);
+    // The key that signed the op (`GovernanceOp.deviceKey`, ADR 0022 rule 1).
+    let device_key = hex::encode(op.device_key);
+    let stored = StoredOp {
+        op_hash: op.hash.0,
+        author: author.clone(),
+        device_key: device_key.clone(),
+        device_seq: op.seq,
+        lamport: op.lamport,
+        issued_at: op.issued_at,
+        op: op.encoded.clone(),
+        state: state_of(op.fate),
+        signed_here,
+    };
+    let head = DeviceHead {
+        device_key,
+        author,
+        member_record: op.author_record.clone(),
+        head_seq: op.seq,
+        frontier_hash: op.hash.0,
+    };
+    repo::insert(conn, owner, community, &stored)?;
+    let newer = repo::heads(conn, owner, community)?
+        .iter()
+        .find(|h| h.device_key == head.device_key)
+        .is_none_or(|h| h.head_seq < head.head_seq);
+    if newer {
+        repo::set_head(conn, owner, community, &head)?;
+    }
+    Ok(())
+}
+
 impl HostGovernance {
     pub(super) fn op_store(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
         self.owner_and_db()
@@ -161,7 +201,7 @@ impl HostGovernance {
     /// Store `op` and advance its device key's head when it is newer;
     /// `signed_here` only from the local signer
     /// (`GovernanceOpStore::store_signed_governance_op`).
-    pub(super) async fn store_governance_op_impl(
+    pub(in crate::host) async fn store_governance_op_impl(
         &self,
         community_id: &str,
         op: &HeldOp,
@@ -177,37 +217,10 @@ impl HostGovernance {
         }
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
-        let author = hex::encode(op.author.0);
-        // The key that signed the op (`GovernanceOp.deviceKey`, ADR 0022 rule 1).
-        let device_key = hex::encode(op.device_key);
-        let stored = StoredOp {
-            op_hash: op.hash.0,
-            author: author.clone(),
-            device_key: device_key.clone(),
-            device_seq: op.seq,
-            lamport: op.lamport,
-            issued_at: op.issued_at,
-            op: op.encoded.clone(),
-            state: state_of(op.fate),
-            signed_here,
-        };
-        let head = DeviceHead {
-            device_key,
-            author,
-            member_record: op.author_record.clone(),
-            head_seq: op.seq,
-            frontier_hash: op.hash.0,
-        };
+        let op = op.clone();
         db.call(move |conn| {
             let tx = conn.unchecked_transaction()?;
-            repo::insert(&tx, &owner, &community, &stored)?;
-            let newer = repo::heads(&tx, &owner, &community)?
-                .iter()
-                .find(|h| h.device_key == head.device_key)
-                .is_none_or(|h| h.head_seq < head.head_seq);
-            if newer {
-                repo::set_head(&tx, &owner, &community, &head)?;
-            }
+            store_op_and_head(&tx, &owner, &community, &op, signed_here)?;
             tx.commit()
         })
         .await
@@ -228,29 +241,43 @@ impl HostGovernance {
             .read()
             .get(community_id)
             .and_then(|c| c.my_pseudonym_key.clone());
-        let (before, after) = db
+        let (before, after, abandoned) = db
             .call(move |conn| {
                 let tx = conn.unchecked_transaction()?;
                 let mine = mine.as_deref();
                 let before = own_states(repo::list(&tx, &owner, &community, None)?, mine);
+                let mut abandoned = Vec::new();
                 for verdict in &fates {
+                    let state = state_of(verdict.fate);
                     repo::set_state(
                         &tx,
                         &owner,
                         &community,
                         &verdict.hash.0,
-                        state_of(verdict.fate),
+                        state,
                         verdict.lamport,
                     )?;
+                    if matches!(state, OpState::Quarantined | OpState::Equivocation) {
+                        abandoned.extend(rekindle_db::repo::outbox::abandon_forum_starters(
+                            &tx,
+                            &owner,
+                            &hex::encode(verdict.hash.0),
+                        )?);
+                    }
                 }
                 let after = own_states(repo::list(&tx, &owner, &community, None)?, mine);
                 tx.commit()?;
-                Ok((before, after))
+                Ok((before, after, abandoned))
             })
             .await
             .map_err(|e| adapter("governance op fates", e))?;
         // An own op the converged set refuses (or reinstates) is announced
         // (review RV7 M2).
+        if !abandoned.is_empty() {
+            if let Some(ops) = self.ctx.outbox.governance_ops() {
+                ops.announce_abandoned_starters(abandoned);
+            }
+        }
         self.announce_verdicts(community_id, &before, &after).await;
         Ok(())
     }

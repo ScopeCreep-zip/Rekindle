@@ -12,6 +12,13 @@ on:
   pull_request:
     branches: [main, "codex/**"]
 
+# A newer push to the same pull request supersedes this run: cancel the old one so it
+# stops holding a runner the merge queue needs (same rule as ci.yml and lint.yml; pushes
+# to the trunk, schedules and manual runs are never cancelled).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: write
@@ -21,11 +28,11 @@ jobs:
     name: Review dependency diff
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
           # Mirror the allow-list from deny.toml so this check stays in
@@ -48,4 +55,10 @@ jobs:
             OpenSSL,
             BSL-1.0,
             Unlicense
+          # caniuse-lite is browserslist's build-time browser-support data
+          # (dev only: vite-plugin-solid > @babel/core > browserslist), under
+          # CC-BY-4.0. It is never bundled into the shipped app, so the
+          # attribution licence does not reach a distributed artifact. Scoped
+          # to this one package; CC-BY-4.0 stays off the global allow-list.
+          allow-dependencies-licenses: pkg:npm/caniuse-lite
           comment-summary-in-pr: on-failure

@@ -59,6 +59,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("archive_thread", HostCall::Request("ThreadArchive")),
     ("unarchive_thread", HostCall::Request("ThreadUnarchive")),
     ("create_thread", HostCall::Request("ThreadCreate")),
+    ("create_forum_post", HostCall::Request("CreateForumPost")),
     ("get_active_threads", HostCall::Request("ThreadListActive")),
     ("get_channel_threads", HostCall::Request("ThreadList")),
     ("get_thread_messages", HostCall::Request("ThreadMessages")),
@@ -91,6 +92,18 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     (
         "set_share_game_totals",
         HostCall::Request("SetShareGameTotals"),
+    ),
+    (
+        "get_presence_policy",
+        HostCall::Request("CommunityGetPresencePolicy"),
+    ),
+    (
+        "set_presence_policy",
+        HostCall::Request("CommunitySetPresencePolicy"),
+    ),
+    (
+        "set_presence_policy_field",
+        HostCall::Request("CommunitySetPresencePolicyField"),
     ),
     ("set_game_detection", HostCall::Request("SetGameDetection")),
     ("set_auto_away", HostCall::Request("SetAutoAway")),
@@ -326,6 +339,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("list_event_attendees", HostCall::Request("EventAttendees")),
     ("get_events", HostCall::Request("EventList")),
     ("get_pending_requests", HostCall::Request("FriendRequests")),
+    (
+        "get_permission_catalogue",
+        HostCall::Request("PermissionCatalogue"),
+    ),
     ("get_roles", HostCall::Request("RoleList")),
     ("create_role", HostCall::Request("RoleCreate")),
     ("edit_role", HostCall::Request("RoleUpdate")),
@@ -472,8 +489,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
     // by the group DM requests.
     // E3.1 — communities.
-    ("get_presence_policy", "E3.4"),
-    ("set_presence_policy", "E3.4"),
     ("rotate_mek", "E3.5"),
     // Search reads both histories: it moves with the last of them.
     // E3.2 — plate gates.

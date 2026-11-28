@@ -7,6 +7,7 @@
 //! ([`crate::Netsim::start`]) delivers each batch in an order drawn from the
 //! run seed, so a seed fixes the interleaving.
 
+use rekindle_secrets::record_writer::RecordWriterSecret;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -166,7 +167,7 @@ pub(crate) struct NodeSlot {
     pub known: HashSet<String>,
     /// The node's open records and the writer keypair each is open with
     /// (node-wide, as Veilid's `opened_records`).
-    pub opened: HashMap<String, Option<String>>,
+    pub opened: HashMap<String, Option<RecordWriterSecret>>,
     /// The node's desired watches, by record key; `None` is cancelled and
     /// dies at the next watch tick ([`crate::records::watches`]).
     pub watches: HashMap<String, Option<crate::records::watches::Desired>>,
@@ -273,7 +274,7 @@ pub(crate) struct Inner {
     pub records: HashMap<String, NetRecord>,
     /// The owner keypair each record was created with, as its creator
     /// holds it (a scenario's thief of that key writes with it).
-    pub owners: HashMap<String, String>,
+    pub owners: HashMap<String, RecordWriterSecret>,
     pub routes: HashMap<String, RouteEntry>,
     pub nodes: Vec<NodeSlot>,
     pending: Vec<Pending>,

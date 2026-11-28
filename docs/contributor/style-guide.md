@@ -272,7 +272,7 @@ startup.
 Stylesheets are split:
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `src/styles/global.css` | Tailwind imports, theme tokens, font-faces, root styles |
 | `src/styles/xfire-theme.css` | Component classes (`.buddy-item`, `.message-bubble`, …) |
 | `src/styles/animations.css` | Motion library (respects `prefers-reduced-motion`) |

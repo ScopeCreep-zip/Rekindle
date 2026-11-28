@@ -1,15 +1,14 @@
 //! The host over a temp root with no node (plan D3.1).
 
-use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::*;
 use crate::host::fixture::temp_root;
-use crate::host::shell_hooks;
-use rekindle_ipc::{Caller, ConnId, HostApi};
+use rekindle_ipc::{Caller, HostApi};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
-use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
+use governance_seed::meta;
+pub(in crate::host) use governance_seed::{seed_governance, signed_chain, CREATOR_RECORD};
 
 #[path = "attachment_limit_tests.rs"]
 mod attachment_limit;
@@ -118,6 +117,9 @@ async fn a_create_unlocks_until_logout() {
 
     let view = create_ann(&host).await;
     assert_eq!(view.display_name, "Ann");
+    let key = &view.public_key;
+    let expected = rekindle_crypto::identity::short_key_fingerprint(&hex::decode(key).unwrap());
+    assert_eq!(view.fingerprint, expected, "create response");
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Operational);
     assert_eq!(
         host.ctx.require_owner().ok().as_deref(),
@@ -129,7 +131,19 @@ async fn a_create_unlocks_until_logout() {
     };
     let shown: Option<rekindle_types::dto::identity::IdentityShown> =
         serde_json::from_value(data).unwrap();
-    assert_eq!(shown.map(|s| s.public_key), Some(view.public_key));
+    let shown = shown.expect("unlocked identity");
+    assert_eq!(&shown.public_key, key);
+    assert_eq!(shown.fingerprint, expected, "get_identity response");
+    let unlock = || IpcRequest::Unlock {
+        identity: key.clone(),
+        passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
+    };
+    let attached = host.call(Caller::shell(), unlock()).await;
+    assert!(
+        matches!(attached, IpcResponse::Ok { data, .. }
+        if data["publicKey"] == *key && data["fingerprint"] == expected),
+        "unlock response when already operational"
+    );
 
     let out = host.call(Caller::shell(), IpcRequest::Logout).await;
     assert!(status_of(&out).is_none(), "{out:?}");
@@ -138,6 +152,18 @@ async fn a_create_unlocks_until_logout() {
     assert!(host.ctx.db.current().is_err());
     let shown = host.call(Caller::shell(), IpcRequest::IdentityShow).await;
     assert!(matches!(shown, IpcResponse::Ok { data, .. } if data.is_null()));
+    let listed = host.call(Caller::shell(), IpcRequest::IdentityList).await;
+    assert!(
+        matches!(listed, IpcResponse::Ok { data, .. }
+        if data[0]["publicKey"] == *key && data[0]["fingerprint"] == expected),
+        "locked identity list row"
+    );
+    let unlocked = host.call(Caller::shell(), unlock()).await;
+    assert!(
+        matches!(unlocked, IpcResponse::Ok { data, .. }
+        if data["publicKey"] == *key && data["fingerprint"] == expected),
+        "unlock response from locked"
+    );
 }
 
 /// One host per data root: a second claim of a held root is refused.
@@ -254,7 +280,10 @@ async fn hydration_recovers_the_stored_registry_keypair() {
     let stored = host.ctx.communities.map().read()["c1"]
         .registry_owner_keypair
         .clone();
-    assert_eq!(stored.as_deref(), Some("registry-keypair"));
+    assert_eq!(
+        stored.as_ref().map(|key| key.as_str()),
+        Some("registry-keypair")
+    );
     assert!(governance.list_missing_registry_keypairs().is_empty());
     host.shutdown().await.unwrap();
 }

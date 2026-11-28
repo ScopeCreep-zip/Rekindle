@@ -53,7 +53,7 @@ speak the same Veilid protocol and SMPL governance.
 ## Top-level layout
 
 | Path | What lives here |
-|------|-----------------|
+| ------ | ----------------- |
 | `src/` | SolidJS frontend (windows, components, stores, handlers, styles) |
 | `src-tauri/` | Tauri 2 backend — commands, services, channels, app state, SQLite, `rekindle-vault` |
 | `crates/` | 38 Rust crates implementing the protocol, crypto, voice, game detection, daemon/CLI |
@@ -67,7 +67,7 @@ speak the same Veilid protocol and SMPL governance.
 ## Where to look for what
 
 | Concern | Start here |
-|---------|------------|
+| --------- | ------------ |
 | What does the app do at runtime? | [`docs/architecture/overview.md`](docs/architecture/overview.md) — full layer stack and data flows |
 | How are communities structured? | [`docs/architecture/communities.md`](docs/architecture/communities.md) — chiral-network v2.0 |
 | What's the wire format? | [`docs/protocol/overview.md`](docs/protocol/overview.md) and [`schemas/`](schemas/) |
@@ -86,7 +86,7 @@ Lower-numbered tiers know nothing about higher tiers. The lowest tiers
 side effects.
 
 | Tier | Crates | Role |
-|------|--------|------|
+| ------ | -------- | ------ |
 | 1 | `rekindle-types` | Shared IDs, enums, error taxonomy |
 | 2 | `rekindle-secrets` | All key material, Zeroize, sole crypto boundary |
 | 3 | `rekindle-codec`, `rekindle-records` | Signed envelope build/verify, DHT record lifecycle |
@@ -135,4 +135,5 @@ For the full set of conventions, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-Rekindle is released under the [MIT License](LICENSE).
+Rekindle is released under the MIT License or the Apache License 2.0, at your option
+([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)).

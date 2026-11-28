@@ -121,7 +121,7 @@ crates/rekindle-ipc/src/
 **Local transport and access control** (`transport.rs`):
 
 | Platform | Transport | Who may connect |
-|---|---|---|
+| --- | --- | --- |
 | Linux | `$XDG_RUNTIME_DIR/rekindle/daemon.sock` | `0700` dir, `0600` socket, and every peer's UID (`SO_PEERCRED`) must equal the daemon's |
 | macOS | `~/Library/Application Support/rekindle/daemon.sock` | the same; tokio reads the peer's UID with `getpeereid` and its PID with `LOCAL_PEEREPID` |
 | Windows | `\\.\pipe\rekindle-<tag of the user profile>` | the pipe's protected DACL `D:P(A;;GA;;;OW)(A;;GA;;;SY)` — the pipe's owner and LocalSystem only — checked by the OS at open; remote clients refused. Bus key files in `%LOCALAPPDATA%\rekindle\` |
@@ -229,7 +229,7 @@ connect to the per-user socket / pipe
 Pattern: **`Noise_IK_25519_ChaChaPoly_BLAKE2s`** via `snow`.
 
 | Property | Mechanism |
-|----------|-----------|
+| ---------- | ----------- |
 | Mutual authentication | Noise IK: the initiator's static key is transmitted, the responder's is known in advance |
 | Forward secrecy | Ephemeral DH per session |
 | Confidentiality | ChaCha20-Poly1305 AEAD |
@@ -340,7 +340,7 @@ this order, within systemd's `TimeoutStopSec=15`:
    no longer holds it open.
 
 | Exit | Meaning | systemd |
-|---|---|---|
+| --- | --- | --- |
 | 0 | stop requested | not restarted (clean exit) |
 | 1 | startup failed: transport, audit log, node lock | restarted (`on-failure`) |
 | 70 `EX_SOFTWARE` | a handler panicked | restarted from fresh state |
@@ -356,7 +356,7 @@ resolved normal-dependency graph and fails if any reaches `veilid-core`,
 `rekindle-db`, `rekindle-node` or `rekindle-desktop`.
 
 | Crate | Binary | Holds |
-|---|---|---|
+| --- | --- | --- |
 | `rekindle-client` | — | `DaemonClient` (requests, `subscribe`, the typed event stream), `spawn::{connect_or_spawn, start_detached, run_foreground}`, `config::load`, `fmt` formatters, `term::use_unicode`, `log::init` (scrubbed file log), `ClientError`, `CLI_BIN`/`cli_cmd!` |
 | `rekindle-cli` | `rekindle` | clap commands, `output/` (text, JSON, JSONL), `watch.rs`, the confirmation and passphrase prompts |
 | `rekindle-tui` | `rekindle-tui` | the ratatui dashboard and views, `[tui]` theming and keybindings (`keymap/`), color-eyre |
@@ -404,6 +404,12 @@ The shape of every variant is pinned by
 C7.26); before C7.26 the inner families printed PascalCase variants and
 snake_case fields.
 
+| Command | Effect |
+| --- | --- |
+| `rekindle community focus <community> [<channel>] [--voice]` | Set the active text channel or use `--voice` for a voice channel. Omit the channel to clear focus. Accepts names or IDs and lists the matching IDs for ambiguous names. |
+
+The TUI Community Info view shows your active channel from the daemon's member list.
+
 ### Configuration
 
 One `config.toml` schema (`rekindle_types::config::user::UserConfig`)
@@ -425,6 +431,15 @@ dirs.
 Every frontend command builds an `IpcRequest`, sends it, and renders the
 response. No frontend touches `TransportNode`, `Session` or an
 identity's vault.
+
+`rekindle community focus <community> [<channel>] [--voice]` records a
+focused channel for presence sharing. Omit the channel to clear focus.
+`rekindle settings share-location <community> on|off` changes sharing
+for that community. Omit the switch to read the current policy. Use
+`--format json` for JSON output. `rekindle settings presence-policy <community>` also
+accepts `share-online`, `share-location`, and `share-activity` with
+`on|off`, or `last-seen` with `hidden|coarse|exact`. TUI Community Info
+shows the location-sharing setting.
 
 Input follows clig.dev:
 
@@ -475,7 +490,7 @@ harness ships the same unit under `.config/docker/`):
 ## Where to look
 
 | Concern | File |
-|---------|------|
+| --------- | ------ |
 | Veilid public API surface | `crates/rekindle-transport/src/lib.rs` |
 | Outbound Veilid I/O | `crates/rekindle-transport/src/broadcast/` |
 | Inbound Veilid I/O | `crates/rekindle-transport/src/subscriptions/` |

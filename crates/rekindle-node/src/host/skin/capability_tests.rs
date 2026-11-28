@@ -14,6 +14,7 @@ use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
 use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
 
 use super::actions::{map, Mapped, Selected as Selection};
+use super::call_fixtures::call_participants;
 use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
 use super::reads::Reads;
 use super::signals::Inputs;
@@ -422,7 +423,7 @@ fn group_incoming(
         from: from.into(),
         display_name: "A".into(),
         kind: "voice".into(),
-        participants: invited.iter().map(|k| (*k).to_owned()).collect(),
+        participants: call_participants(invited),
         is_group: true,
         expires_at_ms: 0,
         group_id: Some(group_id.into()),
@@ -509,7 +510,7 @@ fn two_groups_with_the_same_members_each_match_only_their_own_call() {
         from: "a".into(),
         display_name: "A".into(),
         kind: "voice".into(),
-        participants: vec!["me".into(), "b".into()],
+        participants: call_participants(&["me", "b"]),
         is_group: true,
         expires_at_ms: 0,
         group_id: None,

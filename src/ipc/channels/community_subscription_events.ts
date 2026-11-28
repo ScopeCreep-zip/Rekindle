@@ -1,6 +1,6 @@
-import type { Undecryptable } from "../commands/types";
 import type { SkinApplied } from "../commands/dto";
-import type { DeniedCapabilities } from "../commands/dto_capabilities";
+import type { Undecryptable } from "../commands/types";
+
 /**
  * The daemon-vocabulary half of the `community-event` channel.
  *
@@ -12,22 +12,31 @@ import type { DeniedCapabilities } from "../commands/dto_capabilities";
  * between the two) tells them apart.
  */
 
-import type { CommunityEvent } from "./community_events";
-import type { TypingContext, UnreadChanged } from "./chat_events";
+import type { Message } from "../commands";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
+import type { TypingContext, UnreadChanged } from "./chat_events";
+import type { CommunityEvent } from "./community_events";
+import type { GovernanceEvent } from "./community_governance_events";
 
 /** Why an inviter refused a join (`rekindle_types::join_refusal::JoinRefusal`). */
-export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
+type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
 
 /** Membership events from the daemon vocabulary. */
-export type MembershipEvent =
+type MembershipEvent =
   /**
    * Our join was withdrawn after it returned: the inviter refused it on a
    * retried exchange and the Host forgot the community (plan E3.1/JN1).
    * `reasonText` is the Host's words for the user; render it as given.
    */
   | { joinWithdrawn: { community: string; reason: JoinRefusal; reasonText: string } }
-  | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
+  | {
+      joinRequested: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        hasInvite: boolean;
+      };
+    }
   | { joinProgress: { community: string; stage: string; status: string } }
   | {
       joined: {
@@ -39,7 +48,14 @@ export type MembershipEvent =
       };
     }
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
-  | { memberCardChanged: { community: string; pseudonym: string; displayName: string; customStatus?: string } }
+  | {
+      memberCardChanged: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        customStatus?: string;
+      };
+    }
   | { left: { community: string; pseudonym: string } }
   /** We no longer hold the community: our leave, withdrawn join or Forget (plan E3.2). Device-scoped; a repeat is a no-op. */
   | { forgotten: { community: string } }
@@ -65,12 +81,25 @@ export type MembershipEvent =
       };
     }
   | { unbanned: { community: string; targetPseudonym: string } }
-  | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
+  | {
+      timedOut: {
+        community: string;
+        targetPseudonym: string;
+        durationSeconds: number;
+        reason: string | null;
+      };
+    }
   | { timeoutRemoved: { community: string; targetPseudonym: string } }
   | { timeoutStatusChanged: { community: string; pseudonym: string; timeoutUntil: number | null } }
   | { rolesChanged: { community: string; pseudonym: string; roleIds: string[] } }
   | { onboardingCompleted: { community: string; pseudonym: string; roleIds: string[] } }
-  | { onboardingAnswersSubmitted: { community: string; senderPseudonym: string; answerCount: number } }
+  | {
+      onboardingAnswersSubmitted: {
+        community: string;
+        senderPseudonym: string;
+        answerCount: number;
+      };
+    }
   | { membersRefreshed: { community: string } }
   | {
       /**
@@ -86,7 +115,7 @@ export type MembershipEvent =
     };
 
 /** System-level signals from the daemon vocabulary. */
-export type SystemEvent =
+type SystemEvent =
   /** **This peer's** own observation of the join rate. */
   | {
       raidDetected: {
@@ -142,181 +171,8 @@ type CryptoEvent =
 // `PresenceEvent`, which the backend routes to `presence-event`. See
 // `subscribeCommunityPresenceEvents` in `presence-events.handlers.ts`.
 
-/** A role, as Tier 1's `RoleDisplay`. */
-interface RoleDisplay {
-  /** The full 16-byte role id, 32 hex characters. */
-  id: string;
-  name: string;
-  color: number;
-  /** The name's readable text colour per skin base (plan E7.3). */
-  tagColours: { dark: number; light: number };
-  /**
-   * Permission bitmask. A plain JSON number, safe while
-   * `permissions::ALL` stays under 2^53 — the Rust side asserts that.
-   */
-  permissions: number;
-  position: number;
-  hoist: boolean;
-  mentionable: boolean;
-  selfAssignable: boolean;
-  exclusionGroup: string | null;
-}
-
-/** A channel, as Tier 1's `ChannelOverviewDisplay`. */
-interface ChannelOverviewDisplay {
-  id: string;
-  name: string;
-  /** `"text"` | `"voice"` | `"announcement"`. Called `type` in the store. */
-  kind: string;
-  categoryId: string | null;
-  topic: string;
-  mekGeneration: number;
-  logKey: string | null;
-  sortOrder: number;
-  slowmodeSeconds: number | null;
-  /** A restricted channel whose roster we are not on (FX3): shown, closed. */
-  locked?: boolean;
-  /** The Host's words for why it is locked. */
-  lockedReason?: string;
-}
-
-/** A channel category, as Tier 1's `CategoryDisplay`. */
-interface CategoryDisplay {
-  id: string;
-  name: string;
-  sortOrder: number;
-}
-
-/** Plate Gate (architecture §15) expansion segment, as Tier 1's `SegmentDescriptor`. */
-interface SegmentDescriptor {
-  segmentIndex: number;
-  registryKey: string;
-  anchor: string;
-  slotRangeStart: number;
-  slotRangeEnd: number;
-}
-
-/**
- * Governance events from the daemon vocabulary.
- *
- * These carry the new state inline rather than telling the client to
- * re-read it. `governanceRebuilt` is the exception: a CRDT rebuild
- * moves channels, roles, members and permissions together, so there is
- * no single payload and re-reading is correct.
- */
-export type GovernanceEvent =
-  | {
-      metadataChanged: {
-        community: string;
-        name: string | null;
-        description: string | null;
-        iconHash: string | null;
-        bannerHash: string | null;
-      };
-    }
-  | {
-      channelsChanged: {
-        community: string;
-        channels: ChannelOverviewDisplay[];
-        categories: CategoryDisplay[];
-      };
-    }
-  | { rolesChanged: { community: string; roles: RoleDisplay[] } }
-  | { segmentsChanged: { community: string; segments: SegmentDescriptor[] } }
-  | { bansChanged: { community: string } }
-  | { opPublication: { community: string; op: string; state: OpPublicationState } }
-  | { catchUp: { community: string; catchingUp: boolean; pending: PendingGovOp[] } }
-  | { keyStatus: { community: string; status: KeyStatus } }
-  | {
-      inviteCreated: {
-        community: string;
-        inviteId: string;
-        codeHash: string;
-        createdBy: string;
-        maxUses: number;
-        uses: number;
-        expiresAt: number | null;
-        createdAt: number;
-      };
-    }
-  | { inviteUsed: { community: string; codeHash: string; uses: number } }
-  | { inviteRevoked: { community: string; codeHash: string } }
-  | { inviteExpired: { community: string; codeHash: string } }
-  | { channelPermissionsChanged: { community: string; channel: string } }
-  | { effectivePermissionsChanged: { community: string; member: string; denied: DeniedCapabilities } }
-  | { governanceRebuilt: { community: string } }
-  | {
-      governanceOpQuarantined: {
-        community: string;
-        op: string;
-        author: string;
-        reason: OpQuarantineReason;
-        cause: string | null;
-      };
-    }
-  | {
-      /** A community joined from a checkpoint hint finished its backfill and
-       *  the full history's state at the hint's cut is not the hinted
-       *  snapshot (plan E3.2 S7c.8, threat T8); the community stays on the
-       *  full history. Height and digest are the hint's checkpoint. */
-      checkpointSnapshotMismatch: { community: string; height: number; digest: string };
-    }
-  | {
-      /** A successor community both sides link (ADR 0011, plan E3.2 S7s.3e):
-       *  an applied successor op here names `newAnchor`, and its verified
-       *  genesis cert names this community as predecessor. Announced once
-       *  per op; two valid successors are both offered. `signer` and
-       *  `creators` are pseudonyms, hex. */
-      communitySuccessorOffered: {
-        community: string;
-        newAnchor: string;
-        signer: string;
-        reason: "recreate" | "transfer";
-        creators: string[];
-      };
-    }
-  | {
-      /** A transfer's link request asks us (lead decision (46)):
-       *  `recipient`, the offer's recipient, asks this creator to link into
-       *  its successor `newAnchor`. Announced once per request while it is
-       *  unanswered and its offer stands; answered with
-       *  `AnswerSuccessorLink`. `request` and `recipient` are hex. */
-      successorLinkRequested: {
-        community: string;
-        request: string;
-        recipient: string;
-        newAnchor: string;
-      };
-    };
-
-/** Why the backend set a governance op aside, never applied
- *  (`GovernanceEvent::GovernanceOpQuarantined`, plan E3.2 S7c.5). The two
- *  `unknownOp*` reasons quarantine the whole community (D15): a member
- *  signed an op this version cannot read, likely a newer version's. */
-export type OpQuarantineReason =
-  | "afterAuthorRemoval"
-  | "twoCheckpointEndorsementsInOneRound"
-  | "recordClaimed"
-  | "authorityQuarantined"
-  | "deviceKeyRetired"
-  | "deviceKeyInert"
-  | "deviceKeyOverCap"
-  | "deviceKeyNeedsReadmit"
-  | "deviceKeyRecordTaken"
-  | "checkpointEquivocation"
-  | "unknownOpKind"
-  | "unknownOpVersion";
-
-/** Where one of our governance ops stands, decided by the backend
- *  (`GovernanceEvent::OpPublication`): pending while queued, landed once on
- *  our member record and applied, failed with the community's reason. */
-export type OpPublicationState =
-  | { kind: "pending" }
-  | { kind: "landed" }
-  | { kind: "failed"; reason: string };
-
 /** Social events — reactions, pins, threads, scheduled events, servers. */
-export type SocialEvent =
+type SocialEvent =
   | {
       reactionAdded: {
         community: string;
@@ -422,6 +278,20 @@ export type ChannelMessageEvent =
         body: string;
       };
     }
+  /** A held post was judged, or a new one held (contract CP1): `row` is the
+   *  post as the Host's history read builds it now (body when admitted,
+   *  the Host's placeholder while pending or refused), for the window that
+   *  holds it to replace in place by `messageId`. */
+  | {
+      postAdmissionChanged: {
+        community: string;
+        streamId: string;
+        thread: boolean;
+        pending: boolean;
+        messageId: string;
+        row: Message;
+      };
+    }
   /** Deleted for members (plan E3.3 E4); `removedBy` is the moderator
    *  when a moderator removed it (M4), `null` for its author's delete. */
   | { deleted: { community: string; channel: string; messageId: string; removedBy: string | null } }
@@ -480,8 +350,7 @@ export type CommunitySubscriptionEvent =
    * carries the distinction and the backend routes on it.
    */
   | {
-      typing:
-        // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
+      typing: // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
         | { started: { context: TypingContext; who: string; name: string } }
         | { stopped: { context: TypingContext; who: string } };
     }
@@ -490,47 +359,6 @@ export type CommunitySubscriptionEvent =
 export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;
 
 /** Whether this is the desktop's `{ type, data }` envelope. */
-export function isLegacyCommunityEvent(
-  event: AnyCommunityEvent,
-): event is CommunityEvent {
+export function isLegacyCommunityEvent(event: AnyCommunityEvent): event is CommunityEvent {
   return "type" in event;
-}
-
-/** The unlock barrier's view (plan E3.2 S7d-keys.8, `display_catch_up.rs`): sent in full on every change by
- *  `GovernanceEvent::CatchUp`, and on re-read as `CommunityDetail.catch_up`. Cleared by `catchingUp: false, pending: []`. */
-export interface CatchUpView {
-  catchingUp: boolean;
-  pending: PendingGovOp[];
-}
-
-/** One governance write held by the unlock barrier. */
-export interface PendingGovOp {
-  opId: string;
-  kind: PendingGovKind;
-  target: { member: string | null; channel: string | null; role: string | null };
-  /** The Host's words, e.g. "Kick Bea". */
-  label: string;
-  state: "catchingUp" | "signing";
-}
-
-/** One per `GovernanceEntry` arm (`PendingGovKind`). */
-type PendingGovKind =
-  | "channelCreated" | "channelEdited" | "channelDeleted" | "roleEdited" | "rolesChanged" | "roleDeleted"
-  | "ban" | "unban" | "join" | "memberRecordMoved" | "leave" | "kick" | "approveMember" | "rejectMember"
-  | "timeout" | "removeTimeout" | "communityEdited" | "notificationDefault" | "keyRotation"
-  | "categoryCreated" | "categoryEdited" | "categoryDeleted" | "permissionsChanged"
-  | "threadCreated" | "threadArchived" | "threadUnarchived" | "eventCreated" | "eventArchived" | "eventRsvp"
-  | "expressionAdded" | "expressionRemoved" | "modReport" | "onboardingConfig" | "welcomeScreen"
-  | "adminDelete" | "segmentAdded" | "autoModRule" | "inviteCreated" | "inviteRevoked" | "attachmentPinned"
-  | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit"
-  | "successorLinkRequest" | "successorLink";
-
-/** Our community key against governance's generation, as the Host states it
- *  (`rekindle_types::dto::community::KeyStatus`; `CommunityView::key_status`,
- *  `GovernanceEvent::KeyStatus`): `pending` while it is missing or behind. */
-export interface KeyStatus {
-  state: "current" | "pending";
-  have: number | null;
-  need: number | null;
-  sinceMs: number | null;
 }

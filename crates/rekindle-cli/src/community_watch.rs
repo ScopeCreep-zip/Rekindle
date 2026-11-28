@@ -9,14 +9,13 @@
 
 use rekindle_client::fmt::abbreviate_key;
 use rekindle_client::DaemonClient;
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 use rekindle_types::subscription_events::{
     EventCategory, GovernanceEvent, MembershipEvent, OpPublicationState, OpQuarantineReason,
     SubscriptionEvent, SubscriptionFilter,
 };
 use rekindle_utils::text::sanitize_for_display;
 
-use crate::helpers;
+use crate::community_ref;
 use crate::output::OutputMode;
 
 /// `community watch [-c X]`: one community (name or key), or all of them.
@@ -27,7 +26,7 @@ pub async fn watch(
 ) -> anyhow::Result<()> {
     // Events name a community by anchor key; the user may give a name.
     let community_scope = match community {
-        Some(community) => Some(anchor(client, community).await?),
+        Some(community) => Some(community_ref::anchor(client, community).await?),
         None => None,
     };
     let filter = SubscriptionFilter {
@@ -35,21 +34,6 @@ pub async fn watch(
         community_scope,
     };
     crate::watch::stream(client, vec![filter], mode, render).await
-}
-
-async fn anchor(client: &DaemonClient, community: &str) -> anyhow::Result<String> {
-    let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
-        helpers::send(
-            client,
-            IpcRequest::Community(CommunityRequest::Lifecycle(
-                LifecycleRequest::CommunityInfo {
-                    anchor: community.to_owned(),
-                },
-            )),
-        )
-        .await?,
-    )?;
-    Ok(detail.anchor)
 }
 
 /// The text line for a community event; `None` for any other event.

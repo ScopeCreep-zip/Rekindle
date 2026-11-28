@@ -1,9 +1,6 @@
-import { Component, For, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, createUniqueId, For } from "solid-js";
+import { handleDeleteAutoModRule, handleSetAutoModRule } from "../../../actions/community.actions";
 import type { Community } from "../../../stores/community.store";
-import {
-  handleDeleteAutoModRule,
-  handleSetAutoModRule,
-} from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
 
@@ -12,11 +9,17 @@ interface AutoModTabProps {
 }
 
 const AutoModTab: Component<AutoModTabProps> = (props) => {
+  const ruleNameId = createUniqueId();
+  const keywordsId = createUniqueId();
+  const regexPatternsId = createUniqueId();
+  const actionId = createUniqueId();
   const [editingRuleId, setEditingRuleId] = createSignal<string | null>(null);
   const [name, setName] = createSignal("");
   const [keywords, setKeywords] = createSignal("");
   const [regexPatterns, setRegexPatterns] = createSignal("");
-  const [action, setAction] = createSignal<"blockLocally" | "blurContent" | "alertModerators">("blockLocally");
+  const [action, setAction] = createSignal<"blockLocally" | "blurContent" | "alertModerators">(
+    "blockLocally"
+  );
   const [enabled, setEnabled] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
 
@@ -61,8 +64,14 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
         ruleId: editingRuleId(),
         name: trimmedName,
         enabled: enabled(),
-        keywords: keywords().split("\n").map((entry) => entry.trim()).filter(Boolean),
-        regexPatterns: regexPatterns().split("\n").map((entry) => entry.trim()).filter(Boolean),
+        keywords: keywords()
+          .split("\n")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+        regexPatterns: regexPatterns()
+          .split("\n")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
         action: action(),
       });
       addToast(editingRuleId() ? "AutoMod rule updated" : "AutoMod rule created", "success");
@@ -93,22 +102,43 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
                     </div>
                   </div>
                   <div class="automod-rule-actions">
-                    <button class="settings-copy-btn" onClick={() => editRule(rule.ruleId)}>Edit</button>
-                    <button class="form-btn-danger automod-rule-delete-btn" onClick={() => void deleteRule(rule.ruleId)}>Delete</button>
+                    <button
+                      type="button"
+                      class="settings-copy-btn"
+                      onClick={() => editRule(rule.ruleId)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      class="form-btn-danger automod-rule-delete-btn"
+                      onClick={() => void deleteRule(rule.ruleId)}
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               </div>
             )}
           </For>
-          <div class="settings-hint">Configured rules apply only on this client after decryption.</div>
+          <div class="settings-hint">
+            Configured rules apply only on this client after decryption.
+          </div>
         </div>
       </FormField>
 
-      <FormField label="Rule Name">
-        <input class="form-input" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="Blocked words" />
+      <FormField label="Rule Name" controlId={ruleNameId}>
+        <input
+          id={ruleNameId}
+          class="form-input"
+          value={name()}
+          onInput={(e) => setName(e.currentTarget.value)}
+          placeholder="Blocked words"
+        />
       </FormField>
-      <FormField label="Keywords">
+      <FormField label="Keywords" controlId={keywordsId}>
         <textarea
+          id={keywordsId}
           class="form-textarea"
           rows={6}
           value={keywords()}
@@ -116,8 +146,9 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
           placeholder="One keyword per line"
         />
       </FormField>
-      <FormField label="Regex Patterns">
+      <FormField label="Regex Patterns" controlId={regexPatternsId}>
         <textarea
+          id={regexPatternsId}
           class="form-textarea"
           rows={4}
           value={regexPatterns()}
@@ -125,22 +156,40 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
           placeholder="One regex per line"
         />
       </FormField>
-      <FormField label="Action">
-        <select class="form-select" value={action()} onChange={(e) => setAction(e.currentTarget.value as "blockLocally" | "blurContent" | "alertModerators")}>
+      <FormField label="Action" controlId={actionId}>
+        <select
+          id={actionId}
+          class="form-select"
+          value={action()}
+          onChange={(e) =>
+            setAction(e.currentTarget.value as "blockLocally" | "blurContent" | "alertModerators")
+          }
+        >
           <option value="blockLocally">Block locally</option>
           <option value="blurContent">Blur content</option>
           <option value="alertModerators">Alert moderators</option>
         </select>
       </FormField>
       <label class="automod-enabled-toggle">
-        <input type="checkbox" checked={enabled()} onChange={(e) => setEnabled(e.currentTarget.checked)} />
+        <input
+          type="checkbox"
+          checked={enabled()}
+          onChange={(e) => setEnabled(e.currentTarget.checked)}
+        />
         <span>Rule enabled</span>
       </label>
       <div class="settings-actions-sticky">
-        <button class="form-btn-primary" onClick={() => void saveRule()} disabled={saving()}>
+        <button
+          type="button"
+          class="form-btn-primary"
+          onClick={() => void saveRule()}
+          disabled={saving()}
+        >
           {saving() ? "Saving..." : editingRuleId() ? "Save Rule" : "Create Rule"}
         </button>
-        <button class="settings-copy-btn" onClick={resetForm}>Clear</button>
+        <button type="button" class="settings-copy-btn" onClick={resetForm}>
+          Clear
+        </button>
       </div>
     </div>
   );

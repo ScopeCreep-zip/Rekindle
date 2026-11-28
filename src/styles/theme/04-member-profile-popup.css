@@ -99,19 +99,21 @@
   /* Wave 12 W12.10 — group call surfaces. */
   .group-call-incoming-banner {
     position: fixed;
-    top: 8px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
     z-index: 80;
     display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 12px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    width: max-content;
+    padding: 14px 16px;
     border: 1px solid color-mix(in srgb, var(--color-xfire-online) 50%, transparent);
     border-radius: 8px;
     background: color-mix(in srgb, var(--color-xfire-bg-secondary) 96%, transparent);
     box-shadow: var(--shadow-elevated);
-    max-width: min(640px, calc(100% - 32px));
+    max-width: min(360px, calc(100% - 32px));
   }
   .group-call-banner-text {
     display: flex;
@@ -128,6 +130,7 @@
   }
   .group-call-banner-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 8px;
   }
 
@@ -257,6 +260,10 @@
     max-width: 100%;
   }
 
+  .tooltip-wrapper:is(:hover, :focus-within) > .tooltip-bubble {
+    display: block;
+  }
+
   .tooltip-bubble {
     position: absolute;
     bottom: 100%;
@@ -272,6 +279,7 @@
     white-space: nowrap;
     pointer-events: none;
     z-index: var(--z-tooltip);
+    display: none;
   }
 
   /* Scroll area */
@@ -298,6 +306,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: left;
   }
 
   .identity-bar-name:hover {

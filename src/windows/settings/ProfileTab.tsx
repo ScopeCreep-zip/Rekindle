@@ -1,16 +1,16 @@
-import { Component, createSignal, createResource, For, Show } from "solid-js";
+import { type Component, createResource, createSignal, For, Show } from "solid-js";
+import { handleSetAvatar } from "../../actions/settings.actions";
 import Avatar from "../../components/common/Avatar";
 import FormField from "../../components/common/FormField";
-import { authState, setAuthState } from "../../stores/auth.store";
-import { handleSetAvatar } from "../../actions/settings.actions";
+import GameIcon from "../../components/game/GameIcon";
+import { useDraft } from "../../hooks/useDraft";
+import { fetchAvatarUrl } from "../../ipc/avatar";
 import { commands } from "../../ipc/commands";
+import { authState, setAuthState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
-import { fetchAvatarUrl } from "../../ipc/avatar";
-import GameIcon from "../../components/game/GameIcon";
 import { formatDuration } from "../../utils/formatting";
 import { formatRelativeTime } from "../../utils/time";
-import { useDraft } from "../../hooks/useDraft";
 
 /// The Host's cap (`rekindle_types::presence::limits::MAX_BIO_LEN`,
 /// Discord's About Me); the Host refuses a longer one.
@@ -59,7 +59,7 @@ const ProfileTab: Component = () => {
         (e: unknown) => {
           setAuthState("displayName", oldName);
           addToast(`Name not changed: ${errorMessage(e)}`, "error");
-        },
+        }
       );
     }
   }
@@ -99,8 +99,12 @@ const ProfileTab: Component = () => {
     <>
       <div class="settings-section-title">Avatar</div>
       <div class="avatar-upload-section">
-        <Avatar displayName={authState.displayName ?? "?"} size={64} avatarUrl={authState.avatarUrl ?? undefined} />
-        <button class="avatar-upload-btn" onClick={handleAvatarUpload}>
+        <Avatar
+          displayName={authState.displayName ?? "?"}
+          size={64}
+          avatarUrl={authState.avatarUrl ?? undefined}
+        />
+        <button type="button" class="avatar-upload-btn" onClick={handleAvatarUpload}>
           Change Avatar
         </button>
         <span class="avatar-upload-hint">PNG, JPEG, or GIF (max 256KB)</span>
@@ -118,7 +122,13 @@ const ProfileTab: Component = () => {
               if (e.key === "Enter") handleSaveName((e.currentTarget as HTMLInputElement).value);
             }}
           />
-          <button class="form-btn-primary" onClick={() => handleSaveName(name.value())}>Save</button>
+          <button
+            type="button"
+            class="form-btn-primary"
+            onClick={() => handleSaveName(name.value())}
+          >
+            Save
+          </button>
         </div>
       </FormField>
       <div class="settings-section-title">Status Message</div>
@@ -131,9 +141,13 @@ const ProfileTab: Component = () => {
             placeholder="What's on your mind?"
             value={statusMsgInput()}
             onInput={(e: InputEvent) => setStatusMsgInput((e.target as HTMLInputElement).value)}
-            onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveStatusMessage(); }}
+            onKeyDown={(e: KeyboardEvent) => {
+              if (e.key === "Enter") handleSaveStatusMessage();
+            }}
           />
-          <button class="form-btn-primary" onClick={handleSaveStatusMessage}>Save</button>
+          <button type="button" class="form-btn-primary" onClick={handleSaveStatusMessage}>
+            Save
+          </button>
         </div>
       </FormField>
       <div class="settings-section-title">Bio</div>
@@ -148,10 +162,19 @@ const ProfileTab: Component = () => {
           onInput={(e: InputEvent) => bio.edit((e.target as HTMLTextAreaElement).value)}
         />
         <div class="form-field-row">
-          <span id="bio-count" class="bio-count" classList={{ "bio-count-over": bioLength() > MAX_BIO_LEN }}>
+          <span
+            id="bio-count"
+            class="bio-count"
+            classList={{ "bio-count-over": bioLength() > MAX_BIO_LEN }}
+          >
             {bioLength()} of {MAX_BIO_LEN} characters
           </span>
-          <button class="form-btn-primary" disabled={bioLength() > MAX_BIO_LEN} onClick={handleSaveBio}>
+          <button
+            type="button"
+            class="form-btn-primary"
+            disabled={bioLength() > MAX_BIO_LEN}
+            onClick={handleSaveBio}
+          >
             Save
           </button>
         </div>
@@ -159,7 +182,11 @@ const ProfileTab: Component = () => {
       <div class="settings-section-title">Game Time</div>
       <Show
         when={(gameTotals() ?? []).length > 0}
-        fallback={<div class="game-time-empty">{gameTotals.error ? "Game time could not be read" : "No games played yet"}</div>}
+        fallback={
+          <div class="game-time-empty">
+            {gameTotals.error ? "Game time could not be read" : "No games played yet"}
+          </div>
+        }
       >
         <ul class="game-time-list" aria-label="Game time">
           <For each={gameTotals()}>

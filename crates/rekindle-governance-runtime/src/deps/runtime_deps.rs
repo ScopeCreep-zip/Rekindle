@@ -239,7 +239,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
         lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
-        writer: Option<String>,
+        writer: Option<zeroize::Zeroizing<String>>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
 
     /// Per-subkey seq numbers from this node's local cache, indexed by
@@ -301,8 +301,8 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
 
     // ---------- Permissions ----------
 
-    /// Wrap `commands::community::require_permission` — returns
-    /// `Err(PermissionDenied)` if the caller doesn't hold `perm_bits`.
+    /// Require every bit in `perm_bits` from the Host's merged community
+    /// state and return a user-facing reason if the check is refused.
     fn require_permission(
         &self,
         community_id: &str,

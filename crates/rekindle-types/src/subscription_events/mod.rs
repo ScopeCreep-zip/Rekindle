@@ -25,7 +25,7 @@ mod transfer;
 mod typing;
 mod voice;
 
-pub use call::{CallEvent, DirectCallInfo};
+pub use call::{CallEvent, CallParticipant, DirectCallInfo};
 pub use channel::{ChannelMessageEvent, ConversationContext};
 pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;
@@ -44,7 +44,9 @@ pub use stream::{Cursor, Sequenced, StopReason, StreamFrame};
 pub use system::SystemEvent;
 pub use transfer::TransferEvent;
 pub use typing::{TypingContext, TypingEvent};
-pub use voice::{LinkMeasurement, VoiceEvent, VoiceParticipant, VoiceScope};
+pub use voice::{
+    JoinHandshake, LinkMeasurement, VoiceEvent, VoiceMediaReady, VoiceParticipant, VoiceScope,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -190,6 +192,7 @@ impl SubscriptionEvent {
                 | ChannelMessageEvent::Edited { community, .. }
                 | ChannelMessageEvent::Deleted { community, .. }
                 | ChannelMessageEvent::ChannelSendStatus { community, .. }
+                | ChannelMessageEvent::PostAdmissionChanged { community, .. }
                 | ChannelMessageEvent::ChannelHistoryGap { community, .. }
                 | ChannelMessageEvent::ChannelHistoryGapClosed { community, .. }
                 | ChannelMessageEvent::AttachmentDownloaded { community, .. }

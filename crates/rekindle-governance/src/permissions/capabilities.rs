@@ -6,16 +6,18 @@
 //! holds everything (decision (53)); a timeout (step 7 of
 //! [`super::compute_permissions`]) is named only when the member would
 //! hold the capability without it; else the missing permission. The
-//! channel-scoped controls (a moderator's delete, the soundboard) are
-//! judged with the channel's overwrites, as the validator judges their
-//! entries, and name an overwrite when it is the cause.
+//! channel-scoped controls are judged with the channel's overwrites, as
+//! the validator judges their entries, and name an overwrite when it is
+//! the cause.
 
 use rekindle_types::dto::community_capability::{ChannelCapability, CommunityCapability};
 use rekindle_types::id::{ChannelId, PseudonymKey};
+pub use rekindle_types::permissions::PERMISSION_NAMES;
 use rekindle_types::permissions::{
-    BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, KICK_MEMBERS, MANAGE_CHANNELS,
-    MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS, MANAGE_MESSAGES, MANAGE_ROLES,
-    TIMEOUT_MEMBERS, USE_SOUNDBOARD, VIEW_AUDIT_LOG, VIEW_INSIGHTS,
+    self, BAN_MEMBERS, BYPASS_SLOWMODE, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES,
+    CREATE_PUBLIC_THREADS, KICK_MEMBERS, MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS,
+    MANAGE_EXPRESSIONS, MANAGE_MESSAGES, MANAGE_ROLES, MENTION_EVERYONE, REQUEST_TO_SPEAK,
+    SEND_IN_THREADS, SEND_MESSAGES, TIMEOUT_MEMBERS, USE_SOUNDBOARD, VIEW_AUDIT_LOG, VIEW_INSIGHTS,
 };
 
 use super::{compute_permissions, holds_creator_seat};
@@ -29,7 +31,10 @@ pub enum CapabilityDenial {
     Missing { permission: &'static str },
     /// The member would hold it, but is timed out until `until_secs`
     /// (unix seconds).
-    TimedOut { until_secs: u64 },
+    TimedOut {
+        until_secs: u64,
+        permission: &'static str,
+    },
     /// Only a seated creator holds it.
     NotCreator,
     /// The member holds the permission community-wide, but the channel's
@@ -47,23 +52,25 @@ const fn grant(cap: CommunityCapability) -> Grant {
     use CommunityCapability as C;
     let (bits, label) = match cap {
         C::ManageCommunity | C::ManageWelcome | C::ManageAutomod | C::ManageSecurity => {
-            (MANAGE_COMMUNITY, "Manage Community")
+            (MANAGE_COMMUNITY, permission_name(MANAGE_COMMUNITY))
         }
-        C::ManageChannels | C::SetTopic | C::ManageServers => (MANAGE_CHANNELS, "Manage Channels"),
-        C::ManageRoles => (MANAGE_ROLES, "Manage Roles"),
-        C::KickMembers => (KICK_MEMBERS, "Kick Members"),
-        C::BanMembers => (BAN_MEMBERS, "Ban Members"),
-        C::ModerateMembers => (TIMEOUT_MEMBERS, "Moderate Members"),
-        C::CreateInvite => (CREATE_INVITES, "Create Invites"),
-        C::ViewAuditLog => (VIEW_AUDIT_LOG, "View Audit Log"),
-        C::ViewInsights => (VIEW_INSIGHTS, "View Insights"),
-        C::ManageExpressions => (MANAGE_EXPRESSIONS, "Manage Expressions"),
+        C::ManageChannels | C::SetTopic | C::ManageServers => {
+            (MANAGE_CHANNELS, permission_name(MANAGE_CHANNELS))
+        }
+        C::ManageRoles => (MANAGE_ROLES, permission_name(MANAGE_ROLES)),
+        C::KickMembers => (KICK_MEMBERS, permission_name(KICK_MEMBERS)),
+        C::BanMembers => (BAN_MEMBERS, permission_name(BAN_MEMBERS)),
+        C::ModerateMembers => (TIMEOUT_MEMBERS, permission_name(TIMEOUT_MEMBERS)),
+        C::CreateInvite => (CREATE_INVITES, permission_name(CREATE_INVITES)),
+        C::ViewAuditLog => (VIEW_AUDIT_LOG, permission_name(VIEW_AUDIT_LOG)),
+        C::ViewInsights => (VIEW_INSIGHTS, permission_name(VIEW_INSIGHTS)),
+        C::ManageExpressions => (MANAGE_EXPRESSIONS, permission_name(MANAGE_EXPRESSIONS)),
         C::CreateExpressions => (
             CREATE_EXPRESSIONS | MANAGE_EXPRESSIONS,
             "Create Expressions or Manage Expressions",
         ),
-        C::ManageEvents => (MANAGE_EVENTS, "Manage Events"),
-        C::CreateEvents => (CREATE_EVENTS, "Create Events"),
+        C::ManageEvents => (MANAGE_EVENTS, permission_name(MANAGE_EVENTS)),
+        C::CreateEvents => (CREATE_EVENTS, permission_name(CREATE_EVENTS)),
         C::OfferSuccessor => return Grant::CreatorSeat,
     };
     Grant::Any { bits, label }
@@ -103,9 +110,10 @@ impl Held {
             return None;
         }
         Some(match (self.timeout_end, self.untimed) {
-            (Some(until_secs), Some(held)) if held & bits != 0 => {
-                CapabilityDenial::TimedOut { until_secs }
-            }
+            (Some(until_secs), Some(held)) if held & bits != 0 => CapabilityDenial::TimedOut {
+                until_secs,
+                permission: label,
+            },
             _ => CapabilityDenial::Missing { permission: label },
         })
     }
@@ -135,21 +143,68 @@ pub fn denied_capabilities(
         .collect()
 }
 
-/// The permission a channel-scoped capability needs, and its name as the
-/// role editor shows it: the bit the validator checks with the channel's
-/// overwrites (`AdminDelete`: `MANAGE_MESSAGES`; a `SoundboardPlay`'s
-/// readers: `USE_SOUNDBOARD`).
-const fn channel_grant(cap: ChannelCapability) -> (u64, &'static str) {
-    match cap {
-        ChannelCapability::ManageMessages => (MANAGE_MESSAGES, "Manage Messages"),
-        ChannelCapability::UseSoundboard => (USE_SOUNDBOARD, "Use Soundboard"),
+const fn permission_name(bit: u64) -> &'static str {
+    let mut index = 0;
+    while index < PERMISSION_NAMES.len() {
+        let (named_bit, name) = PERMISSION_NAMES[index];
+        if named_bit == bit {
+            return name;
+        }
+        index += 1;
     }
+    panic!("permission bit must have a name")
+}
+
+/// The permission a channel capability needs.
+#[must_use]
+pub const fn channel_permission_bit(cap: ChannelCapability) -> u64 {
+    match cap {
+        ChannelCapability::ManageMessages => MANAGE_MESSAGES,
+        ChannelCapability::UseSoundboard => USE_SOUNDBOARD,
+        ChannelCapability::CreatePublicThreads => CREATE_PUBLIC_THREADS,
+        ChannelCapability::SendInThreads => SEND_IN_THREADS,
+        ChannelCapability::SendMessages => SEND_MESSAGES,
+        ChannelCapability::BypassSlowmode => BYPASS_SLOWMODE,
+        ChannelCapability::RequestToSpeak => REQUEST_TO_SPEAK,
+        ChannelCapability::MentionEveryone => MENTION_EVERYONE,
+    }
+}
+
+/// The role editor name of the permission a channel capability needs.
+#[must_use]
+pub const fn channel_permission_name(cap: ChannelCapability) -> &'static str {
+    permission_name(channel_permission_bit(cap))
+}
+
+/// One CAPR cause per missing required bit, or `None` if a requirement
+/// cannot be named.
+#[must_use]
+pub fn denied_permissions(
+    member: &PseudonymKey,
+    channel: Option<&ChannelId>,
+    state: &GovernanceState,
+    now_unix: u64,
+    required: u64,
+) -> Option<Vec<CapabilityDenial>> {
+    if required & !permissions::DEFINED != 0 {
+        return None;
+    }
+    let here = Held::of(member, channel, state, now_unix);
+    let missing = required & !here.now;
+    if missing == 0 {
+        return Some(Vec::new());
+    }
+    let base = channel.map(|_| Held::of(member, None, state, now_unix));
+    let denials: Vec<_> = PERMISSION_NAMES
+        .iter()
+        .filter(|(bit, _)| missing & bit != 0)
+        .filter_map(|&(bit, name)| denial_in_scope(&here, base.as_ref(), bit, name))
+        .collect();
+    (denials.len() == missing.count_ones() as usize).then_some(denials)
 }
 
 /// The channel-scoped capabilities `member` lacks in `channel` at
 /// `now_unix`, each with its cause, in [`ChannelCapability::ALL`] order.
-/// A permission held community-wide that the channel's overwrites take
-/// away is [`CapabilityDenial::ChannelDenied`].
 #[must_use]
 pub fn denied_in_channel(
     member: &PseudonymKey,
@@ -162,19 +217,33 @@ pub fn denied_in_channel(
     ChannelCapability::ALL
         .into_iter()
         .filter_map(|cap| {
-            let (bits, label) = channel_grant(cap);
-            let denial = match here.denial(bits, label)? {
-                // Held community-wide, now or once a timeout ends.
-                CapabilityDenial::Missing { .. }
-                    if (base.now | base.untimed.unwrap_or(0)) & bits != 0 =>
-                {
-                    CapabilityDenial::ChannelDenied { permission: label }
-                }
-                denial => denial,
-            };
+            let denial = denial_in_scope(
+                &here,
+                Some(&base),
+                channel_permission_bit(cap),
+                channel_permission_name(cap),
+            )?;
             Some((cap, denial))
         })
         .collect()
+}
+
+fn denial_in_scope(
+    here: &Held,
+    base: Option<&Held>,
+    bit: u64,
+    name: &'static str,
+) -> Option<CapabilityDenial> {
+    let denial = match here.denial(bit, name)? {
+        // Held community-wide, now or once a timeout ends.
+        CapabilityDenial::Missing { .. }
+            if base.is_some_and(|base| (base.now | base.untimed.unwrap_or(0)) & bit != 0) =>
+        {
+            CapabilityDenial::ChannelDenied { permission: name }
+        }
+        denial => denial,
+    };
+    Some(denial)
 }
 
 #[cfg(test)]

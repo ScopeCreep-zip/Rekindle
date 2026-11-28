@@ -21,11 +21,12 @@
 //! history through `hydrateState()`.
 
 use rekindle_types::dto::infoview::InfoviewEvent;
+use rekindle_types::key_format::record_key;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
     CallEvent, ChannelMessageEvent, EventScope, FriendEvent, MembershipEvent, NetworkEvent,
-    SubscriptionEvent, SystemEvent, TypingContext, TypingEvent,
+    SubscriptionEvent, SystemEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -36,6 +37,10 @@ use crate::event_router::{Audience, OutboundEnvelope};
 use crate::state::{AppState, SharedState};
 use crate::window_labels::{self as labels, WindowKind};
 use crate::windows::SettingsTab;
+
+mod subscription_channel;
+
+use subscription_channel::subscription_channel;
 
 /// Everything the backend sends to a webview.
 #[derive(Debug, Clone)]
@@ -228,6 +233,15 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         | SubscriptionEvent::Membership(
             rekindle_types::subscription_events::MembershipEvent::Forgotten { .. },
         ) => communities(),
+        // Admission carries a history row. The Host checks the stream's read
+        // permission, and its community window owns that history.
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::PostAdmissionChanged {
+            community,
+            ..
+        }) => match record_key(community) {
+            Ok(community) => Audience::labels([labels::community_label(Some(&community))]),
+            Err(_) => Audience::default(),
+        },
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
@@ -245,73 +259,6 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
             }
             EventScope::Call(id) => buddy_list().with_labels(labels::call_label_for(&id)),
         },
-    }
-}
-
-/// Which frontend channel a [`SubscriptionEvent`] is consumed on.
-///
-/// Many families share a channel because the frontend's handlers are
-/// organized by window, not by family.
-fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
-    match event {
-        SubscriptionEvent::Presence(_) => "presence-event",
-        // Every window applies it, not only the community dispatcher.
-        SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => "skin-event",
-        SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => "skin-trial-event",
-        SubscriptionEvent::System(SystemEvent::SkinApplyFailed { .. }) => "skin-apply-event",
-        SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
-        SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
-        SubscriptionEvent::System(SystemEvent::ServersViewChanged { .. }) => "servers-event",
-        SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",
-        SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
-        SubscriptionEvent::System(SystemEvent::SkinShell { .. }) => "skin-shell-event",
-        SubscriptionEvent::Voice(_) => "voice-event",
-        // `ChannelMessage` and `Typing` split by context: the community
-        // half goes to the community dispatcher, the direct half to the
-        // chat handlers.
-        SubscriptionEvent::ChannelMessage(
-            ChannelMessageEvent::New { .. }
-            | ChannelMessageEvent::Edited { .. }
-            | ChannelMessageEvent::Deleted { .. }
-            | ChannelMessageEvent::ChannelSendStatus { .. }
-            | ChannelMessageEvent::ChannelHistoryGap { .. }
-            | ChannelMessageEvent::ChannelHistoryGapClosed { .. }
-            | ChannelMessageEvent::AttachmentDownloaded { .. }
-            | ChannelMessageEvent::ExpressionAssetReady { .. },
-        )
-        | SubscriptionEvent::Typing(
-            TypingEvent::Started {
-                context: TypingContext::Channel { .. },
-                ..
-            }
-            | TypingEvent::Stopped {
-                context: TypingContext::Channel { .. },
-                ..
-            },
-        )
-        | SubscriptionEvent::Membership(_)
-        | SubscriptionEvent::Governance(_)
-        | SubscriptionEvent::Crypto(_)
-        | SubscriptionEvent::Social(_)
-        // System events (announcements, raids, automod, lockdowns, sync,
-        // audit) are handled by the community dispatcher.
-        | SubscriptionEvent::System(_)
-        | SubscriptionEvent::UnreadChanged {
-            context: rekindle_types::subscription_events::UnreadContext::Channel { .. },
-            ..
-        } => "community-event",
-        // A DM's or the friend requests' unread count goes to the friend
-        // and chat handlers.
-        SubscriptionEvent::UnreadChanged { .. }
-        | SubscriptionEvent::ChannelMessage(_)
-        | SubscriptionEvent::Typing(_)
-        | SubscriptionEvent::Call(_)
-        | SubscriptionEvent::Friend(_)
-        | SubscriptionEvent::GroupDm(_) => "chat-event",
-        SubscriptionEvent::Notification(_) => "notification-event",
-        SubscriptionEvent::IntentPending(_) => "intent-event",
-        SubscriptionEvent::Network(_) => "network-status",
-        SubscriptionEvent::Transfer(_) => "transfer-event",
     }
 }
 

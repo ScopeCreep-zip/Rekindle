@@ -156,6 +156,7 @@ async fn queue<D: ChannelMessagingDeps>(
     entry: PostEntry,
 ) -> String {
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_string(),
         channel: channel_id.to_string(),
         message: message_id.to_string(),

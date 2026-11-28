@@ -54,6 +54,15 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 #[cfg(desktop)]
 #[must_use]
 pub fn init_with_port<R: Runtime>(port: u16) -> TauriPlugin<R> {
+    init_with_routes(port, |_| axum::Router::new())
+}
+
+/// Mount app-specific test routes behind the same loopback request guard.
+#[cfg(desktop)]
+pub fn init_with_routes<R: Runtime>(
+    port: u16,
+    routes: impl FnOnce(tauri::AppHandle<R>) -> axum::Router + Send + 'static,
+) -> TauriPlugin<R> {
     use tauri::Manager;
 
     Builder::new("wdio-webdriver")
@@ -74,7 +83,7 @@ pub fn init_with_port<R: Runtime>(port: u16) -> TauriPlugin<R> {
 
             // Start the WebDriver HTTP server
             let app_handle = app.app_handle().clone();
-            server::start(app_handle, port);
+            server::start(app_handle.clone(), port, routes(app_handle));
             tracing::info!("WDIO WebDriver plugin initialized on port {port}");
 
             Ok(())

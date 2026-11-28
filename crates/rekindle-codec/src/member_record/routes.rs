@@ -31,11 +31,11 @@ pub struct MemberRoutes {
     pub issued_at: u64,
 }
 
-fn signing_bytes(at: RecordScope<'_>, issued_at: u64, general: &[u8]) -> Vec<u8> {
-    let mut out = at.signing_prefix(domains::MEMBER_ROUTES);
+fn signing_bytes(at: RecordScope<'_>, issued_at: u64, general: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let mut out = at.signing_prefix(domains::MEMBER_ROUTES)?;
     out.extend_from_slice(&issued_at.to_be_bytes());
-    put_lp(&mut out, general);
-    out
+    put_lp(&mut out, general)?;
+    Ok(out)
 }
 
 impl MemberRoutes {
@@ -58,7 +58,7 @@ impl MemberRoutes {
             self.general.len(),
             MEMBER_ROUTE_BLOB_MAX_BYTES,
         )?;
-        let sig = sign(pseudonym, &signing_bytes(at, self.issued_at, &self.general));
+        let sig = sign(pseudonym, &signing_bytes(at, self.issued_at, &self.general)?);
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut root = builder.init_root::<member_routes::Builder<'_>>();
@@ -66,7 +66,7 @@ impl MemberRoutes {
             root.set_issued_at(self.issued_at);
             root.set_sig(&sig);
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size("member routes", &out, MEMBER_ROUTES_MAX_BYTES)?;
         Ok(out)
     }
@@ -102,7 +102,7 @@ pub fn decode_member_routes(
     let issued_at = root.get_issued_at();
     verify(
         pseudonym,
-        &signing_bytes(at, issued_at, general),
+        &signing_bytes(at, issued_at, general)?,
         root.get_sig().map_err(|e| capnp_err(&e))?,
         "member routes",
     )?;

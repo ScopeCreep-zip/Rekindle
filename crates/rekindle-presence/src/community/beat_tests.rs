@@ -60,6 +60,10 @@ impl BeatSink for Sink {
         Ok(())
     }
 
+    async fn write_refreshed_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
+        self.write_beat(community, state).await
+    }
+
     async fn write_quit_beat(&self, community: &str) -> Result<(), String> {
         self.write_beat(community, BeatState::Offline).await
     }
@@ -280,4 +284,22 @@ async fn the_quit_reaches_a_community_joined_since_the_last_check() {
         .map(|w| w.1)
         .collect();
     assert_eq!(offline, vec!["joined".to_owned()]);
+}
+
+/// A voice join or leave writes the community's beat at once (plan E3.4
+/// S8-pre, "Constant rate"), in that community only; nothing while a
+/// hiding status holds or in a community we are not a member of.
+#[tokio::test(start_paused = true)]
+async fn a_voice_change_writes_a_beat_at_once() {
+    let sink = Sink::new(&["c1", "c2"]);
+    let engine = BeatEngine::new(sink.clone(), Arc::new(Seeded::new(7)));
+    engine.refresh_community("c1").await.unwrap();
+    assert_eq!(
+        sink.writes(),
+        vec![(Duration::ZERO, "c1".to_owned(), BeatState::Online)]
+    );
+    engine.refresh_community("gone").await.unwrap();
+    *sink.status.lock() = SessionStatus::Invisible;
+    engine.refresh_community("c2").await.unwrap();
+    assert_eq!(sink.writes().len(), 1);
 }

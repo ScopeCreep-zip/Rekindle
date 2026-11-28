@@ -1,6 +1,6 @@
 import { transferCommands } from "../ipc/commands/dto_transfer";
-import { setTransfersState } from "../stores/transfers.store";
 import { addToast } from "../stores/toast.store";
+import { setTransfersState } from "../stores/transfers.store";
 
 // File transfers (plan E7.2 G12): reading the Host's list. The Downloads view
 // calls it when it opens unread; the transfer handlers call it when an event

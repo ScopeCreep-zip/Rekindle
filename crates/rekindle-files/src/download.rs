@@ -135,6 +135,7 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     // Advertise full possession to the swarm: an `AttachmentCached`
     // entry on our channel outbox (plan E3.3 slice 7).
     let possession = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_owned(),
         channel: channel_id.to_owned(),
         message: format!("cached-{}", Uuid::new_v4()),

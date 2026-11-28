@@ -11,7 +11,7 @@ fn signed_envelope_roundtrip() {
         ttl: 5,
     };
     let bytes = encode_signed_envelope(&signed);
-    let back = decode_signed_envelope(&bytes).unwrap();
+    let back = decode_signed_envelope(&bytes.unwrap()).unwrap();
     assert_eq!(signed.community_id, back.community_id);
     assert_eq!(signed.sender_pseudonym, back.sender_pseudonym);
     assert_eq!(signed.envelope_bytes, back.envelope_bytes);

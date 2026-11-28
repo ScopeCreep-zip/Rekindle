@@ -1,46 +1,4 @@
 @layer components {
-  /* Architecture §32 a11y — global focus-visible. Every interactive
-   * element gets a 2px accent ring on keyboard focus; mouse focus is
-   * suppressed so the dense Xfire UI stays clean for sighted users.
-   * Per-element overrides can wrap their own ring in a corresponding
-   * `:focus-visible` rule, but the global ring is the safety net so
-   * the audit's "0 focus-visible rules" gap closes in one cascade. */
-  *:focus-visible {
-    outline: 2px solid var(--color-xfire-focus-outline);
-    outline-offset: 2px;
-    border-radius: inherit;
-  }
-  /* The ring above reaches 4px past an element (2px outline + 2px
-   * offset): scrolling an element into view, as focus does, leaves that
-   * room so a scroll pane's edge never cuts the ring. */
-  * {
-    scroll-margin: 4px;
-  }
-  *:focus:not(:focus-visible) {
-    outline: none;
-  }
-
-  /* Rows, tabs and bar buttons fill a clipping list or bar edge to edge, so an outset
-   * ring would be cut; theirs is drawn inside the box (plan E7.12), deep
-   * enough for the 3px ring `prefers-contrast: more` asks for. */
-  .buddy-tab:focus-visible,
-  .form-tab:focus-visible,
-  .menu-bar-item:focus-visible,
-  .header-add-btn:focus-visible,
-  .buddy-item:focus-visible,
-  .channel-item:focus-visible,
-  .xfire-titlebar-btn:focus-visible,
-  .member-item:focus-visible,
-  .group-dm-row:focus-visible,
-  .sidebar-section-more:focus-visible,
-  /* "+ Category" sits at the foot of the channel list, which clips it. */
-  .channel-create-category-btn:focus-visible,
-  /* A message log is the scroller its pane clips (plan E7.3: focusable for
-   * SC 2.1.1), so its ring is drawn inside too. */
-  [role="log"][tabindex]:focus-visible {
-    outline-offset: -3px;
-  }
-
   /* Architecture §32 a11y — skip link rendered as the first focusable
    * child of each top-level window. Hidden via `clip-path: inset(100%)`
    * (modern 2026-canon pattern; not the deprecated `left: -9999px`

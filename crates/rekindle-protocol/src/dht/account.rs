@@ -42,7 +42,7 @@ impl AccountRecord {
         display_name: &str,
         status_message: &str,
         now: u64,
-    ) -> Result<(Self, String, SetOutcome), ProtocolError> {
+    ) -> Result<(Self, zeroize::Zeroizing<String>, SetOutcome), ProtocolError> {
         let (lease, record_key, keypair) = pool
             .create(&rekindle_records::schema::single(), None)
             .await?;
@@ -62,7 +62,11 @@ impl AccountRecord {
                     updated_at: now,
                 },
             )
-            .await?;
+            .await;
+        if outcome.is_err() {
+            pool.release(lease).await;
+        }
+        let outcome = outcome?;
         tracing::debug!(key = %record.record_key, ?outcome, "AccountRecord created");
         Ok((record, keypair, outcome))
     }
@@ -112,7 +116,7 @@ impl AccountRecord {
     ) -> Result<SetOutcome, ProtocolError> {
         let ciphertext = self
             .encryption_key
-            .encrypt(&encode_account_header(header))?;
+            .encrypt(&encode_account_header(header)?)?;
         Ok(pool.set_durable(self.lease, 0, ciphertext, None).await?)
     }
 

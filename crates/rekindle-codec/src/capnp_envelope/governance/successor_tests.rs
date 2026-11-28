@@ -93,6 +93,6 @@ fn community_successor_round_trips() {
     let all = [successor(), offer(), withdrawal(), acceptance(9)];
     for entry in all {
         let bytes = encode_governance_entry(&entry);
-        assert_eq!(decode_governance_entry(&bytes).expect("decodes"), entry);
+        assert_eq!(decode_governance_entry(&bytes.unwrap()).expect("decodes"), entry);
     }
 }

@@ -192,6 +192,8 @@ pub(super) async fn route_settings(
         // ── Profile, pictures and policy (plan E3.1 D4) ──────────
         request @ (SettingsRequest::CommunityUpdateProfile { .. }
         | SettingsRequest::CommunitySetDisplayName { .. }
+        | SettingsRequest::CommunityGetPresencePolicy { .. }
+        | SettingsRequest::CommunitySetPresencePolicyField { .. }
         | SettingsRequest::CommunitySetPresencePolicy { .. }
         | SettingsRequest::CommunitySetAvatar { .. }
         | SettingsRequest::CommunitySetBanner { .. }
@@ -512,6 +514,7 @@ pub(super) async fn route_rich(
         | RichRequest::ThreadListActive { .. }
         | RichRequest::ThreadMessages { .. }
         | RichRequest::ThreadSend { .. }
+        | RichRequest::CreateForumPost { .. }
         | RichRequest::PollCreate { .. }
         | RichRequest::PollVote { .. }
         | RichRequest::PollClose { .. }

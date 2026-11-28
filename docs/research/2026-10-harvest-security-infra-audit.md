@@ -140,7 +140,7 @@ the direct cause of a bug fixed two sessions ago.**
 **GAP findings** (business logic still misplaced; target crate named):
 
 | file:line | What's wrong | Target |
-|---|---|---|
+| --- | --- | --- |
 | `friend_runtime/accept.rs:133-138`, `message_service/friend_handlers/session.rs:111-115`, `message_service/friend_handlers/lifecycle.rs:269-274` | The Signal-session idempotency guard (`has_session(...) && is_trusted_identity(...)`) is copy-pasted at 3 separate call sites, each independently tagged "W16.10e" as if it were one fix. **This is the same duplication class that caused the invite-accept session-mismatch bug fixed two sessions ago** — a 4th site (`setup_invite_contact`, in `friend_runtime/invite.rs`) drifted out of sync with the other three precisely because there was no single source of truth to drift *from*. | `rekindle-crypto::signal::session` — one `SignalSessionManager::session_already_established(peer, identity_key) -> bool` method all 4 call sites use. |
 | `community/message_notifications.rs:80-176` (`decrypt_message_body`) | Reimplements, inline, the AAD-bound-decrypt-with-legacy-fallback waterfall that `rekindle_channel::receive::decrypt_channel_body_with_legacy_fallback` already implements and unit-tests. | `rekindle-channel` |
 | `community/mek_rotation.rs:54-78` (`cache_hit` match in `spawn_mek_request_with_retry`) | Real, security-relevant split-brain/convergence decision left inline and untested — in the *same file*, `should_last_resort_mint` (123-126) is the correctly-extracted, tested version of exactly this kind of decision. | `rekindle-mek-rotation` |

@@ -105,6 +105,8 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     transition: color var(--motion-duration-fast);
+    width: 100%;
+    text-align: left;
   }
 
   .category-header:hover {
@@ -206,6 +208,13 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Posting denied here: still shown, in the theme's disabled text (never a
+   * fade, ST1), with the Host's reason as its title. */
+  .forum-channel-new-post-btn:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
   }
 
   .forum-channel-tag {
@@ -323,7 +332,8 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     padding: 18px;
     overflow: auto;
   }
@@ -393,9 +403,11 @@
     color: var(--color-xfire-text-primary);
   }
 
+  /* Request to speak denied (the Host's requestToSpeak reason as its title)
+   * or the hand already raised: the theme's disabled text, never a fade (ST1). */
   .stage-panel-request-btn:disabled {
-    opacity: 0.65;
-    cursor: default;
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
   }
 
   .stage-panel-status {
@@ -416,7 +428,6 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: 220px;
     padding: 16px;
     border: 1px solid var(--color-xfire-border);
     border-radius: 14px;

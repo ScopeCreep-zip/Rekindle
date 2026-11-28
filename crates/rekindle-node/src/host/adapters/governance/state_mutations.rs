@@ -68,7 +68,11 @@ impl HostGovernance {
         });
         let raised = raises_key_generation(prev.as_ref(), &state);
         let departed_outboxes = new_outbox_heads(prev.as_ref(), &state);
-        let channel_created = creates_channel(prev.as_ref(), &state);
+        let stream_created = creates_channel(prev.as_ref(), &state)
+            || state.threads.keys().any(|id| {
+                prev.as_ref()
+                    .is_none_or(|prev| !prev.threads.contains_key(id))
+            });
         let now_secs = self.ctx.clock.now_secs();
         let me_hex = (self.ctx.communities.map().read().get(community_id))
             .and_then(|c| c.my_pseudonym_key.clone())
@@ -108,12 +112,42 @@ impl HostGovernance {
             self.repair_after_grace(community_id);
         }
         self.read_departed_outboxes(community_id, departed_outboxes);
-        if channel_created {
+        self.reread_pending_post_cuts(community_id);
+        if stream_created {
             self.spawn_outbox_reread_unmapped(community_id);
         }
         if view_gained {
             self.spawn_outbox_reread(community_id);
         }
+    }
+
+    fn reread_pending_post_cuts(&self, community_id: &str) {
+        let (Ok(owner), Ok(db)) = (self.ctx.require_owner(), self.ctx.db.current()) else {
+            return;
+        };
+        let host = self.clone();
+        let community = community_id.to_owned();
+        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
+            "pending post cuts",
+            async move {
+                let query = community.clone();
+                let records = db
+                    .call(move |conn| {
+                        rekindle_db::repo::messages::channel_admission::pending_records(
+                            conn, &owner, &query,
+                        )
+                    })
+                    .await;
+                match records {
+                    Ok(records) => {
+                        for record in records {
+                            host.read_channel_outbox(&community, &record).await;
+                        }
+                    }
+                    Err(error) => tracing::warn!(%error, community, "pending post cuts not read"),
+                }
+            },
+        );
     }
 
     /// A merged departure recorded a new head of the member's channel

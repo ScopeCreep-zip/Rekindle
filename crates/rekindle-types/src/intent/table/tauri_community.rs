@@ -54,6 +54,7 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
         "remove_community_member",
         Some(IntentKind::RemoveCommunityMember),
     ),
+    ("get_permission_catalogue", None),
     ("get_roles", None),
     ("create_role", Some(IntentKind::CreateRole)),
     ("edit_role", Some(IntentKind::EditRole)),
@@ -199,6 +200,10 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_active_channel", None),
     ("set_presence_policy", Some(IntentKind::SetPresencePolicy)),
     ("get_presence_policy", None),
+    (
+        "set_presence_policy_field",
+        Some(IntentKind::SetPresencePolicy),
+    ),
     (
         "update_community_profile",
         Some(IntentKind::UpdateCommunityProfile),

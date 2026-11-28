@@ -56,27 +56,22 @@ impl std::fmt::Debug for SettingsRequest {
                 .field("image_len", &image.len())
                 .field("kind", kind)
                 .finish(),
-            Self::CommunityUpdateProfile {
-                community,
-                bio,
-                pronouns,
-                theme_color,
-                badges,
-                avatar_ref,
-                banner_ref,
-                custom_status,
-            } => f
+            Self::CommunityUpdateProfile { community, patch } => f
                 .debug_struct("CommunityUpdateProfile")
                 .field("community", community)
-                .field("bio_len", &bio.as_ref().map(String::len))
-                .field("pronouns_len", &pronouns.as_ref().map(String::len))
-                .field("theme_color", theme_color)
-                .field("badges", &badges.as_ref().map(Vec::len))
-                .field("avatar_ref", avatar_ref)
-                .field("banner_ref", banner_ref)
+                .field("bio_len", &patch.bio.value().map(String::len))
+                .field("pronouns_len", &patch.pronouns.value().map(String::len))
+                .field("theme_color", &patch.theme_color)
+                .field("badges", &patch.badges.value().map(Vec::len))
+                .field("avatar_ref", &patch.avatar_ref)
+                .field("banner_ref", &patch.banner_ref)
                 .field(
                     "custom_status_len",
-                    &custom_status.as_ref().map(String::len),
+                    &patch.custom_status.value().map(String::len),
+                )
+                .field(
+                    "display_name_len",
+                    &patch.display_name.value().map(String::len),
                 )
                 .finish(),
             Self::CommunitySetDisplayName {
@@ -85,8 +80,14 @@ impl std::fmt::Debug for SettingsRequest {
             } => f
                 .debug_struct("CommunitySetDisplayName")
                 .field("community", community)
-                .field("display_name_len", &display_name.len())
+                .field("display_name_len", &display_name.value().map(String::len))
                 .finish(),
+            Self::CommunityGetPresencePolicy { .. } => f
+                .debug_struct("CommunityGetPresencePolicy")
+                .finish_non_exhaustive(),
+            Self::CommunitySetPresencePolicyField { .. } => f
+                .debug_struct("CommunitySetPresencePolicyField")
+                .finish_non_exhaustive(),
             Self::CommunitySetPresencePolicy { community, policy } => f
                 .debug_struct("CommunitySetPresencePolicy")
                 .field("community", community)

@@ -5,7 +5,7 @@ name = "rekindle-desktop"
 version = "0.0.1"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
 
 [lints]
@@ -15,8 +15,8 @@ workspace = true
 # The WebDriver walk's driver (plan E7.13): the vendored, patched
 # tauri-plugin-wdio-webdriver. Debug builds only (`lib.rs` compile_error!);
 # never a default (`cargo xtask check-webdriver-release`).
-# It also turns on rekindle-node's damaged-post switch (`webdriver.rs`).
-webdriver-test = [ "dep:tauri-plugin-wdio-webdriver", "rekindle-node/webdriver-test" ]
+# It also turns on rekindle-node's real-app test hooks.
+webdriver-test = [ "dep:axum", "dep:tauri-plugin-wdio-webdriver", "rekindle-node/webdriver-test" ]
 
 [lib]
 name = "rekindle_lib"
@@ -91,6 +91,7 @@ zbus = "5"
 # with prevent_exit(), see tauri#11489
 
 # tauri-plugin-sql removed — using rusqlite directly for veilid-core compatibility
+axum = { version = "0.8", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"

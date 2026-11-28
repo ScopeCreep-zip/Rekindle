@@ -54,6 +54,6 @@ fn a_frontier_carries_its_roster_checksum() {
     builder
         .init_root::<crate::governance_op_capnp::frontier::Builder<'_>>()
         .init_heads(0);
-    let unsummed = crate::capnp_codec::pack(&builder);
+    let unsummed = crate::capnp_codec::pack(&builder).unwrap();
     assert!(super::decode_frontier(&unsummed).is_err());
 }

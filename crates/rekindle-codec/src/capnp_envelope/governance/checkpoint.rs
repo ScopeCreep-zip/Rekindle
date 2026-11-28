@@ -38,16 +38,16 @@ pub(super) fn read_checkpoint(
     }))
 }
 
-pub(super) fn write_checkpoint(mut p: checkpoint_entry::Builder<'_>, c: &Checkpoint) {
+pub(super) fn write_checkpoint(mut p: checkpoint_entry::Builder<'_>, c: &Checkpoint) -> Result<(), CodecError> {
     p.set_height(c.height);
     p.set_round(c.round);
     if let Some(prev) = &c.prev {
         p.set_has_prev_checkpoint(true);
         write_op_ref(p.reborrow().init_prev_checkpoint(), prev);
     }
-    let mut cut = p.reborrow().init_cut(len(c.cut.len()));
-    for (i, head) in c.cut.iter().enumerate() {
-        write_op_ref(cut.reborrow().get(len(i)), head);
+    let mut cut = p.reborrow().init_cut(crate::capnp_codec::wire_len(c.cut.len())?);
+    for (i, head) in (0u32..).zip(c.cut.iter()) {
+        write_op_ref(cut.reborrow().get(i), head);
     }
     p.set_frontier_hash(&c.frontier_hash);
     p.set_dir_root(&c.dir_root);
@@ -56,14 +56,11 @@ pub(super) fn write_checkpoint(mut p: checkpoint_entry::Builder<'_>, c: &Checkpo
     p.set_state_size(c.state_size);
     p.set_mek_generation(c.mek_generation);
     p.set_eligible_set_hash(&c.eligible_set_hash);
-    let mut pages = p.init_pages(len(c.pages.len()));
-    for (i, page) in c.pages.iter().enumerate() {
-        pages.set(len(i), page.as_str());
+    let mut pages = p.init_pages(crate::capnp_codec::wire_len(c.pages.len())?);
+    for (i, page) in (0u32..).zip(c.pages.iter()) {
+        pages.set(i, page.as_str());
     }
-}
-
-fn len(n: usize) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
+    Ok(())
 }
 
 /// A 32-byte digest field; any other length is refused.

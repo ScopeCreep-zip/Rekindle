@@ -60,6 +60,7 @@ pub(crate) fn friend_error(e: &DmError) -> FriendError {
         | DmError::InvalidName(_)
         | DmError::BadSignature
         | DmError::NotOnRoster(_)
+        | DmError::Codec(_)
         | DmError::KeyMissing { .. } => FriendError::Invalid(e.to_string()),
         DmError::ChainMissing(_) => FriendError::NotReady(e.to_string()),
     }

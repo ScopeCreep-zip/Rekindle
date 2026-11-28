@@ -14,6 +14,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admission;
+
 pub mod automod;
 pub mod awaiting_key;
 pub mod changes;
@@ -79,6 +81,7 @@ pub use send::{
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use threads::{
     archive_thread, create_thread, default_auto_archive_seconds, is_thread_archived,
-    list_active_threads, list_threads, load_thread_messages, send_thread_message, unarchive_thread,
-    validate_auto_archive_seconds, ThreadMessageView, ThreadReplySent,
+    is_thread_reply_id, list_active_threads, list_threads, load_thread_messages,
+    prepare_forum_post, send_prepared_reply, send_thread_message, unarchive_thread,
+    validate_auto_archive_seconds, ForumPost, ThreadMessageView, ThreadReplySent,
 };

@@ -22,7 +22,7 @@ distribution is entirely peer-to-peer, implemented in
 ### Distribution paths
 
 | Event | Mechanism |
-|-------|-----------|
+| ------- | ----------- |
 | Community creation | Creator generates MEK (32 B from OS CSPRNG), writes `MEKGenerationBump { generation: 1 }`. MEK is **never** written to DHT. |
 | Member joins (fresh invite) | MEK is included in `InviteSecrets`. Joiner verifies generation against governance. |
 | Member joins (stale invite) | Joiner broadcasts `RequestMEK` via gossip; the deterministic responder replies via `app_call` with the wrapped key. |
@@ -127,7 +127,7 @@ runtime / adapter / pure-logic split documented in
 [`services-pattern.md`](services-pattern.md):
 
 | Adapter submodule | Role |
-|---|---|
+| --- | --- |
 | `deps_impl.rs` | The single `impl ChannelMessagingDeps` block — every method delegates to one of the submodules below |
 | `state_reads.rs` | Channel / thread / member lookups, permission computation |
 | `state_mutations.rs` | AppState writes (acquire lock, mutate, drop guard before await) |
@@ -146,7 +146,7 @@ to the frontend through the `community-event` channel.
 Per-channel state has three storage layers:
 
 | Surface | Purpose |
-|---|---|
+| --- | --- |
 | `channels` SQLite table | Channel definition: `topic`, `slowmode_seconds`, `nsfw`, per-channel `message_record_key`, `mek_generation`, `log_key`, `my_sequence` (gap-detection counter) |
 | `messages` SQLite table | Message rows, indexed by `(owner_key, conversation_id, timestamp)` with the dedup constraint |
 | `rekindle_db::repo::channels` + `src-tauri/src/channel_materialize.rs` | The `channels` table's SQL (both hosts); materialize produces denormalised snapshots for the UI |
@@ -170,7 +170,7 @@ state). See [`voice.md`](voice.md) for the detailed pipeline.
 ### Mutual-aid SFU
 
 | Channel size | Topology |
-|--------------|----------|
+| --- | --- |
 | ≤ 4 members | Full-mesh P2P — every speaker sends every listener. |
 | > 4 members | Mutual-aid SFU — the lowest-XOR-hash online peer acts as the relay (Selective Forwarding Unit). Decoding / encoding stays at the speaker; the SFU just fans out frames. |
 
@@ -298,7 +298,7 @@ Constraints:
 ## Where the code lives
 
 | Concern | Location |
-|---|---|
+| --- | --- |
 | Pure channel-messaging crate | `crates/rekindle-channel/` |
 | Pure DM / group DM crate | `crates/rekindle-dm/` |
 | Pure call signaling crate | `crates/rekindle-calls/` |

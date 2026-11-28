@@ -11,6 +11,7 @@
 
 use async_trait::async_trait;
 use rekindle_governance_runtime::deps::RoleTable;
+use rekindle_governance_runtime::origin::OWNER_ROLE_POSITION;
 use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 
@@ -42,11 +43,9 @@ impl HostGovernance {
 
     /// `(existing_role_ids, next_position)` for allocating a new role.
     ///
-    /// Next position is one past the highest in use below `u32::MAX`, so a
+    /// Next position is one past the highest in use below the Owner role, so a
     /// freshly created role sorts to the bottom of the ascending list.
-    /// `u32::MAX` is the Owner role's (`origin.rs`): no created role may
-    /// reach it, since `validate` admits a role only strictly below its
-    /// writer's highest position.
+    /// The allocator reserves the Owner's position at creation.
     pub(super) fn role_table_summary_impl(&self, community_id: &str) -> (Vec<RoleId>, u32) {
         let Some(state) = self.governance_state_impl(community_id) else {
             return (Vec::new(), 0);
@@ -56,9 +55,9 @@ impl HostGovernance {
             .roles
             .values()
             .map(|r| r.position)
-            .filter(|position| *position < u32::MAX)
+            .filter(|position| *position < OWNER_ROLE_POSITION)
             .max()
-            .map_or(0, |max| max.saturating_add(1).min(u32::MAX - 1));
+            .map_or(0, |max| max.saturating_add(1).min(OWNER_ROLE_POSITION - 1));
         (ids, next_position)
     }
 }

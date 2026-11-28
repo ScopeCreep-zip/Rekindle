@@ -8,6 +8,8 @@
 //! the Host community store, which the governance adapter reads (plan E3.1
 //! B2b).
 
+use std::sync::Arc;
+
 use parking_lot::RwLock;
 use rekindle_db::repo;
 use rekindle_db::DbHandle;
@@ -176,27 +178,35 @@ pub fn record_removed_by_name(
     }
 }
 
-/// Keep our presence sharing consent for the community
-/// (`communities.presence_policy`, JSON), so a restart loads it
-/// (`governance::loader`).
-pub fn record_presence_policy(
-    session: &RwLock<Option<Session>>,
-    db: &DbHandle,
-    community_id: &str,
-    policy_json: String,
-) {
-    if let Some((owner, db)) = owner_and_db(session, db) {
-        let community = community_id.to_string();
-        db.fire("presence policy", move |conn| {
-            repo::communities::set(
-                conn,
-                &owner,
-                &community,
-                repo::communities::Column::PresencePolicy,
-                policy_json,
-            )
-        });
-    }
+/// Commit a consent edit and update the live policy together. The database
+/// thread serializes edits, including those submitted by different clients.
+///
+/// # Errors
+/// The community is missing or its policy could not be stored.
+pub async fn record_presence_policy(
+    db: &rekindle_db::Db,
+    owner: String,
+    store: Arc<CommunityStore>,
+    community: String,
+    update: impl FnOnce(&mut rekindle_types::presence::PresenceSharingPolicy) + Send + 'static,
+) -> Result<bool, String> {
+    db.call(move |conn| {
+        let mut map = store.map().write();
+        let Some(state) = map.get_mut(&community) else {
+            return Ok(None);
+        };
+        let mut policy = state.presence_policy.clone();
+        update(&mut policy);
+        if state.presence_policy == policy {
+            return Ok(Some(false));
+        }
+        repo::communities::set_presence_policy(conn, &owner, &community, &policy)?;
+        state.presence_policy = policy;
+        Ok(Some(true))
+    })
+    .await
+    .map_err(|error| format!("policy not stored: {error}"))?
+    .ok_or_else(|| "unknown community".into())
 }
 
 /// The next `seq` of our beat in `community_id`, persisted before it is
@@ -242,7 +252,7 @@ pub async fn roster_name(
 pub struct NewMembership {
     pub membership: CommunityMembership,
     /// The registry's owner keypair (the vault's `RegistryKeypair`).
-    pub registry_keypair: Option<String>,
+    pub registry_keypair: Option<zeroize::Zeroizing<String>>,
     /// Our member record's owner keypair `K_M(p)` (the vault's
     /// `MemberRecordOwner`, plan E3.2).
     pub member_record_owner: Option<zeroize::Zeroizing<String>>,
@@ -329,7 +339,10 @@ pub fn record_membership(
             .map_err(|e| format!("member hpke secret: {e}"))?;
         }
     }
-    communities.install_membership(&membership, registry_keypair.as_deref());
+    communities.install_membership(
+        &membership,
+        registry_keypair.as_ref().map(|key| key.as_str()),
+    );
     // The pinned cert every op of ours is built and published under.
     if let Some(decoded) = cert {
         communities.set_genesis_cert(&community, decoded.signed.cert);

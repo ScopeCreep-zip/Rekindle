@@ -10,19 +10,24 @@ import type { Message } from "../stores/chat.store";
 export function messageAnnouncement(
   message: Message,
   senderName: string,
-  removedByName: () => string,
+  removedByName: () => string
 ): string {
   const ts = new Date(message.timestamp).toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
   const sender = senderName || (message.isOwn ? "You" : "Unknown");
+  const admission = message.admission;
   const body = message.removedBy
     ? `Removed by ${removedByName()}`
-    : message.undecryptable
-      ? message.undecryptable.reasonText
-      : message.decryptionFailed
-        ? "Unable to decrypt — waiting for encryption keys"
-        : message.body;
+    : admission
+      ? admission.status === "pending"
+        ? admission.text
+        : admission.reasonText
+      : message.undecryptable
+        ? message.undecryptable.reasonText
+        : message.decryptionFailed
+          ? "Unable to decrypt — waiting for encryption keys"
+          : message.body;
   return `${sender} at ${ts}: ${body}`;
 }

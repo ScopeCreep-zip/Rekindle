@@ -1,12 +1,13 @@
-//! The Host's words for each community capability a member lacks (plan
+//! The Host's words for each community or channel capability a member lacks (plan
 //! E3.2 S9): the reason a community window shows on a disabled control,
-//! from the real cause `rekindle_governance::permissions::denied_capabilities`
-//! names (a missing permission, a running timeout, a creator seat), never a
-//! generic "not allowed". The window renders the text as given; it reads no
-//! permission bits for its controls.
+//! based on the cause governance returns (a missing permission, a running
+//! timeout, a creator seat, or a channel overwrite). The window renders
+//! these words directly.
 
 use chrono::{DateTime, Local, TimeZone as _};
-use rekindle_governance::permissions::{denied_capabilities, denied_in_channel, CapabilityDenial};
+use rekindle_governance::permissions::{
+    denied_capabilities, denied_in_channel, denied_permissions, CapabilityDenial,
+};
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::validate::target::TargetRefusal;
 use rekindle_types::dto::community_capability::{
@@ -17,9 +18,14 @@ use rekindle_types::id::{ChannelId, PseudonymKey};
 /// A member row's actions before we hold a pseudonym here.
 pub(super) const JOIN_UNFINISHED: &str = "You haven't finished joining this community yet.";
 /// Every control before the community's first merge.
-pub(super) const NOT_LOADED: &str = "This community's rules have not loaded yet.";
+pub(crate) const NOT_LOADED: &str = "This community's rules have not loaded yet.";
 /// Our own row's actions.
 pub(super) const YOURSELF: &str = "You can't moderate yourself.";
+
+/// Parse the pseudonym of a joined member.
+pub(crate) fn joined_pseudonym(hex: &str) -> Option<PseudonymKey> {
+    hex::decode(hex).ok()?.try_into().ok().map(PseudonymKey)
+}
 
 /// The Host's words for a moderation action's refusal against one member.
 pub(super) fn moderation_words(refusal: TargetRefusal) -> String {
@@ -51,7 +57,7 @@ pub(super) fn denied_of(
 
 /// `member`'s denied channel capabilities in `channel` of `state` at
 /// `now_secs`, worded.
-pub(super) fn channel_denied_of(
+pub(crate) fn channel_denied_of(
     member: &PseudonymKey,
     channel: &ChannelId,
     state: &GovernanceState,
@@ -63,6 +69,26 @@ pub(super) fn channel_denied_of(
         .collect()
 }
 
+/// Check every required bit and word each refusal from the same snapshot.
+pub(super) fn require_permissions(
+    member: &PseudonymKey,
+    channel: Option<&ChannelId>,
+    state: &GovernanceState,
+    now_secs: u64,
+    required: u64,
+) -> Result<(), String> {
+    let denials = denied_permissions(member, channel, state, now_secs, required)
+        .ok_or("Invalid permission requirement.")?;
+    if denials.is_empty() {
+        return Ok(());
+    }
+    let reasons: Vec<_> = denials
+        .into_iter()
+        .map(|denial| denial_words(denial, now_secs))
+        .collect();
+    Err(reasons.join(" "))
+}
+
 fn words(cap: CommunityCapability, denial: CapabilityDenial, now_secs: u64) -> String {
     match (cap, denial) {
         (CommunityCapability::OfferSuccessor, CapabilityDenial::NotCreator) => {
@@ -72,13 +98,19 @@ fn words(cap: CommunityCapability, denial: CapabilityDenial, now_secs: u64) -> S
     }
 }
 
-fn denial_words(denial: CapabilityDenial, now_secs: u64) -> String {
+pub(crate) fn denial_words(denial: CapabilityDenial, now_secs: u64) -> String {
     match denial {
         CapabilityDenial::Missing { permission } => {
             format!("You need the {permission} permission.")
         }
-        CapabilityDenial::TimedOut { until_secs } => {
-            format!("You're timed out until {}.", clock(until_secs, now_secs))
+        CapabilityDenial::TimedOut {
+            until_secs,
+            permission,
+        } => {
+            let remaining = until_secs.saturating_sub(now_secs);
+            let unit = if remaining == 1 { "second" } else { "seconds" };
+            let until = clock(until_secs, now_secs);
+            format!("You're timed out until {until} ({remaining} {unit} remaining). {permission} is unavailable during the timeout.")
         }
         CapabilityDenial::NotCreator => "Only a creator of this community can do this.".to_owned(),
         CapabilityDenial::ChannelDenied { permission } => {

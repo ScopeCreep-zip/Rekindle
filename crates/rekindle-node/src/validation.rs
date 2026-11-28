@@ -368,6 +368,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityExport { passphrase: _ }
         | IpcRequest::IdentityRotate { passphrase: _ }
         | IpcRequest::Status
+        | IpcRequest::PermissionCatalogue
         | IpcRequest::Shutdown
         | IpcRequest::IdentityShow
         | IpcRequest::PrekeyStatus
@@ -469,6 +470,13 @@ IpcRequest::DisappearingSet { .. } | IpcRequest::DisappearingGet { .. } => group
         | IpcRequest::IdentityMarkVerified { peer: key }
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverPostSkippingLocalPermission { channel, body, reply_to } => {
+            channels::check_post(channel, body, reply_to.as_deref())
+        }
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        IpcRequest::WebdriverHoldGovernanceOps { community: target }
+        | IpcRequest::WebdriverReleaseGovernanceOps { community: target } => community(target),
         IpcRequest::Community(request) => community::check(request),
         IpcRequest::Transfer(request) => transfers::check(request),
         IpcRequest::LocalSearch { scope, query } => local_search::check(scope, query),
@@ -555,6 +563,7 @@ mod community;
 mod community_events;
 mod community_fields;
 mod community_onboarding;
+mod community_profile;
 mod expressions;
 mod friends;
 mod group_dm;

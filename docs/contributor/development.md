@@ -22,7 +22,7 @@ nix develop .#frontend
 The `frontend` shell provides:
 
 | Tool | Purpose |
-|------|---------|
+| ------ | --------- |
 | Rust 1.92+ | Backend compilation (cargo, clippy, rust-analyzer) |
 | Node.js 22 | Frontend tooling |
 | pnpm | Package management |
@@ -409,7 +409,7 @@ and [`../architecture/services-pattern.md`](../architecture/services-pattern.md)
 ## Environment Variables
 
 | Variable | Purpose | Default |
-|----------|---------|---------|
+| ---------- | --------- | --------- |
 | `REKINDLE_APP_NO_BUILD` | `1` makes `pnpm test:app` reuse the last debug build | unset |
 | `CARGO_TARGET_DIR` | Where cargo builds; the real-app suite looks for the app there | `target/` |
 | `RUST_LOG` | Tracing filter (default: `rekindle=info,warn`; Veilid logs under facility targets such as `rtab`, `stor`, `net`, `rpc`, never `veilid_core`) | unset |

@@ -1,4 +1,4 @@
-import type { Codec, ScalabilityMode, SessionVideoConfig } from "../commands/types_sync";
+import type { SessionVideoConfig } from "../commands/types_sync";
 
 /// Architecture §10.6 — community video / screen-share signalling. Split
 /// out of the `CommunityEvent` union (and folded back in via
@@ -53,12 +53,13 @@ export type CommunityVideoEvent =
       // Phase 3 — the backend negotiator found NO local encode codec
       // every peer can decode. Latched backend-side: fires once per
       // compatible→incompatible transition. `peers` lists the blocking
-      // pseudonyms. Voice is unaffected.
+      // members, each with the Host's shown name (contract VN2). Voice is
+      // unaffected.
       type: "videoCodecIncompatible";
       data: {
         communityId: string;
         channelId: string;
-        peers: string[];
+        peers: { pseudonymKey: string; displayName: string }[];
       };
     }
   | {
@@ -70,6 +71,8 @@ export type CommunityVideoEvent =
       data: {
         communityId: string;
         senderPseudonym: string;
+        /** The Host's shown name for the sender (contract VN2). */
+        displayName: string;
         reason: string;
       };
     }

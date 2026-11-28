@@ -1,15 +1,19 @@
 import { batch } from "solid-js";
 import { reconcile } from "solid-js/store";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeChatEvents } from "../ipc/channels";
-import { conversationId } from "../ipc/channels/chat_events";
-import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
-import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
-import { friendsState, setFriendsState } from "../stores/friends.store";
-import { applyCoCreatorEvent } from "../stores/co-creator.store";
-import { chatState, setChatState } from "../stores/chat.store";
-import { handleTypingIndicator, handleIncomingMessage, handleResetUnread, upsertOwnMessage } from "../actions/chat.actions";
 import { handleRefreshFriends } from "../actions/buddy.actions";
+import {
+  handleIncomingMessage,
+  handleResetUnread,
+  handleTypingIndicator,
+  upsertOwnMessage,
+} from "../actions/chat.actions";
+import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
+import { subscribeChatEvents, type UnlistenFn } from "../ipc/channels";
+import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
+import { conversationId } from "../ipc/channels/chat_events";
+import { chatState, setChatState } from "../stores/chat.store";
+import { applyCoCreatorEvent } from "../stores/co-creator.store";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { transformDmMessage, transformHistoryGap, transformNewFriend } from "../utils/transformers";
 
 // A DM we sent changed delivery state (`dmSendStatus`): the
@@ -56,7 +60,11 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
     // A DM's unread count is the Host's (`UnreadChanged`), rendered as is.
     if ("unreadChanged" in event) {
       const { context, count } = event.unreadChanged;
-      if (typeof context === "object" && "dm" in context && friendsState.friends[context.dm.peerKey]) {
+      if (
+        typeof context === "object" &&
+        "dm" in context &&
+        friendsState.friends[context.dm.peerKey]
+      ) {
         setFriendsState("friends", context.dm.peerKey, "unreadCount", count);
       }
       return;
@@ -66,10 +74,16 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
       const msg = event.channelMessage;
       if ("dmSendStatus" in msg) {
         applyMessageState(msg.dmSendStatus);
-      } else if ("directMessageSent" in msg && chatState.conversations[msg.directMessageSent.conversationId]) {
+      } else if (
+        "directMessageSent" in msg &&
+        chatState.conversations[msg.directMessageSent.conversationId]
+      ) {
         // Our own committed row (plan E6.11), into a conversation this
         // window holds; it draws no conversation of its own.
-        upsertOwnMessage(msg.directMessageSent.conversationId, transformDmMessage(msg.directMessageSent.message));
+        upsertOwnMessage(
+          msg.directMessageSent.conversationId,
+          transformDmMessage(msg.directMessageSent.message)
+        );
       }
       return;
     }
@@ -136,7 +150,7 @@ function applyFriendEvent(friend: FriendEvent): void {
           handshakeError: null,
           handshakeRetrying: false,
           unreachable: false,
-        }),
+        })
       );
     }
     handleRefreshFriends();
@@ -148,7 +162,7 @@ function applyFriendEvent(friend: FriendEvent): void {
     setFriendsState(
       "friends",
       peerKey,
-      transformNewFriend(peerKey, displayName, friendshipState, groupLabel),
+      transformNewFriend(peerKey, displayName, friendshipState, groupLabel)
     );
     // The Host's view of the row (its group-DM eligibility, GC3).
     handleRefreshFriends();
@@ -274,7 +288,7 @@ function applyFriendEvent(friend: FriendEvent): void {
 export function subscribeDmChatEvents(
   peerId: string,
   getOwnKey: () => string,
-  onIncoming: () => void,
+  onIncoming: () => void
 ): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     if ("channelMessage" in event && "directMessageReceived" in event.channelMessage) {
@@ -333,7 +347,9 @@ export function subscribeDmChatEvents(
     if ("channelMessage" in event && "messagesExpired" in event.channelMessage) {
       const gone = event.channelMessage.messagesExpired;
       if (conversationId(gone.context) !== peerId || !chatState.conversations[peerId]) return;
-      setChatState("conversations", peerId, "messages", (msgs) => withoutExpired(msgs, gone.clientIds));
+      setChatState("conversations", peerId, "messages", (msgs) =>
+        withoutExpired(msgs, gone.clientIds)
+      );
       onIncoming();
       return;
     }

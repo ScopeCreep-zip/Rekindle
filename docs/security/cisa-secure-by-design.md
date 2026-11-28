@@ -51,7 +51,7 @@ Rekindle's architecture eliminates several whole vulnerability
 classes by construction:
 
 | Vulnerability class | How it is eliminated |
-|---------------------|----------------------|
+| --------------------- | ---------------------- |
 | SQL injection | Rusqlite parameterised queries throughout. No string-concatenated SQL. |
 | Cross-site scripting | No web server. Tauri frontend is local; SolidJS escapes by default. No `dangerouslySetInnerHTML` equivalents. |
 | Server-side request forgery | No HTTP server. `rekindle-link-preview` is the only OpenGraph fetcher; runs sandboxed with hard limits (5 s timeout, 256 KB body cap, plain text/html only, max 5 redirects). |

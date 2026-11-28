@@ -60,6 +60,12 @@ fn stop(tasks: &SingleTasks, community_id: &str) {
 }
 
 impl CommunityStore {
+    /// The lock that serializes edits to our profile and published card.
+    #[must_use]
+    pub fn profile_write_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        community_lock(&self.profile_writes, community_id)
+    }
+
     /// The lock that serializes `community_id`'s watch-ring moves.
     #[must_use]
     pub fn ring_move_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -172,6 +178,8 @@ impl CommunityStore {
     /// Drop a community — on leave.
     pub fn remove(&self, community_id: &str) {
         self.map.write().remove(community_id);
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        self.governance_ingest_holds.remove(community_id);
         self.ring_moves.lock().remove(community_id);
         self.rebuilds.lock().remove(community_id);
         self.rebuild_flights.lock().remove(community_id);
@@ -179,6 +187,7 @@ impl CommunityStore {
         self.successor_judgements.lock().remove(community_id);
         self.frontier_writes.lock().remove(community_id);
         self.admissions.lock().remove(community_id);
+        self.profile_writes.lock().remove(community_id);
         self.follow_ups.lock().remove(community_id);
         self.card_refreshes.lock().remove(community_id);
         self.member_cards
@@ -189,6 +198,8 @@ impl CommunityStore {
     /// Drop every community. Called when the session ends.
     pub fn clear(&self) {
         self.map.write().clear();
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        self.governance_ingest_holds.clear();
         self.ring_moves.lock().clear();
         self.rebuilds.lock().clear();
         self.rebuild_flights.lock().clear();
@@ -196,6 +207,7 @@ impl CommunityStore {
         self.successor_judgements.lock().clear();
         self.frontier_writes.lock().clear();
         self.admissions.lock().clear();
+        self.profile_writes.lock().clear();
         self.follow_ups.lock().clear();
         self.card_refreshes.lock().clear();
         self.member_cards.write().clear();

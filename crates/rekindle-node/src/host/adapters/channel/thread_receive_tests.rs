@@ -6,6 +6,7 @@
 use rekindle_codec::community::envelope::ControlPayload;
 use rekindle_db::repo::threads;
 use rekindle_lifecycle::SessionScope;
+use rekindle_types::message::SendState;
 use rekindle_types::thread::ThreadInfo;
 
 use super::{sender_reply, ThreadMessageView};
@@ -29,14 +30,16 @@ fn notice(claimed: &str) -> ControlPayload {
 
 fn view(author: &str, message_id: &str, opened: bool) -> ThreadMessageView {
     ThreadMessageView {
+        admission: None,
         sender_pseudonym: author.into(),
         body: if opened { "hi".into() } else { String::new() },
         decryption_failed: !opened,
         timestamp_ms: 7_000,
         is_own: false,
         server_message_id: Some(message_id.into()),
-        mek_generation: 1,
+        mek_generation: Some(1),
         stream_seq: 1,
+        send_state: SendState::Delivered,
     }
 }
 

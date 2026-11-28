@@ -38,11 +38,10 @@ pub(crate) async fn mint<D: GovernanceRuntimeDeps>(
     let schema = rekindle_records::schema::join_inbox(&public, slots)
         .ok_or(GovernanceRuntimeError::OutOfBounds { field: "max_uses" })?;
     let pool = deps.record_port()?;
-    let (lease, record_key, owner) = pool
+    let (lease, record_key, owner_keypair) = pool
         .create(&schema, None)
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("create join inbox: {e}")))?;
-    let owner_keypair = Zeroizing::new(owner);
     let opened = pool
         .set(
             lease,

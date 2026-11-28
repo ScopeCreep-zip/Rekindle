@@ -38,7 +38,9 @@ use crate::origin_reserve::{
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).
-const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+pub const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+/// The owner role's position: above every other role, so it is always first.
+pub const OWNER_ROLE_POSITION: u32 = u32::MAX;
 /// `@everyone`: the all-zero RoleId.
 const EVERYONE_ROLE_ID: RoleId = RoleId([0u8; 16]);
 
@@ -85,7 +87,7 @@ pub(crate) fn genesis_entries(
             role_id: OWNER_ROLE_ID,
             name: "Owner".into(),
             permissions: permissions::ADMINISTRATOR,
-            position: u32::MAX,
+            position: OWNER_ROLE_POSITION,
             color: 0xC1_7C_17,
             hoist: true,
             mentionable: false,
@@ -280,9 +282,9 @@ fn owner_signing_key(
     info: &DhtRecordInfo,
     what: &str,
 ) -> Result<(Zeroizing<String>, SigningKey), GovernanceRuntimeError> {
-    let text = Zeroizing::new(info.owner_keypair.clone().ok_or_else(|| {
+    let text = info.owner_keypair.clone().ok_or_else(|| {
         GovernanceRuntimeError::Adapter(format!("origin: the {what} has no owner keypair"))
-    })?);
+    })?;
     let (_, secret) = keypair_text::parse_keypair_text(&text)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("{what} owner: {e}")))?;
     let secret = Zeroizing::new(secret);
@@ -300,7 +302,7 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
 ) -> Result<(GenesisCert, Vec<u8>), GovernanceRuntimeError> {
     let (k_a_text, k_a) = owner_signing_key(anchor, "anchor")?;
     let anchor_owner = k_a.verifying_key().to_bytes();
-    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner);
+    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner)?;
     let message = genesis_signing_bytes(&anchor.record_key, &unsigned);
     let signed = genesis::SignedGenesis {
         anchor_sig: k_a.sign(&message).to_bytes(),
@@ -316,10 +318,9 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
             anchor.lease,
             community_anchor::GENESIS_CERT,
             bytes.clone(),
-            Some(k_a_text.to_string()),
+            Some(k_a_text),
         )
         .await;
-    drop(k_a_text);
     deps.release_record(anchor.lease).await;
     if let Some(stale) = outcome? {
         return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
@@ -455,7 +456,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             reg_record.lease,
             CREATOR_SLOT,
             presence_bytes,
-            Some(creator_writer.clone()),
+            Some(Zeroizing::new(creator_writer.clone())),
         )
         .await?;
     if let Some(stale) = reg_outcome {

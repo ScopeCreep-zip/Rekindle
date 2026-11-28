@@ -5,8 +5,11 @@
 
 use rekindle_channel::deps::SentChannelMessageEcho;
 use rekindle_channel::event::ChannelEvent;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SocialEvent, SubscriptionEvent};
+
+use rekindle_types::thread::thread_reply_key;
 
 use super::HostChannel;
 use crate::host::adapters::governance::community_profile::member_shown_name;
@@ -40,7 +43,13 @@ impl HostChannel {
     /// (plan E3.3): the member list's name, never the raw key. The echo,
     /// the ingest and history all name it here.
     pub(super) fn forward_name(&self, community_id: &str, author: Option<&str>) -> Option<String> {
-        author.map(|a| member_shown_name(&self.ctx().communities, community_id, a))
+        let author = author?;
+        pseudonym_hex(author).ok()?;
+        Some(member_shown_name(
+            &self.ctx().communities,
+            community_id,
+            author,
+        ))
     }
 
     pub(super) fn delivery_impl(
@@ -77,6 +86,32 @@ impl HostChannel {
                 reason,
             },
         ));
+    }
+
+    /// Row-less thread replies use the same status event as other posts.
+    /// The event is keyed by the thread id from the composite stream scope.
+    pub(super) fn thread_send_status(&self, change: &rekindle_outbox::StateChange) -> bool {
+        if change.kind != rekindle_outbox::StreamKind::ChannelPost
+            || !rekindle_channel::is_thread_reply_id(&change.client_id)
+        {
+            return false;
+        }
+        if let Some((community, thread)) = change
+            .stream
+            .strip_prefix("channel_post:")
+            .and_then(|scope| scope.rsplit_once(':'))
+        {
+            let Ok(author) = self.pseudonym_credentials_impl(community) else {
+                return true;
+            };
+            let message_id = thread_reply_key(&author.pseudonym.to_hex(), &change.client_id);
+            let reason = match (&change.wedge_reason, change.state) {
+                (None, SendState::Failed) => Some("the thread reply was discarded".to_owned()),
+                (reason, _) => reason.clone(),
+            };
+            self.send_state_impl(community, thread, &message_id, change.state, reason);
+        }
+        true
     }
 
     /// A poll op of `poll_id` in `channel_id` landed on our outbox or was

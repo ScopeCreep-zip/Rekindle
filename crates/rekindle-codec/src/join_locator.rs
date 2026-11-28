@@ -8,15 +8,16 @@ use rekindle_types::{
 use zeroize::Zeroizing;
 
 use crate::{
-    capnp_codec::{bounds::Bound, capnp_err, pack, unpack_bounded},
+    capnp_codec::{bounds, capnp_err, pack, unpack_bounded},
     governance_op::{read_op_ref, write_op_ref},
     governance_op_capnp::op_ref,
     CodecError,
 };
 
 const VERSION: u8 = 1;
-const HEADER_LEN: usize = 1 + hpke::ENC_LEN;
-const MAX_PLAINTEXT: usize = MAX_ENTRY_LEN - HEADER_LEN - hpke::TAG_LEN;
+const JOIN_LOCATOR_HEADER_LEN: usize = 1 + hpke::ENC_LEN;
+pub(crate) const JOIN_LOCATOR_MAX_PLAINTEXT: usize =
+    MAX_ENTRY_LEN - JOIN_LOCATOR_HEADER_LEN - hpke::TAG_LEN;
 
 /// The member-record locator is the author record in the op reference.
 /// A reader verifies that the fetched MemberJoined names this same record.
@@ -38,8 +39,8 @@ impl JoinLocator {
             .map_err(|e| CodecError::Verification(e.to_string()))?;
         let mut message = capnp::message::Builder::new_default();
         write_op_ref(message.init_root::<op_ref::Builder<'_>>(), &self.joined_op);
-        let plaintext = Zeroizing::new(pack(&message));
-        if plaintext.len() > MAX_PLAINTEXT {
+        let plaintext = Zeroizing::new(pack(&message)?);
+        if plaintext.len() > JOIN_LOCATOR_MAX_PLAINTEXT {
             return Err(CodecError::Serialization(
                 "join locator exceeds its bound".into(),
             ));
@@ -51,8 +52,7 @@ impl JoinLocator {
             &plaintext,
         )
         .map_err(|e| CodecError::Verification(e.to_string()))?;
-        let mut bytes = Vec::with_capacity(HEADER_LEN + sealed.ciphertext.len());
-        bytes.push(VERSION);
+        let mut bytes = Vec::from([VERSION]);
         bytes.extend_from_slice(&sealed.enc);
         bytes.extend_from_slice(&sealed.ciphertext);
         Ok(bytes)
@@ -68,23 +68,24 @@ impl JoinLocator {
         recipient: &ed25519_dalek::SigningKey,
         invite_id: &[u8; 16],
     ) -> Result<Self, CodecError> {
-        if !(HEADER_LEN + hpke::TAG_LEN..=MAX_ENTRY_LEN).contains(&bytes.len())
-            || bytes[0] != VERSION
-        {
-            return Err(CodecError::Deserialization(
-                "invalid join locator carrier".into(),
-            ));
+        let invalid_carrier = || CodecError::Deserialization("invalid join locator carrier".into());
+        if !(JOIN_LOCATOR_HEADER_LEN + hpke::TAG_LEN..=MAX_ENTRY_LEN).contains(&bytes.len()) {
+            return Err(invalid_carrier());
         }
+        let Some((&VERSION, body)) = bytes.split_first() else {
+            return Err(invalid_carrier());
+        };
+        let (enc, ciphertext) = body.split_at_checked(hpke::ENC_LEN).ok_or_else(invalid_carrier)?;
         let secret = Zeroizing::new(pseudonym_to_x25519(recipient).to_bytes());
         let plaintext = hpke::open_base(
             &secret,
             domains::JOIN_LOCATOR,
             invite_id,
-            &bytes[1..HEADER_LEN],
-            &bytes[HEADER_LEN..],
+            enc,
+            ciphertext,
         )
         .map_err(|e| CodecError::Verification(e.to_string()))?;
-        let message = unpack_bounded(&plaintext, Bound::packed(MAX_PLAINTEXT))?;
+        let message = unpack_bounded(&plaintext, bounds::JOIN_LOCATOR_BOUND)?;
         let joined_op = read_op_ref(
             message
                 .get_root::<op_ref::Reader<'_>>()

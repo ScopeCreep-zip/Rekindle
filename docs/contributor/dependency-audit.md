@@ -16,7 +16,7 @@ Before starting, make sure:
 
 - [ ] CI on `main` is green (`cargo test --workspace`, `cargo clippy
   --workspace -- -D warnings`, `cargo fmt --all -- --check`).
-- [ ] `cargo audit` and `cargo deny check` from the most recent
+- [ ] `cargo deny check` from the most recent
   scheduled `audit.yml` run are green (or known issues are tracked).
 - [ ] No open issues tagged `security`, `kev`, or `dependency` are
   unresolved.
@@ -27,7 +27,6 @@ Before starting, make sure:
 
 ```sh
 # Rust
-cargo audit
 cargo deny check   # also run by `cargo xtask check` (check-supply-chain)
 
 # JavaScript
@@ -156,7 +155,7 @@ entry — `cargo deny check sources` will fail otherwise.
 ## Quick reference: when to act outside the quarterly cycle
 
 | Trigger | Action |
-|---------|--------|
+| --------- | -------- |
 | `audit.yml` fails on `main` | Out-of-cycle audit immediately. Fix in private branch if RCE / key compromise. |
 | `kev-check.yml` opens an issue | P1 incident per [`../security/incident-response.md`](../security/incident-response.md). |
 | `dependency-review.yml` blocks a PR | Block the PR until resolved — usually the contributor needs to bump or remove the offending dep. |

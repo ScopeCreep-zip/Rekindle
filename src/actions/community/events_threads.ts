@@ -1,10 +1,41 @@
-import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import type { Message } from "../../stores/chat.store";
 import type { CreateEventRequest } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
+import { isCommandError } from "../../ipc/commands/dto";
+import type { SendState } from "../../ipc/commands/types";
+import { eventAfter, readMark } from "../../stores/admission_events.store";
+import type { Message } from "../../stores/chat.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { takeEarlySendState } from "../../stores/early_send.store";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
+import { mergeRead } from "../../utils/message_merge";
 import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
+
+/**
+ * Our own thread post's state once the Host's answer names it (plan FT1),
+ * newest fact first: a ChannelSendStatus held because it came before the
+ * row knew the id, else a state the Host already applied to the row (its
+ * own event named the row, then a status reached it directly), else the
+ * answer's own `queued`. A late answer never undoes a newer `failed` or
+ * `sent`, nor erases a failure's reason.
+ */
+function ownPostState(
+  row: Message | undefined,
+  messageId: string,
+  answered: SendState
+): Pick<Message, "status" | "failureReason"> {
+  const early = takeEarlySendState(messageId);
+  if (early) {
+    if (early.state === "failed")
+      addToast(early.reason ?? "Message not delivered. Resend it.", "error");
+    return { status: early.state as Message["status"], failureReason: early.reason };
+  }
+  if (row?.serverMessageId === messageId && row.status !== undefined && row.status !== "sending") {
+    return { status: row.status, failureReason: row.failureReason };
+  }
+  return { status: answered as Message["status"], failureReason: undefined };
+}
 
 export async function handleLoadEvents(communityId: string): Promise<void> {
   try {
@@ -17,7 +48,7 @@ export async function handleLoadEvents(communityId: string): Promise<void> {
 
 export async function handleCreateEvent(
   communityId: string,
-  request: CreateEventRequest,
+  request: CreateEventRequest
 ): Promise<string | null> {
   try {
     const eventId = await commands.createEvent(communityId, request);
@@ -39,20 +70,26 @@ export async function handleEditEvent(
   startTime?: number,
   endTime?: number,
   channelId?: string,
-  maxAttendees?: number,
+  maxAttendees?: number
 ): Promise<void> {
   try {
-    await commands.editEvent(communityId, eventId, title, description, startTime, endTime, channelId, maxAttendees);
+    await commands.editEvent(
+      communityId,
+      eventId,
+      title,
+      description,
+      startTime,
+      endTime,
+      channelId,
+      maxAttendees
+    );
   } catch (e) {
     console.error("Failed to edit event:", e);
     addToast("Failed to edit event", "error");
   }
 }
 
-export async function handleDeleteEvent(
-  communityId: string,
-  eventId: string,
-): Promise<void> {
+export async function handleDeleteEvent(communityId: string, eventId: string): Promise<void> {
   try {
     await commands.deleteEvent(communityId, eventId);
   } catch (e) {
@@ -61,10 +98,7 @@ export async function handleDeleteEvent(
   }
 }
 
-export async function handleCancelEvent(
-  communityId: string,
-  eventId: string,
-): Promise<void> {
+export async function handleCancelEvent(communityId: string, eventId: string): Promise<void> {
   try {
     await commands.cancelEvent(communityId, eventId);
   } catch (e) {
@@ -76,7 +110,7 @@ export async function handleCancelEvent(
 export async function handleRsvpEvent(
   communityId: string,
   eventId: string,
-  status: string,
+  status: string
 ): Promise<void> {
   try {
     await commands.rsvpEvent(communityId, eventId, status);
@@ -92,7 +126,7 @@ export async function handleCreateThread(
   name: string,
   starterMessageId: string,
   forumTag?: string | null,
-  autoArchiveSeconds?: number,
+  autoArchiveSeconds?: number
 ): Promise<string | null> {
   try {
     const threadId = await commands.createThread(
@@ -101,7 +135,7 @@ export async function handleCreateThread(
       name,
       starterMessageId,
       forumTag,
-      autoArchiveSeconds,
+      autoArchiveSeconds
     );
     // Thread will arrive via broadcast — but optimistically reload
     await handleLoadChannelThreads(communityId, channelId);
@@ -114,8 +148,8 @@ export async function handleCreateThread(
 }
 
 export async function handleLoadChannelThreads(
-    communityId: string,
-    channelId: string,
+  communityId: string,
+  channelId: string
 ): Promise<void> {
   try {
     // Every thread, archived ones flagged: the list shows them apart and
@@ -123,6 +157,17 @@ export async function handleLoadChannelThreads(
     const threads = await commands.getChannelThreads(communityId, channelId);
     setCommunityState("channelThreads", channelId, threads);
   } catch (e) {
+    // The Host refuses the list when we may no longer view the channel (a
+    // view overwrite): it lists no threads to us, so none are shown, never
+    // the list from before, and its reason is said.
+    if (isCommandError(e) && e.type === "failed" && e.data.code === 403) {
+      // Said once, as the threads we showed go: a later re-read of a list
+      // already empty (another permission event) stays quiet.
+      const shown = (communityState.channelThreads[channelId]?.length ?? 0) > 0;
+      setCommunityState("channelThreads", channelId, []);
+      if (shown) addToast(e.data.message, "info");
+      return;
+    }
     console.error("Failed to load channel threads:", e);
     addToast("Failed to load threads", "error");
   }
@@ -133,26 +178,55 @@ export async function handleCreateForumPost(
   channelId: string,
   name: string,
   body: string,
-  forumTag?: string | null,
+  forumTag?: string | null
 ): Promise<string | null> {
-  const starterMessageId = `forum-post-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-  const threadId = await handleCreateThread(
-    communityId,
-    channelId,
-    name,
-    starterMessageId,
-    forumTag,
-  );
-  if (!threadId) return null;
-  await handleSendThreadMessage(communityId, threadId, body);
-  await handleLoadChannelThreads(communityId, channelId);
-  return threadId;
+  // One Host request creates the thread and queues its starter (plan FT1):
+  // created, or refused with nothing created and the Host's reason shown.
+  try {
+    const created = await commands.createForumPost(
+      communityId,
+      channelId,
+      name,
+      body.trim(),
+      forumTag
+    );
+    // The starter is ours and the Host named it: shown at once with its send
+    // state (queued until the outbox writes it), so an empty first page of
+    // the thread does not hide it; the page and our own event merge into it
+    // by its id.
+    const prior = (communityState.threadMessages[created.threadId] ?? []).find(
+      (m) => m.serverMessageId === created.starterMessageId
+    );
+    const state = ownPostState(prior, created.starterMessageId, created.starter);
+    const starter: Message = {
+      id: Date.now(),
+      senderId: communityState.communities[communityId]?.myPseudonymKey ?? "",
+      body: body.trim(),
+      timestamp: Date.now(),
+      isOwn: true,
+      serverMessageId: created.starterMessageId,
+      ...state,
+    };
+    // Our own event may have shown the starter first: merged by its id.
+    setCommunityState("threadMessages", created.threadId, (prev) =>
+      prior
+        ? (prev ?? []).map((m) =>
+            m.serverMessageId === created.starterMessageId ? { ...m, ...state } : m
+          )
+        : [...(prev ?? []), starter]
+    );
+    await handleLoadChannelThreads(communityId, channelId);
+    return created.threadId;
+  } catch (e) {
+    addToast(errorMessage(e), "error");
+    return null;
+  }
 }
 
 export async function handleSendThreadMessage(
   communityId: string,
   threadId: string,
-  body: string,
+  body: string
 ): Promise<void> {
   if (!body.trim()) return;
   const trimmed = body.trim();
@@ -174,18 +248,23 @@ export async function handleSendThreadMessage(
     .flat()
     .find((t) => t.id === threadId && t.archived)?.channelId;
   try {
-    await commands.sendThreadMessage(communityId, threadId, trimmed);
+    // The Host's send state (plan FT1): queued in the outbox or sent; a
+    // refusal is the only error. A later change arrives as ChannelSendStatus
+    // by this id, and one that came before this answer wins over it.
+    const sent = await commands.sendThreadMessage(communityId, threadId, trimmed);
+    const row = (communityState.threadMessages[threadId] ?? []).find((m) => m.id === tempId);
+    const state = ownPostState(row, sent.messageId, sent.sendState);
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
+      msgs.map((m) => (m.id === tempId ? { ...m, serverMessageId: sent.messageId, ...state } : m))
     );
     // A reply after the archive revives the thread (the Host's listing,
     // `is_thread_archived`): re-read it rather than decide it here.
     if (archivedIn) await handleLoadChannelThreads(communityId, archivedIn);
   } catch (e) {
-    console.error("Failed to send thread message:", e);
-    addToast("Failed to send thread message", "error");
+    console.error("Thread message refused:", e);
+    addToast(errorMessage(e), "error");
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
+      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m))
     );
   }
 }
@@ -193,31 +272,27 @@ export async function handleSendThreadMessage(
 export async function handleLoadThreadMessages(
   communityId: string,
   threadId: string,
-  limit: number,
+  limit: number
 ): Promise<void> {
   try {
+    const mark = readMark();
+    setCommunityState("threadMessages", threadId, (rows) => rows ?? []);
     const messages = await commands.getThreadMessages(communityId, threadId, limit);
     const mapped = transformMessages(messages);
     // The page may answer after a reply was sent or received (walk 14,
-    // M76: the late page replaced our own reply's bubble): keep what the
-    // page does not hold yet, after it.
-    setCommunityState("threadMessages", threadId, (prev) => {
-      const held = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
-      const later = (prev ?? []).filter((m) =>
-        m.serverMessageId ? !held.has(m.serverMessageId) : m.isOwn,
-      );
-      return [...mapped, ...later];
-    });
+    // M76: the late page replaced our own reply's bubble), and earlier
+    // replies may be loaded beyond it: the channel's read merge keeps both,
+    // and refreshes every row the page holds (CP1: a held reply judged).
+    setCommunityState("threadMessages", threadId, (prev) =>
+      mergeRead(prev ?? [], mapped, (m) => eventAfter(m.serverMessageId, mark))
+    );
   } catch (e) {
     console.error("Failed to load thread messages:", e);
     addToast("Failed to load thread messages", "error");
   }
 }
 
-export async function handleArchiveThread(
-  communityId: string,
-  threadId: string,
-): Promise<void> {
+export async function handleArchiveThread(communityId: string, threadId: string): Promise<void> {
   try {
     await commands.archiveThread(communityId, threadId);
   } catch (e) {
@@ -226,10 +301,7 @@ export async function handleArchiveThread(
   }
 }
 
-export async function handleUnarchiveThread(
-  communityId: string,
-  threadId: string,
-): Promise<void> {
+export async function handleUnarchiveThread(communityId: string, threadId: string): Promise<void> {
   try {
     await commands.unarchiveThread(communityId, threadId);
   } catch (e) {
@@ -242,7 +314,7 @@ export async function handleAddGameServer(
   communityId: string,
   gameId: string,
   label: string,
-  address: string,
+  address: string
 ): Promise<string | null> {
   try {
     const serverId = await commands.addGameServer(communityId, gameId, label, address);
@@ -259,14 +331,11 @@ export async function handleAddGameServer(
   }
 }
 
-export async function handleRemoveGameServer(
-  communityId: string,
-  serverId: string,
-): Promise<void> {
+export async function handleRemoveGameServer(communityId: string, serverId: string): Promise<void> {
   try {
     await commands.removeGameServer(communityId, serverId);
     setCommunityState("gameServers", communityId, (prev) =>
-      (prev ?? []).filter((s) => s.id !== serverId),
+      (prev ?? []).filter((s) => s.id !== serverId)
     );
   } catch (e) {
     console.error("Failed to remove game server:", e);

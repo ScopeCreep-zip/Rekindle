@@ -121,6 +121,15 @@ pub enum Action {
         peer_key: String,
         text: String,
     },
+    /// `CreateForumPost`: a thread in a forum channel and its starter, one
+    /// outcome (plan E3.3, FT1).
+    CreateForumPost {
+        community: String,
+        channel: String,
+        title: String,
+        tag: Option<String>,
+        body: String,
+    },
     /// `ChannelMessageEdit`: our message's new body (plan E3.3 E1).
     EditChannelMessage {
         channel: String,
@@ -298,6 +307,11 @@ pub enum CommandResult {
     CommunityInfoLoaded {
         detail: rekindle_types::display::CommunityDetail,
     },
+    CommunityPresencePolicyLoaded {
+        community: String,
+        policy: rekindle_types::presence::PresenceSharingPolicy,
+    },
+    PermissionCatalogueLoaded(rekindle_types::dto::permission_catalogue::PermissionCatalogue),
     FriendListLoaded {
         friends: Vec<rekindle_types::dto::friends::Friend>,
     },

@@ -9,7 +9,7 @@ reference for the full stack as it stands in 2026.
 The configs all live at the repo root (or `.github/`):
 
 | Tool | Config file | Covers |
-|------|-------------|--------|
+| ------ | ------------- | -------- |
 | **rustfmt** | [`../../rustfmt.toml`](../../rustfmt.toml) | Rust code formatting |
 | **clippy** | [`../../clippy.toml`](../../clippy.toml) + workspace lints in `Cargo.toml` | Rust correctness + style |
 | **cargo-deny** | [`../../deny.toml`](../../deny.toml) | Rust dep advisories / licenses / sources / bans |
@@ -51,6 +51,9 @@ lefthook run pre-push            # cargo clippy + cargo test
 every subsequent `git commit` and `git push` runs the configured
 linters automatically.
 
+src/ipc/invoke.ts is the only source file allowed to import the Tauri core Channel and invoke names directly.
+The boundary exposes typed IPC to the rest of the frontend.
+
 ### Per-tool ad-hoc
 
 Each linter is also runnable on its own:
@@ -59,7 +62,6 @@ Each linter is also runnable on its own:
 # Rust
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo audit
 cargo deny check
 cargo vet check
 
@@ -96,7 +98,7 @@ capnp compile -o /dev/null --src-prefix=schemas schemas/*.capnp
 Two workflows orchestrate these in CI:
 
 | Workflow | Covers |
-|----------|--------|
+| ---------- | -------- |
 | [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `cargo fmt`, `cargo clippy`, `cargo test`, Tauri build smoke per OS (the real-app UI suite needs a desktop session and runs outside CI) |
 | [`../../.github/workflows/lint.yml`](../../.github/workflows/lint.yml) | Everything else — frontend (Biome / stylelint / knip), TOML, Markdown + lychee, SQL, workflows (actionlint + zizmor), shell, Nix, typos, gitleaks, Cap'n Proto |
 | [`../../.github/workflows/audit.yml`](../../.github/workflows/audit.yml) | RustSec advisories + cargo-deny + pnpm audit (daily + per-PR) |
@@ -110,8 +112,8 @@ Two workflows orchestrate these in CI:
 ### Rust
 
 `rustfmt` and `clippy` are stdlib — no alternatives. For supply-chain
-auditing we use `cargo-audit` (RustSec advisory DB), `cargo-deny`
-(license + bans + sources policy), and `cargo-vet` (cryptographic
+auditing we use `cargo-deny` (RustSec advisory DB through its
+advisories check, plus license + bans + sources policy), and `cargo-vet` (cryptographic
 audit attestations). Specific selection rationale lives in
 [`../security/supply-chain-policy.md`](../security/supply-chain-policy.md)
 and the dedicated agent reports synthesised here.
@@ -284,7 +286,7 @@ Apply once the parallel TS work in flight has settled.
 Most modern editors auto-detect the configs above. Quick references:
 
 | Editor | Recommended extension(s) |
-|--------|--------------------------|
+| -------- | -------------------------- |
 | **VS Code** | `biomejs.biome`, `stylelint.vscode-stylelint`, `tamasfe.even-better-toml`, `DavidAnson.vscode-markdownlint`, `bradlc.vscode-tailwindcss`, `mads-hartmann.bash-ide-vscode`, `tekumara.typos-vscode` |
 | **JetBrains** | Built-in TOML / Markdown / Bash / TypeScript; install Biome plugin; install Stylelint plugin |
 | **Vim / Neovim** | `null-ls.nvim` / `none-ls.nvim` / `conform.nvim` with sources for biome, stylelint, taplo, shfmt, nixfmt, statix, markdownlint |

@@ -1,12 +1,12 @@
-import { Component, createSignal } from "solid-js";
-import FilesView from "../skin-tree/FilesView";
+import { type Component, createSignal } from "solid-js";
 import { isCommandError } from "../../ipc/commands/dto";
 import type { Capability } from "../../ipc/commands/dto_skin_tree";
-import { transferCommands, type TransferRow } from "../../ipc/commands/dto_transfer";
+import { type TransferRow, transferCommands } from "../../ipc/commands/dto_transfer";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { transfersState } from "../../stores/transfers.store";
 import { addToast } from "../../stores/toast.store";
+import { transfersState } from "../../stores/transfers.store";
 import { errorMessage } from "../../utils/error";
+import FilesView from "../skin-tree/FilesView";
 
 /**
  * The app's own layout's Downloads tab (Xfire's Downloads; plan E7.2 G12):
@@ -30,16 +30,19 @@ const DownloadsTab: Component = () => {
     try {
       await action();
     } catch (e) {
-      if (!(isCommandError(e) && e.type === "cancelled")) addToast(`${what}: ${errorMessage(e)}`, "error");
+      if (!(isCommandError(e) && e.type === "cancelled"))
+        addToast(`${what}: ${errorMessage(e)}`, "error");
     }
   };
   const start = (): void => {
     const r = selected();
-    if (r && can("startDownload")) void run("Download not started", () => transferCommands.start(r.attachmentId, r.target));
+    if (r && can("startDownload"))
+      void run("Download not started", () => transferCommands.start(r.attachmentId, r.target));
   };
   const stop = (): void => {
     const r = selected();
-    if (r && can("stopDownload")) void run("Download not stopped", () => transferCommands.stop(r.attachmentId));
+    if (r && can("stopDownload"))
+      void run("Download not stopped", () => transferCommands.stop(r.attachmentId));
   };
   const execute = (row: TransferRow | undefined = selected()): void => {
     if (row) void run("Download not shown", () => transferCommands.open(row.attachmentId));
@@ -59,7 +62,10 @@ const DownloadsTab: Component = () => {
 
   return (
     <>
-      <FilesView onSelect={(r) => setSelectedId(r?.attachmentId ?? null)} onExecute={(r) => execute(r)} />
+      <FilesView
+        onSelect={(r) => setSelectedId(r?.attachmentId ?? null)}
+        onExecute={(r) => execute(r)}
+      />
       <div class="downloads-tab-actions" role="toolbar" aria-label="Download actions">
         {button("Start", "startDownload", start)}
         {button("Stop", "stopDownload", stop)}

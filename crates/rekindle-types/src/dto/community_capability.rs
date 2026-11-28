@@ -102,11 +102,32 @@ pub enum ChannelCapability {
     ManageMessages,
     /// Play a soundboard sound in this voice channel (`SoundboardPlay`).
     UseSoundboard,
+    /// Create a public thread or forum post.
+    CreatePublicThreads,
+    /// Reply in a thread or send the starter of a forum post.
+    SendInThreads,
+    /// Send a message in the channel's composer.
+    SendMessages,
+    /// Send without waiting for the channel's slowmode.
+    BypassSlowmode,
+    /// Raise a hand to speak in a stage channel.
+    RequestToSpeak,
+    /// Mention everyone or here in the channel.
+    MentionEveryone,
 }
 
 impl ChannelCapability {
     /// Every channel capability, in wire order.
-    pub const ALL: [Self; 2] = [Self::ManageMessages, Self::UseSoundboard];
+    pub const ALL: [Self; 8] = [
+        Self::ManageMessages,
+        Self::UseSoundboard,
+        Self::CreatePublicThreads,
+        Self::SendInThreads,
+        Self::SendMessages,
+        Self::BypassSlowmode,
+        Self::RequestToSpeak,
+        Self::MentionEveryone,
+    ];
 }
 
 /// The channel capabilities a member lacks in one channel, each with the

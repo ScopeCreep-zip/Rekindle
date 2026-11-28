@@ -13,9 +13,12 @@ use webkit2gtk::{
 };
 
 use crate::platform::alert_state::{AlertStateManager, AlertType, PendingAlert};
-use crate::platform::{wrap_script_for_frame_context, FrameId, PlatformExecutor, PrintOptions};
+use crate::platform::{FrameId, PlatformExecutor, PrintOptions};
 use crate::server::response::WebDriverErrorResponse;
 use crate::webdriver::Timeouts;
+
+#[path = "linux_eval.rs"]
+mod eval;
 
 /// Convert a JavaScriptCore value to JSON with multiple fallback strategies.
 ///
@@ -82,7 +85,6 @@ fn js_number(num_str: &str) -> Value {
 #[path = "linux_js_number_tests.rs"]
 mod js_number_tests;
 
-/// Linux `WebKitGTK` executor
 #[derive(Clone)]
 pub struct LinuxExecutor<R: Runtime> {
     window: WebviewWindow<R>,
@@ -200,53 +202,44 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
         self.timeouts.script
     }
 
+    async fn dispatch_native_key(
+        &self,
+        key: super::NativeKey,
+        is_down: bool,
+        modifiers: super::ModifierState,
+    ) -> Result<(), WebDriverErrorResponse> {
+        let (tx, rx) = oneshot::channel();
+        self.window
+            .with_webview(move |webview| {
+                if tx.is_closed() {
+                    return;
+                }
+                let accepted =
+                    super::linux_keys::dispatch(&webview.inner(), key, is_down, modifiers);
+                let _ = tx.send(accepted);
+            })
+            .map_err(|error| WebDriverErrorResponse::unknown_error(&error.to_string()))?;
+        match tokio::time::timeout(std::time::Duration::from_millis(self.timeouts.script), rx).await
+        {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::element_not_interactable(error)),
+            Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error(
+                "Native key dispatch channel closed",
+            )),
+            Err(_) => Err(WebDriverErrorResponse::script_timeout()),
+        }
+    }
+
     // =========================================================================
     // Core JavaScript Execution
     // =========================================================================
 
     async fn evaluate_js(&self, script: &str) -> Result<Value, WebDriverErrorResponse> {
-        let (tx, rx) = oneshot::channel();
-        let script_owned = wrap_script_for_frame_context(script, &self.frame_context);
+        eval::evaluate_js(self, script).await
+    }
 
-        let result = self.window.with_webview(move |webview| {
-            let webview = webview.inner().clone();
-            let tx = Arc::new(parking_lot::Mutex::new(Some(tx)));
-
-            // Use glib main context to spawn the async future
-            let ctx = MainContext::default();
-            ctx.spawn_local(async move {
-                let result = webview
-                    .evaluate_javascript_future(&script_owned, None, None)
-                    .await;
-                let response: Result<Value, String> = match result {
-                    // Try multiple serialization strategies for robustness
-                    Ok(js_value) => Ok(js_value_to_json(&js_value)),
-                    Err(e) => Err(e.to_string()),
-                };
-
-                if let Some(tx) = tx.lock().take() {
-                    let _ = tx.send(response);
-                }
-            });
-        });
-
-        if let Err(e) = result {
-            return Err(WebDriverErrorResponse::javascript_error(
-                &e.to_string(),
-                None,
-            ));
-        }
-
-        let timeout = std::time::Duration::from_millis(self.timeouts.script);
-        match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(Ok(value))) => Ok(serde_json::json!({
-                "success": true,
-                "value": value
-            })),
-            Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::javascript_error(&error, None)),
-            Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error("Channel closed")),
-            Err(_) => Err(WebDriverErrorResponse::script_timeout()),
-        }
+    async fn call_async_function(&self, body: &str) -> Result<Value, WebDriverErrorResponse> {
+        eval::call_async_function(self, body).await
     }
 
     // =========================================================================

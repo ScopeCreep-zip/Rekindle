@@ -15,7 +15,7 @@ fn a_stream_record_without_a_record_key_is_refused() {
         })
         .encode();
         assert!(matches!(
-            DirectBody::decode(DmTypeId::StreamRecord, &bytes),
+            DirectBody::decode(DmTypeId::StreamRecord, &bytes.unwrap()),
             Err(CodecError::Deserialization(_))
         ));
     }
@@ -49,13 +49,13 @@ fn group_bodies_hold_their_shapes() {
             ..invite.clone()
         };
         let bytes = DirectBody::GroupDmInvite(short).encode();
-        assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &bytes).is_err());
+        assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &bytes.unwrap()).is_err());
     }
     let unnamed = DirectBody::GroupDmInvite(GroupDmInvite {
         name: String::new(),
         ..invite.clone()
     });
-    assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &unnamed.encode()).is_err());
+    assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &unnamed.encode().unwrap()).is_err());
     let rekeyed = GroupDmInvite {
         creator_sender_key: [0xCD; 32],
         signature: [3; 64],
@@ -83,7 +83,7 @@ fn group_bodies_hold_their_shapes() {
     assert!(!format!("{invite:?}").contains("VLD0:writer"));
     let decoded = DirectBody::decode(
         DmTypeId::GroupDmInvite,
-        &DirectBody::GroupDmInvite(invite.clone()).encode(),
+        &DirectBody::GroupDmInvite(invite.clone()).encode().unwrap(),
     );
     assert!(matches!(decoded, Ok(DirectBody::GroupDmInvite(ref back)) if *back == invite));
     for (slot, slots) in [
@@ -97,7 +97,7 @@ fn group_bodies_hold_their_shapes() {
             slots,
             ..invite.clone()
         });
-        assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &bad.encode()).is_err());
+        assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &bad.encode().unwrap()).is_err());
     }
     let mut fewer = invite.clone();
     fewer.roster[2].identity = "d".repeat(64);
@@ -118,14 +118,16 @@ fn group_bodies_hold_their_shapes() {
         epoch: 0,
         sealed: Vec::new(),
     });
-    assert!(DirectBody::decode(DmTypeId::GroupContent, &empty.encode()).is_err());
+    assert!(DirectBody::decode(DmTypeId::GroupContent, &empty.encode().unwrap()).is_err());
     let bad_id = encode_root::<crate::direct_capnp::group_dm_decline::Owned>(|mut b| {
         b.set_group_id([1; 15].as_slice());
+        Ok(())
     });
-    assert!(DirectBody::decode(DmTypeId::GroupDmDecline, &bad_id).is_err());
+    assert!(DirectBody::decode(DmTypeId::GroupDmDecline, &bad_id.unwrap()).is_err());
     let bad_stream = encode_root::<crate::direct_capnp::stream_record::Owned>(|mut b| {
         b.set_record_key(dht_key());
         b.set_group_id([1; 3].as_slice());
+        Ok(())
     });
-    assert!(DirectBody::decode(DmTypeId::StreamRecord, &bad_stream).is_err());
+    assert!(DirectBody::decode(DmTypeId::StreamRecord, &bad_stream.unwrap()).is_err());
 }

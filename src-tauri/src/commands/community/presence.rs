@@ -1,12 +1,13 @@
+use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use tauri::State;
 
-use crate::services::community_presence_runtime::get_presence_policy_inner;
 use crate::state::SharedState;
 
 use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest, SettingsRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::presence::{PresencePolicyField, PresenceSharingPolicy};
 
 /// The composer of a channel changed: `typing` is whether it holds text
 /// (`ChannelMessageRequest::ChannelTyping`; the Host decides what is sent).
@@ -56,23 +57,43 @@ pub async fn set_presence_policy(
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(
         SettingsRequest::CommunitySetPresencePolicy {
-            community: community_id.clone(),
+            community: community_id,
             policy,
         },
     ));
-    let done = crate::host_call::call(&state, request).await?;
-    // The registry row's redaction follows the consent now, not at the
-    // next heartbeat tick.
-    crate::services::community::write_our_presence(state.inner(), &community_id).await;
-    Ok(done)
+    crate::host_call::call(&state, request).await
 }
 
+/// Change one consent field in the Host's current policy.
+#[tauri::command]
+pub async fn set_presence_policy_field(
+    community_id: String,
+    field: PresencePolicyField,
+    state: State<'_, SharedState>,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunitySetPresencePolicyField {
+            community: community_id,
+            field,
+        },
+    ));
+    crate::host_call::call(&state, request).await
+}
+
+/// Read the Host's policy, retaining the settings panel's existing payload.
 #[tauri::command]
 pub async fn get_presence_policy(
     community_id: String,
     state: State<'_, SharedState>,
-) -> Result<rekindle_types::presence::PresenceSharingPolicy, String> {
-    Ok(get_presence_policy_inner(state.inner(), &community_id))
+) -> Result<PresenceSharingPolicy, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunityGetPresencePolicy {
+            community: community_id,
+        },
+    ));
+    crate::host_call::call(&state, request)
+        .await
+        .map(|done| done.value)
 }
 
 /// A community's member list (`IpcRequest::Community(CommunityRequest::CommunityMembers)`).
@@ -92,35 +113,23 @@ pub async fn get_community_members(
 #[tauri::command]
 pub async fn update_community_profile(
     community_id: String,
-    bio: Option<String>,
-    pronouns: Option<String>,
-    theme_color: Option<u32>,
-    badges: Option<Vec<String>>,
-    avatar_ref: Option<String>,
-    banner_ref: Option<String>,
-    custom_status: Option<String>,
+    patch: CommunityProfilePatch,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(
         SettingsRequest::CommunityUpdateProfile {
             community: community_id,
-            bio,
-            pronouns,
-            theme_color,
-            badges,
-            avatar_ref,
-            banner_ref,
-            custom_status,
+            patch,
         },
     ));
     crate::host_call::call(&state, request).await
 }
 
-/// Our name in one community, on our card (plan E3.4 S6); `""` clears it.
+/// The name on our per-community card (plan E3.4 S6).
 #[tauri::command]
 pub async fn set_community_display_name(
     community_id: String,
-    display_name: String,
+    display_name: ProfileField<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(

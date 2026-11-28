@@ -158,6 +158,7 @@ async fn queued_post(
     .await
     .unwrap();
     rekindle_types::message::ChannelPost {
+        governance_cut: Vec::new(),
         community: "c1".into(),
         channel: "ch1".into(),
         message: id.into(),
@@ -189,6 +190,7 @@ async fn waiting_post(
     .await
     .unwrap();
     let post = rekindle_types::message::ChannelPost {
+        governance_cut: Vec::new(),
         community: community.into(),
         channel: "ch1".into(),
         message: id.into(),

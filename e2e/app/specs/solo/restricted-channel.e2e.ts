@@ -74,7 +74,11 @@ async function channelState(name: string): Promise<{ listed: boolean; locked: st
     return {
       listed: !!row,
       locked: lock ? (lock.getAttribute("title") ?? "") : null,
-      composer: (document.querySelector(".typing-indicator .typing-label")?.textContent ?? "").trim(),
+      // The composer stays, disabled, with the reason as its placeholder (never-hide).
+      composer: (() => {
+        const box = document.querySelector<HTMLTextAreaElement>(".message-input-wrapper textarea.message-input-field");
+        return box?.disabled ? (box.getAttribute("placeholder") ?? "").trim() : "";
+      })(),
       text: (document.querySelector("#main-content")?.textContent ?? "").replace(/\s+/g, " "),
     };
   }, name)) as { listed: boolean; locked: string | null; composer: string; text: string };

@@ -34,7 +34,7 @@ Research: `research-settings-theme-2026-11-26.md` §2.2, §3.2, §3.3. Backend h
 ## The table
 
 | Role | CSS custom property | Xfire colour (XML / INI) or derivation | Contrast gate | Settings element(s) (§3.2) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `menubar.bg` | `--color-xfire-menubar-bg` | The alpha-weighted mean colour of the pack's menu-bar art (`MenuBackground` / `MenuBar`, the `buddylist.menubar` control; numbers only, no art), or its named colour; a pack with neither: `bg.dark` [`bg.dark`] | ground of `menubar.text` (4.5:1) | The tab rail's ground behind the tab labels (the `.form-tab` row) |
 | `menubar.text` | `--color-xfire-menubar-text` | `MenuTextCG` / `MenuTextCG`; else `text.base` [`text.base`] | 4.5:1 on `menubar.bg` only (Xfire draws `MenuTextCG` only on its menu bar; ruling ST1-3) | Tab labels (`.form-tab`), replacing `--color-xfire-text-dim`, **drawn on `menubar.bg`, never on `bg.dark`** |
 | `input.bg` | `--color-xfire-input-bg` | `TextFieldBGCG`; else `bg.panel` (the chat view ground the INI edit box uses) [`bg.panel`] | ground | Text inputs and closed selects (`.form-input`, `.form-select`), checkbox/radio box ground, replacing `--color-xfire-bg-input` there |
@@ -58,7 +58,7 @@ Research: `research-settings-theme-2026-11-26.md` §2.2, §3.2, §3.3. Backend h
 ## Elements that use existing tokens (CSS only, no new role)
 
 | Settings element | Token | Source |
-|---|---|---|
+| --- | --- | --- |
 | Section titles (`.settings-section-title`) | `--color-xfire-text-secondary` | `HeaderTextCG` / `HeaderText` |
 | Hints, field labels and a slider's value label beside it (`.settings-hint`, `.form-field-label`) | `--color-xfire-text-status` | `StatusTextCG` / `StatusCG` |
 | Secondary and skin-row buttons | ground `--color-xfire-bg-secondary`, text `--color-xfire-text`, border `--color-xfire-progress-outline` | `InfoViewBGCG`, `ListFriendTextCG`, `ProgBarOutlineCG` |

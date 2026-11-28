@@ -88,6 +88,7 @@ fn a_close_past_one_page_is_parts_that_each_fit() {
     assert!(parts.len() > 1);
     let author = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[3; 32]);
     let mut entries = vec![OutboxItem {
+        admission: None,
         author: creator.clone(),
         stream_seq: 1,
         committed_at: 1,
@@ -102,6 +103,7 @@ fn a_close_past_one_page_is_parts_that_each_fit() {
         }),
     }];
     entries.extend((0..1000).map(|i| OutboxItem {
+        admission: None,
         author: voter(i),
         stream_seq: u64::MAX,
         committed_at: 2,
@@ -131,6 +133,7 @@ fn a_close_past_one_page_is_parts_that_each_fit() {
             counted: counted_entries(&counted),
         });
         let pending = PendingEntry {
+            governance_cut: Vec::new(),
             channel_tag: [7; 16],
             stream_seq: u64::MAX,
             generation: u64::MAX,
@@ -139,6 +142,7 @@ fn a_close_past_one_page_is_parts_that_each_fit() {
         seal_batch(None, &"a".repeat(64), &author, u64::MAX, &[pending])
             .expect("each part fits one entry");
         entries.push(OutboxItem {
+            admission: None,
             author: creator.clone(),
             stream_seq: seq,
             committed_at: 3,

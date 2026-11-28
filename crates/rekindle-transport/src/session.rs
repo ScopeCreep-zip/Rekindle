@@ -15,7 +15,7 @@ use rekindle_types::friend::FriendState;
 // ── Session ─────────────────────────────────────────────────────────────
 
 /// Root session state for the local user.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Session {
     /// The local user's identity.
     pub identity: SessionIdentity,
@@ -34,6 +34,12 @@ pub struct Session {
     /// Each friend's current friend-presence key, which opens their STATUS
     /// and GAME_INFO (from `friends.presence_*`).
     pub friend_presence_keys: HashMap<String, PresenceKey>,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Session(<redacted>)")
+    }
 }
 
 impl Session {
@@ -87,7 +93,7 @@ impl Session {
 // ── Identity ────────────────────────────────────────────────────────────
 
 /// The local user's cryptographic and network identity.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SessionIdentity {
     /// Ed25519 public key (hex-encoded, 64 chars).
     pub public_key_hex: String,
@@ -106,10 +112,22 @@ pub struct SessionIdentity {
 
     /// The profile record's owner keypair, in its string form (as the
     /// vault stores it), for re-opening the record writable.
-    pub profile_owner_keypair: Option<String>,
+    pub profile_owner_keypair: Option<zeroize::Zeroizing<String>>,
 
     /// The friend list record's owner keypair, in its string form.
-    pub friend_list_owner_keypair: Option<String>,
+    pub friend_list_owner_keypair: Option<zeroize::Zeroizing<String>>,
+}
+
+impl std::fmt::Debug for SessionIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionIdentity")
+            .field("public_key_hex", &self.public_key_hex)
+            .field("display_name", &self.display_name)
+            .field("profile_dht_key", &self.profile_dht_key)
+            .field("mailbox_dht_key", &self.mailbox_dht_key)
+            .field("friend_list_dht_key", &self.friend_list_dht_key)
+            .finish_non_exhaustive()
+    }
 }
 
 // ── Community membership ────────────────────────────────────────────────

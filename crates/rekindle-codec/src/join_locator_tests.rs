@@ -1,5 +1,11 @@
-use super::*;
-use rekindle_types::{governance::OpHash, id::PseudonymKey};
+use rekindle_secrets::ed25519_dalek;
+use rekindle_types::{
+    dht_layout::join_inbox::MAX_ENTRY_LEN,
+    governance::{OpHash, OpRef},
+    id::PseudonymKey,
+};
+
+use super::{JoinLocator, JOIN_LOCATOR_HEADER_LEN};
 
 #[test]
 fn the_sealed_locator_opens_only_for_its_inviter_and_invite() {
@@ -25,6 +31,6 @@ fn the_sealed_locator_opens_only_for_its_inviter_and_invite() {
     );
     assert!(JoinLocator::open(&bytes, &other, &invite).is_err());
     assert!(JoinLocator::open(&bytes, &inviter, &[7; 16]).is_err());
-    assert!(JoinLocator::open(&bytes[..HEADER_LEN], &inviter, &invite).is_err());
+    assert!(JoinLocator::open(&bytes[..JOIN_LOCATOR_HEADER_LEN], &inviter, &invite).is_err());
     assert!(JoinLocator::open(&[0; MAX_ENTRY_LEN + 1], &inviter, &invite).is_err());
 }

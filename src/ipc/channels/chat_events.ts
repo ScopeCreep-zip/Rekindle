@@ -5,8 +5,8 @@
  */
 
 import type { DmMessage } from "../commands/dto_dm";
-import type { SendState } from "../commands/types";
 import type { LobbyView } from "../commands/dto_lobby";
+import type { SendState } from "../commands/types";
 
 /** DM / conversation message from the daemon vocabulary. */
 interface DirectMessageReceived {
@@ -107,7 +107,7 @@ export type TypingContext =
 
 /** A group member as an event names them (our nickname or fingerprint,
  *  never a name their payload carries). */
-export interface GroupDmMember {
+interface GroupDmMember {
   publicKey: string;
   displayName: string;
 }
@@ -129,7 +129,14 @@ export type GroupDmEvent =
   /** The group's lobby changed (plan E7.2 G6); null when there is none. */
   | { lobby: { groupId: string; lobby: LobbyView | null } }
   /** A group send's state; `retry` while unanswered attempts are retried (plan SR2b). */
-  | { sendStatus: { groupId: string; clientId: string; state: SendState; retry: DeliveryRetry | null } }
+  | {
+      sendStatus: {
+        groupId: string;
+        clientId: string;
+        state: SendState;
+        retry: DeliveryRetry | null;
+      };
+    }
   | {
       message: {
         groupId: string;
@@ -170,7 +177,14 @@ export type FriendEvent =
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
   | { displayNameChanged: { peerKey: string; displayName: string } }
-  | { groupChanged: { peerKey: string; groupId: number | null; group: string | null; groupLabel: string } }
+  | {
+      groupChanged: {
+        peerKey: string;
+        groupId: number | null;
+        group: string | null;
+        groupLabel: string;
+      };
+    }
   | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } }
   | { handshakeRetrying: { peerKey: string } }
@@ -189,6 +203,15 @@ export type FriendEvent =
    *  written, otherwise it failed (plan E3.2 S7s.3g). */
   | { coCreationFinished: { anchor: string; created: boolean } };
 
+/** A group call's member: its key and the Host's name for it (the friend's
+ *  shown name, else the fingerprint form; contract VN2). */
+export interface CallParticipant {
+  publicKey: string;
+  displayName: string;
+  /** Our own participant (contract VN2 addendum 2): the shell adds "(you)". */
+  isSelf: boolean;
+}
+
 /** Peer on the other end of a direct call; absent for a group call. */
 interface DirectCallInfo {
   kind: string;
@@ -197,15 +220,16 @@ interface DirectCallInfo {
   expectedLocalCamera: boolean;
 }
 
-export type CallEvent =
+type CallEvent =
   | {
       incoming: {
         callId: string;
         from: string;
         displayName: string;
         kind: string;
-        /** Everyone invited, for a group call. Empty for a 1:1. */
-        participants: string[];
+        /** Everyone invited, for a group call, each with the Host's name
+         *  for that friend (contract VN2). Empty for a 1:1. */
+        participants: CallParticipant[];
         isGroup: boolean;
         /** The group the call is for (GV2); null for a buddy-list call or a 1:1. */
         groupId: string | null;
@@ -227,7 +251,7 @@ export type CallEvent =
       groupStarted: {
         callId: string;
         kind: string;
-        participants: string[];
+        participants: CallParticipant[];
         groupId: string | null;
         expiresAtMs: number;
       };

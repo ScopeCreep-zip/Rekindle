@@ -1,7 +1,7 @@
-import { Component, Show, createMemo, onCleanup } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import Avatar from "../../common/Avatar";
+import { type Component, createMemo, onCleanup, Show } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
+import Avatar from "../../common/Avatar";
+import SkinGlyph from "../../common/SkinGlyph";
 import type { CallTile } from "./useCallStage";
 
 /// One gallery cell: a live video surface (remote decoder canvas or local
@@ -21,9 +21,11 @@ const ParticipantTile: Component<{
 
   const isSpeaking = createMemo(() => participant()?.isSpeaking ?? false);
   const isMuted = createMemo(() =>
-    props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false),
+    props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false)
   );
   const name = createMemo(() => participant()?.displayName ?? props.tile.displayName);
+  // The initials read the served name, never the "(you)" label.
+  const served = createMemo(() => participant()?.displayName ?? props.tile.servedName);
 
   return (
     <div
@@ -36,7 +38,6 @@ const ParticipantTile: Component<{
         "call-stage-tile-mirror": props.tile.mirror === true,
         "call-stage-tile-screen": props.tile.isScreen,
       }}
-      onDblClick={() => props.onSpotlight?.()}
     >
       <Show
         when={props.tile.canvas}
@@ -46,7 +47,7 @@ const ParticipantTile: Component<{
             fallback={
               <div class="call-stage-tile-avatar">
                 <Avatar
-                  displayName={name()}
+                  displayName={served()}
                   avatarUrl={props.tile.avatarUrl}
                   size={props.spotlighted ? 128 : 72}
                 />
@@ -75,6 +76,16 @@ const ParticipantTile: Component<{
         />
       </Show>
 
+      <button
+        type="button"
+        class="call-stage-tile-spotlight-btn"
+        aria-pressed={!!props.spotlighted}
+        aria-label={`Spotlight ${name()}`}
+        onDblClick={() => props.onSpotlight?.()}
+        onClick={(e) => {
+          if (e.detail === 0) props.onSpotlight?.();
+        }}
+      />
       <div class="call-stage-tile-overlay">
         <Show when={props.tile.isScreen}>
           <SkinGlyph name="screen-share" class="call-stage-tile-badge" />

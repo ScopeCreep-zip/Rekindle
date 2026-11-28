@@ -15,7 +15,9 @@
 
 mod activity_commands;
 mod commands;
+mod conversation_actions;
 mod events;
+mod forum_commands;
 mod friend_commands;
 mod game_commands;
 mod group_dm_commands;

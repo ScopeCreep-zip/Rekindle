@@ -556,7 +556,7 @@ Discord parity for scheduled events.
 ### New Files (4)
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `crates/rekindle-game-detect/src/launcher.rs` | Game launch via `steam://connect` or `open` crate |
 | `crates/rekindle-server/src/rpc/audit_log.rs` | `handle_get_audit_log` (extracted from events.rs) |
 | `crates/rekindle-server/src/rpc/presence.rs` | `handle_channel_typing` + `handle_update_presence` (extracted) |
@@ -565,7 +565,7 @@ Discord parity for scheduled events.
 ### Modified Files — Backend (12)
 
 | File | Change |
-|------|--------|
+| ------ | -------- |
 | `crates/rekindle-game-detect/src/scanner.rs` | Add `rich_presence` to `DetectedGame`, extract from `Process::cmd()` |
 | `crates/rekindle-game-detect/src/rich_presence.rs` | Add `parse_connect_args()` function |
 | `crates/rekindle-game-detect/src/database.rs` | Add `steam_app_id`, `connect_template` to `GameEntry`, add `lookup_by_id()` |
@@ -582,7 +582,7 @@ Discord parity for scheduled events.
 ### Modified Files — Tauri Shell (4)
 
 | File | Change |
-|------|--------|
+| ------ | -------- |
 | `src-tauri/src/services/game_service.rs` | Wire `rich_presence` → `GameInfoState`, add community fan-out |
 | `src-tauri/src/commands/game.rs` | Add `launch_game_to_server` command |
 | `src-tauri/src/lib.rs` | Register new command, pass pool to game service |
@@ -591,7 +591,7 @@ Discord parity for scheduled events.
 ### Modified Files — Frontend (8)
 
 | File | Change |
-|------|--------|
+| ------ | -------- |
 | `src/components/community/MemberProfilePopup.tsx` | Add "Join Game" button |
 | `src/components/community/MemberList.tsx` | Show server address next to game name |
 | `src/components/community/GameServerList.tsx` | Add "Join" button per row, "Add Server" form |
@@ -604,7 +604,7 @@ Discord parity for scheduled events.
 ### Modified Files — Stores/Types (2)
 
 | File | Change |
-|------|--------|
+| --- | --- |
 | `src/stores/community.store.ts` | Add `status` to `CommunityEvent` |
 | `src/handlers/community.handlers.ts` | Add `handleCancelEvent` handler |
 

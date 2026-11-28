@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Phase 18 — community lifecycle orchestration (origin / bootstrap / join / segments / apply) layered on top of rekindle-governance's pure CRDT merge"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -42,4 +42,5 @@ tracing = { workspace = true }
 mockall = "0.13"
 rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
 rekindle-record-pool = { path = "../rekindle-record-pool", features = [ "test-support" ] }
+rekindle-types = { path = "../rekindle-types", features = [ "fixture" ] }
 tokio = { workspace = true, features = [ "macros", "rt-multi-thread", "test-util" ] }

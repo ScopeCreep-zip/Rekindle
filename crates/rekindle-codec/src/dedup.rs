@@ -96,12 +96,9 @@ fn hash_dedup_tuple(community_id: &str, sender: &str, dedup_key: &str) -> DedupH
         hasher.update(&(field.len() as u64).to_le_bytes());
         hasher.update(field.as_bytes());
     }
-    let digest = hasher.finalize();
-    u64::from_le_bytes(
-        digest.as_bytes()[..8]
-            .try_into()
-            .expect("Blake3 always produces >=8 bytes"),
-    )
+    // A BLAKE3 digest is a `[u8; 32]`: its first eight bytes, by type.
+    let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = *hasher.finalize().as_bytes();
+    u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
 }
 
 /// The dedup key of a gossip envelope: its message id, hex-encoded.

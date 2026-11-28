@@ -39,10 +39,10 @@ pub(crate) async fn handle_call_signaling_payload(
         DirectBody::CallInvite(CallInvite {
             call_id,
             offer_kind,
-            initiator_pubkey,
             initiator_x25519_pub,
             expires_at_ms,
             video_decode_codecs,
+            ..
         }) => {
             rekindle_calls::signaling::handlers::handle_incoming_invite(
                 deps,
@@ -50,7 +50,6 @@ pub(crate) async fn handle_call_signaling_payload(
                     sender_hex,
                     call_id: &call_id,
                     offer_kind,
-                    initiator_pubkey: &initiator_pubkey,
                     initiator_x25519_pub: &initiator_x25519_pub,
                     expires_at_ms,
                     video_decode_codecs: &video_decode_codecs,

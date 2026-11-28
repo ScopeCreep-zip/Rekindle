@@ -84,10 +84,7 @@ impl<const N: usize> zeroize::ZeroizeOnDrop for LockedBox<N> {}
 
 impl<const N: usize> std::fmt::Debug for LockedBox<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LockedBox")
-            .field("len", &N)
-            .field("locked", &self.is_locked())
-            .finish_non_exhaustive()
+        f.write_str("LockedBox(<redacted>)")
     }
 }
 

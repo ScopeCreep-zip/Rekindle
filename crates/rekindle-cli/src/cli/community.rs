@@ -1,12 +1,12 @@
 //! Community, role, and moderation CLI types.
 //!
-//! All entity references (community, member, role, invite) are `--flag`
-//! arguments that accept double-quoted strings. This handles spaces,
-//! special characters, and multi-word names cleanly.
+//! Quote entity names that contain spaces or shell metacharacters.
 
 use std::path::PathBuf;
 
 use clap::Subcommand;
+
+use super::community_profile::ProfileArgs;
 
 /// Community lifecycle subcommands.
 #[derive(Subcommand)]
@@ -83,15 +83,19 @@ pub enum CommunityCmd {
         community: String,
     },
 
-    /// Set our name in one community (our card, `M`/0); `""` clears it, and
-    /// the community shows our short pseudonym fingerprint instead. Our
-    /// identity name is never shown to a community.
+    /// Set or clear the name on our community card.
     SetName {
-        /// The community's anchor key.
+        /// Community name or anchor key.
         community: String,
-        /// The name, at most 64 bytes; `""` clears it.
-        name: String,
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        name: Option<String>,
+        /// Restore the short pseudonym fingerprint.
+        #[arg(long)]
+        clear: bool,
     },
+
+    /// Edit our community profile fields.
+    Profile(ProfileArgs),
 
     /// Forget a community you were removed from: its kept history and keys.
     Forget {
@@ -100,8 +104,22 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Set the active channel in a community, or clear it by omitting the channel.
+    Focus {
+        /// Community name or anchor key.
+        community: String,
+        /// Channel name or ID.
+        channel: Option<String>,
+        /// Focus a voice channel.
+        #[arg(long, requires = "channel")]
+        voice: bool,
+    },
+
     /// List joined communities.
     List,
+
+    /// List permission groups, labels and keys.
+    Permissions,
 
     /// Show community details (metadata, channels, roles, members).
     Info {

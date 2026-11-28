@@ -26,6 +26,7 @@ pub const PASSPHRASE: &str = "netsim passphrase";
 pub struct SimNode {
     pub index: usize,
     pub host: Arc<Host>,
+    pub(crate) db: Arc<rekindle_db::DbHandle>,
     /// The unlocked identity's public key, once [`unlock_new_identity`] ran.
     pub public_key: Option<String>,
     /// The node's route port, the one its Host holds, to read our routes.
@@ -68,10 +69,11 @@ pub async fn start_with(n: usize, seed: u64, node_for: NodeFor<'_>) -> (Netsim, 
         let routes = Arc::clone(&node.ports.routes);
         let index = node.index;
         let (mode, shell) = node_for(index);
-        let host = crate::restart::host_on(node, &dir, shell, mode).await;
+        let (host, db) = crate::restart::host_on(node, &dir, shell, mode).await;
         hosts.push(SimNode {
             index,
             host,
+            db,
             public_key: None,
             routes,
             dir,

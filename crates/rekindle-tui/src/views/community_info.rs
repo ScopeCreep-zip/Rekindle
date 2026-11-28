@@ -5,7 +5,7 @@
 //! ┌─ dev-team ───────────────────────────────────────────────┐
 //! │ Description: Development team coordination               │
 //! │ Members: 12          Channels: 3         Created: 2026…  │
-//! │ Governance: SMPL     MEK generation: 7                   │
+//! │ Active channel: #general (text)                          │
 //! ├─ Channels ───────────────────────────────────────────────┤
 //! │   #general      text                                     │
 //! │   #code-review  text                                     │
@@ -17,12 +17,16 @@
 
 use anyhow::Result;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
-use rekindle_types::display::CommunityDetail;
+use rekindle_types::display::{CommunityDetail, RoleDisplay};
+use rekindle_types::dto::community::CommunityMemberView;
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
+use rekindle_types::presence::{SessionLocation, ShareScope};
+use rekindle_utils::text::sanitize_for_display;
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -37,10 +41,15 @@ pub struct CommunityInfoView {
     community: String,
     /// Loaded community detail (None until CommandResult arrives).
     detail: Option<CommunityDetail>,
+    share_location: Option<ShareScope>,
+    members: Vec<CommunityMemberView>,
     /// Whether data is loading.
     loading: bool,
     /// Selected channel index for navigation.
     selected_channel: usize,
+    catalogue: Option<PermissionCatalogue>,
+    role_scroll: usize,
+    role_page_size: usize,
 }
 
 impl CommunityInfoView {
@@ -50,8 +59,13 @@ impl CommunityInfoView {
             focus: FocusRing::new(vec![FocusId::CommunityInfoPanel]),
             community,
             detail: None,
+            share_location: None,
+            members: Vec::new(),
             loading: true,
             selected_channel: 0,
+            catalogue: None,
+            role_scroll: 0,
+            role_page_size: 1,
         }
     }
 
@@ -60,8 +74,31 @@ impl CommunityInfoView {
         &self.community
     }
 
+    fn active_channel(&self, detail: &CommunityDetail) -> String {
+        let Some(member) = self
+            .members
+            .iter()
+            .find(|member| member.pseudonym_key == detail.our_pseudonym)
+        else {
+            return "unavailable".into();
+        };
+        let Some(location) = &member.location else {
+            return "none".into();
+        };
+        let id = location.channel_id();
+        let kind = match location {
+            SessionLocation::Text { .. } => "text",
+            SessionLocation::Voice { .. } => "voice",
+        };
+        let name = match detail.channels.iter().find(|channel| channel.id == id) {
+            Some(channel) => format!("#{}", sanitize_for_display(&channel.name)),
+            None => sanitize_for_display(id),
+        };
+        format!("{name} ({kind})")
+    }
+
     /// Render the metadata section.
-    fn render_metadata(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
+    fn render_metadata(&self, frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
         let gov_short = helpers::abbreviate_key(&detail.anchor);
         let owner_short = (detail.creator_pseudonyms.iter())
             .map(|c| helpers::abbreviate_key(c))
@@ -114,6 +151,18 @@ impl CommunityInfoView {
                 Span::raw(our_key),
                 Span::styled("  Roles: ", Style::new().dim()),
                 Span::raw(roles_str),
+            ]),
+            Line::from(vec![
+                Span::styled("  Share location: ", Style::new().dim()),
+                Span::raw(match self.share_location {
+                    Some(ShareScope::Members) => "On",
+                    Some(ShareScope::None) => "Off",
+                    None => "Unknown",
+                }),
+            ]),
+            Line::from(vec![
+                Span::styled("  Active channel: ", Style::new().dim()),
+                Span::raw(self.active_channel(detail)),
             ]),
         ];
 
@@ -173,40 +222,64 @@ impl CommunityInfoView {
         frame.render_stateful_widget(list, area, &mut list_state);
     }
 
-    /// Render the roles section.
-    fn render_roles(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
-        let title = format!(" Roles ({}) ", detail.roles.len());
+    /// Render the roles section with labels for each role's assigned bits.
+    fn render_roles(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let detail = self
+            .detail
+            .as_ref()
+            .expect("detail checked before rendering");
+        let title = format!(" Roles ({}) · PgUp/PgDn scroll ", detail.roles.len());
         let block = Block::bordered()
             .title(title)
             .border_style(Style::new().dim());
-
-        if detail.roles.is_empty() {
-            let para = Paragraph::new("  No roles defined.")
-                .style(Style::new().dim())
-                .block(block);
-            frame.render_widget(para, area);
-            return;
-        }
-
-        let lines: Vec<Line<'_>> = detail
-            .roles
-            .iter()
-            .map(|r| {
-                Line::from(vec![
-                    Span::raw(format!("  {} ", r.name)),
-                    Span::styled(
-                        format!(
-                            "(id: {}, pos: {}, perms: 0x{:X})",
-                            r.id, r.position, r.permissions
-                        ),
-                        Style::new().dim(),
-                    ),
-                ])
-            })
-            .collect();
-
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        self.role_page_size = usize::from(block.inner(area).height).max(1);
+        let lines = role_lines(&detail.roles, self.catalogue.as_ref())?;
+        self.role_scroll = self
+            .role_scroll
+            .min(lines.len().saturating_sub(self.role_page_size));
+        let page = lines
+            .into_iter()
+            .skip(self.role_scroll)
+            .take(self.role_page_size)
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(page).block(block), area);
+        Ok(())
     }
+}
+
+fn role_lines<'a>(
+    roles: &'a [RoleDisplay],
+    catalogue: Option<&'a PermissionCatalogue>,
+) -> Result<Vec<Line<'a>>> {
+    if roles.is_empty() {
+        return Ok(vec![Line::from("  No roles defined.").dim()]);
+    }
+    let labels = catalogue
+        .into_iter()
+        .flat_map(|catalogue| &catalogue.groups)
+        .flat_map(|group| &group.permissions)
+        .map(|entry| Ok((entry.bit.parse::<u64>()?, entry.label.as_str())))
+        .collect::<Result<Vec<_>>>()?;
+    let mut lines = Vec::new();
+    for role in roles {
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {} ", role.name)),
+            Span::styled(
+                format!(
+                    "(id: {}, pos: {}, perms: 0x{:X})",
+                    role.id, role.position_label, role.permissions
+                ),
+                Style::new().dim(),
+            ),
+        ]));
+        lines.extend(
+            labels
+                .iter()
+                .filter(|(bit, _)| role.permissions & bit != 0)
+                .map(|(_, label)| Line::from(vec![Span::raw("    "), Span::raw(*label)])),
+        );
+    }
+    Ok(lines)
 }
 
 impl View for CommunityInfoView {
@@ -233,17 +306,15 @@ impl View for CommunityInfoView {
         let role_height = role_count.saturating_add(2).min(area.height / 4);
 
         let [meta_area, channels_area, roles_area] = Layout::vertical([
-            Constraint::Length(8),
+            Constraint::Length(10),
             Constraint::Length(channel_height),
             Constraint::Min(role_height),
         ])
         .areas(area);
 
-        Self::render_metadata(frame, meta_area, detail);
+        self.render_metadata(frame, meta_area, detail);
         self.render_channels(frame, channels_area, detail);
-        Self::render_roles(frame, roles_area, detail);
-
-        Ok(())
+        self.render_roles(frame, roles_area)
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
@@ -297,6 +368,14 @@ impl View for CommunityInfoView {
                 self.selected_channel = self.selected_channel.saturating_sub(1);
                 None
             }
+            KeyCode::PageUp => {
+                self.role_scroll = self.role_scroll.saturating_sub(self.role_page_size);
+                None
+            }
+            KeyCode::PageDown => {
+                self.role_scroll = self.role_scroll.saturating_add(self.role_page_size);
+                None
+            }
             // This community's Infoview (plan E7.15 IV7).
             KeyCode::Char('i') => Some(Action::ShowInfoview {
                 subject: rekindle_types::dto::infoview::InfoviewSubject::Community {
@@ -323,11 +402,25 @@ impl View for CommunityInfoView {
     }
 
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
-        if let CommandResult::CommunityInfoLoaded { detail } = result {
-            if detail.anchor == self.community {
+        match result {
+            CommandResult::CommunityInfoLoaded { detail } if detail.anchor == self.community => {
                 self.detail = Some(detail);
                 self.loading = false;
             }
+            CommandResult::CommunityPresencePolicyLoaded { community, policy }
+                if community == self.community =>
+            {
+                self.share_location = Some(policy.share_location);
+            }
+            CommandResult::PermissionCatalogueLoaded(catalogue) => {
+                self.catalogue = Some(catalogue);
+            }
+            CommandResult::CommunityMembersLoaded { community, members }
+                if community == self.community =>
+            {
+                self.members = members;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -336,3 +429,7 @@ impl View for CommunityInfoView {
         &mut self.focus
     }
 }
+
+#[cfg(test)]
+#[path = "community_info_tests.rs"]
+mod tests;

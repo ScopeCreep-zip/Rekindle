@@ -14,6 +14,11 @@ pub fn insert(
     created_at: i64,
     inbox: Option<&JoinInbox>,
 ) -> rusqlite::Result<()> {
+    let expires_at = inbox
+        .and_then(|inbox| inbox.expires_at)
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     conn.execute(
         "INSERT INTO community_invites
          (owner_key, community_id, code, code_hash, url, created_at, join_inbox_key, join_inbox_invite_id, max_uses, expires_at)
@@ -21,7 +26,7 @@ pub fn insert(
         params![
             owner_key, community_id, code, code_hash, url, created_at,
             inbox.map(|i| i.key.as_str()), inbox.map(|i| i.invite_id.as_str()),
-            inbox.map_or(0, |i| i.slots), inbox.and_then(|i| i.expires_at),
+            inbox.map_or(0, |i| i.slots), expires_at,
         ],
     )?;
     Ok(())
@@ -99,7 +104,13 @@ pub fn list(
                     key,
                     invite_id,
                     slots: row.get(6)?,
-                    expires_at: row.get(7)?,
+                    expires_at: row
+                        .get::<_, Option<i64>>(7)?
+                        .map(|value| {
+                            u64::try_from(value)
+                                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(7, value))
+                        })
+                        .transpose()?,
                 }),
                 _ => None,
             },

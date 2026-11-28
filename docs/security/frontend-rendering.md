@@ -191,7 +191,7 @@ Every `innerHTML` usage in the codebase must:
 Current audited exceptions:
 
 | File | Line | Why allowed |
-|------|------|-------------|
+| --- | --- | --- |
 | `src/components/settings/AddDeviceModal.tsx` | ~298 | Pairing QR SVG generated locally by `commands.generatePairingQrSvg()` (Rust); no peer-controlled input flows into the SVG. |
 
 If you add a new exception, add a row to the table.

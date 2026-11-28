@@ -1,21 +1,52 @@
 //! Thread message send/load.
 
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::dto::channel_message::PostAdmission;
+use rekindle_types::message::SendState;
 use rekindle_types::message::{ChannelPost, PostEntry};
 
 use super::policy::ThreadMessageView;
-use super::support::{open_thread_body, thread_replies, thread_scope, uuid_simple};
-use crate::deps::ChannelMessagingDeps;
+use super::support::{thread_replies, thread_scope, uuid_simple};
+use crate::deps::{ChannelMessagingDeps, OutboxItem, PendingThreadReply};
 use crate::error::ChannelError;
+use crate::outbox_seal::open_entry_body;
+use crate::send::BodyPosition;
 
 /// A thread reply we sent: what a receiver's `ThreadMessagePosted`
-/// carries besides the body, so our own frontends get the same event.
+/// carries besides the body, so our own frontends get the same event, and
+/// its delivery state (`Queued`: the outbox moves it on).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThreadReplySent {
     pub message_id: String,
     pub sender_pseudonym: String,
     /// Seconds, as the `ThreadMessageReceived` envelope carries it.
     pub timestamp: u64,
+    pub send_state: SendState,
+}
+
+/// A reply to queue on a thread's stream.
+pub(super) struct ThreadReplyDraft<'a> {
+    pub thread_id: &'a str,
+    pub parent_channel: &'a str,
+    pub revives: Option<String>,
+    pub message_id: String,
+    pub body: &'a str,
+}
+
+const THREAD_REPLY_ID_PREFIX: &str = "tmsg_";
+
+/// Whether our outbox client id identifies a thread reply.
+pub fn is_thread_reply_id(id: &str) -> bool {
+    id.strip_prefix(THREAD_REPLY_ID_PREFIX)
+        .and_then(rekindle_types::id::ChannelId::from_hex)
+        .is_some()
+}
+
+/// A new thread reply's id.
+pub(super) fn new_reply_id() -> String {
+    format!("{THREAD_REPLY_ID_PREFIX}{}", uuid_simple())
 }
 
 /// Send a thread reply (plan E3.3): an entry of our channel outbox
@@ -27,8 +58,8 @@ pub struct ThreadReplySent {
 /// drain).
 ///
 /// # Errors
-/// The thread is unknown, we hold no pseudonym, or the queue or the mesh
-/// send failed.
+/// The thread is unknown, we hold no pseudonym, or the queue failed. A
+/// mesh failure after the queue is not an error: the reply is `Queued`.
 pub async fn send_thread_message<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -38,36 +69,102 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
     let thread = deps
         .thread_state(community_id, thread_id)
         .ok_or_else(|| ChannelError::Adapter("thread not found".into()))?;
+    let reply = ThreadReplyDraft {
+        thread_id,
+        parent_channel: &thread.parent_channel_id_hex,
+        revives: thread.archived_op.clone(),
+        message_id: new_reply_id(),
+        body,
+    };
+    let (post, prepared) = prepare_reply(deps, community_id, reply)?;
+    send_prepared_reply(prepared, deps.queue_post(&post), |envelope| {
+        deps.send_to_mesh(community_id, envelope)
+    })
+    .await
+}
+
+pub(super) fn prepare_reply<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    reply: ThreadReplyDraft<'_>,
+) -> Result<(ChannelPost, PreparedThreadReply), ChannelError> {
     let sender_pseudonym = deps
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
-    let sent_at_ms = deps.now_secs().saturating_mul(1000);
-    let sent = ThreadReplySent {
-        message_id: format!("tmsg_{}", uuid_simple()),
-        sender_pseudonym,
-        timestamp: sent_at_ms / 1000,
-    };
+    let timestamp = deps.now_secs();
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_owned(),
-        channel: thread_id.to_owned(),
-        message: sent.message_id.clone(),
+        channel: reply.thread_id.to_owned(),
+        message: reply.message_id.clone(),
         entry: PostEntry::ThreadReply {
-            parent_channel: thread.parent_channel_id_hex.clone(),
-            body: body.to_owned(),
-            sent_at_ms,
-            revives: thread.archived_op.clone(),
+            parent_channel: reply.parent_channel.to_owned(),
+            body: reply.body.to_owned(),
+            sent_at_ms: timestamp.saturating_mul(1000),
+            revives: reply.revives,
         },
     };
-    deps.queue_post(&post).await?;
+    let prepared = PreparedThreadReply {
+        thread_id: reply.thread_id.to_owned(),
+        sent: ThreadReplySent {
+            message_id: reply.message_id,
+            sender_pseudonym,
+            timestamp,
+            send_state: SendState::Queued,
+        },
+    };
+    Ok((post, prepared))
+}
+
+/// The local echo and mesh notice for a reply whose queue is about to commit.
+pub struct PreparedThreadReply {
+    pub(super) thread_id: String,
+    pub(super) sent: ThreadReplySent,
+}
+
+/// Once the queue commits, the outbox owns delivery. The mesh notice is best effort.
+///
+/// # Errors
+/// The durable queue failed.
+pub async fn send_prepared_reply(
+    prepared: PreparedThreadReply,
+    queue: impl std::future::Future<Output = Result<(), ChannelError>>,
+    notify: impl FnOnce(&CommunityEnvelope) -> Result<(), ChannelError>,
+) -> Result<ThreadReplySent, ChannelError> {
+    queue.await?;
+    let sent = prepared.sent;
     let envelope = CommunityEnvelope::control(ControlPayload::ThreadMessageReceived {
-        thread_id: thread_id.to_string(),
+        thread_id: prepared.thread_id,
         message_id: sent.message_id.clone(),
         sender_pseudonym: sent.sender_pseudonym.clone(),
         timestamp: sent.timestamp,
         reply_to_id: None,
     });
-    deps.send_to_mesh(community_id, &envelope)?;
+    if let Err(error) = notify(&envelope) {
+        tracing::warn!(%error, "thread reply queued; the mesh notice was not sent");
+    }
     Ok(sent)
+}
+
+enum HistoryReply<'a> {
+    Verified(&'a OutboxItem, &'a ChannelMessage),
+    Pending {
+        reply: PendingThreadReply,
+        author: String,
+    },
+}
+
+impl HistoryReply<'_> {
+    fn position(&self) -> (u64, &str, u64) {
+        match self {
+            Self::Verified(item, message) => (
+                message.timestamp,
+                &message.sender_pseudonym,
+                item.stream_seq,
+            ),
+            Self::Pending { reply, author } => (reply.sent_at_ms, author, reply.stream_seq),
+        }
+    }
 }
 
 /// Load a thread's replies from its authors' outboxes, each opened under
@@ -76,7 +173,7 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
 /// order, authors by pseudonym at equal times.
 ///
 /// # Errors
-/// The thread is unknown.
+/// The thread is unknown or the pending replies could not be loaded.
 pub async fn load_thread_messages<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -90,35 +187,102 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
     let Some(scope) = thread_scope(deps, community_id, &thread.parent_channel_id_hex) else {
         return Ok(Vec::new());
     };
-    let mut items = thread_replies(deps, community_id, thread_id).await;
-    items.sort_by(|a, b| {
-        (a.1.timestamp, &a.1.sender_pseudonym, a.0.stream_seq).cmp(&(
-            b.1.timestamp,
-            &b.1.sender_pseudonym,
-            b.0.stream_seq,
-        ))
-    });
+    let replies = thread_replies(deps, community_id, thread_id).await?;
     let before_ms = before_timestamp_secs.map_or(u64::MAX, |ts| ts.saturating_mul(1000));
-    let my_pseudonym = deps.my_pseudonym_hex(community_id).unwrap_or_default();
-    let mut messages: Vec<ThreadMessageView> = items
-        .into_iter()
-        .filter(|(_, message)| message.timestamp < before_ms)
-        .rev()
-        .take(limit.min(200) as usize)
-        .map(|(item, message)| {
-            let body = open_thread_body(deps, community_id, scope, thread_id, &item, &message);
-            ThreadMessageView {
-                is_own: message.sender_pseudonym == my_pseudonym,
-                sender_pseudonym: message.sender_pseudonym.clone(),
-                decryption_failed: body.is_none(),
-                body: body.unwrap_or_default(),
-                timestamp_ms: message.timestamp,
-                server_message_id: message.message_id.clone(),
-                mek_generation: message.mek_generation,
-                stream_seq: item.stream_seq,
-            }
-        })
+    let own = replies.my_pseudonym.as_deref();
+    let mut history: Vec<_> = replies
+        .verified
+        .iter()
+        .map(|(item, message)| HistoryReply::Verified(item, message))
         .collect();
-    messages.reverse();
-    Ok(messages)
+    if let Some(author) = own {
+        history.extend(
+            replies
+                .pending
+                .into_iter()
+                .map(|reply| HistoryReply::Pending {
+                    reply,
+                    author: author.to_owned(),
+                }),
+        );
+    }
+    history.retain(|reply| reply.position().0 < before_ms);
+    history.sort_by(|a, b| a.position().cmp(&b.position()));
+    let first = history.len().saturating_sub(limit.min(200) as usize);
+    Ok(history
+        .into_iter()
+        .skip(first)
+        .map(|reply| match reply {
+            HistoryReply::Verified(item, message) => verified_reply_view(
+                deps,
+                scope,
+                BodyPosition {
+                    anchor: community_id,
+                    channel_id: thread_id,
+                    author: &item.author.0,
+                    stream_seq: item.stream_seq,
+                },
+                message,
+                item.admission.clone(),
+                own == Some(&message.sender_pseudonym),
+            ),
+            HistoryReply::Pending { reply, author } => ThreadMessageView {
+                admission: None,
+                is_own: true,
+                send_state: reply.send_state,
+                sender_pseudonym: author,
+                decryption_failed: false,
+                body: reply.body,
+                timestamp_ms: reply.sent_at_ms,
+                server_message_id: Some(reply.message_id),
+                mek_generation: None,
+                stream_seq: reply.stream_seq,
+            },
+        })
+        .collect())
 }
+
+/// Project one verified outbox reply as it appears in thread history.
+pub fn verified_reply_view<D: ChannelMessagingDeps>(
+    deps: &D,
+    scope: KeyScope,
+    position: BodyPosition<'_>,
+    message: &ChannelMessage,
+    admission: Option<PostAdmission>,
+    is_own: bool,
+) -> ThreadMessageView {
+    let stream_seq = position.stream_seq;
+    let body = if admission.is_none() {
+        open_entry_body(
+            &*deps.keys(),
+            position.anchor,
+            scope,
+            message.mek_generation,
+            position,
+            &message.ciphertext,
+        )
+        .and_then(|body| String::from_utf8(body).ok())
+    } else {
+        None
+    };
+    ThreadMessageView {
+        decryption_failed: admission.is_none() && body.is_none(),
+        admission,
+        is_own,
+        send_state: if is_own {
+            SendState::Sent
+        } else {
+            SendState::Delivered
+        },
+        sender_pseudonym: message.sender_pseudonym.clone(),
+        body: body.unwrap_or_default(),
+        timestamp_ms: message.timestamp,
+        server_message_id: message.message_id.clone(),
+        mek_generation: Some(message.mek_generation),
+        stream_seq,
+    }
+}
+
+#[cfg(test)]
+#[path = "messages_tests.rs"]
+mod tests;

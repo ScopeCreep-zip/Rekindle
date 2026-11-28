@@ -542,6 +542,20 @@ pub enum IpcRequest {
     AgentRevoke { name: String },
     /// Reload authorization policy from disk.
     PolicyReload,
+
+    /// The static role-editor permission catalogue, available in any state.
+    PermissionCatalogue,
+
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverPostSkippingLocalPermission {
+        channel: String,
+        body: String,
+        reply_to: Option<String>,
+    },
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverHoldGovernanceOps { community: String },
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    WebdriverReleaseGovernanceOps { community: String },
 }
 
 mod capability;

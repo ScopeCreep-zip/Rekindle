@@ -3,10 +3,19 @@
  * Host's served rule (`@layer shape`, `[data-skin-node]`); this file holds
  * no positions, only what each bound role draws inside its box. */
 @layer components {
-  /* The pack's window; the served rule insets it by the skin's outsets. */
+  /* The pack's window; the served rule insets it by the skin's outsets.
+   * Its own stacking context: a node's z-index is 3 x the pack's Z
+   * (skin_tree/validate.rs stack_z), and packs use Z up to 99 (Symbiosis's
+   * MainWindow lays its list at Z 30, so 90), which in the window's context
+   * painted the list over every surface beside the tree: the incoming-call
+   * banner (z 80) was laid out but unseen. Isolated, the pack's Z orders its
+   * own nodes only, and the whole tree paints as one layer at the window's
+   * level 0, beneath every Host-driven surface beside it (calls, modals,
+   * alerts) in every pack. */
   .skin-tree {
     position: absolute;
     inset: 0;
+    isolation: isolate;
     font-family: var(--font-family-xfire);
     color: var(--color-xfire-text);
   }

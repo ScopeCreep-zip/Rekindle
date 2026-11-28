@@ -1,4 +1,8 @@
-use super::*;
+use std::collections::BTreeSet;
+
+use rekindle_types::dht_layout::join_inbox as layout;
+
+use super::{Batch, Observations};
 
 #[test]
 fn only_exhausted_capacity_is_reported() {

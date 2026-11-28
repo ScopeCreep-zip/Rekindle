@@ -1,19 +1,20 @@
+import { markChannelReadToLatest } from "../../actions/community/channels";
+import { handleLoadExpressions } from "../../actions/community/lifecycle";
+import { handleLoadChannelMessages } from "../../actions/community/messages";
+import { setTypingUsers } from "../../actions/community/shared";
 import type { CommunityEvent } from "../../ipc/channels";
+import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import type {
   ChannelMessageEvent,
   CommunitySubscriptionEvent,
 } from "../../ipc/channels/community_subscription_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
+import { noteAdmissionEvent } from "../../stores/admission_events.store";
 import type { Message } from "../../stores/chat.store";
-import type { UnreadChanged } from "../../ipc/channels/chat_events";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { holdEarlySendState } from "../../stores/early_send.store";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
-import { transformHistoryGap, transformMessages } from "../../utils/transformers";
-import { setTypingUsers } from "../../actions/community/shared";
-import { markChannelReadToLatest } from "../../actions/community/channels";
-import { handleLoadExpressions } from "../../actions/community/lifecycle";
-import { handleLoadChannelMessages } from "../../actions/community/messages";
+import { addToast } from "../../stores/toast.store";
+import { transformHistoryGap, transformMessage } from "../../utils/transformers";
 
 type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 
@@ -72,7 +73,7 @@ function applyAttachmentDownloaded(channel: string, attachmentId: string): void 
   const idx = messages.findIndex((m) => m.attachment?.attachmentId === attachmentId);
   if (idx < 0) return;
   setCommunityState("channelMessages", channel, idx, "attachment", (att) =>
-    att ? { ...att, downloaded: true } : att,
+    att ? { ...att, downloaded: true } : att
   );
 }
 
@@ -100,14 +101,18 @@ function applyDelete(channel: string, messageId: string, removedBy: string | nul
   if (!msgs) return;
   if (removedBy === null) {
     setCommunityState("channelMessages", channel, (prev) =>
-      prev.filter((m) => m.serverMessageId !== messageId),
+      prev.filter((m) => m.serverMessageId !== messageId)
     );
     return;
   }
   const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
   if (idx < 0) return;
   setCommunityState("channelMessages", channel, idx, (m) => ({
-    ...m, body: "", editedAt: undefined, attachment: undefined, removedBy,
+    ...m,
+    body: "",
+    editedAt: undefined,
+    attachment: undefined,
+    removedBy,
   }));
 }
 
@@ -128,11 +133,15 @@ function applyChannelGapClosed(community: string, sender: string, throughSeq: nu
   const channels = communityState.communities[community]?.channels ?? [];
   for (const { id } of channels) {
     const msgs = communityState.channelMessages[id];
-    if (!msgs?.some((m) => m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)) {
+    if (
+      !msgs?.some((m) => m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)
+    ) {
       continue;
     }
     setCommunityState("channelMessages", id, (prev) =>
-      prev.filter((m) => !(m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)),
+      prev.filter(
+        (m) => !(m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)
+      )
     );
   }
 }
@@ -141,7 +150,7 @@ function applyReactionAdded(
   channel: string,
   messageId: string,
   emoji: string,
-  reactor: string,
+  reactor: string
 ): void {
   const msgs = communityState.channelMessages[channel];
   if (!msgs) return;
@@ -171,7 +180,7 @@ function applyReactionRemoved(
   channel: string,
   messageId: string,
   emoji: string,
-  reactor: string,
+  reactor: string
 ): void {
   const msgs = communityState.channelMessages[channel];
   if (!msgs) return;
@@ -189,7 +198,7 @@ function applyReactionRemoved(
       channel,
       idx,
       "reactions",
-      reactions.filter((_, i) => i !== existingIdx),
+      reactions.filter((_, i) => i !== existingIdx)
     );
   } else {
     setCommunityState("channelMessages", channel, idx, "reactions", existingIdx, {
@@ -265,16 +274,27 @@ function applyChannelUnread(u: UnreadChanged): void {
 /// the community key, `queued` once released to its write (plan E3.2 S7l);
 /// a `failed` one carries the backend's `reason` when its key never came.
 function applySendStatus(channel: string, messageId: string, state: string, reason?: string): void {
-  const msgs = communityState.channelMessages[channel];
-  if (!msgs) return;
-  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-  if (idx < 0) return;
+  // A thread reply's `channel` is its thread (plan FT1): its rows are the thread's.
+  const list = communityState.channelMessages[channel]
+    ? "channelMessages"
+    : communityState.threadMessages[channel]
+      ? "threadMessages"
+      : null;
+  const idx = list
+    ? communityState[list][channel].findIndex((m) => m.serverMessageId === messageId)
+    : -1;
+  if (list === null || idx < 0) {
+    // Our own reply whose send answer has not come back yet: its row has no
+    // server id to match, so the state waits for that answer (either order).
+    holdEarlySendState(messageId, state, reason);
+    return;
+  }
   if (state === "failed") {
-    setCommunityState("channelMessages", channel, idx, "status", "failed");
-    setCommunityState("channelMessages", channel, idx, "failureReason", reason);
+    setCommunityState(list, channel, idx, "status", "failed");
+    setCommunityState(list, channel, idx, "failureReason", reason);
     addToast(reason ?? "Message not delivered. Resend it.", "error");
   } else if (state === "sent" || state === "queued" || state === "awaiting_key") {
-    setCommunityState("channelMessages", channel, idx, "status", state);
+    setCommunityState(list, channel, idx, "status", state);
   }
 }
 
@@ -296,7 +316,7 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.channelSendStatus.channel,
         m.channelSendStatus.messageId,
         m.channelSendStatus.state,
-        m.channelSendStatus.reason,
+        m.channelSendStatus.reason
       );
     } else if ("channelHistoryGap" in m) {
       const g = m.channelHistoryGap;
@@ -305,7 +325,32 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
       const g = m.channelHistoryGapClosed;
       applyChannelGapClosed(g.community, g.senderPseudonym, g.throughSeq);
     } else if ("attachmentDownloaded" in m) {
-      applyAttachmentDownloaded(m.attachmentDownloaded.channel, m.attachmentDownloaded.attachmentId);
+      applyAttachmentDownloaded(
+        m.attachmentDownloaded.channel,
+        m.attachmentDownloaded.attachmentId
+      );
+    } else if ("postAdmissionChanged" in m) {
+      // CP1: a held post was judged, or a new one held (the Host announces a
+      // first hold only here). The event carries the post as the Host's
+      // history read builds it now: a loaded row is replaced in place, at any
+      // depth of scrollback; a new one inside the loaded window goes in by
+      // time. One older than the window is unloaded history, which the next
+      // read returns with the same view.
+      const a = m.postAdmissionChanged;
+      noteAdmissionEvent(a.messageId);
+      const list = a.thread ? "threadMessages" : "channelMessages";
+      const rows = communityState[list][a.streamId];
+      if (!rows) return;
+      const row = transformMessage(a.row);
+      const idx = rows.findIndex((r) => r.serverMessageId === a.messageId);
+      if (idx >= 0) {
+        setCommunityState(list, a.streamId, idx, row);
+      } else if (rows.length === 0 || row.timestamp >= rows[0].timestamp) {
+        setCommunityState(list, a.streamId, (prev) => {
+          const at = prev.findIndex((r) => r.timestamp > row.timestamp);
+          return at < 0 ? [...prev, row] : [...prev.slice(0, at), row, ...prev.slice(at)];
+        });
+      }
     } else if ("expressionAssetReady" in m) {
       // Architecture §18.4 — the eager fetch landed; re-pull the
       // community's expressions so the picker shows the resolved bytes.
@@ -354,7 +399,7 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
     addToast(
       `Raid detected: ${joinsInWindow} joins in the last ${joinIntervalSeconds}s ` +
         `(threshold ${maxJoinsPerInterval}). Consider pausing invites.`,
-      "error",
+      "error"
     );
     return;
   }

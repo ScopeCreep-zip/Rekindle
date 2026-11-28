@@ -321,7 +321,7 @@ suggestive but not proof.
 ## 3. Migration cost, 0.5.3 → 0.5.7
 
 | Change | Impact here |
-|---|---|
+| --- | --- |
 | `Sequencing::NoPreference` → `PreferUnordered` | 3 sites: `crates/rekindle-transport/src/broadcast/node.rs:844`, `src-tauri/src/services/voice_adapter/frame_sender.rs:49`, `src-tauri/src/state_helpers/mod.rs:80` |
 | `VeilidConfig` settings moved behind `footgun-config` into `VeilidConfigInternal` | Largest item. `4cd4dc8` had to strip **40+ fields** from its network config mapping. `upnp`, `protected_store.*`, `rpc.default_route_hop_count` and bootstrap survive on the public struct |
 | `AttachmentState::OverAttached` removed upstream | No compile break — we own our enum (`crates/rekindle-types/src/notification.rs:28`) and parse from strings. The arm goes dead, but u8 discriminants are load-bearing in atomics (`shared.rs`), so this needs a review pass, not a delete |

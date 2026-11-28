@@ -30,13 +30,15 @@ mod anti_entropy_loop;
 pub mod audit;
 mod audit_rows;
 pub(crate) mod automod_rules;
-mod capability_words;
+pub(super) mod capability_words;
 mod catchup;
 mod co_create;
 mod community_events;
 mod community_info;
 pub(crate) mod community_pictures;
 pub(crate) mod community_profile;
+pub use community_profile::shown_name;
+mod community_profile_edit;
 pub(crate) mod community_sync;
 mod create_leave;
 pub mod deps_impl;
@@ -45,13 +47,16 @@ mod dht;
 mod event_control;
 mod event_reminders;
 mod event_rsvps;
+mod hold_end;
 mod key_status;
+mod member_history_ad_loop;
 mod member_routes_loop;
 mod successor;
 mod transfer;
 pub(crate) use co_create::PendingCreations;
 pub(crate) use community_info::InfoEdit;
-pub(crate) use create_leave::{ForgetError, HoldEnd};
+pub(crate) use create_leave::ForgetError;
+pub(crate) use hold_end::HoldEnd;
 pub(crate) use invites::invite_fingerprint;
 pub(crate) use views::{op_publications, removal_display};
 pub(crate) mod channel_admin;
@@ -125,6 +130,7 @@ mod unlock_barrier_loop;
 pub(crate) mod unread;
 pub(crate) mod view_gain;
 pub(crate) mod views;
+mod voice_events;
 mod watch;
 mod watch_relay;
 pub mod watch_ring;
@@ -168,3 +174,5 @@ impl crate::host::Host {
         HostGovernance::new(Arc::clone(&self.ctx))
     }
 }
+
+pub(crate) use ops::store_op_and_head;

@@ -4,62 +4,187 @@
 //! Used by `rekindle-governance` for permission computation and by
 //! the reader-validates model for gossip message validation.
 
-/// General permissions (bits 0-15)
-pub const VIEW_CHANNELS: u64 = 1 << 0;
-pub const MANAGE_CHANNELS: u64 = 1 << 1;
-pub const MANAGE_ROLES: u64 = 1 << 2;
-pub const MANAGE_COMMUNITY: u64 = 1 << 3;
-pub const CREATE_INVITES: u64 = 1 << 4;
-pub const KICK_MEMBERS: u64 = 1 << 5;
-pub const BAN_MEMBERS: u64 = 1 << 6;
-pub const TIMEOUT_MEMBERS: u64 = 1 << 7;
-pub const MANAGE_NICKNAMES: u64 = 1 << 8;
-pub const MANAGE_EXPRESSIONS: u64 = 1 << 9;
-pub const VIEW_AUDIT_LOG: u64 = 1 << 10;
-pub const VIEW_INSIGHTS: u64 = 1 << 11;
-pub const CREATE_EXPRESSIONS: u64 = 1 << 12;
+// Keep the declared-bit mask derived from the same declarations as the constants.
+macro_rules! permission_bits {
+    ($($(#[$attr:meta])* $name:ident = $bit:literal;)*) => {
+        $($(#[$attr])* pub const $name: u64 = 1 << $bit;)*
 
-/// Text permissions (bits 16-31)
-pub const SEND_MESSAGES: u64 = 1 << 16;
-pub const EMBED_LINKS: u64 = 1 << 17;
-pub const ATTACH_FILES: u64 = 1 << 18;
-pub const ADD_REACTIONS: u64 = 1 << 19;
-pub const MENTION_EVERYONE: u64 = 1 << 20;
-pub const MANAGE_MESSAGES: u64 = 1 << 21;
-pub const READ_HISTORY: u64 = 1 << 22;
-pub const SEND_TTS: u64 = 1 << 23;
-pub const USE_EXTERNAL_EMOJIS: u64 = 1 << 24;
-pub const USE_EXTERNAL_STICKERS: u64 = 1 << 25;
-pub const PIN_MESSAGES: u64 = 1 << 26;
-pub const SEND_VOICE_MESSAGES: u64 = 1 << 27;
-pub const SEND_POLLS: u64 = 1 << 28;
-pub const BYPASS_SLOWMODE: u64 = 1 << 29;
+        /// All defined permission bits, excluding reserved positions.
+        pub const DEFINED: u64 = 0 $(| $name)*;
+    };
+}
 
-/// Voice permissions (bits 32-43)
-pub const CONNECT: u64 = 1 << 32;
-pub const SPEAK: u64 = 1 << 33;
-pub const MUTE_MEMBERS: u64 = 1 << 34;
-pub const DEAFEN_MEMBERS: u64 = 1 << 35;
-pub const MOVE_MEMBERS: u64 = 1 << 36;
-pub const USE_VOICE_ACTIVITY: u64 = 1 << 37;
-pub const PRIORITY_SPEAKER: u64 = 1 << 38;
-pub const USE_SOUNDBOARD: u64 = 1 << 39;
-pub const USE_EXTERNAL_SOUNDS: u64 = 1 << 40;
-pub const REQUEST_TO_SPEAK: u64 = 1 << 41;
-pub const STREAM: u64 = 1 << 42;
+permission_bits! {
+    /// General permissions (bits 0-15)
+    VIEW_CHANNELS = 0;
+    MANAGE_CHANNELS = 1;
+    MANAGE_ROLES = 2;
+    MANAGE_COMMUNITY = 3;
+    CREATE_INVITES = 4;
+    KICK_MEMBERS = 5;
+    BAN_MEMBERS = 6;
+    TIMEOUT_MEMBERS = 7;
+    MANAGE_NICKNAMES = 8;
+    MANAGE_EXPRESSIONS = 9;
+    VIEW_AUDIT_LOG = 10;
+    VIEW_INSIGHTS = 11;
+    CREATE_EXPRESSIONS = 12;
 
-/// Thread permissions (bits 44-47)
-pub const MANAGE_THREADS: u64 = 1 << 44;
-pub const CREATE_PUBLIC_THREADS: u64 = 1 << 45;
-pub const CREATE_PRIVATE_THREADS: u64 = 1 << 46;
-pub const SEND_IN_THREADS: u64 = 1 << 47;
+    /// Text permissions (bits 16-31)
+    SEND_MESSAGES = 16;
+    EMBED_LINKS = 17;
+    ATTACH_FILES = 18;
+    ADD_REACTIONS = 19;
+    MENTION_EVERYONE = 20;
+    MANAGE_MESSAGES = 21;
+    READ_HISTORY = 22;
+    SEND_TTS = 23;
+    USE_EXTERNAL_EMOJIS = 24;
+    USE_EXTERNAL_STICKERS = 25;
+    PIN_MESSAGES = 26;
+    SEND_VOICE_MESSAGES = 27;
+    SEND_POLLS = 28;
+    BYPASS_SLOWMODE = 29;
 
-/// Event permissions (bits 48-49)
-pub const MANAGE_EVENTS: u64 = 1 << 48;
-pub const CREATE_EVENTS: u64 = 1 << 49;
+    /// Voice permissions (bits 32-43)
+    CONNECT = 32;
+    SPEAK = 33;
+    MUTE_MEMBERS = 34;
+    DEAFEN_MEMBERS = 35;
+    MOVE_MEMBERS = 36;
+    USE_VOICE_ACTIVITY = 37;
+    PRIORITY_SPEAKER = 38;
+    USE_SOUNDBOARD = 39;
+    USE_EXTERNAL_SOUNDS = 40;
+    REQUEST_TO_SPEAK = 41;
+    STREAM = 42;
 
-/// Admin permission (bit 50) — bypasses all checks.
-pub const ADMINISTRATOR: u64 = 1 << 50;
+    /// Thread permissions (bits 44-47)
+    MANAGE_THREADS = 44;
+    CREATE_PUBLIC_THREADS = 45;
+    CREATE_PRIVATE_THREADS = 46;
+    SEND_IN_THREADS = 47;
+
+    /// Event permissions (bits 48-49)
+    MANAGE_EVENTS = 48;
+    CREATE_EVENTS = 49;
+
+    /// Admin permission (bit 50) — bypasses all checks.
+    ADMINISTRATOR = 50;
+}
+
+/// An individual permission in the role editor.
+pub struct CatalogueEntry {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub bit: u64,
+}
+
+/// A role-editor permission group.
+pub struct CatalogueGroup {
+    pub name: &'static str,
+    pub permissions: &'static [CatalogueEntry],
+}
+
+macro_rules! permission_entries {
+    ($($bit:ident => $label:literal,)*) => {
+        &[$(CatalogueEntry { key: stringify!($bit), label: $label, bit: $bit }),*]
+    };
+}
+
+/// The Host's role-editor groups and entries, in display order.
+pub const PERMISSION_CATALOGUE: &[CatalogueGroup] = &[
+    CatalogueGroup {
+        name: "General",
+        permissions: permission_entries! {
+            VIEW_CHANNELS => "View Channels",
+            MANAGE_CHANNELS => "Manage Channels",
+            MANAGE_ROLES => "Manage Roles",
+            MANAGE_COMMUNITY => "Manage Community",
+            CREATE_INVITES => "Create Invites",
+            KICK_MEMBERS => "Kick Members",
+            BAN_MEMBERS => "Ban Members",
+            TIMEOUT_MEMBERS => "Moderate Members",
+            VIEW_AUDIT_LOG => "View Audit Log",
+            MANAGE_NICKNAMES => "Manage Nicknames",
+            MANAGE_EXPRESSIONS => "Manage Expressions",
+            VIEW_INSIGHTS => "View Insights",
+            CREATE_EXPRESSIONS => "Create Expressions",
+            ADMINISTRATOR => "Administrator",
+        },
+    },
+    CatalogueGroup {
+        name: "Text",
+        permissions: permission_entries! {
+            SEND_MESSAGES => "Send Messages",
+            EMBED_LINKS => "Embed Links",
+            ATTACH_FILES => "Attach Files",
+            ADD_REACTIONS => "Add Reactions",
+            MENTION_EVERYONE => "Mention Everyone",
+            MANAGE_MESSAGES => "Manage Messages",
+            READ_HISTORY => "Read History",
+            PIN_MESSAGES => "Pin Messages",
+            SEND_POLLS => "Send Polls",
+            SEND_TTS => "Send TTS Messages",
+            USE_EXTERNAL_EMOJIS => "Use External Emojis",
+            USE_EXTERNAL_STICKERS => "Use External Stickers",
+            SEND_VOICE_MESSAGES => "Send Voice Messages",
+            BYPASS_SLOWMODE => "Bypass Slowmode",
+        },
+    },
+    CatalogueGroup {
+        name: "Voice",
+        permissions: permission_entries! {
+            CONNECT => "Connect",
+            SPEAK => "Speak",
+            MUTE_MEMBERS => "Mute Members",
+            DEAFEN_MEMBERS => "Deafen Members",
+            MOVE_MEMBERS => "Move Members",
+            USE_VOICE_ACTIVITY => "Use Voice Activity",
+            REQUEST_TO_SPEAK => "Request to Speak",
+            STREAM => "Stream",
+            PRIORITY_SPEAKER => "Priority Speaker",
+            USE_SOUNDBOARD => "Use Soundboard",
+            USE_EXTERNAL_SOUNDS => "Use External Sounds",
+        },
+    },
+    CatalogueGroup {
+        name: "Threads",
+        permissions: permission_entries! {
+            MANAGE_THREADS => "Manage Threads",
+            CREATE_PUBLIC_THREADS => "Create Public Threads",
+            CREATE_PRIVATE_THREADS => "Create Private Threads",
+            SEND_IN_THREADS => "Send In Threads",
+        },
+    },
+    CatalogueGroup {
+        name: "Events",
+        permissions: permission_entries! {
+            MANAGE_EVENTS => "Manage Events",
+            CREATE_EVENTS => "Create Events",
+        },
+    },
+];
+
+/// Role-editor labels indexed in ascending bit order for capability denials.
+pub const PERMISSION_NAMES: &[(u64, &str)] = &permission_names();
+
+const fn permission_names() -> [(u64, &'static str); DEFINED.count_ones() as usize] {
+    let mut names = [(0, ""); DEFINED.count_ones() as usize];
+    let mut group = 0;
+    while group < PERMISSION_CATALOGUE.len() {
+        let entries = PERMISSION_CATALOGUE[group].permissions;
+        let mut index = 0;
+        while index < entries.len() {
+            let entry = &entries[index];
+            let bit_index = (DEFINED & (entry.bit - 1)).count_ones() as usize;
+            names[bit_index] = (entry.bit, entry.label);
+            index += 1;
+        }
+        group += 1;
+    }
+    names
+}
 
 /// Default permissions for the @everyone role in new communities.
 pub const DEFAULT_EVERYONE: u64 = VIEW_CHANNELS
@@ -76,11 +201,11 @@ pub const DEFAULT_EVERYONE: u64 = VIEW_CHANNELS
     | SEND_IN_THREADS
     | CREATE_EVENTS;
 
-/// All permissions set (bits 0-50).
 /// The permissions any one of which lets a member rotate the community
 /// key ([`Permissions::may_rotate_mek`]).
 pub const MEK_ROTATION: u64 = KICK_MEMBERS | BAN_MEMBERS | MANAGE_COMMUNITY;
 
+/// All permission positions (bits 0–50), including reserved positions.
 pub const ALL: u64 = (1 << 51) - 1;
 
 /// Convenience struct wrapping a u64 bitmask with helper methods.

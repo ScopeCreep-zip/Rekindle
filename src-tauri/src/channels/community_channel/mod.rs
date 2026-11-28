@@ -3,8 +3,8 @@ use serde::Serialize;
 mod dto;
 pub use dto::{
     NativeVideoErrorEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
-    VideoEnvelopeRejectedEvent, VideoKeyframeRequestEvent, VideoSessionConfigEvent,
-    VideoTopologyChangeEvent,
+    VideoCodecIncompatiblePeer, VideoEnvelopeRejectedEvent, VideoKeyframeRequestEvent,
+    VideoSessionConfigEvent, VideoTopologyChangeEvent,
 };
 
 /// Events streamed from Rust to the frontend for community operations.

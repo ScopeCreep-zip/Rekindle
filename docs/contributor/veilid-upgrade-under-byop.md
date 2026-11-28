@@ -166,7 +166,7 @@ Veilid does not implement HPKE itself — it uses the standard **`hpke`
 crate v0.14.0** (`veilid-core/Cargo.toml:273`) with:
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | KEM | `X25519HkdfSha256` (`vld0/mod.rs:232`) |
 | KDF | `HkdfSha256` (`crypto_system/hpke.rs:11`) |
 | AEAD | `ChaCha20Poly1305` (`crypto_system/hpke.rs:12`) |

@@ -22,6 +22,8 @@ use rekindle_records::port::RecordPort;
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::governance::HostGovernance;
 
+mod admission;
+
 mod blocks;
 pub(crate) mod changes;
 pub mod deps_impl;
@@ -37,6 +39,7 @@ mod outbox_hold;
 mod outbox_read;
 mod outbox_unmapped;
 pub(crate) use outbox_read::outbox_stream;
+mod forum_post;
 pub(crate) mod outbox_send;
 mod persist;
 mod received;
@@ -50,6 +53,8 @@ mod thread_refusal;
 #[derive(Clone)]
 pub struct HostChannel {
     gov: HostGovernance,
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    skip_local_post_permission: bool,
 }
 
 impl crate::host::Host {
@@ -63,13 +68,27 @@ impl crate::host::Host {
 impl HostChannel {
     /// The channel adapter over `gov`'s Host.
     pub(crate) fn of_governance(gov: &HostGovernance) -> Self {
-        Self { gov: gov.clone() }
+        Self {
+            gov: gov.clone(),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            skip_local_post_permission: false,
+        }
     }
 
     /// The channel adapter over `ctx`.
     pub(crate) fn new(ctx: &DaemonContext) -> Self {
         Self {
             gov: crate::daemon::dispatch::adapter(ctx),
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            skip_local_post_permission: false,
+        }
+    }
+
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    pub(crate) fn for_post_skipping_local_permission(ctx: &DaemonContext) -> Self {
+        Self {
+            skip_local_post_permission: true,
+            ..Self::new(ctx)
         }
     }
 
@@ -185,7 +204,8 @@ pub(crate) fn key_did_not_arrive_text() -> String {
     format!("Not sent: {}", rekindle_outbox::KEY_DID_NOT_ARRIVE)
 }
 
-/// Tell the windows of each post that waited past its deadline for its
+/// Publish thread delivery status and tell the windows of each post that
+/// waited past its deadline for its
 /// channel's key (the outbox engine fails it with
 /// [`rekindle_outbox::KEY_DID_NOT_ARRIVE`]), with the reason they show.
 /// Runs on the unlock scope.
@@ -201,7 +221,7 @@ pub(crate) fn start_key_deadline(
     };
     let channel = HostChannel::new(ctx);
     let mut changes = posts.changes();
-    scope.spawn_with_token("channel post key deadline", |stop| async move {
+    scope.spawn_with_token("channel post status", |stop| async move {
         loop {
             let change = match stop.run_until_cancelled(changes.recv()).await {
                 None | Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return,
@@ -211,6 +231,9 @@ pub(crate) fn start_key_deadline(
                 }
                 Some(Ok(change)) => change,
             };
+            if channel.thread_send_status(&change) {
+                continue;
+            }
             let expired = change.kind == rekindle_outbox::StreamKind::ChannelPost
                 && change.state == rekindle_types::message::SendState::Failed
                 && change.wedge_reason.as_deref() == Some(rekindle_outbox::KEY_DID_NOT_ARRIVE);
@@ -245,7 +268,7 @@ pub(crate) fn release_waiting_posts(gov: &HostGovernance, community_id: &str) {
     if gov.context().outbox.channel_posts().is_none() {
         return;
     }
-    let channel = HostChannel { gov: gov.clone() };
+    let channel = HostChannel::of_governance(gov);
     let community = community_id.to_owned();
     let releases = gov.context().outbox.channel_release_lock();
     rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(gov).spawn_or_drop(

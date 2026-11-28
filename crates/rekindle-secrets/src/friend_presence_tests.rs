@@ -29,5 +29,5 @@ fn the_next_epoch_is_a_new_key() {
     assert_eq!(next.epoch(), 2);
     assert_ne!(next.as_bytes(), first.as_bytes());
     assert!(PresenceKey::new(u32::MAX, [0; 32]).next(&rng).is_none());
-    assert!(!format!("{first:?}").contains('7'));
+    assert_eq!(format!("{first:?}"), "PresenceKey(<redacted>)");
 }

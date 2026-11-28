@@ -56,6 +56,57 @@ fn the_view_names_our_role_and_carries_our_standing() {
     );
 }
 
+#[test]
+fn roles_serve_position_labels() {
+    use crate::host::adapters::governance::{projection::project, role_ops::role_displays};
+    use rekindle_governance::{fixture::stamp, merge::apply_entry, state::GovernanceState};
+    use rekindle_governance_runtime::origin::OWNER_ROLE_ID;
+    use rekindle_types::governance::GovernanceEntry;
+    use rekindle_types::id::{PseudonymKey, RoleId};
+
+    let created = RoleId([0x12; 16]);
+    let custom_at_max = RoleId([0x13; 16]);
+    let mut governance = GovernanceState::default();
+    for (id, name, position) in [
+        (OWNER_ROLE_ID, "Owner", u32::MAX),
+        (created, "Raiders", 7),
+        (custom_at_max, "Co-owner", u32::MAX),
+    ] {
+        apply_entry(
+            &PseudonymKey([1; 32]),
+            &GovernanceEntry::RoleDefinition {
+                role_id: id,
+                name: name.into(),
+                permissions: 0,
+                position,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+            stamp(1),
+            &mut governance,
+        );
+    }
+    let cli_roles = role_displays(&governance, None);
+    let mut state = CommunityState::new("gk");
+    project(&mut state, governance);
+    let view = community_view(&state, own_card_view(&state, None), 0, None);
+    let community_roles = serde_json::to_value(&view.roles).unwrap();
+    let cli_roles = serde_json::to_value(&cli_roles).unwrap();
+
+    for roles in [community_roles, cli_roles] {
+        let roles = roles.as_array().unwrap();
+        let role_by_id = |id: RoleId| roles.iter().find(|role| role["id"] == id.to_hex()).unwrap();
+        assert_eq!(role_by_id(OWNER_ROLE_ID)["positionLabel"], "Always first");
+        for id in [created, custom_at_max] {
+            let role = role_by_id(id);
+            assert_eq!(role["positionLabel"], role["position"].to_string());
+        }
+    }
+}
+
 /// A creator (1), an admin (5, position 5, ADMINISTRATOR) and a moderator
 /// (6, position 2, BAN only).
 fn hierarchy() -> rekindle_governance::state::GovernanceState {
@@ -86,6 +137,96 @@ fn hierarchy() -> rekindle_governance::state::GovernanceState {
         );
     }
     gov
+}
+
+fn assert_channel_overwrite_words(bit: u64, key: &str, reason: &str) {
+    use crate::host::adapters::governance::projection::project;
+    use rekindle_governance::{fixture::stamp, merge::apply_entry};
+    use rekindle_types::governance::GovernanceEntry;
+    use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
+    use rekindle_types::permissions::DEFAULT_EVERYONE;
+
+    let creator = PseudonymKey([1; 32]);
+    let member = PseudonymKey([6; 32]);
+    let member_role = RoleId([2; 16]);
+    let channel = ChannelId([9; 16]);
+    let mut gov = hierarchy();
+    gov.roles.get_mut(&member_role).unwrap().permissions = DEFAULT_EVERYONE | bit;
+    apply_entry(
+        &creator,
+        &GovernanceEntry::ChannelCreated {
+            channel_id: channel,
+            name: "general".into(),
+            channel_type: "text".into(),
+            category_id: None,
+            position: 0,
+            parent_voice_channel_id: None,
+        },
+        stamp(2),
+        &mut gov,
+    );
+
+    let mut state = CommunityState::new("gk");
+    state.my_pseudonym_key = Some(member.to_hex());
+    let denied = |state: &CommunityState| {
+        let view = community_view(state, own_card_view(state, None), 0, None);
+        let json = serde_json::to_value(view).unwrap();
+        json["channels"][0]["denied"].as_object().unwrap().clone()
+    };
+    project(&mut state, gov.clone());
+    let mut expected = denied(&state);
+    assert_eq!(expected.insert(key.to_owned(), reason.into()), None);
+
+    apply_entry(
+        &creator,
+        &GovernanceEntry::PermissionOverwrite {
+            channel_id: channel,
+            target_type: "member".into(),
+            target_id: member.to_hex(),
+            allow: 0,
+            deny: bit,
+        },
+        stamp(3),
+        &mut gov,
+    );
+    project(&mut state, gov);
+    assert_eq!(denied(&state), expected);
+}
+
+#[test]
+fn send_messages_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::SEND_MESSAGES,
+        "sendMessages",
+        "Send Messages is turned off for you in this channel.",
+    );
+}
+
+#[test]
+fn bypass_slowmode_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::BYPASS_SLOWMODE,
+        "bypassSlowmode",
+        "Bypass Slowmode is turned off for you in this channel.",
+    );
+}
+
+#[test]
+fn request_to_speak_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::REQUEST_TO_SPEAK,
+        "requestToSpeak",
+        "Request to Speak is turned off for you in this channel.",
+    );
+}
+
+#[test]
+fn mention_everyone_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::MENTION_EVERYONE,
+        "mentionEveryone",
+        "Mention Everyone is turned off for you in this channel.",
+    );
 }
 
 #[test]

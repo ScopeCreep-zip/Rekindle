@@ -5,15 +5,46 @@ import type { Message } from "../stores/chat.store";
  * the Host's stored rows when it began, so a row it cannot have seen stays:
  * one of ours still waiting for its id, or one newer than the read's newest
  * (an echo or a post that arrived while the read was in flight). A row
- * inside the read's window that the read lacks was removed, and goes.
+ * older than the read's oldest is history the read did not reach (earlier
+ * scrollback), and stays before it. Only a row inside the read's window
+ * that the read lacks was removed, and goes. A row `newerThanRead` names
+ * (its admission changed after the read began) keeps the store's version.
  */
-export function mergeRead(existing: Message[], read: Message[]): Message[] {
+export function mergeRead(
+  existing: Message[],
+  read: Message[],
+  newerThanRead: (m: Message) => boolean = () => false
+): Message[] {
+  // An empty read has no window: nothing it holds replaces or removes a row
+  // (with no oldest or newest, every row would land both before and after it).
+  if (read.length === 0) return existing;
   const ids = new Set(read.map((m) => m.serverMessageId).filter((id) => id !== undefined));
   const newest = read.reduce((t, m) => Math.max(t, m.timestamp), Number.NEGATIVE_INFINITY);
-  const later = existing.filter(
-    (m) =>
-      !(m.serverMessageId !== undefined && ids.has(m.serverMessageId)) &&
-      (m.serverMessageId === undefined || m.timestamp > newest),
+  const oldest = read.reduce((t, m) => Math.min(t, m.timestamp), Number.POSITIVE_INFINITY);
+  const unread = existing.filter(
+    (m) => !(m.serverMessageId !== undefined && ids.has(m.serverMessageId))
   );
-  return [...read, ...later];
+  const earlier = unread.filter((m) => m.serverMessageId !== undefined && m.timestamp < oldest);
+  const later = unread.filter((m) => m.serverMessageId === undefined || m.timestamp > newest);
+  // A loaded row the store holds a newer version of than the read (an
+  // admission event that came after the read began) keeps the store's.
+  const newer = new Map(
+    existing
+      .filter((m) => m.serverMessageId !== undefined && newerThanRead(m))
+      .map((m) => [m.serverMessageId, m])
+  );
+  const fresh = read.map((m) => newer.get(m.serverMessageId) ?? m);
+  // A first hold can arrive inside the time window of a read that had no
+  // row for it yet. Keep that event's row with the read's rows in time order.
+  const inserted = unread.filter(
+    (m) =>
+      m.serverMessageId !== undefined &&
+      m.timestamp >= oldest &&
+      m.timestamp <= newest &&
+      newer.has(m.serverMessageId)
+  );
+  const covered = inserted.length
+    ? [...fresh, ...inserted].sort((a, b) => a.timestamp - b.timestamp)
+    : fresh;
+  return [...earlier, ...covered, ...later];
 }

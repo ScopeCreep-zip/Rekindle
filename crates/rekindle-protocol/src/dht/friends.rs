@@ -22,7 +22,7 @@ pub struct FriendList {
 /// The record could not be created, or the write failed outright.
 pub async fn create_friend_list(
     pool: &dyn RecordPort,
-) -> Result<(LeaseId, String, String, SetOutcome), ProtocolError> {
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>, SetOutcome), ProtocolError> {
     let (lease, key, keypair) = pool
         .create(&rekindle_records::schema::single(), None)
         .await?;
@@ -76,7 +76,7 @@ pub async fn write_friend_list(
     key: &str,
     friends: &[FriendEntry],
 ) -> Result<SetOutcome, ProtocolError> {
-    let data = capnp_codec::friend::encode_friend_list(friends);
+    let data = capnp_codec::friend::encode_friend_list(friends)?;
     let lease = pool.acquire(key, None, OpenIntent::Hold).await?;
     let outcome = pool.set_durable(lease, 0, data, None).await;
     pool.release(lease).await;

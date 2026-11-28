@@ -1,11 +1,15 @@
-import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
-import { transformCommunityDetail, transformMember } from "../../utils/transformers";
 import {
   handleLoadAutoModRules,
   handleLoadExpressions,
   handleResolveCommunityImageDataUrls,
 } from "../../actions/community/lifecycle";
+import { commands } from "../../ipc/commands";
+import {
+  communityState,
+  setCommunityMembers,
+  setCommunityState,
+} from "../../stores/community.store";
+import { transformCommunityDetail, transformMember } from "../../utils/transformers";
 
 // An event can name a community this window does not hold yet (one just
 // created or joined elsewhere: walk 13, M45/B61). Writing under its missing

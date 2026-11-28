@@ -153,12 +153,14 @@ pub async fn dispatch_role(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     let value = helpers::send(client, role_request(cmd)?).await?;
-    let value = if matches!(cmd, RoleCmd::Create { .. }) {
-        role_created(value)?
-    } else {
-        value
-    };
-    format::print_structured(&value, mode)
+    match cmd {
+        RoleCmd::List { .. } if matches!(mode, OutputMode::Text) => {
+            let roles = serde_json::from_value::<Vec<rekindle_types::display::RoleDisplay>>(value)?;
+            crate::community::print_roles(&roles, mode)
+        }
+        RoleCmd::Create { .. } => format::print_structured(&role_created(value)?, mode),
+        _ => format::print_structured(&value, mode),
+    }
 }
 
 /// The Host request a moderation subcommand (`community kick`, `ban`,

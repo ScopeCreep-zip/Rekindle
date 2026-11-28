@@ -41,10 +41,6 @@ pub struct VoiceReceiveParams {
     pub community_id: Option<String>,
     /// Channel ID for stage-gate lookup. `None` for 1:1 calls.
     pub channel_id: Option<String>,
-    /// Pre-loaded member display names: `pseudonym_key_hex → display_name`.
-    /// Populated from SQLite on loop start so we don't need async DB
-    /// queries inside the receive path.
-    pub member_names: HashMap<String, String>,
     /// Base jitter target (ms) from `VoiceConfig` — the floor the
     /// adaptive controller starts at and never shrinks below. Replaces
     /// the old hardcoded 200 ms.
@@ -149,7 +145,6 @@ struct VoiceReceiveLoop {
     last_key_request: HashMap<String, Instant>,
     community_id: Option<String>,
     channel_id: Option<String>,
-    member_names: HashMap<String, String>,
     report_signing_key: Option<ed25519_dalek::SigningKey>,
     media_liveness: Arc<MediaLiveness>,
     /// Origin for the loop's local millisecond clock. Only differences
@@ -209,7 +204,6 @@ impl VoiceReceiveLoop {
             last_key_request: HashMap::new(),
             community_id: params.community_id,
             channel_id: params.channel_id,
-            member_names: params.member_names,
             report_signing_key: params.report_signing_key,
             media_liveness: params.media_liveness,
             playback_depth_ms: params.playback_depth_ms,
@@ -227,15 +221,6 @@ impl VoiceReceiveLoop {
     /// echo measures its own delay in.
     fn local_ms(&self) -> u64 {
         u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX)
-    }
-
-    /// Look up a member's display name from the pre-loaded cache.
-    /// Falls back to the hex-encoded pseudonym key if not found.
-    fn resolve_display_name(&self, pseudonym_hex: &str) -> String {
-        self.member_names
-            .get(pseudonym_hex)
-            .cloned()
-            .unwrap_or_else(|| pseudonym_hex.to_string())
     }
 
     async fn run_loop(mut self) {
@@ -313,10 +298,8 @@ impl VoiceReceiveLoop {
                     let sender_hex = hex::encode(&sender_key);
                     tracing::info!(peer = %sender_hex, "new voice participant");
 
-                    let display_name = self.resolve_display_name(&sender_hex);
                     self.deps.emit_voice_event(VoiceSessionEvent::UserJoined {
                         peer_pubkey: sender_hex,
-                        display_name,
                     });
 
                     self.participants.insert(

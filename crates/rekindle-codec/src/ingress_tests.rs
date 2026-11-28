@@ -14,7 +14,7 @@ fn signed() -> SignedEnvelope {
 
 #[test]
 fn a_gossip_datagram_classifies_as_gossip_and_decodes() {
-    let datagram = gossip_datagram(&signed());
+    let datagram = gossip_datagram(&signed()).unwrap();
     assert_eq!(datagram[0], GOSSIP_TAG);
     let Ingress::Gossip(bytes) = classify(&datagram) else {
         panic!("a gossip datagram must classify as gossip");
@@ -31,7 +31,7 @@ fn the_tags_route_and_anything_else_is_untagged() {
     assert_eq!(classify(&[]), Ingress::Untagged);
     // A bare `SignedEnvelope` (the pre-E2.3 gossip wire) is untagged.
     let bare = encode_signed_envelope(&signed());
-    assert_eq!(classify(&bare), Ingress::Untagged);
+    assert_eq!(classify(&bare.unwrap()), Ingress::Untagged);
     // A transport frame starts with its version byte.
     assert_eq!(classify(&[0x01, 0, 0, 0]), Ingress::Untagged);
 }

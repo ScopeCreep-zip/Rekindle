@@ -44,7 +44,8 @@ use rekindle_types::dht_layout::{member_record, prekeys, MAX_APP_MESSAGE_LEN, MA
 /// four times that many bytes, as 8-byte words.
 #[must_use]
 pub const fn words_for(max_bytes: usize) -> usize {
-    max_bytes / 8 * 4
+    // At most `max_bytes / 2`, so the product never saturates.
+    (max_bytes / 8).saturating_mul(4)
 }
 
 /// The most packed bytes one word can take: a tag, its eight bytes and the
@@ -76,9 +77,14 @@ impl Bound {
     /// The bound of a type whose schema caps it at `max_words` words: the
     /// segment table's word and each word at [`PACKED_WORD_MAX_BYTES`].
     #[must_use]
-    pub const fn schema(max_words: usize) -> Self {
+    pub const fn schema(max_words: u16) -> Self {
+        let max_words = max_words as usize;
         Self {
-            max_bytes: (max_words + 1) * PACKED_WORD_MAX_BYTES,
+            // u16 bounds are at most 65,535 words. The segment table and
+            // packed words fit in usize on every supported platform.
+            // A u16 word cap plus its segment header fits with its packed
+            // overhead on the supported 64-bit targets.
+            max_bytes: max_words.saturating_add(1).saturating_mul(PACKED_WORD_MAX_BYTES),
             max_words,
         }
     }
@@ -141,6 +147,11 @@ pub const ACCOUNT_HEADER_BOUND: Bound = Bound::packed(MAX_SUBKEY_SIZE);
 /// `GovernanceOp` (`governance_op.capnp`): one op-log subkey of a member
 /// record.
 pub const GOVERNANCE_OP_BOUND: Bound = Bound::packed(crate::governance_op::GOVERNANCE_OP_MAX_BYTES);
+
+/// `JoinLocator` (an `OpRef` from `governance_op.capnp`): the join inbox
+/// slot's byte cap after the HPKE framing.
+pub const JOIN_LOCATOR_BOUND: Bound =
+    Bound::packed(crate::join_locator::JOIN_LOCATOR_MAX_PLAINTEXT);
 
 /// `Frontier` (`governance_op.capnp`): one frontier subkey of a member
 /// record.

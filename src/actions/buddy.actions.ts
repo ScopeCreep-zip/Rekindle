@@ -1,12 +1,12 @@
 import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
-import { setFriendsState, friendsState } from "../stores/friends.store";
+import { type FriendCodeView, isCancelled } from "../ipc/commands/dto";
 import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
-import { foldFriendSnapshot } from "../utils/transformers";
-import { errorMessage } from "../utils/error";
-import { isCancelled, type FriendCodeView } from "../ipc/commands/dto";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
+import { foldFriendSnapshot } from "../utils/transformers";
 
 /** Open the chat with a friend; a refusal or failure says so in the Host's words, never silently. */
 export function handleDoubleClickFriend(publicKey: string): void {
@@ -40,7 +40,7 @@ export async function handleResetSignalSession(publicKey: string): Promise<strin
 /// (`rekindle://add/...`, plan E2.5 D17).
 export async function handleAddFriendFromCode(
   code: string,
-  message: string,
+  message: string
 ): Promise<string | null> {
   try {
     // The Host names them from its own rows (audit U-7). Not time-bounded here: the Host's review may be on screen, and the
@@ -89,9 +89,7 @@ export async function handleAcceptRequest(publicKey: string): Promise<string | n
   try {
     // The Host names them from their request (audit U-7).
     await commands.acceptRequest(publicKey);
-    setFriendsState("pendingRequests", (reqs) =>
-      reqs.filter((r) => r.publicKey !== publicKey),
-    );
+    setFriendsState("pendingRequests", (reqs) => reqs.filter((r) => r.publicKey !== publicKey));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -101,9 +99,7 @@ export async function handleAcceptRequest(publicKey: string): Promise<string | n
 export async function handleRejectRequest(publicKey: string): Promise<string | null> {
   try {
     await commands.rejectRequest(publicKey);
-    setFriendsState("pendingRequests", (reqs) =>
-      reqs.filter((r) => r.publicKey !== publicKey),
-    );
+    setFriendsState("pendingRequests", (reqs) => reqs.filter((r) => r.publicKey !== publicKey));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -119,7 +115,7 @@ export async function handleLoadPendingRequests(): Promise<void> {
         publicKey: r.publicKey,
         displayName: r.displayName,
         message: r.message,
-      })),
+      }))
     );
   } catch (e) {
     console.error("Failed to load pending requests:", e);
@@ -144,10 +140,7 @@ export async function handleCreateFriendGroup(name: string): Promise<number> {
   }
 }
 
-export async function handleRenameFriendGroup(
-  groupId: number,
-  name: string,
-): Promise<void> {
+export async function handleRenameFriendGroup(groupId: number, name: string): Promise<void> {
   try {
     // The Host announces each relabelled friend (`groupChanged`).
     await commands.renameFriendGroup(groupId, name);
@@ -158,7 +151,7 @@ export async function handleRenameFriendGroup(
 
 export async function handleMoveFriendToGroup(
   publicKey: string,
-  groupId: number | null,
+  groupId: number | null
 ): Promise<void> {
   try {
     // The Host announces the move (`groupChanged`).
@@ -176,9 +169,7 @@ export async function handleBlockUser(publicKey: string): Promise<string | null>
     delete next[publicKey];
     setFriendsState("friends", reconcile(next));
     // Remove from pending requests store
-    setFriendsState("pendingRequests", (reqs) =>
-      reqs.filter((r) => r.publicKey !== publicKey),
-    );
+    setFriendsState("pendingRequests", (reqs) => reqs.filter((r) => r.publicKey !== publicKey));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -217,9 +208,7 @@ export async function handleGenerateInvite(): Promise<{ url: string; inviteId: s
 export async function handleCancelInvite(inviteId: string): Promise<string | null> {
   try {
     await commands.cancelInvite(inviteId);
-    setFriendsState("outgoingInvites", (prev) =>
-      prev.filter((inv) => inv.inviteId !== inviteId),
-    );
+    setFriendsState("outgoingInvites", (prev) => prev.filter((inv) => inv.inviteId !== inviteId));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -238,7 +227,7 @@ export async function handleLoadOutgoingInvites(): Promise<void> {
         expiresAt: inv.expiresAt,
         status: inv.status,
         acceptedBy: inv.acceptedBy,
-      })),
+      }))
     );
   } catch (e) {
     console.error("Failed to load outgoing invites:", e);

@@ -4,6 +4,8 @@
 
 pub mod attachments;
 pub mod channel;
+pub mod channel_admission;
+
 pub mod channel_changes;
 
 use rekindle_types::message::SendState;

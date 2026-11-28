@@ -32,16 +32,6 @@ pub(super) fn on_projected(
     }
 }
 
-/// One presence poll right after a slot grant (presence, E3.4).
-pub(super) fn spawn_presence_poll_tick(state: &SharedState, community_id: &str) {
-    let (s, c) = (state.clone(), community_id.to_string());
-    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop("presence poll tick", async move {
-        if let Err(e) = crate::services::community::presence_poll_tick_public(&s, &c).await {
-            tracing::debug!(error = %e, community = %c, "presence poll after a slot grant failed");
-        }
-    });
-}
-
 /// A key the Host's cache took, into the shell's own cache (MEK, E3.5).
 pub(super) fn install_mek(
     state: &SharedState,

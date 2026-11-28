@@ -45,8 +45,10 @@
  * `@layer xfire-defaults` and `@layer sec` (`cargo xtask
  * check-theme-literals`). The `@layer a11y` overrides below read tokens. */
 @import "./theme/00-primitives.css";
+@import "./theme/00-focus.css";
 @import "./theme/00-rules.css";
 @import "./theme/01-form-primitives.css";
+@import "./theme/01-settings-appearance.css";
 @import "./theme/02-form-primitives.css";
 @import "./theme/03-member-profile-popup.css";
 @import "./theme/04-member-profile-popup.css";
@@ -297,7 +299,11 @@
     font-family: var(--font-family-xfire);
     font-size: 12px;
     color: var(--color-xfire-text);
-    overflow: hidden;
+    /* clip, not hidden: a hidden-overflow root is still a scroll container,
+     * and the browser scrolled it sideways to bring a focused popover into
+     * view (the member profile popup clipped the window's left column).
+     * A window never scrolls as a page; its parts scroll inside. */
+    overflow: clip;
     user-select: none;
   }
 

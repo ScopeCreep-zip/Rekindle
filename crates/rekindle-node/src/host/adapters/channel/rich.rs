@@ -9,9 +9,9 @@ use rekindle_channel::deps::ThreadInfoSnapshot;
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_types::dto::channel_message::ChannelMessageView;
-use rekindle_types::message::SendState;
+use rekindle_types::dto::community_capability::ChannelCapability;
 use rekindle_types::permissions;
-use rekindle_types::thread::{thread_reply_key, ThreadInfo};
+use rekindle_types::thread::{thread_reply_key, ThreadInfo, ThreadReplyOutcome};
 
 use super::HostChannel;
 
@@ -66,11 +66,12 @@ pub(crate) fn thread_snapshot(info: ThreadInfo) -> ThreadInfoSnapshot {
     }
 }
 
-fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView {
+pub(super) fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView {
     let server_message_id = view
         .server_message_id
         .map(|message_id| thread_reply_key(&view.sender_pseudonym, &message_id));
     ChannelMessageView {
+        admission: view.admission,
         id: 0,
         sender_id: view.sender_pseudonym,
         body: view.body,
@@ -87,11 +88,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
         forwarded_from_name: None,
         attachment: None,
         flags: 0,
-        send_state: if view.is_own {
-            SendState::Sent
-        } else {
-            SendState::Delivered
-        },
+        send_state: view.send_state,
         failure_reason: None,
         edited_at: None,
         removed_by: None,
@@ -107,7 +104,12 @@ impl HostChannel {
             .ok_or_else(|| ChannelError::InvalidId(format!("thread {thread_id} not found")))
     }
 
-    fn require(&self, community_id: &str, channel_id: &str, bits: u64) -> Result<(), ChannelError> {
+    pub(super) fn require(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        bits: u64,
+    ) -> Result<(), ChannelError> {
         // Reads of a community we were removed from stay open; every
         // write is refused (plan E3.2 S9 own removal).
         if bits != permissions::VIEW_CHANNELS {
@@ -143,8 +145,11 @@ impl HostChannel {
         community_id: &str,
         thread: NewThread<'_>,
     ) -> Result<String, ChannelError> {
-        self.refuse_removed(community_id)?;
-        self.require(community_id, thread.channel_id, permissions::VIEW_CHANNELS)?;
+        self.require_thread_capability(
+            community_id,
+            thread.channel_id,
+            ChannelCapability::CreatePublicThreads,
+        )?;
         rekindle_channel::create_thread(
             self,
             community_id,
@@ -225,27 +230,52 @@ impl HostChannel {
             before_timestamp,
         )
         .await?;
-        Ok(views.into_iter().map(message_view).collect())
+        let (owner, db) = self.owner_and_db()?;
+        let community = community_id.to_owned();
+        let thread = thread_id.to_owned();
+        let before = before_timestamp
+            .map(|value| i64::try_from(value.saturating_mul(1000)).unwrap_or(i64::MAX));
+        let limit = limit.min(200);
+        let placeholders = db
+            .call(move |conn| {
+                rekindle_db::repo::messages::channel_admission::page(
+                    conn, &owner, &community, &thread, before, limit,
+                )
+            })
+            .await
+            .map_err(|e| ChannelError::Adapter(format!("store: {e}")))?;
+        Ok(super::history::with_placeholders(
+            views.into_iter().map(message_view).collect(),
+            placeholders,
+            true,
+            limit,
+        ))
     }
 
     /// Post `body` to `thread_id`; our own frontends get the reply as a
     /// receiver does (plan E7.13 M76), since the mesh never echoes it.
     ///
     /// # Errors
-    /// We may not send in the parent channel, or the write failed.
+    /// We may not send in the parent channel's threads (`SEND_IN_THREADS`,
+    /// Discord's model), or the queue failed; a mesh failure after the
+    /// queue still answers `Queued`.
     pub(crate) async fn send_thread_message(
         &self,
         community_id: &str,
         thread_id: &str,
         body: &str,
-    ) -> Result<(), ChannelError> {
+    ) -> Result<ThreadReplyOutcome, ChannelError> {
         let channel = self.thread_parent(community_id, thread_id)?;
-        self.require(community_id, &channel, permissions::SEND_MESSAGES)?;
+        self.require_thread_capability(community_id, &channel, ChannelCapability::SendInThreads)?;
         let sent =
             rekindle_channel::send_thread_message(self, community_id, thread_id, body).await?;
+        let outcome = ThreadReplyOutcome {
+            message_id: thread_reply_key(&sent.sender_pseudonym, &sent.message_id),
+            send_state: sent.send_state,
+        };
         self.publish_own_reply(community_id, thread_id, body, sent)
             .await;
-        Ok(())
+        Ok(outcome)
     }
 
     /// Attach a poll to our message; the poll's id.

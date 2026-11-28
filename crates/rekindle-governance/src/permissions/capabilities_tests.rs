@@ -2,9 +2,9 @@
 
 use rekindle_types::dto::community_capability::CommunityCapability as C;
 use rekindle_types::id::{PseudonymKey, RoleId};
-use rekindle_types::permissions::{ADMINISTRATOR, DEFAULT_EVERYONE, MANAGE_CHANNELS};
+use rekindle_types::permissions::{ADMINISTRATOR, DEFAULT_EVERYONE, DEFINED, MANAGE_CHANNELS};
 
-use super::{denied_capabilities, CapabilityDenial};
+use super::{denied_capabilities, CapabilityDenial, PERMISSION_NAMES};
 use crate::op::OpStamp;
 use crate::state::{GovernanceState, RoleState, TimeoutState};
 
@@ -91,7 +91,10 @@ fn a_timed_out_member_is_told_the_timeout_only_where_it_is_the_cause() {
     );
     assert_eq!(
         denial(&s, 1, C::ManageChannels, 1_100),
-        Some(CapabilityDenial::TimedOut { until_secs: 1_600 })
+        Some(CapabilityDenial::TimedOut {
+            until_secs: 1_600,
+            permission: "Manage Channels"
+        })
     );
     // Not held even untimed: the missing permission is the cause.
     assert_eq!(
@@ -206,11 +209,15 @@ fn a_channel_capability_names_the_overwrite_the_permission_or_the_timeout() {
     use rekindle_types::dto::community_capability::ChannelCapability as Ch;
     use rekindle_types::governance::GovernanceEntry;
     use rekindle_types::id::ChannelId;
-    use rekindle_types::permissions::{MANAGE_MESSAGES, USE_SOUNDBOARD};
+    use rekindle_types::permissions::{
+        BYPASS_SLOWMODE, MANAGE_MESSAGES, MENTION_EVERYONE, REQUEST_TO_SPEAK, USE_SOUNDBOARD,
+    };
 
     use super::denied_in_channel;
     let room = ChannelId([9; 16]);
     let mut s = state();
+    s.roles.get_mut(&RoleId::EVERYONE).unwrap().permissions |=
+        BYPASS_SLOWMODE | REQUEST_TO_SPEAK | MENTION_EVERYONE;
     s.roles.insert(
         RoleId([6; 16]),
         role("Mods", MANAGE_MESSAGES | USE_SOUNDBOARD, 2),
@@ -266,6 +273,21 @@ fn a_channel_capability_names_the_overwrite_the_permission_or_the_timeout() {
     );
     assert!(denied(&s, 2, 100).contains(&(
         Ch::UseSoundboard,
-        CapabilityDenial::TimedOut { until_secs: 150 }
+        CapabilityDenial::TimedOut {
+            until_secs: 150,
+            permission: "Use Soundboard"
+        }
     )));
+}
+
+#[test]
+fn each_defined_permission_has_one_name() {
+    let mut named = 0;
+    for &(bit, name) in PERMISSION_NAMES {
+        assert!(bit.is_power_of_two());
+        assert!(!name.is_empty());
+        assert_eq!(named & bit, 0, "duplicate bit for {name}");
+        named |= bit;
+    }
+    assert_eq!(named, DEFINED);
 }

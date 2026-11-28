@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "DHT record lifecycle, SMPL sizing, and read backoff for Rekindle v2.0"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -12,11 +12,13 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [ "macros", "sync" ] }
+zeroize = "1"
 
 [dev-dependencies]
 parking_lot = { workspace = true }

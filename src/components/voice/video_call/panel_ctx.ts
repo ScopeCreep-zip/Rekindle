@@ -5,8 +5,8 @@
 // primitives of its own (signals are created in the hook; effects and
 // lifecycle callbacks never leave it).
 
-import type { Channel } from "@tauri-apps/api/core";
 import type { NativePreviewFrameMsg } from "../../../ipc/commands";
+import type { Channel } from "../../../ipc/invoke";
 import type { RemoteStream } from "./codec_utils";
 import type { VideoSender } from "./sender_types";
 
@@ -25,6 +25,8 @@ export type VideoCallPanelProps =
       mode: "dm";
       /** Hex-encoded peer Ed25519 public key. */
       peerId: string;
+      /** The peer's name as the Host serves it for the call (contract VN2). */
+      peerName: string;
       visible: boolean;
     };
 

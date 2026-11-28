@@ -75,10 +75,6 @@ impl ShellHooks for ShellSession {
         );
     }
 
-    fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String> {
-        crate::commands::community::require_permission(&self.state, community_id, perm_bits)
-    }
-
     fn on_governance_projected(&self, community_id: &str, projected: &GovernanceProjected) {
         governance::on_projected(&self.state, community_id, projected);
     }
@@ -89,10 +85,6 @@ impl ShellHooks for ShellSession {
             community_id.to_string(),
             requester_pseudonym.to_string(),
         );
-    }
-
-    fn spawn_presence_poll_tick(&self, community_id: &str) {
-        governance::spawn_presence_poll_tick(&self.state, community_id);
     }
 
     async fn presence_refresh(&self, community_id: &str) {
@@ -119,6 +111,12 @@ impl ShellHooks for ShellSession {
 
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
         crate::state_helpers::key_provider(&self.state)
+    }
+
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::new(
+            crate::services::presence_adapter::DesktopSessionPresence::new(Arc::clone(&self.state)),
+        )
     }
 
     async fn community_records_ready(

@@ -7,6 +7,7 @@ use rand::RngCore as _;
 use subtle::ConstantTimeEq as _;
 
 /// A minted token. Its `Debug` never shows the value.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct BearerToken(String);
 
 impl BearerToken {
@@ -50,7 +51,7 @@ impl BearerToken {
 
 impl std::fmt::Debug for BearerToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("BearerToken(…)")
+        f.write_str("BearerToken(<redacted>)")
     }
 }
 

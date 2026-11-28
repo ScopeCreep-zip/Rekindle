@@ -3,7 +3,7 @@ name = "rekindle-crypto"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Ed25519 identity, Signal Protocol sessions, and group encryption for Rekindle"
 
 [lints]

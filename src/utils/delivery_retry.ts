@@ -7,6 +7,10 @@ import type { DeliveryRetry } from "../ipc/channels/chat_events";
  * reading "sent" while nothing arrives.
  */
 export function deliveryRetryText(retry: DeliveryRetry): string {
-  const at = new Date(retry.nextAttemptAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const at = new Date(retry.nextAttemptAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
   return `Not delivered yet — still trying (attempt ${retry.attempts}, next try at ${at})`;
 }

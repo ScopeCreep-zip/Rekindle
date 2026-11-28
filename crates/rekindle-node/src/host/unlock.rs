@@ -70,7 +70,7 @@ pub(crate) async fn run(
     }
     let scope = begin_scope(ctx);
     // The outbox (plan E2.5, D22) before any stage that sends.
-    if let Err(e) = ctx.outbox.start(ctx, &scope, &installed.public_key) {
+    if let Err(e) = ctx.outbox.start(ctx, &scope, &installed.view.public_key) {
         return fail(ctx, IpcResponse::error(500, format!("outbox: {e}"))).await;
     }
     // Our presence starts Online with the unlock (its publisher runs only
@@ -80,11 +80,6 @@ pub(crate) async fn run(
     if let Err(e) = super::adapters::files::open(ctx, &scope) {
         return fail(ctx, IpcResponse::error(500, format!("file cache: {e}"))).await;
     }
-    let view = rekindle_types::dto::identity::IdentityView {
-        public_key: installed.public_key.clone(),
-        display_name: installed.display_name.clone(),
-    };
-
     // The own-records stage tells the prekey maintenance (3c) when our
     // prekey record is filled; with no transport it is dropped unsent.
     let (prekeys_ready, prekeys_filled) = tokio::sync::oneshot::channel();
@@ -112,7 +107,7 @@ pub(crate) async fn run(
     if let Some(transport) = &transport {
         // The identity's new-route budget (plan RV1) before anything
         // publishes a route blob.
-        super::route_budget::attach(ctx, &scope, &installed.public_key).await;
+        super::route_budget::attach(ctx, &scope, &installed.view.public_key).await;
         match transport.start_records() {
             Ok(pool) => {
                 // The channel posts' key deadline (plan E3.2 S7l); their
@@ -155,7 +150,7 @@ pub(crate) async fn run(
             prekey_writes: Arc::clone(&ctx.own_prekey_writes),
             prekeys_ready: Some(prekeys_ready),
             friends: super::adapters::friends::HostFriends::of(ctx),
-            public_key: installed.public_key.clone(),
+            public_key: installed.view.public_key.clone(),
             secret: installed.secret.clone(),
         };
         if let Err(e) = scope.spawn_with_token("own records", |stop| stage.run(stop)) {
@@ -170,14 +165,15 @@ pub(crate) async fn run(
             presence: ctx.own_presence.clone(),
             db: Arc::clone(&ctx.db),
             source: Arc::clone(&ctx.idle),
-            owner: installed.public_key.clone(),
+            owner: installed.view.public_key.clone(),
         };
         let idle = scope
             .spawn_with_token("idle", |stop| stage.run(stop))
             .map_err(|e| e.to_string());
         // Game detection only while it is on (plan E7.2): off, no scanner.
         let game =
-            super::game_stage::start_if_enabled(ctx, &scope, installed.public_key.clone()).await;
+            super::game_stage::start_if_enabled(ctx, &scope, installed.view.public_key.clone())
+                .await;
         if let Err(e) = idle.and(game) {
             return fail(
                 ctx,
@@ -229,7 +225,7 @@ pub(crate) async fn run(
     // 3d. The audit check.
     audit(
         ctx,
-        &installed.public_key,
+        &installed.view.public_key,
         installed.audit.as_ref(),
         created,
     )
@@ -238,9 +234,12 @@ pub(crate) async fn run(
     // 3e. The warm cache (plan E3.1 C1): every community and its last
     // merged governance from the identity's stores, before any stage that
     // reads them, network or not.
-    if let Err(e) =
-        super::adapters::governance::loader::restore(ctx, &installed.public_key, &installed.secret)
-            .await
+    if let Err(e) = super::adapters::governance::loader::restore(
+        ctx,
+        &installed.view.public_key,
+        &installed.secret,
+    )
+    .await
     {
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
@@ -300,8 +299,8 @@ pub(crate) async fn run(
     // 5. The shell's unported stages.
     if let Some(shell) = ctx.shell.clone() {
         let view = UnlockedView {
-            public_key: installed.public_key.clone(),
-            display_name: installed.display_name.clone(),
+            public_key: installed.view.public_key.clone(),
+            display_name: installed.view.display_name.clone(),
             secret: installed.secret.clone(),
         };
         if let Err(e) = shell.unlocked(&view, &scope).await {
@@ -314,7 +313,7 @@ pub(crate) async fn run(
     if let Err(refused) = transition(ctx, DaemonState::Operational) {
         return refused;
     }
-    IpcResponse::ok(&view)
+    IpcResponse::ok(&installed.view)
 }
 
 /// A stage failed after the install: tear down, return to Locked, answer

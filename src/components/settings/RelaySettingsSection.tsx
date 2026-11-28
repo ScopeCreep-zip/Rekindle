@@ -1,5 +1,4 @@
-import { Component, For, Show, createMemo, onMount } from "solid-js";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createMemo, For, onMount, Show } from "solid-js";
 import {
   handleHydrateRelayState,
   handleRevokeRelay,
@@ -7,6 +6,7 @@ import {
   relayState,
 } from "../../actions/relay.actions";
 import { handleSaveSettings } from "../../actions/settings.actions";
+import { friendsState } from "../../stores/friends.store";
 import { settingsState } from "../../stores/settings.store";
 
 /// Strand Relay Network (architecture §13) configuration block: shows
@@ -19,8 +19,7 @@ const RelaySettingsSection: Component = () => {
 
   const toggleAutoVolunteer = (): void => {
     void handleSaveSettings({
-      autoVolunteerRelayForNewFriends:
-        !settingsState.autoVolunteerRelayForNewFriends,
+      autoVolunteerRelayForNewFriends: !settingsState.autoVolunteerRelayForNewFriends,
     });
   };
 
@@ -40,9 +39,8 @@ const RelaySettingsSection: Component = () => {
     <>
       <div class="settings-section-title">Strand Relay Network</div>
       <div class="settings-hint">
-        Friends you relay for receive a dedicated route from your client. Other
-        peers may use that route as a fallback when they can't reach your
-        friend directly.
+        Friends you relay for receive a dedicated route from your client. Other peers may use that
+        route as a fallback when they can't reach your friend directly.
       </div>
 
       {/* W11.3 — explicit-consent toggle: when ON, accepting a new
@@ -54,13 +52,10 @@ const RelaySettingsSection: Component = () => {
           checked={settingsState.autoVolunteerRelayForNewFriends}
           onChange={toggleAutoVolunteer}
         />
-        <span class="settings-toggle-label">
-          Auto-volunteer to relay for new friends
-        </span>
+        <span class="settings-toggle-label">Auto-volunteer to relay for new friends</span>
         <div class="settings-hint">
-          Only volunteers for friends you accept after enabling this. Existing
-          friends are unchanged — opt them in via "Volunteer for a friend"
-          below.
+          Only volunteers for friends you accept after enabling this. Existing friends are unchanged
+          — opt them in via "Volunteer for a friend" below.
         </div>
       </label>
 
@@ -74,6 +69,7 @@ const RelaySettingsSection: Component = () => {
             <div class="relay-row">
               <span class="buddy-name">{displayName(key)}</span>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => handleRevokeRelay(key)}
               >
@@ -109,6 +105,7 @@ const RelaySettingsSection: Component = () => {
             <div class="relay-row">
               <span class="buddy-name">{displayName(key)}</span>
               <button
+                type="button"
                 class="form-btn-primary"
                 onClick={() => handleVolunteerRelay(key)}
               >

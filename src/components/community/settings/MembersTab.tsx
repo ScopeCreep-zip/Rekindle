@@ -1,19 +1,19 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import StatusDot from "../../status/StatusDot";
-import RoleTag from "../RoleTag";
-import GovernancePublicationStatus from "../GovernancePublicationStatus";
+import { type Component, createSignal, For, Show } from "solid-js";
+import {
+  handleAssignRole,
+  handleBanMember,
+  handleExpandCommunitySegment,
+  handleRemoveCommunityMember,
+  handleRemoveTimeout,
+  handleTimeoutMember,
+  handleUnassignRole,
+} from "../../../actions/community.actions";
 import type { Community, Member, Role } from "../../../stores/community.store";
 import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
-import {
-  handleRemoveCommunityMember,
-  handleBanMember,
-  handleAssignRole,
-  handleUnassignRole,
-  handleTimeoutMember,
-  handleRemoveTimeout,
-  handleExpandCommunitySegment,
-} from "../../../actions/community.actions";
+import SkinGlyph from "../../common/SkinGlyph";
+import StatusDot from "../../status/StatusDot";
+import GovernancePublicationStatus from "../GovernancePublicationStatus";
+import RoleTag from "../RoleTag";
 
 interface MembersTabProps {
   community: Community;
@@ -31,9 +31,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
   const filteredMembers = () => {
     const q = searchQuery().toLowerCase().trim();
     if (!q) return props.community.members;
-    return props.community.members.filter((m) =>
-      m.displayName.toLowerCase().includes(q),
-    );
+    return props.community.members.filter((m) => m.displayName.toLowerCase().includes(q));
   };
 
   function toggleMemberRole(pseudonymKey: string, roleId: string, has: boolean): void {
@@ -102,18 +100,19 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               when={expansionBannerVariant() === "alert"}
               fallback={
                 <>
-                  <strong>Approaching segment limit ({remaining()} slots left).</strong>{" "}
-                  Expand to a new SMPL segment so the community can keep admitting
-                  members. Each segment holds up to {SLOTS_PER_SEGMENT} more members.
+                  <strong>Approaching segment limit ({remaining()} slots left).</strong> Expand to a
+                  new SMPL segment so the community can keep admitting members. Each segment holds
+                  up to {SLOTS_PER_SEGMENT} more members.
                 </>
               }
             >
-              <strong>This community has reached its segment capacity.</strong>{" "}
-              Expand to a new SMPL segment to admit more members. Each segment
-              holds up to {SLOTS_PER_SEGMENT} additional members.
+              <strong>This community has reached its segment capacity.</strong> Expand to a new SMPL
+              segment to admit more members. Each segment holds up to {SLOTS_PER_SEGMENT} additional
+              members.
             </Show>
           </div>
           <button
+            type="button"
             class="plate-gate-banner-btn"
             disabled={expanding() || props.manageDenied !== null}
             title={props.manageDenied ?? undefined}
@@ -126,14 +125,11 @@ const MembersTab: Component<MembersTabProps> = (props) => {
       </Show>
       <Show when={(props.community.segments?.length ?? 0) > 0}>
         <div class="plate-gate-status">
-          Plate Gate: {segmentCount()} segments · capacity {capacity()} ·
-          {" "}{props.community.members.length} members ·{" "}
-          {remaining()} slots open
+          Plate Gate: {segmentCount()} segments · capacity {capacity()} ·{" "}
+          {props.community.members.length} members · {remaining()} slots open
         </div>
       </Show>
-      <div class="member-list-header">
-        Members — {props.community.members.length}
-      </div>
+      <div class="member-list-header">Members — {props.community.members.length}</div>
       <input
         class="form-input member-search-input"
         type="text"
@@ -149,38 +145,52 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               <span class="member-name">{member.displayName}</span>
               <div class="member-roles-row">
                 <For each={memberAllRoles(member)}>
-                  {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
+                  {(role) => (
+                    <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+                  )}
                 </For>
               </div>
               <Show when={member.timeoutUntil}>
-                <SkinGlyph name="timeout" class="timeout-indicator" title="Timed out" label="Timed out" />
+                <SkinGlyph
+                  name="timeout"
+                  class="timeout-indicator"
+                  title="Timed out"
+                  label="Timed out"
+                />
               </Show>
             </div>
             {/* Never-hide: every action is drawn for every member, each disabled
                 with the Host's reason for this member (rank, permission, self). */}
             <div class="settings-member-actions">
               <button
+                type="button"
                 class="form-btn-secondary"
                 disabled={member.moderation.manageRoles !== null}
                 title={member.moderation.manageRoles ?? undefined}
                 aria-description={member.moderation.manageRoles ?? undefined}
-                onClick={() => setRolePickerTarget(
-                  rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
-                )}
+                onClick={() =>
+                  setRolePickerTarget(
+                    rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
+                  )
+                }
               >
                 <SkinGlyph name="shield" /> Roles
               </button>
-              <Show when={!member.timeoutUntil} fallback={
-                <button
-                  class="form-btn-secondary"
-                  disabled={member.moderation.timeout !== null}
-                  title={member.moderation.timeout ?? undefined}
-                  aria-description={member.moderation.timeout ?? undefined}
-                  onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
-                >
-                  <SkinGlyph name="timeout" /> Untimeout
-                </button>
-              }>
+              <Show
+                when={!member.timeoutUntil}
+                fallback={
+                  <button
+                    type="button"
+                    class="form-btn-secondary"
+                    disabled={member.moderation.timeout !== null}
+                    title={member.moderation.timeout ?? undefined}
+                    aria-description={member.moderation.timeout ?? undefined}
+                    onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
+                  >
+                    <SkinGlyph name="timeout" /> Untimeout
+                  </button>
+                }
+              >
                 <select
                   class="timeout-select"
                   disabled={member.moderation.timeout !== null}
@@ -204,6 +214,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 </select>
               </Show>
               <button
+                type="button"
                 class="form-btn-secondary"
                 disabled={member.moderation.kick !== null}
                 title={member.moderation.kick ?? undefined}
@@ -213,6 +224,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 <SkinGlyph name="account-remove" /> Kick
               </button>
               <button
+                type="button"
                 class="form-btn-danger"
                 disabled={member.moderation.ban !== null}
                 title={member.moderation.ban ?? undefined}
@@ -224,17 +236,23 @@ const MembersTab: Component<MembersTabProps> = (props) => {
             </div>
             <Show when={rolePickerTarget() === member.pseudonymKey}>
               <div class="role-picker-list settings-role-picker">
-                <For each={props.community.roles.filter((r) => r.id !== EVERYONE_ROLE_ID).sort((a, b) => b.position - a.position)}>
+                <For
+                  each={props.community.roles
+                    .filter((r) => r.id !== EVERYONE_ROLE_ID)
+                    .sort((a, b) => b.position - a.position)}
+                >
                   {(role) => {
                     const has = () => member.roleIds.includes(role.id);
                     return (
-                      <div
-                        class={`role-picker-item ${has() ? "role-picker-item-active" : ""}`}
-                        onClick={() => toggleMemberRole(member.pseudonymKey, role.id, has())}
-                      >
-                        <input type="checkbox" class="role-picker-checkbox" checked={has()} readOnly />
+                      <label class={`role-picker-item ${has() ? "role-picker-item-active" : ""}`}>
+                        <input
+                          type="checkbox"
+                          class="role-picker-checkbox"
+                          checked={has()}
+                          onChange={() => toggleMemberRole(member.pseudonymKey, role.id, has())}
+                        />
                         {role.name}
-                      </div>
+                      </label>
                     );
                   }}
                 </For>

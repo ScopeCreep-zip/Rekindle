@@ -3,7 +3,7 @@ name = "rekindle-events"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Reusable event primitives: BLAKE3 dedup, subscription state, state effects, monotonic journal — hoisted from rekindle-transport::subscriptions."
 
 [lints]

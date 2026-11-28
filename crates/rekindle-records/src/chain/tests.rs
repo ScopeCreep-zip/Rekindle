@@ -104,7 +104,7 @@ async fn an_append_after_a_retire_keeps_the_mark() {
     port.overwrite(
         &key,
         dm_participant::HEAD,
-        rekindle_codec::capnp_codec::chain::encode_chain_head(&past),
+        rekindle_codec::capnp_codec::chain::encode_chain_head(&past).unwrap(),
     );
     assert!(matches!(
         read_after(&port, &key, 0).await,
@@ -158,7 +158,7 @@ async fn malformed_pages_are_refused() {
         entries: entries(3..=3),
     };
     assert!(matches!(
-        refuse(encode_chain_page(&short)).await,
+        refuse(encode_chain_page(&short).unwrap()).await,
         Err(ChainError::Malformed { .. })
     ));
     // A link that does not end right before the page.
@@ -172,7 +172,7 @@ async fn malformed_pages_are_refused() {
         entries: entries(3..=4),
     };
     assert!(matches!(
-        refuse(encode_chain_page(&gap)).await,
+        refuse(encode_chain_page(&gap).unwrap()).await,
         Err(ChainError::Malformed { .. })
     ));
     // A HEAD with an empty range.

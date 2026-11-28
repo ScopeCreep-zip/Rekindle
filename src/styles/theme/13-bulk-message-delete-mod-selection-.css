@@ -7,6 +7,12 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
   }
 
+  .chat-message-select-hit {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+  }
+
   .chat-message-select-checkbox {
     position: absolute;
     left: 8px;
@@ -137,8 +143,8 @@
   }
 
   .message-input-send-btn:disabled {
-    color: var(--color-xfire-text-dim);
-    cursor: default;
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
   }
 
   /* Architecture §32 a11y — opacity fade replaces the original

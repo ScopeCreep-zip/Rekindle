@@ -5,7 +5,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::VoiceError;
+use crate::session_state::VoiceSessionState;
+
 use rekindle_codec::capnp_codec::SignedWire;
+pub use rekindle_types::subscription_events::JoinHandshake;
 
 pub mod allocation;
 pub mod egress;
@@ -77,8 +80,7 @@ pub struct VoiceTransport {
     peers: HashMap<String, VoicePeer>,
     /// Current operating mode.
     mode: VoiceMode,
-    /// Local three-way join handshake progress.
-    handshake: JoinHandshake,
+    session_state: Arc<VoiceSessionState>,
     /// Every peer's media link and the allocator over them (plan E4.3.3),
     /// shared with producers that must not wait on this transport's lock.
     media: Arc<MediaRoster>,
@@ -106,31 +108,10 @@ fn is_no_connection(err: &VoiceError) -> bool {
 pub struct VoicePeer {
     /// When this entry was (first) added to the roster.
     pub added_at: std::time::Instant,
-    /// Display name as carried by the join handshake (VoiceJoin /
-    /// VoiceJoinAck / roster entry). `None` until any leg supplies it.
-    pub display_name: Option<String>,
     /// The peer's media link: the route it advertised (VoiceJoin /
     /// roster / re-resolve), its bandwidth owner and egress driver (plan
     /// E4.3.3).
     pub link: Arc<PeerLink>,
-}
-
-/// Local three-way join handshake progress (SimpleX
-/// `x.grp.acpt`/`x.grp.mem.con` analog): we announced (leg 1), a
-/// member saw us (leg 2 — explicit VoiceJoinAck, or implicit via a
-/// roster/mutual VoiceJoin), and we confirmed transport-readiness
-/// (leg 3 — VoiceJoinConfirmed sent). A member alone in a channel
-/// stays `Announced` until a second participant completes the
-/// handshake mutually.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum JoinHandshake {
-    /// VoiceJoin broadcast, no evidence anyone received it.
-    #[default]
-    Announced,
-    /// At least one member acked / showed up — we are seen.
-    Seen,
-    /// VoiceJoinConfirmed sent — both sides converged.
-    Connected,
 }
 
 impl VoiceTransport {
@@ -143,37 +124,20 @@ impl VoiceTransport {
             signing_key: None,
             peers: HashMap::new(),
             mode: VoiceMode::default(),
-            handshake: JoinHandshake::default(),
+            session_state: Arc::default(),
             media: Arc::default(),
             scope: None,
         }
     }
 
+    /// Handshake and media readiness, independent of the async transport lock.
+    pub fn session_state(&self) -> Arc<VoiceSessionState> {
+        Arc::clone(&self.session_state)
+    }
+
     /// Current local join-handshake stage.
     pub fn handshake(&self) -> JoinHandshake {
-        self.handshake
-    }
-
-    /// Leg-2 evidence arrived (explicit VoiceJoinAck, roster receipt,
-    /// or a mutual VoiceJoin while we were still unseen). Returns
-    /// `true` only on the Announced→Seen transition so callers emit
-    /// the state event exactly once.
-    pub fn advance_handshake_seen(&mut self) -> bool {
-        if self.handshake == JoinHandshake::Announced {
-            self.handshake = JoinHandshake::Seen;
-            return true;
-        }
-        false
-    }
-
-    /// Leg 3 — mark the handshake complete. Returns `true` only on
-    /// the first call so VoiceJoinConfirmed is sent exactly once.
-    pub fn advance_handshake_connected(&mut self) -> bool {
-        if self.handshake != JoinHandshake::Connected {
-            self.handshake = JoinHandshake::Connected;
-            return true;
-        }
-        false
+        self.session_state.handshake()
     }
 
     /// The key this transport signs packets with (pseudonym for a
@@ -260,7 +224,7 @@ impl VoiceTransport {
         scope: Arc<rekindle_lifecycle::SessionScope>,
     ) {
         self.init(sender, sender_key, scope);
-        self.add_peer(peer_key, route_blob, None);
+        self.add_peer(peer_key, route_blob);
         tracing::info!(
             channel = %self.channel_id,
             peer = %peer_key,
@@ -274,21 +238,12 @@ impl VoiceTransport {
     /// the peer is NEW to the roster — callers emit the roster-changed
     /// signaling event on that edge, so repeat VoiceJoin re-announces
     /// (route refresh) don't re-fire membership downstream.
-    pub fn add_peer(
-        &mut self,
-        pseudonym_key: &str,
-        route_blob: &[u8],
-        display_name: Option<&str>,
-    ) -> bool {
+    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> bool {
         // Re-add keeps the original added_at (route upsert, not a
         // fresh join) so the presence-reconcile grace isn't reset by
-        // repeat VoiceJoin announces. A name supplied by any handshake
-        // leg upgrades a missing one; `None` never erases a known name.
+        // repeat VoiceJoin announces.
         if let Some(existing) = self.peers.get_mut(pseudonym_key) {
             existing.link.set_route(route_blob);
-            if let Some(name) = display_name {
-                existing.display_name = Some(name.to_string());
-            }
             tracing::debug!(
                 channel = %self.channel_id,
                 peer = %pseudonym_key,
@@ -308,7 +263,6 @@ impl VoiceTransport {
             pseudonym_key.to_string(),
             VoicePeer {
                 added_at: std::time::Instant::now(),
-                display_name: display_name.map(str::to_string),
                 link,
             },
         );
@@ -343,30 +297,6 @@ impl VoiceTransport {
             .iter()
             .map(|(k, v)| (k.clone(), v.added_at.elapsed().as_secs()))
             .collect()
-    }
-
-    /// `(pseudonym_key, route_blob, display_name)` for every roster
-    /// entry — the roster-broadcast builder's view.
-    pub fn peer_named_entries(&self) -> Vec<(String, Vec<u8>, Option<String>)> {
-        self.peers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.link.route(), v.display_name.clone()))
-            .collect()
-    }
-
-    /// Every remote roster member with the name a handshake carried,
-    /// ordered by key: the roster as signaling knows it (plan C7.29).
-    pub fn roster_participants(&self) -> Vec<crate::signaling::deps::VoiceRosterParticipant> {
-        let mut members: Vec<_> = self
-            .peers
-            .iter()
-            .map(|(k, v)| crate::signaling::deps::VoiceRosterParticipant {
-                pseudonym_key: k.clone(),
-                display_name: v.display_name.clone(),
-            })
-            .collect();
-        members.sort_by(|a, b| a.pseudonym_key.cmp(&b.pseudonym_key));
-        members
     }
 
     /// Remove a peer from the voice mesh. Returns `true` when the
@@ -508,7 +438,7 @@ impl VoiceTransport {
         self.signing_key = None;
         self.media.set_padding_key(None);
         self.mode = VoiceMode::default();
-        self.handshake = JoinHandshake::default();
+        self.session_state = Arc::default();
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
     }
 
@@ -548,7 +478,9 @@ impl VoiceTransport {
             sig: Vec::new(),
         };
         packet.sign(signing_key);
-        Ok(packet.encode())
+        packet
+            .encode()
+            .map_err(|error| VoiceError::Transport(error.to_string()))
     }
 }
 

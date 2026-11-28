@@ -20,6 +20,7 @@ use rekindle_types::dht_layout::member_record::CARD;
 use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::permissions;
 use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
@@ -28,20 +29,6 @@ use rekindle_types::subscription_events::{
 
 use super::HostGovernance;
 use crate::host::community::CommunityStore;
-
-/// A change to our profile in one community: each `None` keeps the field,
-/// an empty value clears it (plan E3.4 S6).
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ProfileEdit {
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
-    pub theme_color: Option<u32>,
-    pub badges: Option<Vec<String>>,
-    pub avatar_ref: Option<String>,
-    pub banner_ref: Option<String>,
-    /// Our card's custom status (plan E3.4 S6).
-    pub custom_status: Option<String>,
-}
 
 /// A new community policy.
 #[derive(Debug, Clone)]
@@ -52,75 +39,9 @@ pub(crate) struct PolicyEdit {
 }
 
 impl HostGovernance {
-    /// Apply `edit` to our profile in `community`, field by field (a
-    /// partial update keeps the rest), and store it on our roster row so
-    /// it survives a restart; a custom status goes to our card.
-    ///
-    /// # Errors
-    /// The community is not joined, or the store or card write failed.
-    pub(crate) async fn update_profile(
-        &self,
-        community: &str,
-        edit: ProfileEdit,
-    ) -> Result<(), String> {
-        let set = |field: &mut Option<String>, value: Option<String>| {
-            if let Some(v) = value {
-                *field = (!v.is_empty()).then_some(v);
-            }
-        };
-        let (me, row) = {
-            let mut map = self.ctx.communities.map().write();
-            let c = map.get_mut(community).ok_or("unknown community")?;
-            set(&mut c.my_bio, edit.bio);
-            set(&mut c.my_pronouns, edit.pronouns);
-            set(&mut c.my_avatar_ref, edit.avatar_ref);
-            set(&mut c.my_banner_ref, edit.banner_ref);
-            if let Some(color) = edit.theme_color {
-                c.my_theme_color = Some(color);
-            }
-            if let Some(badges) = edit.badges {
-                c.my_badges = badges;
-            }
-            let row = rekindle_db::repo::members::OwnProfile {
-                bio: c.my_bio.clone(),
-                pronouns: c.my_pronouns.clone(),
-                theme_color: c.my_theme_color,
-                badges: c.my_badges.clone(),
-                avatar_ref: c.my_avatar_ref.clone(),
-                banner_ref: c.my_banner_ref.clone(),
-            };
-            (c.my_pseudonym_key.clone().ok_or("no pseudonym")?, row)
-        };
-        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
-        let cid = community.to_owned();
-        db.call(move |conn| {
-            rekindle_db::repo::members::set_own_profile(conn, &owner, &cid, &me, &row)
-        })
-        .await
-        .map_err(|e| format!("profile not stored: {e}"))?;
-        let Some(status) = edit.custom_status else {
-            return Ok(());
-        };
-        let mut text = self.own_card_text(community);
-        text.custom_status = (!status.is_empty()).then_some(status);
-        self.publish_own_card(community, &text).await
-    }
-
-    /// Make `name` our name in `community` (`""` clears it: readers show
-    /// our short pseudonym fingerprint), on our card (plan E3.4 S6).
-    ///
-    /// # Errors
-    /// The community is not joined, or the card write failed.
-    pub(crate) async fn set_display_name(&self, community: &str, name: &str) -> Result<(), String> {
-        let mut text = self.own_card_text(community);
-        let name = name.trim();
-        text.display_name = (!name.is_empty()).then(|| name.to_owned());
-        self.publish_own_card(community, &text).await
-    }
-
     /// What our card says now: its name and custom status from the card
     /// cache, and the game we share there now ([`Self::shared_card_game`]).
-    fn own_card_text(&self, community: &str) -> OwnCardText {
+    pub(super) fn own_card_text(&self, community: &str) -> OwnCardText {
         let card = self.own_cached_card(community).unwrap_or_default();
         OwnCardText {
             display_name: card.display_name,
@@ -148,33 +69,30 @@ impl HostGovernance {
         )
     }
 
-    /// Make `policy` our presence sharing consent in `community` (local
-    /// only, never published; architecture §10 / §16.3), kept on the
-    /// community and its row, and wake the card's game writer: the game our
-    /// card shares follows the consent, so hiding it reaches the card within
-    /// [`CARD_GAME_SETTLE`](crate::host::adapters::presence::card_game::CARD_GAME_SETTLE)
-    /// with no presence change (plan E3.4 S6).
+    /// Store the local consent and wake the beat and card writers after the
+    /// edit commits.
     ///
     /// # Errors
-    /// The community is not joined, or the policy does not serialize.
-    pub fn set_presence_policy(
+    /// The identity is locked, the community is missing or the write failed.
+    pub(crate) async fn edit_presence_policy(
         &self,
         community: &str,
-        policy: PresenceSharingPolicy,
+        update: impl FnOnce(&mut PresenceSharingPolicy) + Send + 'static,
     ) -> Result<(), String> {
-        let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
-        {
-            let mut map = self.ctx.communities.map().write();
-            let state = map.get_mut(community).ok_or("unknown community")?;
-            state.presence_policy = policy;
+        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
+        let changed = crate::host::session::record_presence_policy(
+            &db,
+            owner,
+            self.ctx.communities.clone(),
+            community.to_owned(),
+            update,
+        )
+        .await?;
+        if changed {
+            crate::host::adapters::presence::view::location_policy_changed(&self.ctx, community);
+            self.ctx.own_presence.card_game.notify_one();
+            crate::host::adapters::presence::refresh_beat(&self.ctx, community);
         }
-        crate::host::session::record_presence_policy(
-            &self.ctx.session,
-            &self.ctx.db,
-            community,
-            policy_json,
-        );
-        self.ctx.own_presence.card_game.notify_one();
         Ok(())
     }
 
@@ -186,6 +104,10 @@ impl HostGovernance {
             if self.own_departed(&community) {
                 continue;
             }
+            // The card also carries our name and custom status. Read those
+            // fields after any profile edit that is writing the same card.
+            let lock = self.ctx.communities.profile_write_lock(&community);
+            let _held = lock.lock().await;
             let shared = self.shared_card_game(&community);
             if self.own_cached_card(&community).and_then(|c| c.game) == shared {
                 continue;
@@ -198,7 +120,11 @@ impl HostGovernance {
     }
 
     /// Write `text` to our card, then read it back into the card cache.
-    async fn publish_own_card(&self, community: &str, text: &OwnCardText) -> Result<(), String> {
+    pub(super) async fn publish_own_card(
+        &self,
+        community: &str,
+        text: &OwnCardText,
+    ) -> Result<(), String> {
         let keys = self.own_record_keys(community)?;
         let hpke = {
             let guard = self.ctx.vault.lock();
@@ -326,9 +252,21 @@ impl HostGovernance {
     }
 }
 
+impl HostGovernance {
+    /// How the member list names this member from the Host's verified card view.
+    ///
+    /// # Panics
+    /// The caller must pass a validated community pseudonym.
+    #[must_use]
+    pub fn member_shown_name(&self, community_id: &str, member_hex: &str) -> String {
+        member_shown_name(&self.ctx.communities, community_id, member_hex)
+    }
+}
+
 /// The name a community renders for `pseudonym`: its card's, else its
 /// short pseudonym fingerprint; never empty (plan E3.4 S6).
-pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
+#[must_use]
+pub fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
     card_name
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&pseudonym.0))
@@ -343,7 +281,11 @@ pub(crate) fn member_shown_name(
     community_id: &str,
     member_hex: &str,
 ) -> String {
-    let pseudonym = PseudonymKey::from_hex_lossy(member_hex);
+    let pseudonym = PseudonymKey(
+        pseudonym_hex(member_hex)
+            .expect("validated pseudonym")
+            .to_bytes(),
+    );
     shown_name(
         communities.member_card_name(community_id, &pseudonym),
         &pseudonym,

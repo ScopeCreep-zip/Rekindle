@@ -141,7 +141,7 @@ majority confirmation (ADR 0018, plan E3.5):
 ### Key documents
 
 | Document | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | [`architecture/communities.md`](architecture/communities.md) | Three-part Communities spec index |
 | [`architecture/communities-overview.md`](architecture/communities-overview.md) | Model, three-path delivery, SMPL schema, permissions, design principles |
 | [`architecture/communities-channels.md`](architecture/communities-channels.md) | MEK, channel messaging, voice, DMs |
@@ -288,7 +288,7 @@ live work.
 ## Known Risks
 
 | Risk | Impact | Mitigation |
-|------|--------|------------|
+| ------ | -------- | ------------ |
 | Veilid DHT latency (500 ms–5 s) | Slow presence updates | Aggressive SQLite caching + `watch_dht_values` + inspect polling fallback |
 | Voice latency over privacy routes | Higher mouth-to-ear latency | 3-hop Tor-class `SafetySelection::Safe` (`LowLatency` stability within the floor); budget re-baselined to ITU-T G.114 interactive band — privacy is not traded for latency |
 | Veilid API maturity | Breaking changes | Isolate Veilid behind handles in `rekindle-protocol` / `rekindle-transport` |

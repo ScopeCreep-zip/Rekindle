@@ -13,7 +13,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rekindle_codec::capnp_codec::direct::DirectBody;
 
-use rekindle_types::group_dm::GroupCallRoster;
+use rekindle_types::group_dm::{GroupCallRoster, GroupDmRosterMember};
+use rekindle_types::key_format::public_key_hex;
+use rekindle_types::subscription_events::CallParticipant;
 
 use crate::error::CallError;
 use crate::signaling::event::CallSignalEvent;
@@ -28,6 +30,9 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// Errors if no identity is loaded.
     fn owner_key(&self) -> Result<String, CallError>;
 
+    /// Display name of the loaded identity.
+    fn own_display_name(&self) -> Result<String, CallError>;
+
     /// Identity Ed25519 secret bytes (32 B). Errors if no identity is
     /// loaded. Caller is responsible for zeroizing after use (most
     /// callers convert to X25519 then drop).
@@ -41,9 +46,8 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// Group call registry handle.
     fn group_registry(&self) -> Arc<dyn GroupCallRegistry>;
 
-    /// What we hold of the group DM `group_id`: its roster (identity
-    /// keys), an unanswered invite to it, or nothing. A group-scoped call
-    /// is admitted only between members of it
+    /// What we hold of the group DM `group_id`: its roster, an unanswered
+    /// invite to it, or nothing. A group-scoped call is admitted only between members
     /// ([`crate::signaling::check_group_scope`]).
     async fn group_roster(&self, group_id: &str) -> Result<GroupCallRoster, CallError>;
 
@@ -54,9 +58,8 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// case (the adapter looks up the map; this trait method abstracts).
     fn is_peer_temp_muted(&self, peer_pubkey_hex: &str) -> bool;
 
-    /// Resolve a peer's display name for UI surfaces (friend list
-    /// lookup; falls back to truncated pubkey hex).
-    fn friend_display_name(&self, peer_pubkey_hex: &str) -> String;
+    /// The display name held in the Host's friend list.
+    fn friend_display_name(&self, peer_pubkey_hex: &str) -> Option<String>;
 
     // --- Media capabilities ---
 
@@ -226,4 +229,87 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// Tauri payload and calls `event_emit::emit_live` or
     /// `emit_journaled` as appropriate.
     fn emit_event(&self, event: CallSignalEvent);
+}
+
+/// The name shown for a DM call peer.
+///
+/// # Errors
+/// The public key is malformed.
+pub fn friend_shown_name(
+    public_key: &str,
+    friend_name: Option<String>,
+) -> Result<String, CallError> {
+    call_shown_name(public_key, friend_name)
+}
+
+fn call_shown_name(
+    public_key: &str,
+    names: impl IntoIterator<Item = String>,
+) -> Result<String, CallError> {
+    let key = public_key_hex(public_key).map_err(|error| CallError::invalid(error.to_string()))?;
+    Ok(names
+        .into_iter()
+        .find(|name| is_call_name(public_key, name))
+        .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&key.to_bytes())))
+}
+
+/// A friend row or a signed roster can hold an earlier key-derived label.
+/// Treat those labels as unnamed so a later source can supply a real name.
+fn is_call_name(public_key: &str, name: &str) -> bool {
+    let compact = name.trim().replace(' ', "");
+    !compact.is_empty()
+        && !compact.eq_ignore_ascii_case(public_key)
+        && !public_key
+            .get(..8)
+            .is_some_and(|prefix| compact.eq_ignore_ascii_case(prefix))
+}
+
+pub(super) fn peer_shown_name<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    public_key: &str,
+) -> Result<String, CallError> {
+    friend_shown_name(public_key, deps.friend_display_name(public_key))
+}
+
+pub(super) fn group_call_shown_name<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    key: &str,
+    own_key: &str,
+    roster: &[GroupDmRosterMember],
+) -> Result<String, CallError> {
+    let own_name = (key == own_key)
+        .then(|| deps.own_display_name())
+        .transpose()?;
+    let friend_name = std::iter::once_with(|| deps.friend_display_name(key));
+    let roster_name = std::iter::once_with(|| {
+        roster
+            .iter()
+            .find(|member| member.identity == key)
+            .map(|member| member.display_name.clone())
+    });
+    call_shown_name(
+        key,
+        std::iter::once(own_name)
+            .chain(friend_name)
+            .chain(roster_name)
+            .flatten(),
+    )
+}
+
+pub(super) fn named_participants<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    participants: &[String],
+    own_key: &str,
+    roster: &[GroupDmRosterMember],
+) -> Result<Vec<CallParticipant>, CallError> {
+    participants
+        .iter()
+        .map(|key| {
+            Ok(CallParticipant {
+                display_name: group_call_shown_name(deps, key, own_key, roster)?,
+                public_key: key.clone(),
+                is_self: key == own_key,
+            })
+        })
+        .collect()
 }

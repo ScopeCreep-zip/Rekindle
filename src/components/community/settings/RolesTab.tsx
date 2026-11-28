@@ -1,25 +1,30 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import type { Community } from "../../../stores/community.store";
-import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
-import RoleTag from "../RoleTag";
-import PermissionCheckboxList from "./PermissionCheckboxList";
-import FormField from "../../common/FormField";
-import { colorIntToHex, hexToColorInt } from "../../../utils/color";
-import { togglePermBit } from "../../../ipc/permissions";
+import { type Component, createSignal, createUniqueId, For, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import {
   handleCreateRole,
-  handleEditRole,
   handleDeleteRole,
+  handleEditRole,
 } from "../../../actions/community.actions";
+import { togglePermBit } from "../../../ipc/permissions";
+import type { Community } from "../../../stores/community.store";
+import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import { tokenVar } from "../../../styles/generated/tokens";
+import { colorIntToHex, hexToColorInt } from "../../../utils/color";
+import FormField from "../../common/FormField";
+import SkinGlyph from "../../common/SkinGlyph";
+import RoleTag from "../RoleTag";
+import PermissionCheckboxList from "./PermissionCheckboxList";
 
 interface RolesTabProps {
   community: Community;
 }
 
 const RolesTab: Component<RolesTabProps> = (props) => {
+  const editRoleNameId = createUniqueId();
+  const editRoleColorId = createUniqueId();
+  const newRoleNameId = createUniqueId();
+  const newRoleColorId = createUniqueId();
   const [showNewRole, setShowNewRole] = createSignal(false);
   const [creatingRole, setCreatingRole] = createSignal(false);
   const [newRoleName, setNewRoleName] = createSignal("");
@@ -37,7 +42,15 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [editRoleSelfAssignable, setEditRoleSelfAssignable] = createSignal(false);
   const [savingRole, setSavingRole] = createSignal(false);
 
-  function startEditRole(role: { id: string; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }): void {
+  function startEditRole(role: {
+    id: string;
+    name: string;
+    color: number;
+    permissions: string;
+    hoist: boolean;
+    mentionable: boolean;
+    selfAssignable?: boolean;
+  }): void {
     setEditingRoleId(role.id);
     setEditRoleName(role.name);
     setEditRoleColor(colorIntToHex(role.color));
@@ -59,7 +72,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         newRolePerms().toString(),
         newRoleHoist(),
         newRoleMentionable(),
-        newRoleSelfAssignable(),
+        newRoleSelfAssignable()
       );
       setNewRoleName("");
       setNewRoleColor("#000000");
@@ -87,7 +100,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         null,
         editRoleHoist(),
         editRoleMentionable(),
-        editRoleSelfAssignable(),
+        editRoleSelfAssignable()
       );
       addToast("Role updated", "success");
       setEditingRoleId(null);
@@ -111,45 +124,61 @@ const RolesTab: Component<RolesTabProps> = (props) => {
       </div>
       <For each={[...props.community.roles].sort((a, b) => b.position - a.position)}>
         {(role) => (
-          <Show when={editingRoleId() === role.id} fallback={
-            <div
-              class="settings-role-row"
-              onClick={() => role.id !== EVERYONE_ROLE_ID && startEditRole(role)}
-            >
-              <span
-                class="settings-role-color"
-                style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : tokenVar("text.dim") }}
-              />
-              <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
-              <span class="settings-role-position">pos: {role.position}</span>
-              <Show when={role.hoist}>
-                <span class="settings-role-position">hoisted</span>
-              </Show>
-              <div class="settings-role-actions">
-                <Show when={role.id !== EVERYONE_ROLE_ID}>
-                  <button
-                    class="form-btn-danger"
-                    onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}
-                    title="Delete Role"
-                  >
-                    <SkinGlyph name="delete" />
-                  </button>
-                </Show>
+          <Show
+            when={editingRoleId() === role.id}
+            fallback={
+              <div class="settings-role-row">
+                <Dynamic
+                  component={role.id === EVERYONE_ROLE_ID ? "div" : "button"}
+                  type={role.id === EVERYONE_ROLE_ID ? undefined : "button"}
+                  class="settings-role-summary"
+                  onClick={role.id === EVERYONE_ROLE_ID ? undefined : () => startEditRole(role)}
+                >
+                  <span
+                    class="settings-role-color"
+                    style={{
+                      "--settings-role-color": role.color
+                        ? colorIntToHex(role.color)
+                        : tokenVar("text.dim"),
+                    }}
+                  />
+                  <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+                  {/* The Host's words for the position (PN1): "Always first" for the
+                   *  owner role, never its raw sentinel. */}
+                  <span class="settings-role-position">{role.positionLabel}</span>
+                  <Show when={role.hoist}>
+                    <span class="settings-role-position">hoisted</span>
+                  </Show>
+                </Dynamic>
+                <div class="settings-role-actions">
+                  <Show when={role.id !== EVERYONE_ROLE_ID}>
+                    <button
+                      type="button"
+                      class="form-btn-danger"
+                      onClick={() => deleteRole(role.id)}
+                      title="Delete Role"
+                    >
+                      <SkinGlyph name="delete" />
+                    </button>
+                  </Show>
+                </div>
               </div>
-            </div>
-          }>
+            }
+          >
             <div class="settings-section settings-section-accented">
-              <FormField label="Name">
+              <FormField label="Name" controlId={editRoleNameId}>
                 <input
+                  id={editRoleNameId}
                   class="form-input"
                   type="text"
                   value={editRoleName()}
                   onInput={(e) => setEditRoleName(e.currentTarget.value)}
                 />
               </FormField>
-              <FormField label="Color">
+              <FormField label="Color" controlId={editRoleColorId}>
                 <div class="form-field-row">
                   <input
+                    id={editRoleColorId}
                     type="color"
                     value={editRoleColor()}
                     onInput={(e) => setEditRoleColor(e.currentTarget.value)}
@@ -196,10 +225,20 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 />
               </FormField>
               <div class="form-field-row">
-                <button class="form-btn-primary" onClick={handleSaveEditRole} disabled={savingRole()}>
+                <button
+                  type="button"
+                  class="form-btn-primary"
+                  onClick={handleSaveEditRole}
+                  disabled={savingRole()}
+                >
                   <SkinGlyph name="save" /> {savingRole() ? "Saving..." : "Save"}
                 </button>
-                <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
+                <button
+                  type="button"
+                  class="form-btn-secondary"
+                  onClick={() => setEditingRoleId(null)}
+                  disabled={savingRole()}
+                >
                   <SkinGlyph name="close" /> Cancel
                 </button>
               </div>
@@ -207,17 +246,18 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           </Show>
         )}
       </For>
-      <Show when={showNewRole()} fallback={
-        <button
-          class="form-btn-secondary"
-          onClick={() => setShowNewRole(true)}
-        >
-          <SkinGlyph name="plus-box" /> Create Role
-        </button>
-      }>
+      <Show
+        when={showNewRole()}
+        fallback={
+          <button type="button" class="form-btn-secondary" onClick={() => setShowNewRole(true)}>
+            <SkinGlyph name="plus-box" /> Create Role
+          </button>
+        }
+      >
         <div class="settings-section settings-section-success">
-          <FormField label="Name">
+          <FormField label="Name" controlId={newRoleNameId}>
             <input
+              id={newRoleNameId}
               class="form-input"
               type="text"
               placeholder="Role name..."
@@ -225,9 +265,10 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               onInput={(e) => setNewRoleName(e.currentTarget.value)}
             />
           </FormField>
-          <FormField label="Color">
+          <FormField label="Color" controlId={newRoleColorId}>
             <div class="form-field-row">
               <input
+                id={newRoleColorId}
                 type="color"
                 value={newRoleColor()}
                 onInput={(e) => setNewRoleColor(e.currentTarget.value)}
@@ -275,16 +316,14 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           </FormField>
           <div class="form-field-row">
             <button
+              type="button"
               class="form-btn-primary"
               onClick={handleCreateNewRole}
               disabled={!newRoleName().trim() || creatingRole()}
             >
               <SkinGlyph name="save" /> {creatingRole() ? "Creating..." : "Create"}
             </button>
-            <button
-              class="form-btn-secondary"
-              onClick={() => setShowNewRole(false)}
-            >
+            <button type="button" class="form-btn-secondary" onClick={() => setShowNewRole(false)}>
               <SkinGlyph name="close" /> Cancel
             </button>
           </div>
