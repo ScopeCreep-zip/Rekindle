@@ -71,6 +71,7 @@
     "allow-get-notification-sound",
     "allow-get-older-channel-messages",
     "allow-get-onboarding-config",
+    "allow-get-permission-catalogue",
     "allow-get-poll-results",
     "allow-get-preferences",
     "allow-get-presence-policy",

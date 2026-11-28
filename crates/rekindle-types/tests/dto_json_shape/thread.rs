@@ -35,6 +35,22 @@ pub fn samples(add: &mut impl FnMut(&str, Value)) {
                     ChannelCapability::SendInThreads,
                     "You need the Send In Threads permission.".into(),
                 ),
+                (
+                    ChannelCapability::SendMessages,
+                    "You need the Send Messages permission.".into(),
+                ),
+                (
+                    ChannelCapability::BypassSlowmode,
+                    "You need the Bypass Slowmode permission.".into(),
+                ),
+                (
+                    ChannelCapability::RequestToSpeak,
+                    "You need the Request to Speak permission.".into(),
+                ),
+                (
+                    ChannelCapability::MentionEveryone,
+                    "You need the Mention Everyone permission.".into(),
+                ),
             ]
             .into(),
         }),

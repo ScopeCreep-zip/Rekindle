@@ -49,8 +49,33 @@ export type ChannelCapability =
   | "manageMessages"
   | "useSoundboard"
   | "createPublicThreads"
-  | "sendInThreads";
+  | "sendInThreads"
+  | "mentionEveryone"
+  | "sendMessages"
+  | "bypassSlowmode"
+  | "requestToSpeak";
 
 /** The channel controls we lack in one channel, each with the Host's
  *  reason (Tier 1 `ChannelDeniedCapabilities`); a held one is absent. */
 export type ChannelDeniedCapabilities = Partial<Record<ChannelCapability, string>>;
+
+/** One permission in the Host's catalogue (`rekindle_types::permissions`,
+ *  contract PN1): its key, its label in the role editor, and its bit as a
+ *  decimal string (a u64 is not JS-safe as a number). */
+export interface PermissionEntry {
+  key: string;
+  label: string;
+  bit: string;
+}
+
+/** A group of the catalogue, in the Host's order. */
+export interface PermissionGroup {
+  name: string;
+  permissions: PermissionEntry[];
+}
+
+/** Every defined permission, once, grouped as the role editor shows them:
+ *  the Host's table, never a shell copy (`get_permission_catalogue`). */
+export interface PermissionCatalogue {
+  groups: PermissionGroup[];
+}

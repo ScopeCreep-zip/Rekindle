@@ -118,6 +118,9 @@ pub enum CommunityCmd {
     /// List joined communities.
     List,
 
+    /// List permission groups, labels and keys.
+    Permissions,
+
     /// Show community details (metadata, channels, roles, members).
     Info {
         /// Community name or anchor key.

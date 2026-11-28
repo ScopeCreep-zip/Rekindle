@@ -146,8 +146,12 @@
   "community.channelView": {
     "channelType": "forum",
     "denied": {
+      "bypassSlowmode": "You need the Bypass Slowmode permission.",
       "createPublicThreads": "You need the Create Public Threads permission.",
-      "sendInThreads": "You need the Send In Threads permission."
+      "mentionEveryone": "You need the Mention Everyone permission.",
+      "requestToSpeak": "You need the Request to Speak permission.",
+      "sendInThreads": "You need the Send In Threads permission.",
+      "sendMessages": "You need the Send Messages permission."
     },
     "id": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
     "locked": false,
@@ -230,6 +234,21 @@
     },
     "themeColor": {
       "op": "clear"
+    }
+  },
+  "community.roleView": {
+    "color": 12680215,
+    "hoist": true,
+    "id": "ffffffffffffffffffffffffffffffff",
+    "mentionable": false,
+    "name": "Owner",
+    "permissions": "1125899906842624",
+    "position": 4294967295,
+    "positionLabel": "Always first",
+    "selfAssignable": false,
+    "tagColours": {
+      "dark": 12680215,
+      "light": 10051858
     }
   },
   "dm.disappearingTimer": {
@@ -672,6 +691,260 @@
       }
     ],
     "description": "LAN party HQ"
+  },
+  "permissionCatalogue": {
+    "groups": [
+      {
+        "name": "General",
+        "permissions": [
+          {
+            "bit": "1",
+            "key": "VIEW_CHANNELS",
+            "label": "View Channels"
+          },
+          {
+            "bit": "2",
+            "key": "MANAGE_CHANNELS",
+            "label": "Manage Channels"
+          },
+          {
+            "bit": "4",
+            "key": "MANAGE_ROLES",
+            "label": "Manage Roles"
+          },
+          {
+            "bit": "8",
+            "key": "MANAGE_COMMUNITY",
+            "label": "Manage Community"
+          },
+          {
+            "bit": "16",
+            "key": "CREATE_INVITES",
+            "label": "Create Invites"
+          },
+          {
+            "bit": "32",
+            "key": "KICK_MEMBERS",
+            "label": "Kick Members"
+          },
+          {
+            "bit": "64",
+            "key": "BAN_MEMBERS",
+            "label": "Ban Members"
+          },
+          {
+            "bit": "128",
+            "key": "TIMEOUT_MEMBERS",
+            "label": "Moderate Members"
+          },
+          {
+            "bit": "1024",
+            "key": "VIEW_AUDIT_LOG",
+            "label": "View Audit Log"
+          },
+          {
+            "bit": "256",
+            "key": "MANAGE_NICKNAMES",
+            "label": "Manage Nicknames"
+          },
+          {
+            "bit": "512",
+            "key": "MANAGE_EXPRESSIONS",
+            "label": "Manage Expressions"
+          },
+          {
+            "bit": "2048",
+            "key": "VIEW_INSIGHTS",
+            "label": "View Insights"
+          },
+          {
+            "bit": "4096",
+            "key": "CREATE_EXPRESSIONS",
+            "label": "Create Expressions"
+          },
+          {
+            "bit": "1125899906842624",
+            "key": "ADMINISTRATOR",
+            "label": "Administrator"
+          }
+        ]
+      },
+      {
+        "name": "Text",
+        "permissions": [
+          {
+            "bit": "65536",
+            "key": "SEND_MESSAGES",
+            "label": "Send Messages"
+          },
+          {
+            "bit": "131072",
+            "key": "EMBED_LINKS",
+            "label": "Embed Links"
+          },
+          {
+            "bit": "262144",
+            "key": "ATTACH_FILES",
+            "label": "Attach Files"
+          },
+          {
+            "bit": "524288",
+            "key": "ADD_REACTIONS",
+            "label": "Add Reactions"
+          },
+          {
+            "bit": "1048576",
+            "key": "MENTION_EVERYONE",
+            "label": "Mention Everyone"
+          },
+          {
+            "bit": "2097152",
+            "key": "MANAGE_MESSAGES",
+            "label": "Manage Messages"
+          },
+          {
+            "bit": "4194304",
+            "key": "READ_HISTORY",
+            "label": "Read History"
+          },
+          {
+            "bit": "67108864",
+            "key": "PIN_MESSAGES",
+            "label": "Pin Messages"
+          },
+          {
+            "bit": "268435456",
+            "key": "SEND_POLLS",
+            "label": "Send Polls"
+          },
+          {
+            "bit": "8388608",
+            "key": "SEND_TTS",
+            "label": "Send TTS Messages"
+          },
+          {
+            "bit": "16777216",
+            "key": "USE_EXTERNAL_EMOJIS",
+            "label": "Use External Emojis"
+          },
+          {
+            "bit": "33554432",
+            "key": "USE_EXTERNAL_STICKERS",
+            "label": "Use External Stickers"
+          },
+          {
+            "bit": "134217728",
+            "key": "SEND_VOICE_MESSAGES",
+            "label": "Send Voice Messages"
+          },
+          {
+            "bit": "536870912",
+            "key": "BYPASS_SLOWMODE",
+            "label": "Bypass Slowmode"
+          }
+        ]
+      },
+      {
+        "name": "Voice",
+        "permissions": [
+          {
+            "bit": "4294967296",
+            "key": "CONNECT",
+            "label": "Connect"
+          },
+          {
+            "bit": "8589934592",
+            "key": "SPEAK",
+            "label": "Speak"
+          },
+          {
+            "bit": "17179869184",
+            "key": "MUTE_MEMBERS",
+            "label": "Mute Members"
+          },
+          {
+            "bit": "34359738368",
+            "key": "DEAFEN_MEMBERS",
+            "label": "Deafen Members"
+          },
+          {
+            "bit": "68719476736",
+            "key": "MOVE_MEMBERS",
+            "label": "Move Members"
+          },
+          {
+            "bit": "137438953472",
+            "key": "USE_VOICE_ACTIVITY",
+            "label": "Use Voice Activity"
+          },
+          {
+            "bit": "2199023255552",
+            "key": "REQUEST_TO_SPEAK",
+            "label": "Request to Speak"
+          },
+          {
+            "bit": "4398046511104",
+            "key": "STREAM",
+            "label": "Stream"
+          },
+          {
+            "bit": "274877906944",
+            "key": "PRIORITY_SPEAKER",
+            "label": "Priority Speaker"
+          },
+          {
+            "bit": "549755813888",
+            "key": "USE_SOUNDBOARD",
+            "label": "Use Soundboard"
+          },
+          {
+            "bit": "1099511627776",
+            "key": "USE_EXTERNAL_SOUNDS",
+            "label": "Use External Sounds"
+          }
+        ]
+      },
+      {
+        "name": "Threads",
+        "permissions": [
+          {
+            "bit": "17592186044416",
+            "key": "MANAGE_THREADS",
+            "label": "Manage Threads"
+          },
+          {
+            "bit": "35184372088832",
+            "key": "CREATE_PUBLIC_THREADS",
+            "label": "Create Public Threads"
+          },
+          {
+            "bit": "70368744177664",
+            "key": "CREATE_PRIVATE_THREADS",
+            "label": "Create Private Threads"
+          },
+          {
+            "bit": "140737488355328",
+            "key": "SEND_IN_THREADS",
+            "label": "Send In Threads"
+          }
+        ]
+      },
+      {
+        "name": "Events",
+        "permissions": [
+          {
+            "bit": "281474976710656",
+            "key": "MANAGE_EVENTS",
+            "label": "Manage Events"
+          },
+          {
+            "bit": "562949953421312",
+            "key": "CREATE_EVENTS",
+            "label": "Create Events"
+          }
+        ]
+      }
+    ]
   },
   "preferences": {
     "autoAwayMinutes": 10,

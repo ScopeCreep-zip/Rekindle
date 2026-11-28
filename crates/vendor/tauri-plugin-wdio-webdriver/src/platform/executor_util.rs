@@ -89,6 +89,20 @@ pub(crate) fn extract_script_result_from_inner(
     Ok(Value::Null)
 }
 
+/// `answer` bounded by the session's script timeout: an execute that has not settled when the
+/// timer fires answers with the `script timeout` error (W3C WebDriver, "Execute Script" and the
+/// session's script timeout, <https://www.w3.org/TR/webdriver2/#execute-script>,
+/// <https://www.w3.org/TR/webdriver2/#dfn-script-timeout>). Both platforms' execute paths go
+/// through this one bound.
+pub(crate) async fn within_script_timeout<T>(
+    timeout_ms: u64,
+    answer: impl std::future::Future<Output = Result<T, WebDriverErrorResponse>>,
+) -> Result<T, WebDriverErrorResponse> {
+    tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), answer)
+        .await
+        .unwrap_or_else(|_elapsed| Err(WebDriverErrorResponse::script_timeout()))
+}
+
 /// Wrap a JavaScript script to execute within a specific frame context.
 /// If `frame_context` is empty (top-level), returns the script unchanged.
 /// Otherwise, wraps the script to navigate to the correct frame before execution.

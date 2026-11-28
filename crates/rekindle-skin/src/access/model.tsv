@@ -455,7 +455,11 @@
 .member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .member-search-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
+.mention-popover-reason	text	var(--color-xfire-text-secondary)	--color-xfire-accent 25% over --color-xfire-bg-secondary	1.0	false
+.mention-popover-reason	text	var(--color-xfire-text-secondary)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-row	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
+.mention-popover-row-denied	text	var(--color-xfire-text-dim)	--color-xfire-accent 25% over --color-xfire-bg-secondary	1.0	false
+.mention-popover-row-denied	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-tag	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
 .mention-popover-tag-role	text	var(--color-xfire-accent-text)	--color-xfire-accent 13% over --color-xfire-bg-secondary	1.0	false
 .mention-popover-tag-special	text	var(--color-xfire-mention-everyone)	--color-xfire-mention-everyone 25% over --color-xfire-bg-secondary	1.0	false
@@ -492,16 +496,21 @@
 .message-forwarded-icon	text	var(--color-xfire-accent-text)	--color-xfire-bg-panel	1.0	false
 .message-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .message-input-attach-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.message-input-attach-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .message-input-attach-btn:hover	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .message-input-emoji-btn	text	var(--color-xfire-text-secondary)	--color-xfire-bg-input	1.0	false
+.message-input-emoji-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-input	1.0	false
 .message-input-emoji-btn:hover	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .message-input-mic-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .message-input-mic-btn-active	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
+.message-input-mic-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .message-input-mic-btn:hover	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .message-input-mic-timer	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .message-input-send-btn	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
-.message-input-send-btn:disabled	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.message-input-send-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .message-input::placeholder	text	var(--color-xfire-offline-text)	--color-xfire-bg-input	1.0	false
+.message-input:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-input	1.0	false
+.message-input:disabled::placeholder	text	var(--color-xfire-text-disabled)	--color-xfire-bg-input	1.0	false
 .message-link-preview-description	text	var(--color-xfire-text-secondary)	--color-xfire-bg-secondary	1.0	false
 .message-link-preview-site	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
 .message-link-preview-title	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
@@ -807,6 +816,7 @@
 .stage-panel-member-meta	text	var(--color-xfire-text-secondary)	--color-xfire-bg-tertiary	1.0	false
 .stage-panel-member-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-tertiary	1.0	false
 .stage-panel-request-btn	text	var(--color-xfire-text-primary)	--color-xfire-accent 16% over --color-xfire-bg-tertiary	1.0	false
+.stage-panel-request-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-accent 16% over --color-xfire-bg-tertiary	1.0	false
 .stage-panel-section-title	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .stage-panel-status	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .stage-panel-title	text	var(--color-xfire-text-primary)	--color-xfire-accent 16% over --color-xfire-bg-secondary	1.0	false

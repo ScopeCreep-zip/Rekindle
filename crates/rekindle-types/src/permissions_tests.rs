@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Permissions, ADD_REACTIONS, ADMINISTRATOR, BAN_MEMBERS, CONNECT, DEFAULT_EVERYONE, DEFINED,
+    MANAGE_CHANNELS, PERMISSION_CATALOGUE, READ_HISTORY, SEND_MESSAGES, SPEAK, VIEW_CHANNELS,
+};
 
 #[test]
 fn administrator_bypasses_all() {
@@ -29,58 +32,15 @@ fn default_everyone_includes_basics() {
 }
 
 #[test]
-fn bits_dont_overlap() {
-    // Verify no two constants share a bit
-    let all_consts = [
-        VIEW_CHANNELS,
-        MANAGE_CHANNELS,
-        MANAGE_ROLES,
-        MANAGE_COMMUNITY,
-        CREATE_INVITES,
-        KICK_MEMBERS,
-        BAN_MEMBERS,
-        TIMEOUT_MEMBERS,
-        MANAGE_NICKNAMES,
-        MANAGE_EXPRESSIONS,
-        VIEW_AUDIT_LOG,
-        VIEW_INSIGHTS,
-        CREATE_EXPRESSIONS,
-        SEND_MESSAGES,
-        EMBED_LINKS,
-        ATTACH_FILES,
-        ADD_REACTIONS,
-        MENTION_EVERYONE,
-        MANAGE_MESSAGES,
-        READ_HISTORY,
-        SEND_TTS,
-        USE_EXTERNAL_EMOJIS,
-        USE_EXTERNAL_STICKERS,
-        PIN_MESSAGES,
-        SEND_VOICE_MESSAGES,
-        SEND_POLLS,
-        BYPASS_SLOWMODE,
-        CONNECT,
-        SPEAK,
-        MUTE_MEMBERS,
-        DEAFEN_MEMBERS,
-        MOVE_MEMBERS,
-        USE_VOICE_ACTIVITY,
-        PRIORITY_SPEAKER,
-        USE_SOUNDBOARD,
-        USE_EXTERNAL_SOUNDS,
-        REQUEST_TO_SPEAK,
-        STREAM,
-        MANAGE_THREADS,
-        CREATE_PUBLIC_THREADS,
-        CREATE_PRIVATE_THREADS,
-        SEND_IN_THREADS,
-        MANAGE_EVENTS,
-        CREATE_EVENTS,
-        ADMINISTRATOR,
-    ];
-    for (i, a) in all_consts.iter().enumerate() {
-        for b in &all_consts[i + 1..] {
-            assert_eq!(a & b, 0, "Permission bits overlap: {a:#x} and {b:#x}");
-        }
+fn catalogue_covers_each_defined_bit_once() {
+    let mut seen = 0;
+    for entry in PERMISSION_CATALOGUE
+        .iter()
+        .flat_map(|group| group.permissions)
+    {
+        assert!(entry.bit.is_power_of_two(), "{}", entry.key);
+        assert_eq!(seen & entry.bit, 0, "duplicate bit for {}", entry.key);
+        seen |= entry.bit;
     }
+    assert_eq!(seen, DEFINED);
 }
