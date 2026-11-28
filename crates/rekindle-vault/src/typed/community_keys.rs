@@ -64,11 +64,16 @@ pub fn persist_registry_keypair(vault: &VaultStore, community_id: &str, keypair_
 }
 
 /// Load the registry owner keypair for a community from the open keystore.
-pub fn load_registry_keypair(vault: &VaultStore, community_id: &str) -> Option<String> {
+pub fn load_registry_keypair(
+    vault: &VaultStore,
+    community_id: &str,
+) -> Option<zeroize::Zeroizing<String>> {
     match vault.get(&VaultKey::RegistryKeypair {
         community: community_id.to_string(),
     }) {
-        Ok(Some(bytes)) => String::from_utf8(bytes.to_vec()).ok(),
+        Ok(Some(bytes)) => std::str::from_utf8(&bytes)
+            .ok()
+            .map(|text| zeroize::Zeroizing::new(text.to_owned())),
         Ok(None) => None,
         Err(e) => {
             tracing::trace!(error = %e, community = %community_id, "no registry keypair in keystore");
