@@ -39,6 +39,7 @@ import { BUDDY, inBuddy, LOGIN, menu, openSettings, SETTINGS } from "../../../wa
 import { pageLog, recordPage } from "../../../walk/probe.ts";
 import {
   type Peer,
+  peerChannelId,
   peerJoinCommunity,
   peerRequestFriend,
   peerReviewed,
@@ -98,8 +99,6 @@ async function openInbox(pack: string, how: "tab" | "menu"): Promise<boolean> {
 }
 /** The channel the original creates after the copy: the governance op the copy lacks. */
 const AFTER_COPY = "after-the-copy";
-/** Long enough for the original's op to reach its own record before the copy unlocks again. */
-const PUBLISH_MS = 30_000;
 
 /** The CLI subcommand that commits ReEnrolDevice on the copy (.10 part 2). */
 const REENROL = ["community", "re-enrol-device"];
@@ -230,8 +229,13 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 3000 });
     await gone(browser, 'input[placeholder="Channel name..."]', NET_WAIT_MS);
     await byText(browser, ".channel-item", AFTER_COPY, NET_WAIT_MS);
-    // Its op published before the copy is back.
-    await browser.pause(PUBLISH_MS);
+    // The local row can be visible while the write is held. Dee must see
+    // the signed channel before the copy is brought back to the network.
+    await waitUntil(
+      async () => Boolean(await peerChannelId(dee, COMMUNITY, AFTER_COPY)),
+      NET_WAIT_MS * 2,
+      `Dee never received Ari's #${AFTER_COPY} while the copy was offline`
+    );
     await copy.resume();
     let refusal = "";
     await waitUntil(
