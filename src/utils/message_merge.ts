@@ -10,6 +10,9 @@ import type { Message } from "../stores/chat.store";
  * that the read lacks was removed, and goes.
  */
 export function mergeRead(existing: Message[], read: Message[]): Message[] {
+  // An empty read has no window: nothing it holds replaces or removes a row
+  // (with no oldest or newest, every row would land both before and after it).
+  if (read.length === 0) return existing;
   const ids = new Set(read.map((m) => m.serverMessageId).filter((id) => id !== undefined));
   const newest = read.reduce((t, m) => Math.max(t, m.timestamp), Number.NEGATIVE_INFINITY);
   const oldest = read.reduce((t, m) => Math.min(t, m.timestamp), Number.POSITIVE_INFINITY);
