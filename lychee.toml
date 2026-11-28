@@ -76,14 +76,15 @@ include_fragments = "none"
 # Run only over markdown — code comments are out of scope for now.
 extensions = ["md"]
 
-# github.com fails to render file pages of ryanoasis/nerd-fonts (a very large repository): its
-# blob page for license-audit.md at tag v3.3.0 answers 503 on every request, while the same file
-# is served from raw.githubusercontent.com. Check that same file at the same ref there, so the
-# verbatim LICENSE-NerdFonts.md and our NOTICE.md keep their links and a missing file still fails.
-# (lychee v0.24.2 remap: regex replace_all, lychee-lib/src/remap.rs.)
+# github.com file pages (blob) are throttled for CI runners (503 from Actions while the same URLs
+# answer 200 elsewhere) and fail to render for very large repositories (ryanoasis/nerd-fonts at
+# v3.3.0: 503 everywhere). raw.githubusercontent.com serves the same file at the same ref from
+# GitHub's content CDN, so every blob link is checked there: a missing file or a wrong ref still
+# fails, no status code is newly accepted, and tree (directory) links are checked as before.
+# nerd-fonts' "blob/-/" (default branch) maps to HEAD first. (lychee v0.24.2 remap: regex replace_all.)
 remap = [
   "^https://github\\.com/ryanoasis/nerd-fonts/blob/-/(.+)$ https://raw.githubusercontent.com/ryanoasis/nerd-fonts/HEAD/$1",
-  "^https://github\\.com/ryanoasis/nerd-fonts/blob/(.+)$ https://raw.githubusercontent.com/ryanoasis/nerd-fonts/$1",
+  "^https://github\\.com/([^/]+)/([^/]+)/blob/(.+)$ https://raw.githubusercontent.com/$1/$2/$3",
 ]
 
 # github.com throttles automated page fetches from CI runners and answers 503
