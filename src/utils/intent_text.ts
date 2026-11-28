@@ -18,6 +18,10 @@ import type {
 import { groupDigits } from "./safety_number";
 
 /** A kind whose review words are not its name's: the contract's wording. */
+/** Initialisms inside `IntentKind` names (rekindle-types intent/kind.rs), kept upper-case
+ *  when a kind's name becomes its title: "Start DM call", "Open external URL", "Rotate MEK". */
+const INITIALISMS = new Set(["Dm", "Mek", "Qr", "Svg", "Url"]);
+
 const KIND_WORDS: Partial<Record<IntentKind, string>> = {
   // E3.4 S6 contract: "Change your name in this community".
   setCommunityDisplayName: "Change your name in this community",
@@ -29,7 +33,11 @@ const KIND_WORDS: Partial<Record<IntentKind, string>> = {
 export function kindPhrase(kind: IntentKind): string {
   const own = KIND_WORDS[kind];
   if (own) return own;
-  const words = kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  const words = kind
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(" ")
+    .map((w) => (INITIALISMS.has(w) ? w.toUpperCase() : w.toLowerCase()))
+    .join(" ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
