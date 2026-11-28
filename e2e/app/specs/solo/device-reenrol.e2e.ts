@@ -108,6 +108,7 @@ const REENROL = ["community", "re-enrol-device"];
 async function unlockAgain(): Promise<void> {
   await logOut(browser, ME);
   await unlock();
+  await inBuddy(browser);
 }
 
 /** Unlock from the login window. */
