@@ -15,7 +15,6 @@ import {
   type User,
   channelCount,
   DOT_STATUS,
-  consoleSeen,
   createCommunity,
   createIdentity,
   createInvite,
@@ -27,8 +26,8 @@ import {
   selectChannel,
   setLocationSharing,
   setCommunityName,
-  watchConsole,
 } from "../../journeys.ts";
+import { consoleSeen, watchConsole } from "../../console.ts";
 import { shot } from "../../shots.ts";
 
 /** How long a post may take to show in the other member's open channel. */
