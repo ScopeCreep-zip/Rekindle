@@ -161,6 +161,9 @@ CREATE TABLE IF NOT EXISTS group_dms (
     disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
         disappearing_seconds >= 0
     ),
+    -- Lamport version and authenticated author of the current timer.
+    disappearing_version INTEGER NOT NULL DEFAULT 0 CHECK (disappearing_version >= 0),
+    disappearing_author TEXT NOT NULL DEFAULT '',
     -- SK2-G §6 (plan E7.2 G7): the friend whose chat this group was created
     -- from (`EnterAttachedRoom` opens it), and our own "Chat Rooms" flag.
     origin_peer TEXT CHECK (origin_peer IS null OR length(origin_peer) = 64),

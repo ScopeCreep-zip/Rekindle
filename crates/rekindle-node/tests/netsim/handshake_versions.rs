@@ -271,3 +271,75 @@ async fn friend_profile_rotation_ignores_an_older_record() {
     assert!(sim.watched_by(bea.index).contains_key(&new));
     assert!(!sim.watched_by(bea.index).contains_key(&old));
 }
+
+async fn group(seed: u64) -> (Netsim, Vec<SimNode>, String) {
+    let (sim, mut nodes) = start(3, seed).await;
+    let group_id = crate::group_dm::three_members(&sim, &mut nodes).await;
+    (sim, nodes, group_id)
+}
+
+async fn set_timer(node: &SimNode, group_id: &str, seconds: u32) {
+    node.ok(IpcRequest::DisappearingSet {
+        conversation: group_id.into(),
+        seconds,
+    })
+    .await;
+}
+
+async fn timer(node: &SimNode, group_id: &str) -> u32 {
+    let view: rekindle_types::dto::dm::DisappearingTimerView = serde_json::from_value(
+        node.ok(IpcRequest::DisappearingGet {
+            conversation: group_id.into(),
+        })
+        .await,
+    )
+    .expect("current group timer");
+    view.seconds
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn group_disappearing_timer_retries_after_route_death() {
+    let (sim, nodes, group_id) = group(298).await;
+    let (ann, bea, cat) = (&nodes[0], &nodes[1], &nodes[2]);
+    outside_dead(&sim, bea);
+    // Cat and Bea are roster peers with a pairwise session.
+    set_timer(cat, &group_id, 30).await;
+    attempted(&sim, cat, bea, DmTypeId::DisappearingTimer).await;
+    assert_eq!(timer(bea, &group_id).await, 0);
+    assert!(eventually(&sim, LIMIT, || async { timer(ann, &group_id).await == 30 }).await);
+    sim.fault(Fault::RouteDeath { node: bea.index });
+    assert!(
+        eventually(&sim, LIMIT, || async { timer(bea, &group_id).await == 30 }).await,
+        "the replacement route carries the group timer to Bea"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn group_disappearing_timer_ignores_an_older_change() {
+    use rekindle_codec::capnp_codec::direct::DisappearingTimer;
+    use rekindle_transport::operations::group_dm::parse_group_id;
+
+    let (sim, nodes, group_id) = group(299).await;
+    let (ann, bea) = (&nodes[0], &nodes[1]);
+    set_timer(ann, &group_id, 30).await;
+    assert!(eventually(&sim, LIMIT, || async { timer(bea, &group_id).await == 30 }).await);
+    set_timer(bea, &group_id, 60).await;
+    assert!(eventually(&sim, LIMIT, || async { timer(ann, &group_id).await == 60 }).await);
+    send_again(
+        ann,
+        bea,
+        &DirectBody::DisappearingTimer(DisappearingTimer {
+            seconds: 30,
+            group_id: Some(parse_group_id(&group_id).expect("group ID")),
+            group_version: Some(1),
+        }),
+    )
+    .await;
+    assert!(
+        !eventually(&sim, Duration::from_secs(10), || async {
+            timer(bea, &group_id).await != 60
+        })
+        .await,
+        "the old group timer overwrote a newer change"
+    );
+}

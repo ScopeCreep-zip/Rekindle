@@ -371,6 +371,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::CreatorInvite
             | DmTypeId::CreatorWithdrawn
             | DmTypeId::ProfileKeyRotated
+            | DmTypeId::DisappearingTimer
     )
 }
 

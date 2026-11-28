@@ -185,6 +185,7 @@ async fn a_received_timer_change_is_a_stored_notice_once() {
     let timer = DirectBody::DisappearingTimer(DisappearingTimer {
         seconds: 300,
         group_id: None,
+        group_version: None,
     });
     pending(&host, owner, bob, 0, &timer).await;
     pending(&host, owner, bob, 1, &timer).await;

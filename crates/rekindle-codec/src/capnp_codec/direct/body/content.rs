@@ -210,6 +210,7 @@ impl Typing {
 pub struct DisappearingTimer {
     pub seconds: u32,
     pub group_id: Option<super::GroupId>,
+    pub group_version: Option<i64>,
 }
 
 impl DisappearingTimer {
@@ -218,18 +219,24 @@ impl DisappearingTimer {
         if let Some(group_id) = &self.group_id {
             b.set_group_id(group_id);
         }
+        if let Some(version) = self.group_version {
+            b.set_group_version(version);
+        }
     }
 
-    /// A group id that is neither empty nor 16 bytes is malformed.
+    /// A group timer must name a 16-byte group and a positive version.
     pub(super) fn read(r: disappearing_timer::Reader<'_>) -> Result<Self, CodecError> {
         let group_id = r.get_group_id().map_err(|e| capnp_err(&e))?;
+        let version = r.get_group_version();
+        let (group_id, group_version) = match (group_id.is_empty(), version) {
+            (true, 0) => (None, None),
+            (false, 1..) => (Some(fixed(Ok(group_id), "timer group id")?), Some(version)),
+            _ => return Err(CodecError::Deserialization("invalid timer group version".into())),
+        };
         Ok(Self {
             seconds: timer(r.get_seconds())?,
-            group_id: if group_id.is_empty() {
-                None
-            } else {
-                Some(fixed(Ok(group_id), "timer group id")?)
-            },
+            group_id,
+            group_version,
         })
     }
 }
@@ -240,6 +247,7 @@ pub(crate) fn timer_sample() -> DisappearingTimer {
     DisappearingTimer {
         seconds: 3_600,
         group_id: Some([5; 16]),
+        group_version: Some(2),
     }
 }
 

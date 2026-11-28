@@ -237,6 +237,7 @@ struct Typing {
 struct DisappearingTimer {
   seconds @0 :UInt32;
   groupId @1 :Data;                     # 16 for a group DM (E2.6); empty for a DM
+  groupVersion @2 :Int64;               # positive for a group DM; 0 for a DM
 }
 
 # --- Group DMs (plan E2.6: 3-8 members, no governance, sender-owned keys).

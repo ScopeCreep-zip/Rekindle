@@ -39,6 +39,8 @@ pub struct TimerChange<'a> {
     pub owner_key: &'a str,
     pub conversation: &'a str,
     pub kind: ConversationType,
+    /// The incoming group timer's version. Local changes allocate one.
+    pub group_version: Option<i64>,
     pub seconds: u32,
     pub set_by: &'a str,
     pub now: i64,
@@ -50,11 +52,11 @@ pub struct TimerChange<'a> {
 pub enum TimerChanged {
     /// No friend or group row holds the conversation; nothing written.
     NotHeld,
-    /// The timer already was that value; nothing written (Signal ignores
-    /// an unchanged `expireTimer`, `DataMessageProcessor`).
+    /// A stale group update or a timer already set to the same value.
     Unchanged,
-    /// The timer changed and its notice row was stored.
-    Changed,
+    /// The timer changed and its notice row was stored. A group timer
+    /// carries its new version.
+    Changed { group_version: Option<i64> },
 }
 
 /// Set the timer on a conversation and, when it changed, store the
@@ -68,45 +70,72 @@ pub enum TimerChanged {
 /// The transaction failed; nothing was written.
 pub fn change_timer(conn: &Connection, c: &TimerChange<'_>) -> rusqlite::Result<TimerChanged> {
     let tx = conn.unchecked_transaction()?;
-    let (read, write) = match c.kind {
-        ConversationType::GroupDm => (
-            "SELECT disappearing_seconds FROM group_dms WHERE owner_key = ?1 AND group_id = ?2",
-            "UPDATE group_dms SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND group_id = ?2",
-        ),
-        _ => (
-            "SELECT disappearing_seconds FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            "UPDATE friends SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND public_key = ?2",
-        ),
-    };
     let owner = c.owner_key;
-    let held: Option<u32> = tx
-        .query_row(read, params![owner, c.conversation], |row| row.get(0))
-        .optional()?;
-    let outcome = match held {
-        None => TimerChanged::NotHeld,
-        Some(s) if s == c.seconds => TimerChanged::Unchanged,
-        Some(_) => {
-            tx.execute(write, params![owner, c.conversation, c.seconds])?;
-            let ours = c.set_by == owner;
-            let expire_at = (ours && c.seconds > 0).then(|| c.now + i64::from(c.seconds) * 1000);
+    let (previous, group_version) = if c.kind == ConversationType::GroupDm {
+        let held: Option<(u32, i64, String)> = tx.query_row(
+            "SELECT disappearing_seconds, disappearing_version, disappearing_author FROM group_dms
+             WHERE owner_key = ?1 AND group_id = ?2",
+            params![owner, c.conversation],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).optional()?;
+        let Some((previous, version, author)) = held else {
+            return Ok(TimerChanged::NotHeld);
+        };
+        let next = match c.group_version {
+            Some(next) if (next, c.set_by) > (version, author.as_str()) => next,
+            Some(_) => return Ok(TimerChanged::Unchanged),
+            None if previous == c.seconds => return Ok(TimerChanged::Unchanged),
+            None => version
+                .checked_add(1)
+                .ok_or(rusqlite::Error::IntegralValueOutOfRange(1, version))?,
+        };
+        tx.execute(
+            "UPDATE group_dms SET disappearing_seconds = ?3, disappearing_version = ?4,
+             disappearing_author = ?5 WHERE owner_key = ?1 AND group_id = ?2",
+            params![owner, c.conversation, c.seconds, next, c.set_by],
+        )?;
+        (previous, Some(next))
+    } else {
+        let held = tx
+            .query_row(
+                "SELECT disappearing_seconds FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+                params![owner, c.conversation],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(previous) = held else {
+            return Ok(TimerChanged::NotHeld);
+        };
+        if previous != c.seconds {
             tx.execute(
-                "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, \
+                "UPDATE friends SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND public_key = ?2",
+                params![owner, c.conversation, c.seconds],
+            )?;
+        }
+        (previous, None)
+    };
+    let outcome = if previous == c.seconds {
+        TimerChanged::Unchanged
+    } else {
+        let ours = c.set_by == owner;
+        let expire_at = (ours && c.seconds > 0).then(|| c.now + i64::from(c.seconds) * 1000);
+        tx.execute(
+            "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, \
                  body, timestamp, is_read, send_state, message_id, expire_seconds, expire_at, \
                  timer_notice_seconds) \
                  VALUES (?1, ?2, ?3, ?4, '', ?5, 1, 'delivered', ?6, ?7, ?8, ?7)",
-                params![
-                    owner,
-                    c.conversation,
-                    c.kind.as_str(),
-                    c.set_by,
-                    c.now,
-                    c.notice_id,
-                    c.seconds,
-                    expire_at
-                ],
-            )?;
-            TimerChanged::Changed
-        }
+            params![
+                owner,
+                c.conversation,
+                c.kind.as_str(),
+                c.set_by,
+                c.now,
+                c.notice_id,
+                c.seconds,
+                expire_at
+            ],
+        )?;
+        TimerChanged::Changed { group_version }
     };
     tx.commit()?;
     Ok(outcome)

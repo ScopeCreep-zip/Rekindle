@@ -97,17 +97,22 @@ pub async fn set(
             ));
         }
     };
-    match store_change(host, &owner, conversation, kind, seconds, &owner).await? {
-        TimerChanged::NotHeld => {
-            return Err(FriendError::NotFound(format!(
-                "no conversation {conversation}"
-            )));
-        }
-        // Signal sends no update for an unchanged timer.
-        TimerChanged::Unchanged => return Ok(()),
-        TimerChanged::Changed => {}
-    }
-    let body = DirectBody::DisappearingTimer(DisappearingTimer { seconds, group_id });
+    let group_version =
+        match store_change(host, &owner, conversation, kind, seconds, &owner, None).await? {
+            TimerChanged::NotHeld => {
+                return Err(FriendError::NotFound(format!(
+                    "no conversation {conversation}"
+                )));
+            }
+            // Signal sends no update for an unchanged timer.
+            TimerChanged::Unchanged => return Ok(()),
+            TimerChanged::Changed { group_version } => group_version,
+        };
+    let body = DirectBody::DisappearingTimer(DisappearingTimer {
+        seconds,
+        group_id,
+        group_version,
+    });
     let mut first_error = None;
     for peer in &to {
         let sent = if group_id.is_some() {
@@ -139,6 +144,7 @@ async fn store_change(
     kind: ConversationType,
     seconds: u32,
     set_by: &str,
+    group_version: Option<i64>,
 ) -> Result<TimerChanged, FriendError> {
     let notice_id = client_id_text(&mint_client_id(host));
     let now = host.clock().now_ms_i64();
@@ -155,6 +161,7 @@ async fn store_change(
                 owner_key: &o,
                 conversation: &id,
                 kind,
+                group_version,
                 seconds,
                 set_by: &by,
                 now,
@@ -163,7 +170,7 @@ async fn store_change(
         )
     })
     .await?;
-    if outcome == TimerChanged::Changed {
+    if matches!(outcome, TimerChanged::Changed { .. }) {
         if let Some(context) = ConversationContext::of(conversation, kind) {
             host.publish(SubscriptionEvent::ChannelMessage(
                 ChannelMessageEvent::DisappearingTimerChanged {
@@ -204,7 +211,17 @@ pub(crate) async fn on_timer(host: &dyn FriendHost, sender: &str, t: &Disappeari
     let Ok(owner) = state::owner(host) else {
         return false;
     };
-    match store_change(host, &owner, &conversation, kind, t.seconds, sender).await {
+    match store_change(
+        host,
+        &owner,
+        &conversation,
+        kind,
+        t.seconds,
+        sender,
+        t.group_version,
+    )
+    .await
+    {
         Ok(_) => true,
         Err(e) => {
             tracing::warn!(error = %e, "peer's disappearing timer not stored");

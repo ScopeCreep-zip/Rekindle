@@ -45,6 +45,7 @@ fn change<'a>(
         owner_key: OWNER,
         conversation,
         kind: ConversationType::Dm,
+        group_version: None,
         seconds,
         set_by,
         now,
@@ -58,7 +59,9 @@ fn the_timer_is_per_conversation() {
     assert_eq!(timer(&conn, OWNER, "bob", ConversationType::Dm).unwrap(), 0);
     assert_eq!(
         change_timer(&conn, &change("bob", 30, OWNER, 0, "n1")).unwrap(),
-        TimerChanged::Changed
+        TimerChanged::Changed {
+            group_version: None
+        }
     );
     assert_eq!(
         timer(&conn, OWNER, "bob", ConversationType::Dm).unwrap(),
@@ -81,7 +84,9 @@ fn a_timer_change_is_a_stored_notice_that_disappears_on_its_own_timer() {
     insert_dm(&conn, &dm("bob", "hello", 0, None)).unwrap();
     assert_eq!(
         change_timer(&conn, &change("bob", 30, OWNER, 2_000, "ours")).unwrap(),
-        TimerChanged::Changed
+        TimerChanged::Changed {
+            group_version: None
+        }
     );
     assert_eq!(
         change_timer(&conn, &change("bob", 30, "bob", 3_000, "dup")).unwrap(),

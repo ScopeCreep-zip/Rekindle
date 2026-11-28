@@ -11,6 +11,7 @@ fn a_timer_past_four_weeks_refuses_the_frame() {
         DirectBody::DisappearingTimer(DisappearingTimer {
             seconds: MAX_SECONDS,
             group_id: None,
+            group_version: None,
         })
     );
     assert!(DirectBody::decode(DmTypeId::DisappearingTimer, &bytes(MAX_SECONDS + 1).unwrap()).is_err());
