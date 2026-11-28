@@ -1,17 +1,5 @@
 import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
-import {
-  BAN_MEMBERS,
-  CREATE_INVITES,
-  hasPermission,
-  KICK_MEMBERS,
-  MANAGE_CHANNELS,
-  MANAGE_COMMUNITY,
-  MANAGE_EXPRESSIONS,
-  MANAGE_ROLES,
-  servedPermissions,
-  VIEW_AUDIT_LOG,
-} from "../../ipc/permissions";
 import type { Community } from "../../stores/community.store";
 import { deniedFor } from "../../utils/denied";
 import ConfirmDialog from "../common/ConfirmDialog";
@@ -57,16 +45,17 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const [confirmAction, setConfirmAction] = createSignal<ConfirmOptions | null>(null);
 
   // The backend's base flags (plan E3.2 S9).
-  const myPerms = createMemo(() => servedPermissions(props.community));
+  // What we may do here, as the Host serves it (CAPR, contract PN1).
+  const may = (cap: CommunityCapability): boolean => deniedFor(props.community, cap) === null;
 
-  const canManageCommunity = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
-  const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));
-  const canManageRoles = createMemo(() => hasPermission(myPerms(), MANAGE_ROLES));
-  const canKick = createMemo(() => hasPermission(myPerms(), KICK_MEMBERS));
-  const canBan = createMemo(() => hasPermission(myPerms(), BAN_MEMBERS));
-  const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INVITES));
-  const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
-  const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
+  const canManageCommunity = createMemo(() => may("manageCommunity"));
+  const canManageChannels = createMemo(() => may("manageChannels"));
+  const canManageRoles = createMemo(() => may("manageRoles"));
+  const canKick = createMemo(() => may("kickMembers"));
+  const canBan = createMemo(() => may("banMembers"));
+  const canCreateInvite = createMemo(() => may("createInvite"));
+  const canViewAuditLog = createMemo(() => may("viewAuditLog"));
+  const canManageExpressions = createMemo(() => may("manageExpressions"));
 
   const isAdmin = createMemo(
     () =>

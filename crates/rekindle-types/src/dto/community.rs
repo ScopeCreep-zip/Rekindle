@@ -337,6 +337,8 @@ pub struct CommunityRoleView {
     /// 2^53.
     pub permissions: String,
     pub position: u32,
+    /// The position as presented to users, supplied by the Host.
+    pub position_label: String,
     pub hoist: bool,
     pub mentionable: bool,
     pub self_assignable: bool,

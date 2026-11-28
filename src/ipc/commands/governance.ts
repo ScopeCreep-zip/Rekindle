@@ -6,6 +6,7 @@ import type {
   InviteDto,
   ThreadReplyOutcome,
 } from "./dto";
+import type { PermissionCatalogue } from "./dto_capabilities";
 import type {
   CreateEventRequest,
   EventInfo,
@@ -16,6 +17,10 @@ import type {
 } from "./types";
 
 export const governanceCommands = {
+  /** The Host's permission catalogue (contract PN1): every defined bit,
+   *  grouped and labelled, for the role and overwrite editors. */
+  getPermissionCatalogue: () => hostInvoke<PermissionCatalogue>("get_permission_catalogue"),
+
   // Reactions
   addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
     hostInvoke<unknown>("add_reaction", { communityId, channelId, messageId, emoji }).then(
@@ -99,6 +104,8 @@ export const governanceCommands = {
         tagColours: { dark: number; light: number };
         permissions: number;
         position: number;
+        /** The position as the Host presents it (contract PN1). */
+        positionLabel: string;
         hoist: boolean;
         mentionable: boolean;
         selfAssignable: boolean;

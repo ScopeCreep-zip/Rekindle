@@ -1,7 +1,8 @@
 //! Community commands: create, join, leave, list, info.
 
-use rekindle_ipc::protocol::LifecycleRequest;
-use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{
+    ChannelMessageRequest, CommunityRequest, IpcRequest, LifecycleRequest,
+};
 use rekindle_types::display::CommunityDetail;
 
 use crate::cli::CommunityCmd;
@@ -14,6 +15,9 @@ use rekindle_client::DaemonClient;
 
 mod list;
 mod profile;
+mod roles;
+
+pub(crate) use roles::print_roles;
 
 pub async fn dispatch(
     cmd: &CommunityCmd,
@@ -115,6 +119,7 @@ pub async fn dispatch(
             format::print_structured(&value, mode)
         }
         CommunityCmd::List => list::dispatch(client, mode).await,
+        CommunityCmd::Permissions => roles::permissions(client, mode).await,
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
                 client,
@@ -317,11 +322,7 @@ fn print_full_info(value: &serde_json::Value, mode: OutputMode) -> anyhow::Resul
         mode,
     )?;
     format::print_text("")?;
-    table::print_table(
-        &["Role", "Position", "Permissions", "ID"],
-        &role_rows(&roles),
-        mode,
-    )
+    print_roles(&roles, mode)
 }
 
 fn channel_rows(channels: &[rekindle_types::display::ChannelOverviewDisplay]) -> Vec<Vec<String>> {
@@ -340,22 +341,6 @@ fn channel_rows(channels: &[rekindle_types::display::ChannelOverviewDisplay]) ->
                 c.topic.clone(),
                 c.mek_generation.to_string(),
                 rekindle_client::fmt::abbreviate_key(&c.id),
-            ]
-        })
-        .collect()
-}
-
-fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>> {
-    let mut sorted: Vec<_> = roles.iter().collect();
-    sorted.sort_by(|a, b| b.position.cmp(&a.position).then_with(|| a.id.cmp(&b.id)));
-    sorted
-        .into_iter()
-        .map(|r| {
-            vec![
-                r.name.clone(),
-                r.position.to_string(),
-                format!("{:#x}", r.permissions),
-                r.id.clone(),
             ]
         })
         .collect()

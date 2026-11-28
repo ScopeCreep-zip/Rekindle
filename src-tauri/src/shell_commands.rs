@@ -339,6 +339,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("list_event_attendees", HostCall::Request("EventAttendees")),
     ("get_events", HostCall::Request("EventList")),
     ("get_pending_requests", HostCall::Request("FriendRequests")),
+    (
+        "get_permission_catalogue",
+        HostCall::Request("PermissionCatalogue"),
+    ),
     ("get_roles", HostCall::Request("RoleList")),
     ("create_role", HostCall::Request("RoleCreate")),
     ("edit_role", HostCall::Request("RoleUpdate")),

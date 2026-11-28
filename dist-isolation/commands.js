@@ -118,6 +118,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "get_outgoing_invites",
   "get_own_presence",
   "get_pending_requests",
+  "get_permission_catalogue",
   "get_poll_results",
   "get_preferences",
   "get_presence_policy",

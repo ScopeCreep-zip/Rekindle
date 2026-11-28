@@ -132,6 +132,7 @@ mod own_removal;
 mod own_removal_quiet;
 mod own_removal_void;
 mod pair;
+mod permission_catalogue;
 mod pins;
 mod pool_route_loss;
 mod post_before_key;

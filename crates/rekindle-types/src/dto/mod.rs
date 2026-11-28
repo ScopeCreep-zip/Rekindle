@@ -17,6 +17,7 @@ pub mod infoview;
 pub mod local_search;
 pub mod member_groups;
 pub mod onboarding;
+pub mod permission_catalogue;
 pub mod presence;
 pub mod servers;
 pub mod skin;

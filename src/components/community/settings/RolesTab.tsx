@@ -143,7 +143,9 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                     }}
                   />
                   <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
-                  <span class="settings-role-position">pos: {role.position}</span>
+                  {/* The Host's words for the position (PN1): "Always first" for the
+                   *  owner role, never its raw sentinel. */}
+                  <span class="settings-role-position">{role.positionLabel}</span>
                   <Show when={role.hoist}>
                     <span class="settings-role-position">hoisted</span>
                   </Show>
