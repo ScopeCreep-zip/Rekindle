@@ -12,6 +12,7 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_types::dto::skin_library::SkinApplyFailure;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -286,17 +287,53 @@ fn update(window: &WebviewWindow, load: &Load) {
             // is suspended or its entry module never ran.
             expose(window, show, staged);
             report_timeout(window, load, timed_out_skin);
-            let target = window.clone();
-            window
-                .dialog()
-                .message(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE)
-                .title("Skin load failed")
-                .kind(MessageDialogKind::Error)
-                .parent(window)
-                .buttons(MessageDialogButtons::OkCustom("Close window".to_owned()))
-                .show(move |_| log_window(target.destroy(), &target, "close failed skin window"));
+            show_timeout_dialog(window);
         }
     }
+}
+
+// rfd's GTK message dialog does not use its raw parent handle. Use the
+// already mapped GTK toplevel so Wayland can place the dialog over it.
+#[cfg(target_os = "linux")]
+fn show_timeout_dialog(window: &WebviewWindow) {
+    use gtk::prelude::{DialogExt, WidgetExt};
+
+    let parent = match window.gtk_window() {
+        Ok(parent) => parent,
+        Err(error) => {
+            tracing::warn!(%error, label = window.label(), "skin error dialog parent unavailable");
+            return;
+        }
+    };
+    let dialog = gtk::MessageDialog::builder()
+        .transient_for(&parent)
+        .destroy_with_parent(true)
+        .modal(true)
+        .title("Skin load failed")
+        .message_type(gtk::MessageType::Error)
+        .text(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE)
+        .build();
+    dialog.add_button("Close window", gtk::ResponseType::Close);
+    dialog.set_default_response(gtk::ResponseType::Close);
+    let target = window.clone();
+    dialog.connect_response(move |dialog, _| {
+        dialog.hide();
+        log_window(target.destroy(), &target, "close failed skin window");
+    });
+    dialog.show_all();
+}
+
+#[cfg(not(target_os = "linux"))]
+fn show_timeout_dialog(window: &WebviewWindow) {
+    let target = window.clone();
+    window
+        .dialog()
+        .message(SkinApplyFailure::LOAD_TIMEOUT_MESSAGE)
+        .title("Skin load failed")
+        .kind(MessageDialogKind::Error)
+        .parent(window)
+        .buttons(MessageDialogButtons::OkCustom("Close window".to_owned()))
+        .show(move |_| log_window(target.destroy(), &target, "close failed skin window"));
 }
 
 pub(crate) fn is_revealed(window: &WebviewWindow) -> bool {
