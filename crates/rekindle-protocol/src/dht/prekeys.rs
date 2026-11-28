@@ -29,7 +29,7 @@ pub struct RecordRead {
 /// The record could not be created.
 pub async fn create_prekey_record(
     pool: &dyn RecordPort,
-) -> Result<(LeaseId, String, String), ProtocolError> {
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>), ProtocolError> {
     let (lease, key, keypair) = pool
         .create(&rekindle_records::schema::prekeys(), None)
         .await?;

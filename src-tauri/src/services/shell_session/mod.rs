@@ -117,6 +117,12 @@ impl ShellHooks for ShellSession {
         crate::state_helpers::key_provider(&self.state)
     }
 
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::new(
+            crate::services::presence_adapter::DesktopSessionPresence::new(Arc::clone(&self.state)),
+        )
+    }
+
     async fn community_records_ready(
         &self,
         community_id: &str,

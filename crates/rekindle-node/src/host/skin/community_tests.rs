@@ -115,6 +115,11 @@ fn joined(community: &str, channel: &str) -> SubscriptionEvent {
             community: community.into(),
             channel: channel.into(),
         },
+        join_handshake: rekindle_types::subscription_events::JoinHandshake::Announced,
+        media_ready: rekindle_types::subscription_events::VoiceMediaReady {
+            ready: false,
+            reason: "handshake-announced".into(),
+        },
     })
 }
 

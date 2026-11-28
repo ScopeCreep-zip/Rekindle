@@ -10,7 +10,6 @@ use super::*;
 fn row(pseudonym: &str, channel: Option<&str>, fresh: bool) -> PresencePeerView {
     PresencePeerView {
         pseudonym_hex: pseudonym.to_string(),
-        display_name: Some(format!("{pseudonym}-name")),
         voice_channel_id: channel.map(str::to_string),
         fresh,
     }

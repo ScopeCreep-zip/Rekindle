@@ -255,6 +255,7 @@ pub(crate) fn public_text(public: &[u8; 32]) -> String {
 pub(crate) fn writer_public(text: &str) -> Result<[u8; 32], PortError> {
     let (public, secret) = rekindle_crypto::keypair_text::parse_keypair_text(text)
         .map_err(|e| PortError::KeyText(format!("keypair: {e}")))?;
+    let secret = zeroize::Zeroizing::new(secret);
     let derived = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret)
         .verifying_key()
         .to_bytes();

@@ -76,7 +76,7 @@ async fn a_foreign_key_fails_against_a_member_record_and_owner_of_names_its_owne
         .create(&schema::member_record(), Some(&k_m))
         .await
         .unwrap();
-    assert_eq!(owner_pair, k_m);
+    assert!(owner_pair.as_str() == k_m, "same owner credential");
     assert_eq!(a.owner_of(lease).unwrap(), public_text(&k_m_public));
     for subkey in [
         member_record::CARD,

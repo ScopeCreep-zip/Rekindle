@@ -8,15 +8,51 @@
 //! do not come through here: they keep arriving through
 //! [`RecordPort::on_value_change`](super::RecordPort::on_value_change).
 
+use rekindle_secrets::record_writer::RecordWriterSecret;
+
 use super::{RecordReport, RecordSchema, RecordValue, ReportScope};
 
 /// A writer keypair, with its public key (the writer a stored value names).
+///
+/// The credential is private and the type has no display conversion.
+///
+/// ```compile_fail
+/// use rekindle_records::port::WriterKey;
+/// fn plain_copy(writer: &WriterKey) -> String {
+///     writer.keypair.clone()
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use rekindle_records::port::WriterKey;
+/// fn display(writer: &WriterKey) -> String {
+///     writer.to_string()
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriterKey {
-    /// The keypair text.
-    pub keypair: String,
+    keypair: RecordWriterSecret,
     /// The public key text, as [`RecordValue::writer`] carries it.
     pub public: String,
+}
+
+impl WriterKey {
+    #[must_use]
+    pub fn new(public: String, keypair: RecordWriterSecret) -> Self {
+        Self { keypair, public }
+    }
+
+    /// Borrow the protected credential for the DHT backend.
+    #[must_use]
+    pub fn keypair(&self) -> &RecordWriterSecret {
+        &self.keypair
+    }
+
+    /// Transfer a newly created record's owner to its caller.
+    #[must_use]
+    pub fn into_keypair(self) -> RecordWriterSecret {
+        self.keypair
+    }
 }
 
 /// What an open or a create returns.
@@ -224,3 +260,7 @@ pub trait DhtBackend: Send + Sync {
     /// remains.
     async fn cancel_watch(&self, key: &str, subkeys: Option<&[u32]>) -> Result<bool, DhtCallError>;
 }
+
+#[cfg(test)]
+#[path = "dht_writer_tests.rs"]
+mod writer_tests;

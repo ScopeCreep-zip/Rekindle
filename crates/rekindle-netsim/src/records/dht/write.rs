@@ -21,11 +21,11 @@ impl SimDht {
         self.net.inner.lock().nodes[self.node].app_sets += 1;
         let opened = self.opened(key)?;
         let writer = writer
-            .map(|w| w.keypair.clone())
+            .map(|w| w.keypair().clone())
             .or(opened)
             .ok_or_else(|| error(DhtErrorKind::Generic, "value is not writable"))?;
-        let public =
-            writer_public(&writer).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
+        let public = writer_public(writer.expose())
+            .map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
         self.note_resend(key, subkey, &data, &public, min_seq);
         self.validate(key, subkey, &public, data.len())?;
         // In flight until it returns (0.5.8 `inspect_record.rs:274-277,287-290`).

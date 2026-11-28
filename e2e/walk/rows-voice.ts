@@ -68,7 +68,7 @@ async function joinRefusal(b: Browser): Promise<string> {
  * elements and then reading each one raced a participant leaving between
  * the two (Linux walk at f00132dc2, M25: "element at index 1 wasn't found").
  */
-async function voiceNames(b: Browser): Promise<string> {
+export async function voiceNames(b: Browser): Promise<string> {
   return (await b.execute(() =>
     Array.from(document.querySelectorAll(".voice-panel .voice-participant-name"))
       .map((n) => (n.textContent ?? "").trim())
@@ -85,7 +85,7 @@ async function waitListed(b: Browser, name: string, listed: boolean, who: string
 }
 
 /** Click CallStage's Join hero button and wait for the connected stage (CallStage.tsx:22-40). */
-async function joinFromStage(b: Browser): Promise<void> {
+export async function joinFromStage(b: Browser): Promise<void> {
   await (await shown(b, ".call-stage-join-btn", WAIT_MS)).click();
   let refused = "";
   await waitUntil(

@@ -27,6 +27,26 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The local three-way voice join handshake stage.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JoinHandshake {
+    /// We announced the join.
+    #[default]
+    Announced,
+    /// A peer has seen us.
+    Seen,
+    /// We confirmed transport readiness.
+    Connected,
+}
+
+/// Current readiness and its highest-priority blocker, or the ready reason.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceMediaReady {
+    pub ready: bool,
+    pub reason: String,
+}
+
 /// Where a voice session is taking place.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -73,8 +93,8 @@ impl VoiceScope {
 #[serde(rename_all = "camelCase")]
 pub struct VoiceParticipant {
     pub pseudonym_key: String,
-    /// Absent when the roster row carried no name to resolve.
-    pub display_name: Option<String>,
+    /// The member’s shown name from the Host.
+    pub display_name: String,
 }
 
 /// Voice channel activity, and the local session's own state.
@@ -86,9 +106,8 @@ pub enum VoiceEvent {
     Joined {
         scope: VoiceScope,
         pseudonym: String,
-        /// Carried when the joiner is known to us by name. Gossip
-        /// supplies only the pseudonym; a local join supplies both.
-        display_name: Option<String>,
+        /// The joiner's shown name from the Host.
+        display_name: String,
         /// The joiner's private-route blob, when their announcement
         /// carried one.
         ///
@@ -141,8 +160,7 @@ pub enum VoiceEvent {
     /// Progress through the three-leg voice join handshake.
     JoinHandshake {
         scope: VoiceScope,
-        /// Which leg — e.g. `"offered"`, `"answered"`, `"confirmed"`.
-        state: String,
+        state: JoinHandshake,
         /// The peer this leg concerns, when it names one.
         peer: Option<String>,
         display_name: Option<String>,
@@ -202,7 +220,11 @@ pub enum VoiceEvent {
     //
     // Observed by our own audio engine rather than reported by a peer.
     /// **We** joined a call, and the audio pipeline is running.
-    LocalJoined { scope: VoiceScope },
+    LocalJoined {
+        scope: VoiceScope,
+        join_handshake: JoinHandshake,
+        media_ready: VoiceMediaReady,
+    },
 
     /// A participant started or stopped speaking (voice activity).
     SpeakingChanged {
@@ -317,7 +339,7 @@ impl VoiceEvent {
             | Self::SpeakRequested { scope, .. }
             | Self::SpeakResponded { scope, .. }
             | Self::SoundboardPlayed { scope, .. }
-            | Self::LocalJoined { scope }
+            | Self::LocalJoined { scope, .. }
             | Self::SpeakingChanged { scope, .. }
             | Self::PacketsDropped { scope, .. }
             | Self::ConnectionQuality { scope, .. } => Some(scope),
