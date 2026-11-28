@@ -4,11 +4,12 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use super::{ServerState, DAEMON_AGENT_NAME, RATE_LIMIT_MAX_TOKENS, RATE_LIMIT_REFILL_MS};
+use super::rate::Lane;
+use super::{QueuedMedia, ServerState, DAEMON_AGENT_NAME};
 
 use crate::framing::{decode_frame, encode_frame};
 use crate::message::{Message, WIRE_VERSION};
-use crate::protocol::BusPayload;
+use crate::protocol::{AgentCapability, BusPayload};
 
 /// Route a received frame to the appropriate destination(s).
 ///
@@ -41,44 +42,43 @@ pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, p
         return;
     }
 
-    // Rate limit check: token bucket per connection.
+    // Rate limit check: two token buckets per connection.
     //
-    // Daemon→client media frames BYPASS this limit: the token bucket bounds a
-    // CLIENT that sends frames (video-media-engine plan Step 3), not the
-    // daemon's video fan-out, which arrives at frame rate across many streams.
-    // A non-daemon `Media` frame is dropped later in the `Media` arm, so
+    // Daemon→client media frames BYPASS both: the buckets bound a CLIENT
+    // that sends frames (video-media-engine plan Step 3), not the daemon's
+    // video fan-out, which arrives at frame rate across many streams. A
+    // non-daemon `Media` frame is dropped later in the `Media` arm, so
     // exempting it here cannot let an untrusted client flood the bus.
-    {
+    //
+    // A rate-limited uplink may replace an older pending frame from the
+    // same client. It never adds work to the daemon's media queue.
+    let over_limit = {
         let conns = state.connections.read().await;
-        if let Some(conn) = conns.get(&sender_conn_id) {
-            let is_daemon_media = matches!(msg.payload, BusPayload::Media(_))
-                && conn.verified_name.as_deref() == Some(DAEMON_AGENT_NAME);
-            if !is_daemon_media {
-                let now_ms = rekindle_utils::timestamp_ms();
-                let last = conn
-                    .last_token_refill
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if now_ms.saturating_sub(last) >= RATE_LIMIT_REFILL_MS {
-                    conn.rate_tokens
-                        .store(RATE_LIMIT_MAX_TOKENS, std::sync::atomic::Ordering::Relaxed);
-                    conn.last_token_refill
-                        .store(now_ms, std::sync::atomic::Ordering::Relaxed);
-                }
-                let prev = conn.rate_tokens.fetch_update(
-                    std::sync::atomic::Ordering::Relaxed,
-                    std::sync::atomic::Ordering::Relaxed,
-                    |t| if t > 0 { Some(t - 1) } else { None },
-                );
-                if prev.is_err() {
-                    tracing::warn!(
-                        conn_id = sender_conn_id,
-                        "rate limit exceeded, dropping frame"
-                    );
-                    return;
-                }
+        let Some(conn) = conns.get(&sender_conn_id) else {
+            return;
+        };
+        let lane = match msg.payload {
+            BusPayload::Media(_) if conn.verified_name.as_deref() == Some(DAEMON_AGENT_NAME) => {
+                Lane::DaemonMedia
             }
+            BusPayload::MediaUp(_) => Lane::MediaUp,
+            _ => Lane::Request,
+        };
+        let now_ms = u64::try_from(conn.connected_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let over_limit = !conn.rate.admit(lane, now_ms);
+        if over_limit && lane == Lane::Request {
+            tracing::debug!(conn_id = sender_conn_id, "request rate limit exceeded");
+            return;
         }
-    }
+        if over_limit {
+            tracing::trace!(
+                conn_id = sender_conn_id,
+                dropped = conn.rate.media_up_dropped(),
+                "uplink frame rate limit exceeded"
+            );
+        }
+        over_limit
+    };
 
     // Sender identity verification and clearance enforcement.
     {
@@ -138,6 +138,13 @@ pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, p
     // Anything that doesn't match a known routing path is dropped.
 
     if let Some(corr_id) = msg.correlation_id {
+        if matches!(msg.payload, BusPayload::Media(_) | BusPayload::MediaUp(_)) {
+            tracing::debug!(
+                conn_id = sender_conn_id,
+                "media frames cannot carry a correlation"
+            );
+            return;
+        }
         // Correlated response: route to the connection that sent the
         // original request. Only the daemon answers requests; a correlated
         // frame from anyone else would let a client forge another
@@ -319,7 +326,10 @@ pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, p
                     continue;
                 }
                 if let Some(conn) = conns.get(&conn_id) {
-                    if conn.media_tx.send(stamped_payload.clone()) {
+                    if conn.media_tx.send(QueuedMedia {
+                        source: sender_conn_id,
+                        bytes: stamped_payload.clone(),
+                    }) {
                         evicted += 1;
                     }
                     delivered += 1;
@@ -327,6 +337,61 @@ pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, p
             }
             tracing::debug!(delivered, evicted, "media frame fanned out (drop-oldest)");
         }
+        BusPayload::MediaUp(_) => {
+            route_media_up(state, sender_conn_id, stamped_payload, over_limit).await;
+        }
+    }
+}
+
+/// A client's encoded video frame goes to the daemon alone (plan E4.1):
+/// onto the daemon connection's bounded, drop-oldest media queue, never to
+/// another client. A daemon-origin `MediaUp` is dropped (it has no one to
+/// go to), and so is one from a key without `Authenticated` clearance now
+/// (plan D1): a camera frame is the identity's data like any request.
+async fn route_media_up(
+    state: &ServerState,
+    sender_conn_id: u64,
+    stamped_payload: Vec<u8>,
+    over_limit: bool,
+) {
+    if is_daemon(state, sender_conn_id).await {
+        tracing::warn!(
+            conn_id = sender_conn_id,
+            "media uplink frame from the daemon — dropped"
+        );
+        return;
+    }
+    if !state
+        .is_cleared(sender_conn_id, AgentCapability::VoiceWrite)
+        .await
+    {
+        tracing::warn!(
+            conn_id = sender_conn_id,
+            "media uplink frame from an uncleared connection — dropped"
+        );
+        return;
+    }
+    let daemon_conn = state
+        .name_to_conn
+        .read()
+        .await
+        .get(DAEMON_AGENT_NAME)
+        .copied();
+    let conns = state.connections.read().await;
+    let Some(daemon) = daemon_conn.and_then(|id| conns.get(&id)) else {
+        tracing::debug!("media uplink frame with no daemon connected — dropped");
+        return;
+    };
+    let frame = QueuedMedia {
+        source: sender_conn_id,
+        bytes: stamped_payload,
+    };
+    if over_limit {
+        daemon
+            .media_tx
+            .replace_oldest(frame, |queued| queued.source == sender_conn_id);
+    } else if daemon.media_tx.send(frame) {
+        tracing::trace!("daemon media uplink queue full, dropped oldest frame");
     }
 }
 

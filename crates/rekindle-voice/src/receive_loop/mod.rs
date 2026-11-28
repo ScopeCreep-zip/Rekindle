@@ -22,11 +22,12 @@ use tokio::sync::{broadcast, mpsc};
 use crate::codec::{EncodedFrame, OpusCodec};
 use crate::jitter::{JitterBuffer, JitterFrame};
 use crate::liveness::MediaLiveness;
-use crate::media_crypto::{FrameOpener, MediaKeys, MediaScope, OpenError};
+use crate::media_crypto::{FrameOpener, MediaKeys, OpenError};
 use crate::mixer::AudioMixer;
 use crate::receiver_report::SenderEcho;
 use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::VoicePacket;
+use rekindle_types::media::MediaScope;
 
 pub struct VoiceReceiveParams {
     pub packet_rx: mpsc::Receiver<VoicePacket>,

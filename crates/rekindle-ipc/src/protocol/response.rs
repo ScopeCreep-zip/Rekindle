@@ -92,12 +92,13 @@ impl IpcResponse {
 /// - Daemon subscriber: `BusPayload::Response(IpcResponse)`
 /// - Subscription delivery: `BusPayload::Event(SubscriptionEvent)`
 /// - Media fan-out: `BusPayload::Media(MediaFrame)` (daemon → client only)
+/// - Media uplink: `BusPayload::MediaUp(UplinkFrame)` (client → daemon only)
 ///
 /// # Wire compatibility
 ///
 /// Postcard encodes this enum by variant **index** (externally tagged), so
 /// variants are only ever **appended** — never inserted or reordered — to keep
-/// existing indices stable. `Media` is the last variant for that reason.
+/// existing indices stable. `MediaUp` is the last variant for that reason.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BusPayload {
     /// Frontend → Daemon request, boxed: `IpcRequest` dwarfs every other
@@ -129,4 +130,12 @@ pub enum BusPayload {
     /// Daemon → client only: a client never sends `Media`, and a client-origin
     /// `Media` is rejected by the server router (see `ipc/server/routing.rs`).
     Media(rekindle_types::video::MediaFrame),
+    /// Frontend → Daemon encoded video frame (plan E4.1): the uplink
+    /// sibling of `Media`, appended after it so postcard indices stay stable.
+    ///
+    /// Client → daemon only: the server router delivers a client's
+    /// `MediaUp` to the daemon's drop-oldest media queue alone, under its own
+    /// per-connection frame bucket (`MEDIA_UP_MAX_FRAMES_PER_SEC`), never the
+    /// request bucket, and drops a daemon-origin one (`ipc/server/routing.rs`).
+    MediaUp(rekindle_types::video::UplinkFrame),
 }

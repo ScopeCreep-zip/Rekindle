@@ -16,23 +16,15 @@ use rekindle_types::subscription_events::StreamFrame;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
-use rekindle_types::video::MediaFrame;
+use rekindle_types::video::{MediaFrame, UplinkFrame};
 
 use super::error::{IpcError, Result};
 use super::framing::{decode_frame, encode_frame};
-use super::media_channel::{media_channel, MediaReceiver, MediaSender};
+use super::media_channel::{media_channel, MediaReceiver, MediaSender, MEDIA_LANE_CAPACITY};
 use super::message::{Message, MessageContext, SecurityLevel, Timestamp};
 use super::noise;
 use super::protocol::{BusPayload, IpcRequest, IpcResponse};
 use super::transport::PeerCredentials;
-
-/// Bounded depth of the client-side media frame queue.
-///
-/// Video frames arrive at frame rate and a late frame is worthless, so the
-/// queue drops the OLDEST frame on overflow — it never grows unboundedly or
-/// blocks the I/O loop. ~4 s of one 30 fps stream: enough to absorb a slow
-/// consumer without hoarding stale video.
-const MEDIA_RECEIVER_CAPACITY: usize = 128;
 
 /// How many stream frames the client buffers for its consumer.
 const EVENT_QUEUE_CAPACITY: usize = 1024;
@@ -72,6 +64,7 @@ pub struct BusClient {
     msg_ctx: MessageContext,
     /// Outbound frames to send to the server.
     outbound_tx: mpsc::Sender<Vec<u8>>,
+    media_outbound_tx: MediaSender<Vec<u8>>,
     /// Inbound frames received from the server (forwarded requests for daemon subscriber).
     inbound_rx: mpsc::Receiver<Vec<u8>>,
     /// Typed subscription events from the server's EventRouter.
@@ -82,6 +75,10 @@ pub struct BusClient {
     /// one is worthless, so this bypasses the ordered event channel — a full
     /// queue drops the oldest frame, never blocking the I/O loop.
     media_rx: Option<MediaReceiver<MediaFrame>>,
+    /// Bounded, drop-oldest uplink frame channel (plan E4.1): the clients'
+    /// `MediaUp` frames the server delivered to this connection, which only
+    /// the daemon's is. Taken once via `take_media_up_receiver()`.
+    media_up_rx: Option<MediaReceiver<UplinkFrame>>,
     /// Pending request-response waiters, keyed by msg_id.
     pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>>,
     /// Monotonic epoch for timestamp generation.
@@ -122,13 +119,16 @@ impl BusClient {
         .await?;
 
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<Vec<u8>>(256);
+        let (media_outbound_tx, mut media_outbound_rx) =
+            media_channel::<Vec<u8>>(MEDIA_LANE_CAPACITY);
         let (inbound_tx, inbound_rx) = mpsc::channel::<Vec<u8>>(1024);
         let (event_tx, event_rx) = mpsc::channel::<StreamFrame>(EVENT_QUEUE_CAPACITY);
         let mut events = EventQueue {
             tx: event_tx,
             lagging: false,
         };
-        let (media_tx, media_rx) = media_channel::<MediaFrame>(MEDIA_RECEIVER_CAPACITY);
+        let (media_tx, media_rx) = media_channel::<MediaFrame>(MEDIA_LANE_CAPACITY);
+        let (media_up_tx, media_up_rx) = media_channel::<UplinkFrame>(MEDIA_LANE_CAPACITY);
         let pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
@@ -151,7 +151,7 @@ impl BusClient {
                                     &pending_clone,
                                     &inbound_tx,
                                     &mut events,
-                                    &media_tx,
+                                    MediaLanes { down: &media_tx, up: &media_up_tx },
                                 ).await;
                             }
                             Ok(None) => {}
@@ -174,6 +174,14 @@ impl BusClient {
                             break;
                         }
                     }
+                    Some(mut payload) = media_outbound_rx.recv() => {
+                        let result = transport.write_frame(&mut writer, &payload).await;
+                        zeroize::Zeroize::zeroize(&mut payload);
+                        if let Err(e) = result {
+                            tracing::debug!(error = %e, "media write failed, closing");
+                            break;
+                        }
+                    }
                 }
             }
             reader_task.abort();
@@ -183,9 +191,11 @@ impl BusClient {
             sender_id,
             msg_ctx: MessageContext::new(sender_id),
             outbound_tx,
+            media_outbound_tx,
             inbound_rx,
             event_rx: Some(event_rx),
             media_rx: Some(media_rx),
+            media_up_rx: Some(media_up_rx),
             pending,
             epoch: Instant::now(),
             io_handle,
@@ -234,6 +244,15 @@ impl BusClient {
     /// Send a `Message<BusPayload>` to the bus server.
     pub async fn send(&self, msg: &Message<BusPayload>) -> Result<()> {
         let payload = encode_frame(msg)?;
+        if matches!(msg.payload, BusPayload::Media(_) | BusPayload::MediaUp(_)) {
+            if self.media_outbound_tx.is_closed() {
+                return Err(IpcError::OutboundClosed);
+            }
+            if self.media_outbound_tx.send(payload) {
+                tracing::trace!("outbound media queue full, dropped oldest frame");
+            }
+            return Ok(());
+        }
         self.outbound_tx
             .send(payload)
             .await
@@ -340,6 +359,22 @@ impl BusClient {
         self.send(&msg).await
     }
 
+    /// Send an encoded video frame up to the daemon (client → daemon, plan
+    /// E4.1): `BusPayload::MediaUp`, which the server delivers to the
+    /// daemon's drop-oldest media queue alone, under the connection's own
+    /// frame bucket. F1's `DaemonClient` maps `HostApi::media_up` onto it.
+    pub async fn send_media_up(&self, frame: UplinkFrame, level: SecurityLevel) -> Result<()> {
+        let msg = Message::new(&self.msg_ctx, BusPayload::MediaUp(frame), level, self.epoch);
+        self.send(&msg).await
+    }
+
+    /// Take the uplink frame receiver (the daemon's side of `MediaUp`).
+    /// Can only be called once; bounded and drop-oldest like
+    /// [`take_media_receiver`](Self::take_media_receiver).
+    pub fn take_media_up_receiver(&mut self) -> Option<MediaReceiver<UplinkFrame>> {
+        self.media_up_rx.take()
+    }
+
     /// The client's sender ID.
     pub fn sender_id(&self) -> Uuid {
         self.sender_id
@@ -359,7 +394,7 @@ impl BusClient {
     /// this to get the frame stream. The receiver is bounded and drop-oldest:
     /// a late frame is dropped, never queued unboundedly, because a stale
     /// video frame is worthless. Mirrors [`take_event_receiver`], but the
-    /// media queue is bounded where the event queue is not.
+    /// media queue evicts the oldest frame on overflow.
     ///
     /// [`take_event_receiver`]: Self::take_event_receiver
     pub fn take_media_receiver(&mut self) -> Option<MediaReceiver<MediaFrame>> {
@@ -383,19 +418,26 @@ impl BusClient {
     }
 }
 
+/// The connection's two drop-oldest media queues, downlink and uplink.
+struct MediaLanes<'a> {
+    down: &'a MediaSender<MediaFrame>,
+    up: &'a MediaSender<UplinkFrame>,
+}
+
 /// Route an inbound payload to the correct channel.
 ///
-/// Four-way split:
+/// Payload routing:
 /// - `BusPayload::Response` → pending oneshot waiter (request-response correlation)
 /// - `BusPayload::Event(StreamFrame)` → bounded event queue (TUI consumes)
 /// - `BusPayload::Media(MediaFrame)` → bounded drop-oldest media channel (video consumer)
+/// - `BusPayload::MediaUp(UplinkFrame)` → bounded drop-oldest uplink channel (daemon)
 /// - `BusPayload::Request` → inbound channel (daemon subscriber consumes)
 async fn route_inbound(
     payload: Vec<u8>,
     pending: &Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>,
     inbound_tx: &mpsc::Sender<Vec<u8>>,
     events: &mut EventQueue,
-    media_tx: &MediaSender<MediaFrame>,
+    media: MediaLanes<'_>,
 ) {
     let msg: Message<BusPayload> = match decode_frame(&payload) {
         Ok(m) => m,
@@ -432,9 +474,16 @@ async fn route_inbound(
             // never blocks the I/O loop: on overflow it drops the OLDEST frame,
             // because a late video frame is worthless. If the consumer never
             // took the receiver, frames simply accumulate to the cap and evict.
-            let evicted = media_tx.send(frame);
+            let evicted = media.down.send(frame);
             if evicted {
                 tracing::trace!("media queue full, dropped oldest frame");
+            }
+        }
+        BusPayload::MediaUp(frame) => {
+            // A client's encoded frame, which the server delivers only to
+            // the daemon: same drop-oldest discipline as the downlink.
+            if media.up.send(frame) {
+                tracing::trace!("media uplink queue full, dropped oldest frame");
             }
         }
         BusPayload::Request(_) => {

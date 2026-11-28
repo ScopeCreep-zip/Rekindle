@@ -19,39 +19,11 @@ use std::sync::Arc;
 use rekindle_secrets::sframe::{self, Kid, SframeKey, SframeSender};
 use zeroize::Zeroizing;
 
+use rekindle_types::media::MediaScope;
+
 use crate::replay_window::CtrWindow;
 use crate::session_deps::MediaKeySource;
 use crate::transport::VoicePacket;
-
-/// What a voice session's media is keyed under.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MediaScope {
-    /// A 1:1 call with `peer` (identity key hex).
-    Call { peer: String },
-    /// A community voice channel.
-    Channel {
-        community_id: String,
-        channel_id: String,
-    },
-}
-
-impl MediaScope {
-    /// The scope of a session on `channel_id`: a community channel when
-    /// `community_id` is set, otherwise a 1:1 call whose channel id is the
-    /// peer's identity key.
-    #[must_use]
-    pub fn of_session(community_id: Option<&str>, channel_id: &str) -> Self {
-        match community_id {
-            Some(community_id) => Self::Channel {
-                community_id: community_id.to_string(),
-                channel_id: channel_id.to_string(),
-            },
-            None => Self::Call {
-                peer: channel_id.to_string(),
-            },
-        }
-    }
-}
 
 /// Why a frame was not opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +64,7 @@ impl MediaKeys {
 
     fn send_source(&self) -> Option<SendSource> {
         match &self.scope {
-            MediaScope::Call { peer } => {
+            MediaScope::DirectCall { peer } => {
                 let media = self.deps.call_media(peer)?;
                 Some(SendSource {
                     secret: media.secret,
@@ -129,7 +101,7 @@ impl MediaKeys {
         metadata: &[u8],
     ) -> Result<SframeKey, OpenError> {
         match &self.scope {
-            MediaScope::Call { peer } => {
+            MediaScope::DirectCall { peer } => {
                 if hex::encode(sender_key) != *peer {
                     return Err(OpenError::WrongSender);
                 }

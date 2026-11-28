@@ -18,10 +18,13 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use super::error::Result;
+use super::message::SecurityLevel;
+use super::protocol::AgentCapability;
 use super::registry::ClearanceRegistry;
 use super::transport::{Listener, PeerCredentials};
 
 mod connection;
+mod rate;
 mod routing;
 mod stream;
 
@@ -30,13 +33,10 @@ const RATE_LIMIT_MAX_TOKENS: u32 = 100;
 /// Rate limit: refill interval in milliseconds.
 const RATE_LIMIT_REFILL_MS: u64 = 1000;
 
-/// Per-connection media fan-out queue depth.
-///
-/// Bounds how many undelivered video frames the server buffers for one slow
-/// client before evicting the oldest (drop-oldest). ~4 s of a single 30 fps
-/// stream — enough to ride out a socket-write hiccup, small enough that a
-/// stalled client never accrues stale video. A late frame is worthless.
-const MEDIA_FANOUT_CAPACITY: usize = 128;
+/// Media uplink: max `BusPayload::MediaUp` frames per second per connection
+/// (plan E4.1): two tracks at 60 fps with 2x headroom. Its own bucket: a
+/// frame never spends a request token, and a request never a frame token.
+pub const MEDIA_UP_MAX_FRAMES_PER_SEC: u32 = 240;
 
 /// Per-connection state tracked by the bus server.
 struct ConnectionState {
@@ -50,19 +50,23 @@ struct ConnectionState {
     ///
     /// Separate from `tx` so a burst of video frames can never evict a queued
     /// response or event, and so the media path can drop the OLDEST frame on
-    /// overflow (which `tx`, a plain mpsc, cannot). Carries encoded
-    /// `Message<BusPayload::Media>` frames.
-    media_tx: crate::media_channel::MediaSender<Vec<u8>>,
+    /// overflow. Carries encoded uplink or downlink frames.
+    media_tx: crate::media_channel::MediaSender<QueuedMedia>,
     /// The client's Noise static public key, proven by the handshake.
     static_key: [u8; 32],
     /// Peer OS-level credentials.
     peer: PeerCredentials,
     /// When this connection was established.
     connected_at: Instant,
-    /// Token bucket rate limiter: tokens remaining this window.
-    rate_tokens: std::sync::atomic::AtomicU32,
-    /// Epoch ms when tokens were last refilled.
-    last_token_refill: std::sync::atomic::AtomicU64,
+    /// The request bucket and the separate `MediaUp` frame bucket.
+    rate: rate::RateBuckets,
+}
+
+/// Encoded media waiting for a socket write. The source lets a rate-limited
+/// uplink replace one of its own pending frames without evicting another client's.
+struct QueuedMedia {
+    source: u64,
+    bytes: Vec<u8>,
 }
 
 /// Shared state for the bus server, accessible from per-connection tasks.
@@ -102,8 +106,8 @@ struct ServerState {
 
 impl ServerState {
     /// Whether `conn_id`'s key holds at least `Authenticated` clearance in
-    /// the registry now (an agent also `events:read`).
-    async fn is_cleared(&self, conn_id: u64) -> bool {
+    /// the registry now and, for an agent, the required capability.
+    async fn is_cleared(&self, conn_id: u64, capability: AgentCapability) -> bool {
         let registry = self.registry.read().await;
         self.connections
             .read()
@@ -111,8 +115,8 @@ impl ServerState {
             .get(&conn_id)
             .and_then(|conn| registry.lookup(&conn.static_key))
             .is_some_and(|identity| {
-                identity.security_level >= crate::message::SecurityLevel::Authenticated
-                    && identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
+                identity.security_level >= SecurityLevel::Authenticated
+                    && identity.permits(Some(capability))
             })
     }
 
@@ -208,8 +212,9 @@ impl BusServer {
                     tracing::info!(conn_id, pid = ?peer.pid, "client connected");
 
                     let (tx, outbound_rx) = mpsc::channel::<Vec<u8>>(256);
-                    let (media_tx, media_rx) =
-                        crate::media_channel::media_channel::<Vec<u8>>(MEDIA_FANOUT_CAPACITY);
+                    let (media_tx, media_rx) = crate::media_channel::media_channel::<QueuedMedia>(
+                        crate::media_channel::MEDIA_LANE_CAPACITY,
+                    );
                     let channels = connection::ConnectionChannels {
                         tx,
                         outbound_rx,

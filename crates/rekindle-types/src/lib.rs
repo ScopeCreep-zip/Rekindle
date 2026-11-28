@@ -41,6 +41,7 @@ pub mod join_refusal;
 pub mod key_format;
 pub mod lamport;
 pub mod link_preview;
+pub mod media;
 pub mod member;
 pub mod message;
 pub mod notification;

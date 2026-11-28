@@ -19,10 +19,6 @@ use crate::state::AppState;
 /// re-sent only when it moves more than this fraction.
 const WEBVIEW_HYSTERESIS: f64 = 0.15;
 
-/// The track labels our community streams are derived under
-/// (`video_sender.ts`).
-const TRACK_LABELS: [&str; 2] = ["camera", "screen"];
-
 /// The encoder rate for `allocation`, at least video's minimum (before any
 /// route has an estimate the allocation carries 0).
 fn kbps_for(allocation: Allocation) -> u32 {
@@ -107,8 +103,10 @@ impl VideoAllocationFollower {
         else {
             return;
         };
-        for label in TRACK_LABELS {
-            let stream_id = rekindle_video::derive_stream_id(&self.channel_id, &pseudonym, label);
+        // The tracks our community streams are derived under (`video_sender.ts`).
+        for track in rekindle_types::media::Track::ALL {
+            let stream_id =
+                rekindle_video::derive_stream_id(&self.channel_id, &pseudonym, track.label());
             crate::event_dispatch::emit_community(
                 &self.app,
                 CommunityEvent::VideoKeyframeRequest(VideoKeyframeRequestEvent {

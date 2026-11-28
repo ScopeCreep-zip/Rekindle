@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::ServerState;
 use crate::framing::encode_frame;
 use crate::message::{Message, SecurityLevel, Timestamp, WIRE_VERSION};
-use crate::protocol::BusPayload;
+use crate::protocol::{AgentCapability, BusPayload};
 
 /// Start `conn_id`'s stream from `from`, replacing any stream it had.
 /// Nothing starts before the host has handed the server its journal (the
@@ -70,7 +70,7 @@ async fn run(
         if let StreamFrame::Event(sequenced) = &frame {
             // A lock lowers every client, and the next unlock admits only
             // the clients that identity trusts (plan D1).
-            if !state.is_cleared(conn_id).await
+            if !state.is_cleared(conn_id, AgentCapability::EventsRead).await
                 || !state.event_router.read().matches(conn_id, &sequenced.event)
             {
                 continue;

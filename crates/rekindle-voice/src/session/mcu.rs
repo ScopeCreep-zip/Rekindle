@@ -12,8 +12,9 @@ use std::sync::Arc;
 
 use crate::error::VoiceError;
 use crate::mcu_loop;
-use crate::media_crypto::{MediaKeys, MediaScope};
+use crate::media_crypto::MediaKeys;
 use crate::session_deps::{MediaKeySource, VoiceSessionDeps};
+use rekindle_types::media::MediaScope;
 
 pub fn start_mcu_loop(deps: &Arc<dyn VoiceSessionDeps>) -> Result<(), VoiceError> {
     // Self-skip key for the mixer must be the same identity we sign

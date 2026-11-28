@@ -81,8 +81,8 @@ fn call_frames_open_only_from_the_peer_and_only_once() {
     // Each side's scope names the other; both hold the call secret.
     let alice_keys = Keys::new(&bob_hex);
     let bob_keys = Keys::new(&alice_hex);
-    let mut sealer = FrameSealer::new(keys(&alice_keys, MediaScope::Call { peer: bob_hex }));
-    let mut opener = FrameOpener::new(keys(&bob_keys, MediaScope::Call { peer: alice_hex }));
+    let mut sealer = FrameSealer::new(keys(&alice_keys, MediaScope::DirectCall { peer: bob_hex }));
+    let mut opener = FrameOpener::new(keys(&bob_keys, MediaScope::DirectCall { peer: alice_hex }));
 
     let p = packet(&alice, &mut sealer, 1, b"opus");
     assert_eq!(opener.open(&p).unwrap(), b"opus");

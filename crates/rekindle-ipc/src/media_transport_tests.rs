@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
+use rekindle_types::media::MediaScope;
 use rekindle_types::video::{Codec, MediaFrame};
 
 use super::framing::{decode_frame, encode_frame};
@@ -35,6 +36,11 @@ fn sample_frame(seq: u32) -> MediaFrame {
         // Distinct per-frame content; sequence/timestamp already differ by seq.
         payload: vec![0xDE, 0xAD, 0xBE, 0xEF],
         timestamp_ms: 1_700_000_000_000 + u64::from(seq),
+        scope: MediaScope::Channel {
+            community_id: "c".into(),
+            channel_id: "v".into(),
+        },
+        sender: "d".repeat(64),
     }
 }
 
@@ -163,14 +169,23 @@ async fn client_origin_media_is_rejected_by_server() {
     let server_kp = generate_keypair().unwrap();
     let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
 
-    // Empty registry — every client is ephemeral (never the daemon).
+    let consumer_kp = generate_keypair().unwrap();
+    let mut registry = ClearanceRegistry::new();
+    registry.register(
+        "client-consumer".into(),
+        consumer_kp.public().try_into().unwrap(),
+        SecurityLevel::Authenticated,
+        AgentType::Human,
+        vec![],
+    );
+
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("bus.sock");
     let server = Arc::new(
         BusServer::bind(
             &sock,
             server_kp.into_inner(),
-            Arc::new(tokio::sync::RwLock::new(ClearanceRegistry::new())),
+            Arc::new(tokio::sync::RwLock::new(registry)),
         )
         .unwrap(),
     );
@@ -183,13 +198,12 @@ async fn client_origin_media_is_rejected_by_server() {
     });
 
     // Consumer subscribes and takes its media receiver.
-    let consumer_kp = generate_keypair().unwrap();
     let mut consumer =
         BusClient::connect(Uuid::now_v7(), &sock, &server_pub, consumer_kp.as_inner())
             .await
             .unwrap();
     let mut media_rx = consumer.take_media_receiver().unwrap();
-    consumer
+    let resp = consumer
         .request(
             IpcRequest::Subscribe {
                 filters: vec![SubscriptionFilter::all()],
@@ -201,7 +215,9 @@ async fn client_origin_media_is_rejected_by_server() {
         .await
         .unwrap();
 
-    // A second ephemeral client tries to inject a frame.
+    assert!(matches!(resp, IpcResponse::Ok { .. }), "{resp:?}");
+
+    // An ephemeral client tries to inject a frame.
     let attacker_kp = generate_keypair().unwrap();
     let attacker = BusClient::connect(Uuid::now_v7(), &sock, &server_pub, attacker_kp.as_inner())
         .await

@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::media::{MediaScope, Track};
+
 /// Video codec identifier. Closed set, multi-codec by design (the
 /// platform reality: Apple WebKit guarantees H.264 hardware encode but
 /// not VP9; WebKitGTK guarantees VP8/VP9 via libvpx but H.264 only via
@@ -238,6 +240,31 @@ pub struct MediaFrame {
     pub payload: Vec<u8>,
     /// Presentation timestamp in milliseconds, carried through from the source
     /// `EncodedVideoFrame::timestamp_ms`.
+    pub timestamp_ms: u64,
+    /// The media scope the frame belongs to, so a downlink frame is routed
+    /// to the windows keyed by it (plan E4.1).
+    pub scope: MediaScope,
+    /// Who sent it: identity key hex in a direct call, pseudonym hex in a
+    /// channel.
+    pub sender: String,
+}
+
+/// One encoded video frame a frontend sends up to the Host (plan E4.1):
+/// the client→Host sibling of [`MediaFrame`], carried in-process by
+/// `HostApi::media_up` and over the bus as `BusPayload::MediaUp`. The Host
+/// derives the stream identity and sequence from `scope` and `track`.
+/// Postcard-only like [`MediaFrame`], and best-effort: every hop queues it
+/// drop-oldest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UplinkFrame {
+    pub scope: MediaScope,
+    pub track: Track,
+    /// Whether this is a keyframe (intra / IDR).
+    pub keyframe: bool,
+    pub codec: Codec,
+    /// The compressed bitstream for this single video frame.
+    pub payload: Vec<u8>,
+    /// Presentation timestamp in milliseconds, from the encoder.
     pub timestamp_ms: u64,
 }
 

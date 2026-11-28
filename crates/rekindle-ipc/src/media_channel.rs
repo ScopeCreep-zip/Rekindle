@@ -1,4 +1,4 @@
-//! Bounded, drop-oldest queue for daemon→client media frames.
+//! Bounded, drop-oldest queue for media frames, both directions (plan E4.1).
 //!
 //! Media (video frames) must not ride the ordered, deduped, journaled event
 //! stream (`BusPayload::Event`), and a late frame is worthless — so the media
@@ -8,19 +8,18 @@
 //! (`src-tauri/src/video_channels.rs`), but here the transport is the postcard
 //! Noise bus, not a Tauri channel.
 //!
-//! Two bounded hops use it:
-//! - **server → connection**: the per-connection fan-out queue that drains to
-//!   one client's socket (`T = Vec<u8>`, an encoded `Message<BusPayload>`).
-//! - **client inbound → consumer**: the queue `take_media_receiver` hands to
-//!   the TUI/CLI (`T = MediaFrame`).
+//! The queue backs these media lanes:
+//! - **client → socket**: encoded bus media waits apart from control traffic.
+//! - **server → socket**: uplink to the daemon and downlink to subscribers.
+//! - **client inbound → consumer**: typed `MediaFrame` and `UplinkFrame`
+//!   receivers exposed by `BusClient`.
+//! - **in-process Host lanes**: `HostApi::media_up`/`media_down`.
 //!
-//! A single-producer/single-consumer discipline is expected (the sender is
-//! `Clone` only so it can be moved into a task and still observe closure), and
-//! the queue never blocks: `send` returns immediately, evicting the oldest
-//! frame when the capacity is reached.
+//! The queue has one receiver and supports cloned senders. Producers never
+//! await space. A full queue evicts its oldest frame.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -38,7 +37,12 @@ struct Shared<T> {
     dropped: AtomicU64,
     /// Live sender count. When it reaches zero the receiver observes closure.
     senders: AtomicUsize,
+    /// Cleared when the receiver drops, so a fan-out prunes the sender.
+    receiver_alive: AtomicBool,
 }
+
+/// Maximum queued encoded frames per media hop.
+pub const MEDIA_LANE_CAPACITY: usize = 128;
 
 /// Producer half of a bounded drop-oldest media queue.
 pub struct MediaSender<T> {
@@ -60,6 +64,7 @@ pub fn media_channel<T>(capacity: usize) -> (MediaSender<T>, MediaReceiver<T>) {
         capacity,
         dropped: AtomicU64::new(0),
         senders: AtomicUsize::new(1),
+        receiver_alive: AtomicBool::new(true),
     });
     (
         MediaSender {
@@ -74,10 +79,13 @@ impl<T> MediaSender<T> {
     ///
     /// Never blocks and never fails: a late frame is worthless, so on overflow
     /// the queue drops the oldest buffered frame to make room for this one.
-    /// Returns `true` if an older frame was evicted.
+    /// Returns `true` if an older frame was evicted. A closed queue discards the item.
     pub fn send(&self, item: T) -> bool {
         let evicted = {
             let mut q = self.shared.queue.lock();
+            if self.is_closed() {
+                return false;
+            }
             let evicted = if q.len() >= self.shared.capacity {
                 q.pop_front();
                 self.shared.dropped.fetch_add(1, Ordering::Relaxed);
@@ -92,6 +100,22 @@ impl<T> MediaSender<T> {
         // across a wake-up.
         self.shared.notify.notify_one();
         evicted
+    }
+
+    /// Replace the oldest buffered item matching `same_source`. If that
+    /// source has no backlog, discard the incoming item.
+    pub(crate) fn replace_oldest(&self, item: T, same_source: impl FnMut(&T) -> bool) {
+        let mut queue = self.shared.queue.lock();
+        if let Some(index) = queue.iter().position(same_source) {
+            queue.remove(index);
+            queue.push_back(item);
+            self.shared.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Whether the receiver has dropped: nothing sent now is ever read.
+    pub fn is_closed(&self) -> bool {
+        !self.shared.receiver_alive.load(Ordering::Acquire)
     }
 
     /// Total items evicted (oldest-dropped) over this queue's lifetime.
@@ -116,6 +140,14 @@ impl<T> Drop for MediaSender<T> {
         if self.shared.senders.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.shared.notify.notify_one();
         }
+    }
+}
+
+impl<T> Drop for MediaReceiver<T> {
+    fn drop(&mut self) {
+        let mut queue = self.shared.queue.lock();
+        self.shared.receiver_alive.store(false, Ordering::Release);
+        queue.clear();
     }
 }
 

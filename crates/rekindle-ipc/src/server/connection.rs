@@ -6,7 +6,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 use super::routing;
-use super::{ConnectionState, ServerState, RATE_LIMIT_MAX_TOKENS};
+use super::{rate, ConnectionState, QueuedMedia, ServerState};
 
 use crate::media_channel::{MediaReceiver, MediaSender};
 use crate::noise::{self, NoiseTransport};
@@ -22,9 +22,9 @@ pub(super) struct ConnectionChannels {
     /// Receiver half of `tx`, drained by the I/O loop.
     pub outbound_rx: mpsc::Receiver<Vec<u8>>,
     /// Bounded, drop-oldest media fan-out → this connection's socket.
-    pub media_tx: MediaSender<Vec<u8>>,
+    pub media_tx: MediaSender<QueuedMedia>,
     /// Receiver half of `media_tx`, drained by the I/O loop.
-    pub media_rx: MediaReceiver<Vec<u8>>,
+    pub media_rx: MediaReceiver<QueuedMedia>,
 }
 
 /// Handle a single client connection: Noise handshake, then encrypted I/O.
@@ -108,8 +108,7 @@ pub(super) async fn handle_connection(
         static_key: client_pubkey,
         peer: peer_creds,
         connected_at,
-        rate_tokens: std::sync::atomic::AtomicU32::new(RATE_LIMIT_MAX_TOKENS),
-        last_token_refill: std::sync::atomic::AtomicU64::new(0),
+        rate: rate::RateBuckets::new(),
     };
     state.connections.write().await.insert(conn_id, conn);
 
@@ -163,8 +162,8 @@ pub(super) async fn handle_connection(
             // Media frames ride their own bounded, drop-oldest queue so a slow
             // socket sheds stale video instead of stalling control traffic.
             Some(mut frame) = media_rx.recv() => {
-                let result = transport.write_frame(&mut writer, &frame).await;
-                zeroize::Zeroize::zeroize(&mut frame);
+                let result = transport.write_frame(&mut writer, &frame.bytes).await;
+                zeroize::Zeroize::zeroize(&mut frame.bytes);
                 if let Err(e) = result {
                     tracing::debug!(conn_id, error = %e, "media write failed, closing");
                     break;

@@ -171,6 +171,9 @@ pub struct Host {
     bus: Option<Bus>,
     /// Held for the life of the host.
     claimed: ClaimedRoot,
+    /// The encoded-media lanes behind `HostApi::media_up`/`media_down`
+    /// (plan E4.1).
+    pub(super) media: super::media_lanes::MediaLanes,
 }
 
 impl Host {
@@ -416,6 +419,7 @@ impl Host {
             workers,
             bus,
             claimed,
+            media: super::media_lanes::MediaLanes::new(),
         }))
     }
 

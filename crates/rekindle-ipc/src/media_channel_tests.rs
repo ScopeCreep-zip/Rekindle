@@ -75,3 +75,26 @@ async fn clone_keeps_channel_open_until_last_sender_drops() {
     assert_eq!(rx.recv().await, Some(8));
     assert_eq!(rx.recv().await, None);
 }
+
+#[test]
+fn uplink_over_budget_replaces_its_own_oldest_pending_frame() {
+    let (tx, mut rx) = media_channel(4);
+    tx.send(("camera", 1));
+    tx.send(("screen", 2));
+    tx.send(("camera", 3));
+    tx.replace_oldest(("camera", 4), |frame| frame.0 == "camera");
+    tx.replace_oldest(("other", 5), |frame| frame.0 == "other");
+    assert_eq!(tx.dropped(), 1);
+    assert_eq!(rx.try_recv(), Some(("screen", 2)));
+    assert_eq!(rx.try_recv(), Some(("camera", 3)));
+    assert_eq!(rx.try_recv(), Some(("camera", 4)));
+    assert_eq!(rx.try_recv(), None);
+}
+
+#[test]
+fn a_dropped_receiver_closes_the_sender() {
+    let (tx, rx) = media_channel::<u32>(2);
+    assert!(!tx.is_closed());
+    drop(rx);
+    assert!(tx.is_closed());
+}

@@ -24,12 +24,13 @@ use tokio::sync::{broadcast, mpsc};
 use crate::audio_processing::AudioProcessor;
 use crate::codec::OpusCodec;
 use crate::liveness::MediaLiveness;
-use crate::media_crypto::{FrameSealer, MediaKeys, MediaScope};
+use crate::media_crypto::{FrameSealer, MediaKeys};
 use crate::receiver_report::VoiceReceiverReport;
 use crate::send_loop::quality::PeerLink;
 use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::{OutboundFrame, VoiceTransport};
 use crate::VoiceMode;
+use rekindle_types::media::MediaScope;
 
 pub struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
