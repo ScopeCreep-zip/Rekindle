@@ -5,13 +5,14 @@
 // the Host's role carries exactly that bit.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, press, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { openCommunitySettings } from "../../../walk/rows-community.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Role Hall ${Date.now() % 100000}`;
 const ROLE = "catalogue-role";
+const ROLE_NAME_INPUT = 'input[placeholder="Role name..."]';
 /** The permission ticked: any key the catalogue serves will do; this one is plain. */
 const TICKED = "ADD_REACTIONS";
 
@@ -41,7 +42,7 @@ describe("the role editor lists the Host's permission catalogue (PN1)", function
     const catalogue = await hostCall<Catalogue>("get_permission_catalogue");
     await openCommunitySettings(browser, "Roles");
     await press(browser, await byText(browser, ".modal-container .form-btn-secondary", "Create Role"));
-    await typeInto(await shown(browser, 'input[placeholder="Role name..."]'), ROLE);
+    await typeInto(await shown(browser, ROLE_NAME_INPUT), ROLE);
     await shown(browser, `label.settings-option[data-permission="${TICKED}"]`, NET_WAIT_MS);
 
     // What the editor shows, in order: each group's name and its labels by key.
@@ -80,14 +81,10 @@ describe("the role editor lists the Host's permission catalogue (PN1)", function
     console.log(`[roles] saved permissions ${String(saved)} (ticked bit ${String(bit)})`);
 
     // The saved role, reopened from its row: the ticked permission reads checked.
-    await waitUntil(
-      async () => !(await (await browser.$(".modal-container .form-btn-primary*=Creating")).isExisting()),
-      NET_WAIT_MS,
-      "the create form never finished",
-    );
-    await press(browser, await byText(browser, ".settings-role-row", ROLE, NET_WAIT_MS));
+    await gone(browser, ROLE_NAME_INPUT, NET_WAIT_MS);
+    await press(browser, await byText(browser, ".settings-role-row .settings-role-summary", ROLE, NET_WAIT_MS));
     const ticked = await shown(browser, `label.settings-option[data-permission="${TICKED}"] input`, NET_WAIT_MS);
-    await ticked.scrollIntoView({ block: "center" });
+    await browser.execute((node: HTMLElement) => node.scrollIntoView({ block: "center" }), ticked as unknown as HTMLElement);
     const checked = (await ticked.isSelected()) as boolean;
     console.log(`[roles] reopened ${ROLE}: ${TICKED} checked=${checked}`);
     await shot("role-saved-ticked");
