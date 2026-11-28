@@ -1862,5 +1862,7 @@ CREATE TABLE IF NOT EXISTS channel_post_admission (
     timestamp INTEGER NOT NULL,
     status TEXT NOT NULL CHECK (json_type(status) = 'object'),
     PRIMARY KEY (owner_key, community_id, stream_id, sender, message_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities (owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
