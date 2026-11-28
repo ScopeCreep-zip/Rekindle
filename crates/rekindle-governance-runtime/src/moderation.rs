@@ -1,4 +1,8 @@
-//! Moderation: ban, unban, timeout, kick.
+//! Moderation: ban, unban, timeout, lifting a timeout, the durable kick
+//! (`MemberRemoved`) and our own leave (`MemberLeft`), plan E3.2 and
+//! `evidence/slot-integrity.md` §4.4 ("Leave = `MemberLeft` op … Kick and
+//! ban are moderator ops"). The merge drops a removed or departed member
+//! from `members`, so no reader counts them as a key reader.
 //!
 //! Pure orchestration over `GovernanceRuntimeDeps`, so both tracks drive
 //! one implementation. The Tauri host already wrote these as governance
@@ -15,7 +19,7 @@
 
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::permissions::{BAN_MEMBERS, KICK_MEMBERS};
+use rekindle_types::permissions::{BAN_MEMBERS, KICK_MEMBERS, TIMEOUT_MEMBERS};
 
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
@@ -33,14 +37,14 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, BAN_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::BanEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
             reason: reason.map(ToString::to_string),
-            lamport,
+            // `op_log::build_op` fills it from the op's deps.
+            target_seq_frontier: 0,
         },
     )
     .await?;
@@ -50,6 +54,71 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
     // has already landed and must not be undone by a rotation failure.
     deps.spawn_text_mek_rotation_for_ban(community_id, pseudonym_hex);
     Ok(())
+}
+
+/// Remove a member without barring return: the durable kick
+/// `MemberRemoved`, which readers accept from a `KICK_MEMBERS` holder who
+/// outranks the target, and the departure rotation (ADR 0018) that the
+/// removal drives. `reason` travels in the op; the removed member shows it
+/// (A/B R5-2).
+pub async fn remove_member<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    pseudonym_hex: &str,
+    reason: Option<&str>,
+) -> Result<(), GovernanceRuntimeError> {
+    deps.require_permission(community_id, KICK_MEMBERS)?;
+    // The member's slot heads as we hold them: readers keep its posts
+    // from history by them, not by the time it claims (A/B R3-8).
+    let heads = deps
+        .departed_slot_heads(community_id, pseudonym_hex)
+        .await?;
+    apply::write_entry(
+        deps,
+        community_id,
+        GovernanceEntry::MemberRemoved {
+            target: PseudonymKey::from_hex_lossy(pseudonym_hex),
+            reason: reason.map(str::to_owned),
+            heads,
+            // `op_log::build_op` fills it from the op's deps.
+            target_seq_frontier: 0,
+        },
+    )
+    .await?;
+    deps.spawn_text_mek_rotation_for_ban(community_id, pseudonym_hex);
+    Ok(())
+}
+
+/// Our own departure: the `MemberLeft` op on our member record, written
+/// before the community is forgotten here. It carries our own slot heads
+/// as we hold them: we wrote every value of our slot, so readers keep our
+/// posts from history by them, and a slot write after the leave (a
+/// restored backup of this profile) is kept by none (A/B R3-8).
+///
+/// A joiner whose own `MemberJoined` the merged state never admitted (it
+/// lost a single-use race, or the inviter refused it) authors nothing:
+/// there is nothing of ours on the DAG to undo (plan SU1, the withdrawal
+/// decision), and [`LeaveOutcome::Withdrawn`] tells the caller to forget the
+/// community locally only.
+pub async fn leave<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<LeaveOutcome, GovernanceRuntimeError> {
+    apply::write_departure(deps, community_id).await
+}
+
+/// What our [`leave`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LeaveOutcome {
+    /// Our `MemberLeft` was authored on our member record.
+    Left,
+    /// The unlock barrier holds our writes (plan E3.2 S7d-keys.8): the
+    /// leave takes effect locally at once and our `MemberLeft` is signed
+    /// once the barrier passes (never, on a restore). `op_id` is its id
+    /// in the held list ([`crate::unlock_barrier::UnlockBarrier::written`]).
+    Held { op_id: String },
+    /// Our join was never admitted: nothing was authored.
+    Withdrawn,
 }
 
 /// Lift a ban. Requires `BAN_MEMBERS`.
@@ -62,19 +131,19 @@ pub async fn unban_member<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, BAN_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::UnbanEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
-            lamport,
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
-/// Temporarily strip a member's permissions. Requires `KICK_MEMBERS`.
+/// Temporarily strip a member's permissions. Requires `TIMEOUT_MEMBERS`,
+/// the bit readers check the entry against (`validate_write`).
 pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -82,8 +151,7 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     duration_seconds: u64,
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
-    deps.require_permission(community_id, KICK_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
+    deps.require_permission(community_id, TIMEOUT_MEMBERS)?;
     apply::write_entry(
         deps,
         community_id,
@@ -93,47 +161,27 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
             reason: reason.map(ToString::to_string),
             // Wall-clock start, so every peer computes the same expiry
             // from the entry alone rather than from when it merged it.
-            started_at: rekindle_utils::timestamp_secs(),
-            lamport,
+            started_at: deps.clock().now_secs(),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
-/// Lift a timeout early. Requires `KICK_MEMBERS`.
+/// Lift a timeout early. Requires `TIMEOUT_MEMBERS`.
 pub async fn remove_timeout<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    deps.require_permission(community_id, KICK_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
+    deps.require_permission(community_id, TIMEOUT_MEMBERS)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RemoveTimeoutEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
-            lamport,
         },
     )
-    .await
-}
-
-/// Remove a member without barring return. Requires `KICK_MEMBERS`.
-///
-/// v2.0 has no separate "kick" entry, and that is deliberate rather than
-/// an omission: nothing in a peer-to-peer registry can evict a member —
-/// their slot keypair is derived from a seed every member holds, so they
-/// can rewrite their presence immediately. What a kick actually means is
-/// "the community stops recognising you until you rejoin", which is a
-/// zero-duration timeout: permissions stripped now, no permanent bar.
-///
-/// The coordinator-era RPC pretended otherwise by deleting the member's
-/// row from the index — a change the member could simply undo.
-pub async fn kick_member<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    pseudonym_hex: &str,
-) -> Result<(), GovernanceRuntimeError> {
-    timeout_member(deps, community_id, pseudonym_hex, 0, Some("kicked")).await
+    .await?;
+    Ok(())
 }

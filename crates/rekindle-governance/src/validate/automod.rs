@@ -23,7 +23,6 @@ pub(super) fn validate_automod_rule(
     rule_id: &[u8; 16],
     enabled: bool,
     trigger_json: &str,
-    action: &str,
     state: &GovernanceState,
 ) -> bool {
     #[derive(serde::Deserialize)]
@@ -33,13 +32,6 @@ pub(super) fn validate_automod_rule(
         keywords: Vec<String>,
         #[serde(default)]
         regex_patterns: Vec<String>,
-    }
-
-    if !matches!(
-        action,
-        "block_locally" | "blur_content" | "alert_moderators"
-    ) {
-        return false;
     }
 
     let Ok(trigger) = serde_json::from_str::<TriggerConfig>(trigger_json) else {

@@ -51,7 +51,7 @@ pub struct VoiceParticipantRow {
 
 /// Voice session view state.
 pub struct VoiceSessionView {
-    /// Community governance key.
+    /// Community anchor key.
     community: String,
     /// Voice channel ID.
     channel: String,

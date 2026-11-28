@@ -1,15 +1,15 @@
 //! A community's session leases in the record pool (plan C7.5).
 //!
 //! The governance runtime hands every record a community keeps for its
-//! session — governance, registry, channels, segments, overflow pages — to
+//! session — anchor, registry, channels, segments, overflow pages — to
 //! [`records_ready`]. This is the one place that holds them, starts the
 //! community's loops, and releases them when the member leaves (logout's
 //! pool shutdown closes the rest).
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::pool::RecordPool;
 use rekindle_records::lease::{CommunityLeases, HeldKind, LeaseId};
+use rekindle_records::port::RecordPort;
 
 use crate::state::AppState;
 use crate::state_helpers;
@@ -22,7 +22,7 @@ pub(crate) async fn hold(state: &Arc<AppState>, community_id: &str, incoming: Co
         // Logged out: the pool is gone and has closed every record.
         return;
     };
-    let surplus = merge(state, &pool, community_id, incoming);
+    let surplus = merge(state, pool.as_ref(), community_id, incoming);
     for lease in surplus {
         pool.release(lease).await;
     }
@@ -60,30 +60,13 @@ pub(crate) async fn records_ready(
     }
 }
 
-/// Release every lease the community holds (leave). The pool closes a
-/// record when its last borrower releases it.
-pub(crate) async fn release_all(state: &Arc<AppState>, community_id: &str) {
-    let held = {
-        let mut communities = state.communities.write();
-        communities
-            .get_mut(community_id)
-            .map(|cs| std::mem::take(&mut cs.leases))
-    };
-    let (Some(held), Ok(pool)) = (held, state_helpers::record_pool(state)) else {
-        return;
-    };
-    for lease in held.all() {
-        pool.release(lease).await;
-    }
-}
-
 /// Fold `incoming` into the community's leases
 /// ([`CommunityLeases::merge`]), recording each newly held record's key in
 /// its key inventory (`open_community_records`, which the watch and inspect
 /// paths read); returns the surplus to release.
 fn merge(
     state: &Arc<AppState>,
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     community_id: &str,
     incoming: CommunityLeases,
 ) -> Vec<LeaseId> {
@@ -95,9 +78,9 @@ fn merge(
     let inventory = &mut cs.open_community_records;
     for (kind, key) in merged.added {
         match kind {
-            HeldKind::Governance => inventory.governance_key = Some(key),
+            HeldKind::Anchor => inventory.anchor = Some(key),
             HeldKind::Registry => inventory.registry_key = Some(key),
-            HeldKind::Channel | HeldKind::Segment => inventory.add_channel(key),
+            HeldKind::Segment => inventory.add_segment(key),
             HeldKind::Overflow => inventory.add_overflow(key),
         }
     }

@@ -1,12 +1,12 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import { callsState } from "../../stores/calls.store";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   handleAcceptGroupCall,
   handleDeclineGroupCall,
   handleEndGroupCall,
 } from "../../actions/calls.actions";
-import { ICON_HANGUP } from "../../icons";
+import { callsState } from "../../stores/calls.store";
+import { friendsState } from "../../stores/friends.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 // Wave 12 W12.10 — group call surfaces.
 //
@@ -102,13 +102,13 @@ const ActiveGroupCallPanel: Component = () => {
   };
 
   const participantName = (key: string): string => {
-    return friendsState.friends[key]?.displayName ?? key.slice(0, 8) + "…";
+    return friendsState.friends[key]?.displayName ?? `${key.slice(0, 8)}…`;
   };
 
   return (
     <Show when={call()}>
       {(c) => (
-        <div class="group-call-panel" role="region" aria-label="Group call in progress">
+        <section class="group-call-panel" aria-label="Group call in progress">
           <div class="group-call-panel-header">
             <span class="group-call-panel-title">
               Group {c().kind} call · {c().accepted.length}/{c().participants.length}
@@ -131,9 +131,7 @@ const ActiveGroupCallPanel: Component = () => {
                       {participantName(pubkey).slice(0, 1).toUpperCase()}
                     </div>
                     <div class="group-call-tile-name">{participantName(pubkey)}</div>
-                    <div class="group-call-tile-status">
-                      {accepted() ? "in call" : "ringing…"}
-                    </div>
+                    <div class="group-call-tile-status">{accepted() ? "in call" : "ringing…"}</div>
                   </div>
                 );
               }}
@@ -147,10 +145,10 @@ const ActiveGroupCallPanel: Component = () => {
               aria-label="Leave call"
               title="Leave call"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+              <SkinGlyph name="hangup" />
             </button>
           </div>
-        </div>
+        </section>
       )}
     </Show>
   );

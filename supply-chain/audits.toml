@@ -36,3 +36,17 @@ implies = "safe-to-deploy"
 # version = "1.2.3"
 # criteria = "safe-to-deploy"
 # notes = "Reviewed by <maintainer-handle> on YYYY-MM-DD; no concerns."
+
+[[audits.region]]
+who = "radicalkjax <k1104jackson@hotmail.com>"
+criteria = "safe-to-deploy"
+version = "4.0.1"
+notes = """
+Plan E7.1 (roadmap 5.2), for rekindle_secrets::locked::LockedBox. MIT;
+no RustSec advisory (cargo deny check 2026-11-19); deps bitflags, libc,
+mach2 (Apple), windows-sys. Reviewed src/lock.rs and os/{unix,windows}.rs:
+the safe `lock` rounds to page bounds and calls mlock / VirtualLock; the
+guard's Drop calls munlock / VirtualUnlock; no I/O, network or build
+script. It never reads or copies the locked bytes, so it handles no key
+material and crypto-reviewed does not apply.
+"""

@@ -1,17 +1,21 @@
-import { Component, Show, createMemo, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import { type Component, createMemo, onCleanup, onMount, Show } from "solid-js";
+import { initVoiceEventListener } from "../actions/voice.actions";
 import Titlebar from "../components/titlebar/Titlebar";
 import ActiveCallPanel from "../components/voice/ActiveCallPanel";
-import { callsState, setCallsState, type CallEntry } from "../stores/calls.store";
 import { subscribeCallEvents } from "../handlers/calls.handlers";
+import { startEventStream, type UnlistenFn } from "../ipc/channels";
 import { commands } from "../ipc/commands";
+import { type CallEntry, callsState, setCallsState } from "../stores/calls.store";
 import { setVoiceState } from "../stores/voice.store";
-import { startEventStream } from "../ipc/channels";
+import { setWindowKind } from "../utils/window_kind";
 
 /// The call window: the one place a connected 1:1 call's controls and
 /// media pipeline run. The backend opens it on connect
 /// (`present_active_call`); it reads the call's current state with
-/// `get_active_call`, then follows the call's events.
+/// `get_active_call`, then follows the call's events. When the call ends
+/// the backend destroys this window (`retire_call_window`, plan CL2), so
+/// its webview and media resources go with it; the "Call ended" fallback
+/// shows only when the window opens after its call already ended.
 function getCallIdFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
   return params.get("id") ?? "";
@@ -21,9 +25,9 @@ const CallWindow: Component = () => {
   const callId = getCallIdFromUrl();
   const unlisteners: Promise<UnlistenFn>[] = [];
 
-  onMount(async () => {
-    unlisteners.push(subscribeCallEvents({ owner: false }));
-    void startEventStream();
+  /// Load this call's state from the backend: at mount, and again when the
+  /// event stream says this window's state may be stale.
+  async function load(): Promise<void> {
     const snapshot = await commands.getActiveCall(callId);
     if (!snapshot) return;
     const entry: CallEntry = {
@@ -41,6 +45,16 @@ const CallWindow: Component = () => {
     if (snapshot.connected && snapshot.kind === "video") {
       setVoiceState("cameraOn", true);
     }
+  }
+
+  onMount(async () => {
+    unlisteners.push(subscribeCallEvents({ owner: false }));
+    // The backend sends a DM call's voice events (mute, speaking,
+    // connection quality) to its call window too; without this the
+    // panel's peer state never moved (plan C7.28).
+    unlisteners.push(initVoiceEventListener());
+    void startEventStream(() => void load());
+    await load();
   });
 
   onCleanup(() => {
@@ -55,6 +69,7 @@ const CallWindow: Component = () => {
     return null;
   });
 
+  setWindowKind("call");
   return (
     <div class="app-frame call-window-frame">
       <Titlebar title="Call" />
@@ -63,9 +78,7 @@ const CallWindow: Component = () => {
         fallback={
           <div class="empty-placeholder">
             <div class="empty-placeholder-title">Call ended</div>
-            <div class="empty-placeholder-subtitle">
-              You can close this window.
-            </div>
+            <div class="empty-placeholder-subtitle">You can close this window.</div>
           </div>
         }
       >

@@ -1,13 +1,11 @@
-//! Phase 21 REDO — friend + community presence adapter.
+//! Phase 21 REDO — community presence adapter.
 //!
-//! Implements `rekindle_presence::{FriendPresenceDeps,
-//! CommunityPresenceDeps}` against the live AppState + AppHandle +
-//! Db. Split into per-trait files (Invariant 1 ≤500 LoC):
+//! Implements `rekindle_presence::CommunityPresenceDeps` against the live
+//! AppState + AppHandle + Db (friend presence is the Host's,
+//! `rekindle_node::host::adapters::friends`, plan E2.1). Split into files
+//! (Invariant 1 ≤500 LoC):
 //!
-//! - `friend_deps.rs` — `FriendPresenceDeps` impl (20 methods)
 //! - `community_deps.rs` — `CommunityPresenceDeps` impl (21 methods)
-//! - `mapping.rs` — `UserStatusKind` ↔ `UserStatus` + game-info +
-//!   event mapping helpers shared by both impls
 //! - `persist.rs` — SQLite-backed helpers (channel-log catchup
 //!   insert, history-range MIN/MAX scan, member upsert) extracted
 //!   from `community_deps.rs` to keep it under the LoC cap
@@ -21,14 +19,13 @@ use rekindle_db::Db;
 
 mod auto_expand;
 pub mod community_deps;
-pub mod friend_deps;
-mod gossip_overlay;
-mod mapping;
 mod member_state;
-mod pending_sync;
 mod persist;
 mod scan;
+mod session_presence;
 mod state_reads;
+
+pub(crate) use session_presence::{voice_presence_changed, DesktopSessionPresence};
 
 /// Adapter struct — same shape as Phase 17/18/19/20 adapters.
 pub struct PresenceAdapter {
@@ -37,12 +34,22 @@ pub struct PresenceAdapter {
     pub(super) pool: Db,
 }
 
+/// A record port failure as presence reports it: a key or keypair text that
+/// does not parse is `InvalidDhtKey`, anything else a DHT failure.
+fn presence_error(e: rekindle_records::port::PortError) -> rekindle_presence::PresenceError {
+    match e {
+        rekindle_records::port::PortError::KeyText(reason) => {
+            rekindle_presence::PresenceError::InvalidDhtKey(reason)
+        }
+        other => rekindle_presence::PresenceError::Dht(other.to_string()),
+    }
+}
+
 impl PresenceAdapter {
     /// The session's record pool; `NotAttached` while logged out.
     pub(super) fn record_pool(
         &self,
-    ) -> Result<Arc<rekindle_protocol::dht::pool::RecordPool>, rekindle_presence::PresenceError>
-    {
+    ) -> Result<Arc<dyn rekindle_records::port::RecordPort>, rekindle_presence::PresenceError> {
         crate::state_helpers::record_pool(&self.state)
             .map_err(|_| rekindle_presence::PresenceError::NotAttached)
     }
@@ -57,7 +64,7 @@ impl PresenceAdapter {
 }
 
 /// Build a one-shot adapter from the live AppState. The facades in
-/// `services/presence_service.rs` + `services/community/presence/*`
+/// `services/sync_service.rs` + `services/community/presence/*`
 /// construct one per call (cheap — just clones three Arcs) and hand
 /// it to the crate's orchestrators.
 pub fn build_adapter(state: &Arc<AppState>) -> Option<PresenceAdapter> {

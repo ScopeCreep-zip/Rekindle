@@ -14,23 +14,38 @@ use uuid::Uuid;
 
 use rekindle_ipc::client::BusClient;
 use rekindle_ipc::message::SecurityLevel;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
+use rekindle_ipc::protocol::{CommunityRequest, GroupDmRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::IpcError;
-use rekindle_types::subscription_events::{SubscriptionEvent, SubscriptionFilter};
+use rekindle_types::intent::{IntentId, IntentProof, Reversibility};
+use rekindle_types::subscription_events::{Cursor, StreamFrame, SubscriptionFilter};
 
 use crate::ClientError;
 
 /// Default request timeout.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for requests that wait on Veilid network I/O.
-const LONG_TIMEOUT: Duration = Duration::from_secs(180);
+const LONG_TIMEOUT: Duration = rekindle_types::config::NETWORK_COMMAND_DEADLINE;
+
+/// A request that ran: its answer, and for an intent how it can be taken
+/// back.
+#[derive(Debug, Clone)]
+pub struct Ran {
+    pub data: serde_json::Value,
+    pub reversibility: Option<Reversibility>,
+    /// How to take the action back while the offer lasts (`IpcRequest::Undo`).
+    pub undo: Option<rekindle_types::intent::UndoOffer>,
+}
 
 /// A connection to the daemon.
 pub struct DaemonClient {
     client: Arc<BusClient>,
-    /// Typed event stream, taken once by a streaming consumer.
-    event_rx: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<SubscriptionEvent>>>,
+    /// The host's stream frames, taken once by a streaming consumer.
+    event_rx: parking_lot::Mutex<Option<mpsc::Receiver<StreamFrame>>>,
 }
+
+/// The key file name every frontend of this user connects with.
+const CLIENT_KEY_NAME: &str = "client";
 
 impl DaemonClient {
     /// Connect to a running daemon.
@@ -44,48 +59,69 @@ impl DaemonClient {
         if !socket.exists() {
             return Err(ClientError::NotRunning { socket });
         }
-        let server_pub = rekindle_ipc::noise_keys::read_bus_public_key()
+        // The client's persistent Noise key (plan D1): an unlock from it
+        // registers it with the identity, so it keeps its clearance across
+        // connections and reboots.
+        let keypair = rekindle_ipc::noise_keys::load_or_create_agent_keypair(CLIENT_KEY_NAME)
             .await
-            .map_err(|e| ClientError::Connect(format!("no bus public key: {e}")))?;
-        // A fresh ephemeral Noise key per connection; clearance for a
-        // persistent client key arrives with the vault (plan D1).
-        let keypair = rekindle_ipc::generate_keypair().map_err(ClientError::Ipc)?;
-        let mut client = BusClient::connect_with_retry(
+            .map_err(ClientError::Ipc)?;
+        let client = BusClient::connect_with_retry(
             Uuid::now_v7(),
             &socket,
-            &server_pub,
+            // Read at each attempt: a daemon that starts between two
+            // attempts publishes a new key.
+            rekindle_ipc::noise_keys::read_bus_public_key,
             keypair.as_inner(),
             3,
             Duration::from_millis(500),
         )
         .await
-        .map_err(|e| ClientError::Connect(e.to_string()))?;
-        let event_rx = client.take_event_receiver();
-        Ok(Self {
-            client: Arc::new(client),
-            event_rx: parking_lot::Mutex::new(event_rx),
-        })
+        .map_err(|e| match e {
+            IpcError::BuildMismatch { client, host } => ClientError::BuildMismatch { client, host },
+            other => ClientError::Connect(other.to_string()),
+        })?;
+        Ok(Self::from_bus(client))
     }
 
-    /// Take the typed event stream. Returns `None` after the first call.
-    pub fn take_event_receiver(&self) -> Option<mpsc::UnboundedReceiver<SubscriptionEvent>> {
+    /// Wrap a bus connection that already completed its handshake.
+    ///
+    /// [`DaemonClient::connect`] finds the user's daemon and key; this is the
+    /// seam a frontend's tests use to run over a bus they serve themselves
+    /// (a `BusServer` on a temporary socket), with no daemon.
+    #[must_use]
+    pub fn from_bus(mut client: BusClient) -> Self {
+        let event_rx = client.take_event_receiver();
+        Self {
+            client: Arc::new(client),
+            event_rx: parking_lot::Mutex::new(event_rx),
+        }
+    }
+
+    /// Take the host's stream frames. Returns `None` after the first call.
+    pub fn take_event_receiver(&self) -> Option<mpsc::Receiver<StreamFrame>> {
         self.event_rx.lock().take()
     }
 
-    /// Subscribe this connection to every event category.
+    /// Subscribe this connection to every event category, from `from` (the
+    /// last cursor processed; `None` for live events only).
     ///
     /// # Errors
     /// The request failed or the daemon refused it.
-    pub async fn subscribe_all(&self) -> Result<(), ClientError> {
-        self.subscribe(vec![SubscriptionFilter::all()]).await
+    pub async fn subscribe_all(&self, from: Option<Cursor>) -> Result<(), ClientError> {
+        self.subscribe(vec![SubscriptionFilter::all()], from).await
     }
 
-    /// Subscribe this connection to the events matching `filters`.
+    /// Subscribe this connection to the events matching `filters`, from
+    /// `from` (plan D3.2: replay, then `Resumed`, or `InvalidSession`).
     ///
     /// # Errors
     /// The request failed or the daemon refused it.
-    pub async fn subscribe(&self, filters: Vec<SubscriptionFilter>) -> Result<(), ClientError> {
-        self.request_ok(IpcRequest::Subscribe { filters })
+    pub async fn subscribe(
+        &self,
+        filters: Vec<SubscriptionFilter>,
+        from: Option<Cursor>,
+    ) -> Result<(), ClientError> {
+        self.request_ok(IpcRequest::Subscribe { filters, from })
             .await
             .map(drop)
     }
@@ -113,12 +149,32 @@ impl DaemonClient {
     /// Send a request and unwrap a successful answer.
     ///
     /// # Errors
-    /// As [`Self::request`], plus [`ClientError::Daemon`] for an error
-    /// answer. Events never travel in the response slot, so one there is a
-    /// protocol violation.
+    /// As [`Self::request_outcome`].
     pub async fn request_ok(&self, request: IpcRequest) -> Result<serde_json::Value, ClientError> {
+        self.request_outcome(request).await.map(|ran| ran.data)
+    }
+
+    /// Send a request and unwrap a successful answer with how it can be
+    /// taken back (plan D3.3).
+    ///
+    /// # Errors
+    /// As [`Self::request`], plus [`ClientError::Daemon`] for an error
+    /// answer and [`ClientError::IntentRequired`] when the host's gate holds
+    /// the request for review: render it, then [`Self::commit_intent`].
+    pub async fn request_outcome(&self, request: IpcRequest) -> Result<Ran, ClientError> {
         match self.request(request).await? {
-            IpcResponse::Ok(value) => Ok(value),
+            IpcResponse::Ok {
+                data,
+                reversibility,
+                undo,
+            } => Ok(Ran {
+                data,
+                reversibility,
+                undo,
+            }),
+            IpcResponse::IntentRequired(review) => {
+                Err(ClientError::IntentRequired(Box::new(review)))
+            }
             IpcResponse::Error {
                 code,
                 message,
@@ -128,8 +184,32 @@ impl DaemonClient {
                 message,
                 remediation,
             }),
-            IpcResponse::Event(_) => Err(ClientError::Protocol("event in a response")),
         }
+    }
+
+    /// Commit a held action with `proof` (plan D3.3). A changed fact is
+    /// answered with a fresh review ([`ClientError::IntentRequired`]).
+    ///
+    /// # Errors
+    /// As [`Self::request_outcome`]; a wrong proof is a daemon error and the
+    /// action stays held.
+    pub async fn commit_intent(
+        &self,
+        intent_id: IntentId,
+        proof: IntentProof,
+    ) -> Result<Ran, ClientError> {
+        self.request_outcome(IpcRequest::IntentCommit { intent_id, proof })
+            .await
+    }
+
+    /// Drop a held action.
+    ///
+    /// # Errors
+    /// As [`Self::request_outcome`].
+    pub async fn cancel_intent(&self, intent_id: IntentId) -> Result<(), ClientError> {
+        self.request_ok(IpcRequest::IntentCancel { intent_id })
+            .await
+            .map(drop)
     }
 
     /// Close the connection, flushing anything still queued.
@@ -149,18 +229,93 @@ impl DaemonClient {
 fn request_timeout(request: &IpcRequest) -> Duration {
     match request {
         IpcRequest::IdentityCreate { .. }
-        | IpcRequest::IdentityRotate
-        | IpcRequest::IdentityDestroy { .. }
-        | IpcRequest::IdentityWipe { .. }
-        | IpcRequest::CommunityCreate { .. }
-        | IpcRequest::CommunityJoin { .. }
-        | IpcRequest::FriendAdd { .. }
+        | IpcRequest::IdentityRotate { .. }
+        | IpcRequest::IdentityExport { .. }
+        | IpcRequest::IdentityImport { .. }
+        | IpcRequest::IdentityDelete { .. }
+        | IpcRequest::IdentityWipe
+        | IpcRequest::QuickWipeArm { .. }
+        | IpcRequest::QuickWipeDisarm
+        | IpcRequest::QuickWipeTrigger
+        | IpcRequest::IntentCommit { .. }
+        | IpcRequest::Logout
+        | IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::Unlock { .. }
-        | IpcRequest::ChannelSend { .. }
         | IpcRequest::DmSend { .. }
-        | IpcRequest::DmInbox { .. }
-        | IpcRequest::ChannelHistory { .. } => LONG_TIMEOUT,
+        | IpcRequest::OutboxRetry { .. }
+        | IpcRequest::GroupDm(
+            GroupDmRequest::Create { .. }
+            | GroupDmRequest::Accept { .. }
+            | GroupDmRequest::Send { .. },
+        )
+        | IpcRequest::DmInbox { .. } => LONG_TIMEOUT,
+        IpcRequest::Community(request) if !community_local_read(request) => LONG_TIMEOUT,
         _ => DEFAULT_TIMEOUT,
     }
 }
+
+/// A community request answered from local state alone. Every other one
+/// waits on the network: a governance write answers once its op landed on
+/// our member record, up to the Host's `NETWORK_ANSWER_DEADLINE` (plan
+/// E3.2 S6b), and a send, a fetch or an upload waits on Veilid.
+fn community_local_read(request: &CommunityRequest) -> bool {
+    use rekindle_ipc::protocol::{
+        ActivityRequest, AuditRequest, ChannelRequest, ExpressionRequest, MemberRequest,
+        PinRequest, RichRequest, SettingsRequest,
+    };
+    matches!(
+        request,
+        CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityList
+                | LifecycleRequest::CommunityViews
+                | LifecycleRequest::CommunityMembers { .. }
+                | LifecycleRequest::CommunityInfo { .. }
+                | LifecycleRequest::CommunityPendingMembers { .. }
+                | LifecycleRequest::InviteList { .. }
+        ) | CommunityRequest::Settings(
+            SettingsRequest::CommunityAvatarGet { .. }
+                | SettingsRequest::CommunityPolicyGet { .. }
+                | SettingsRequest::OnboardingConfigGet { .. }
+                | SettingsRequest::WelcomeScreenGet { .. }
+        ) | CommunityRequest::Channels(ChannelRequest::ChannelList { .. })
+            | CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelTyping { .. }
+                    | ChannelMessageRequest::ChannelSetActive { .. }
+                    | ChannelMessageRequest::MekList { .. }
+            )
+            | CommunityRequest::Unread(_)
+            | CommunityRequest::Audit(
+                AuditRequest::AuditLog { .. } | AuditRequest::NotificationDefaultGet { .. }
+            )
+            | CommunityRequest::Activities(
+                ActivityRequest::EventList { .. }
+                    | ActivityRequest::EventAttendees { .. }
+                    | ActivityRequest::GameServerList { .. }
+            )
+            | CommunityRequest::Members(
+                MemberRequest::RoleList { .. }
+                    | MemberRequest::MemberBlockList { .. }
+                    | MemberRequest::BanList { .. }
+                    | MemberRequest::AutomodRules { .. }
+                    | MemberRequest::ModReportList { .. }
+            )
+            | CommunityRequest::Pins(
+                PinRequest::ChannelPins { .. }
+                    | PinRequest::AttachmentInfo { .. }
+                    | PinRequest::MessageSearch { .. }
+            )
+            | CommunityRequest::Rich(
+                RichRequest::ThreadList { .. }
+                    | RichRequest::ThreadListActive { .. }
+                    | RichRequest::ThreadMessages { .. }
+                    | RichRequest::PollResults { .. }
+            )
+            | CommunityRequest::Expressions(ExpressionRequest::Expressions { .. })
+    )
+}
+
+#[cfg(test)]
+#[path = "client_timeout_tests.rs"]
+mod timeout_tests;

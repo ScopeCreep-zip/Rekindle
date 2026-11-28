@@ -1,6 +1,7 @@
 //! The presence row's size budget (plan C7.15).
 
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::presence::fixture::history_range;
 use rekindle_types::presence::limits::{
     MAX_BADGES, MAX_BADGE_LEN, MAX_BIO_LEN, MAX_CONTENT_REF_LEN, MAX_DISPLAY_NAME_LEN,
     MAX_PRONOUNS_LEN,
@@ -67,20 +68,12 @@ fn the_cap_is_the_registry_subkey_limit() {
     assert_eq!(PRESENCE_ROW_CAP, 4112);
 }
 
-fn range(channel: u8, newest: u64) -> HistoryRange {
-    HistoryRange {
-        channel_id: ChannelId([channel; 16]),
-        oldest_lamport: 1,
-        newest_lamport: newest,
-    }
-}
-
 /// At the bound of every field the slot has no room left for even one
 /// range (3,990 of 4,112 B): the ad is the part that yields.
 #[test]
 fn a_worst_case_row_carries_no_history_ad() {
     let deps = MockCommunityDeps::new(MockState::default());
-    let ranges: Vec<HistoryRange> = (0..3u8).map(|c| range(c, u64::from(c))).collect();
+    let ranges: Vec<HistoryRange> = (0..3u8).map(|c| history_range(c, u64::from(c))).collect();
     assert!(fit_history_ad(&deps, "c1", &worst_case_row(), ranges).is_none());
 }
 
@@ -95,7 +88,7 @@ fn history_ad_keeps_the_newest_ranges_that_fit() {
         route_blob: vec![1; 733],
         ..Default::default()
     };
-    let ranges: Vec<HistoryRange> = (0..40u8).map(|c| range(c, u64::from(c))).collect();
+    let ranges: Vec<HistoryRange> = (0..40u8).map(|c| history_range(c, u64::from(c))).collect();
 
     let ad = fit_history_ad(&deps, "c1", &row, ranges).expect("some ranges fit");
     let mut with_ad = row.clone();
@@ -111,7 +104,7 @@ fn history_ad_keeps_the_newest_ranges_that_fit() {
     let newest_kept: Vec<HistoryRange> = (0..40u8)
         .rev()
         .take(kept)
-        .map(|c| range(c, u64::from(c)))
+        .map(|c| history_range(c, u64::from(c)))
         .collect();
     assert_eq!(
         ad.ciphertext.len(),
@@ -127,7 +120,7 @@ fn a_small_row_carries_every_range() {
         signature: Vec::new(),
         ..Default::default()
     };
-    let ranges: Vec<HistoryRange> = (0..5u8).map(|c| range(c, u64::from(c))).collect();
+    let ranges: Vec<HistoryRange> = (0..5u8).map(|c| history_range(c, u64::from(c))).collect();
     let ad = fit_history_ad(&deps, "c1", &row, ranges.clone()).expect("fits");
     let all = 12 + serde_json::to_vec(&ranges).unwrap().len() + 16;
     assert_eq!(ad.ciphertext.len(), all);
@@ -169,7 +162,7 @@ fn writes(deps: &MockCommunityDeps) -> usize {
 async fn superseded_by_our_own_row_is_rewritten() {
     let deps = MockCommunityDeps::new(MockState::default());
     let (ours, me) = signed_row(1);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(184), &ours).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 184, &ours).await;
     assert_eq!(writes(&deps), 1, "one rewrite");
 }
 
@@ -179,7 +172,7 @@ async fn superseded_by_another_member_is_not_overwritten() {
     let deps = MockCommunityDeps::new(MockState::default());
     let (theirs, _) = signed_row(2);
     let (_, me) = signed_row(1);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), &theirs).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 9, &theirs).await;
     assert_eq!(writes(&deps), 0);
 }
 
@@ -194,8 +187,8 @@ async fn superseded_by_an_unverified_value_is_not_overwritten() {
         .replacen("\"status\":\"online\"", "\"status\":\"away\"", 1)
         .into_bytes();
     assert_ne!(forged, ours);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), &forged).await;
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), b"not json").await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 9, &forged).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 9, b"not json").await;
     assert_eq!(writes(&deps), 0);
 }
 
@@ -205,10 +198,10 @@ async fn a_rewrite_is_attempted_once() {
     let (ours, me) = signed_row(1);
     let mut state = MockState::default();
     state.write_outcomes.push_back(RowWrite::Superseded {
-        seq: Some(185),
+        seq: 185,
         data: ours.clone(),
     });
     let deps = MockCommunityDeps::new(state);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(184), &ours).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 184, &ours).await;
     assert_eq!(writes(&deps), 1);
 }

@@ -1,14 +1,14 @@
-import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handleGetAuditLog } from "../../../actions/community.actions";
-import { truncateKey, formatDateTimeSecs, formatAction } from "../../../utils/formatting";
-import type { AuditLogEntryDto } from "../../../ipc/commands/dto";
+import type { CommunityAuditEntry } from "../../../ipc/commands/dto";
+import { formatAction, formatDateTimeSecs } from "../../../utils/formatting";
 
 interface AuditLogTabProps {
   communityId: string;
 }
 
 const AuditLogTab: Component<AuditLogTabProps> = (props) => {
-  const [entries, setEntries] = createSignal<AuditLogEntryDto[]>([]);
+  const [entries, setEntries] = createSignal<CommunityAuditEntry[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   const [loaded, setLoaded] = createSignal(false);
@@ -50,9 +50,9 @@ const AuditLogTab: Component<AuditLogTabProps> = (props) => {
             <div class="audit-log-entry">
               <div class="audit-log-action">{formatAction(entry.action)}</div>
               <div class="audit-log-meta">
-                <span class="audit-log-actor">{truncateKey(entry.actorPseudonym)}</span>
-                <Show when={entry.target}>
-                  <span class="audit-log-target">{truncateKey(entry.target!)}</span>
+                <span class="audit-log-actor">{entry.actorName}</span>
+                <Show when={entry.targetName}>
+                  {(name) => <span class="audit-log-target">{name()}</span>}
                 </Show>
                 <Show when={entry.details}>
                   <span class="audit-log-details">{entry.details}</span>
@@ -64,7 +64,7 @@ const AuditLogTab: Component<AuditLogTabProps> = (props) => {
         </For>
       </div>
       <Show when={hasMore() && entries().length > 0}>
-        <button class="form-btn-secondary" onClick={loadMore} disabled={loading()}>
+        <button type="button" class="form-btn-secondary" onClick={loadMore} disabled={loading()}>
           {loading() ? "Loading..." : "Load More"}
         </button>
       </Show>

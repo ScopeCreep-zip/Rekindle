@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="219 178 580 580" width="16" height="16" role="img" aria-label="Rekindle">
+  <title>Rekindle</title>
+  <defs>
+    <linearGradient id="rks-outer" gradientUnits="userSpaceOnUse" x1="650" y1="250" x2="390" y2="745">
+      <stop offset="0" stop-color="#ff59c3"/>
+      <stop offset="0.3" stop-color="#ff4ec0"/>
+      <stop offset="0.55" stop-color="#9658f0"/>
+      <stop offset="1" stop-color="#0256ee"/>
+    </linearGradient>
+    <linearGradient id="rks-inner" gradientUnits="userSpaceOnUse" x1="560" y1="360" x2="500" y2="740">
+      <stop offset="0" stop-color="#ffd8f9"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cfeaff"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#rks-outer)" d="M497 188C530 215 590 270 612 330C622 365 628 400 632 440C640 415 648 395 655 375C690 420 713 490 713 575C713 680 630 748 520 748C400 748 312 680 312 585C312 500 360 440 420 390C470 348 505 290 497 188Z"/>
+  <path fill="url(#rks-inner)" d="M528 380C565 440 615 510 615 595C615 665 575 705 515 705C455 705 428 665 428 610C428 530 500 470 528 380Z"/>
+</svg>

@@ -30,27 +30,12 @@
 
     .settings-content .form-btn-primary,
     .settings-content .form-btn-secondary,
+    .settings-content .skin-row-btn,
     .settings-content .form-btn-danger {
       padding: 5px 10px;
       font-size: 11px;
     }
 
-
-    /* Phase 7 W24 — cross-device pairing QR display + camera scanner. */
-    .pairing-qr-display {
-      display: inline-block;
-      padding: 12px;
-      background: #f8fafc;
-      border: 1px solid var(--color-xfire-border);
-      border-radius: 6px;
-      line-height: 0;
-    }
-
-    .pairing-qr-display svg {
-      display: block;
-      width: 256px;
-      height: 256px;
-    }
 
     .settings-button-row {
       display: flex;
@@ -62,7 +47,7 @@
     .qr-scanner-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.85);
+      background: color-mix(in srgb, var(--color-xfire-scrim) 85%, transparent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -86,7 +71,7 @@
     .qr-scanner-video {
       width: 100%;
       aspect-ratio: 1 / 1;
-      background: #000;
+      background: var(--color-xfire-scrim);
       border-radius: 4px;
       object-fit: cover;
     }
@@ -244,13 +229,13 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--color-xfire-text-primary);
-    margin: 0 0 4px 0;
+    margin: 0 0 4px;
   }
 
   .onboarding-question-desc {
     font-size: 12px;
     color: var(--color-xfire-text-dim);
-    margin: 0 0 12px 0;
+    margin: 0 0 12px;
   }
 
 
@@ -264,7 +249,7 @@
     border-radius: 6px;
     background: var(--color-xfire-bg-secondary);
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--motion-duration-fast), background var(--motion-duration-fast);
     text-align: left;
     color: var(--color-xfire-text-primary);
     font-size: 13px;
@@ -278,7 +263,7 @@
 
   .onboarding-option.selected {
     border-color: var(--color-xfire-accent);
-    background: rgba(23, 124, 193, 0.15);
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
   }
 
   .onboarding-option-title {
@@ -305,7 +290,7 @@
     font-size: 16px;
     font-weight: 600;
     color: var(--color-xfire-text-primary);
-    margin: 0 0 8px 0;
+    margin: 0 0 8px;
   }
 
   .onboarding-guide-step p {
@@ -317,7 +302,7 @@
 
   .onboarding-error {
     padding: 0 20px;
-    color: #e74c3c;
+    color: var(--color-xfire-danger-text);
     font-size: 12px;
   }
 
@@ -337,15 +322,31 @@
     align-items: center;
     padding: 40px 20px;
     max-width: 500px;
+    width: 100%;
+    box-sizing: border-box;
     margin: 0 auto;
+  }
+
+  /* Featured channels fill the column and their text wraps inside it, so
+     a long description never pushes an entry past the window. */
+  .welcome-screen-channels,
+  .welcome-channel-entry {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .welcome-channel-desc {
+    overflow-wrap: anywhere;
   }
 
   .welcome-screen-header h2 {
     font-size: 22px;
     font-weight: 700;
     color: var(--color-xfire-text-primary);
-    margin: 0 0 12px 0;
+    margin: 0 0 12px;
     text-align: center;
+    overflow-wrap: anywhere;
   }
 
   .welcome-screen-description {
@@ -353,7 +354,8 @@
     color: var(--color-xfire-text-secondary);
     line-height: 1.6;
     text-align: center;
-    margin: 0 0 24px 0;
+    margin: 0 0 24px;
+    overflow-wrap: anywhere;
   }
 
   .welcome-screen-channels h3 {
@@ -362,7 +364,7 @@
     color: var(--color-xfire-text-dim);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin: 0 0 10px 0;
+    margin: 0 0 10px;
   }
 
   .welcome-channel-list {
@@ -381,7 +383,7 @@
     border-radius: 6px;
     background: var(--color-xfire-bg-secondary);
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--motion-duration-fast), background var(--motion-duration-fast);
     text-align: left;
     width: 100%;
     color: var(--color-xfire-text-primary);

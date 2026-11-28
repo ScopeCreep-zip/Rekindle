@@ -21,6 +21,31 @@ use crate::error::MekRotationError;
 use crate::{wait_for_rotation_slot, RotationRecipient};
 
 use crate::pseudonym_hex::{pseudonym_from_hex, pseudonym_hex};
+use rekindle_types::id::PseudonymKey;
+
+/// The members who may be elected to rotate after `departed` leaves: the
+/// online recipients and us, when the governance lets each rotate. The
+/// departed member is never one, even when we are it: the kick's notice
+/// reaches the kicked node too, and a rotator it elected would mint the
+/// key that is meant to shut it out.
+fn rotation_candidates(
+    departed: &PseudonymKey,
+    recipients: &[RotationRecipient],
+    me: Option<PseudonymKey>,
+    may_rotate: impl Fn(&PseudonymKey) -> bool,
+) -> Vec<PseudonymKey> {
+    let mut candidates = recipients
+        .iter()
+        .filter_map(|r| pseudonym_from_hex(&r.pseudonym_hex))
+        .collect::<Vec<_>>();
+    if let Some(me) = me {
+        if !candidates.contains(&me) {
+            candidates.push(me);
+        }
+    }
+    candidates.retain(|candidate| candidate != departed && may_rotate(candidate));
+    candidates
+}
 
 pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     deps: &D,
@@ -29,22 +54,20 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
 ) -> Result<(), MekRotationError> {
     let departed = pseudonym_from_hex(departed_pseudonym)
         .ok_or_else(|| MekRotationError::InvalidInput("invalid departed pseudonym".to_string()))?;
-    let recipients = deps.online_recipients(community_id, Some(departed_pseudonym));
+    let recipients = deps
+        .online_recipients(community_id, Some(departed_pseudonym))
+        .await;
     // The rotator is elected only among members who may rotate (plan
     // D20) — every peer filters the same merged governance, so all agree
     // on the candidates. With none online, nobody rotates: the rotation
     // waits for an eligible member rather than falling to one readers
     // would refuse.
-    let mut candidate_keys = recipients
-        .iter()
-        .filter_map(|r| pseudonym_from_hex(&r.pseudonym_hex))
-        .collect::<Vec<_>>();
-    if let Some(me) = deps.my_pseudonym(community_id) {
-        if !candidate_keys.contains(&me) {
-            candidate_keys.push(me);
-        }
-    }
-    candidate_keys.retain(|candidate| deps.may_rotate(community_id, candidate));
+    let candidate_keys = rotation_candidates(
+        &departed,
+        &recipients,
+        deps.my_pseudonym(community_id),
+        |candidate| deps.may_rotate(community_id, candidate),
+    );
     if candidate_keys.is_empty() {
         tracing::info!(community = %community_id, "departure rotation pending — no member who may rotate is online");
         return Ok(());
@@ -68,10 +91,13 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     let mek = match deps.my_pseudonym(community_id) {
         Some(me) => {
             let rank = rekindle_secrets::rotator::election_hash(&departed.0, &me.0);
-            MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank)
+            MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref())
+                .with_provenance(me.0, rank)
         }
-        None => MediaEncryptionKey::generate(new_generation),
+        None => MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref()),
     };
+    // Members the push did not reach ask for the key once the bump below
+    // merges (plan E3.2 S7m item 1c); the rotation stands without them.
     distribute_mek(
         deps,
         community_id,
@@ -89,14 +115,12 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
 
     install_minted(deps, community_id, scope, &mek)?;
 
-    let lamport = deps.next_governance_lamport(community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::MEKGenerationBump {
             generation: new_generation,
             trigger_departed: departed,
             cascade_skipped,
-            lamport,
         },
     )
     .await?;
@@ -105,7 +129,7 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     let rotator_pseudonym = deps.my_pseudonym(community_id).map(|p| pseudonym_hex(&p));
     deps.send_to_mesh(
         community_id,
-        &CommunityEnvelope::Control(ControlPayload::MEKRotated {
+        &CommunityEnvelope::control(ControlPayload::MEKRotated {
             channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym,
@@ -164,10 +188,12 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
     // A manual rotation has no trigger member, so the rank is taken
     // against a zero context — a stable per-minter tiebreak.
     let rank = rekindle_secrets::rotator::election_hash(&[0u8; 32], &me.0);
-    let new_mek = MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank);
+    let new_mek = MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref())
+        .with_provenance(me.0, rank);
 
     // Excluding nobody: everyone online is still a member.
-    let recipients = deps.online_recipients(community_id, None);
+    let recipients = deps.online_recipients(community_id, None).await;
+    // As a departure rotation: an unreached member asks for the key.
     distribute_mek(deps, community_id, scope, &new_mek, &recipients).await?;
 
     install_minted(deps, community_id, scope, &new_mek)?;
@@ -176,7 +202,6 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
     // the distribution can tell their cached key is stale. A channel key's
     // generation is its own and is not a governance fact.
     if scope == KeyScope::Community {
-        let lamport = deps.next_governance_lamport(community_id)?;
         deps.write_governance_entry(
             community_id,
             GovernanceEntry::MEKGenerationBump {
@@ -186,7 +211,6 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
                 // otherwise look like they had left.
                 trigger_departed: me,
                 cascade_skipped: Vec::new(),
-                lamport,
             },
         )
         .await?;
@@ -194,7 +218,7 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
 
     deps.send_to_mesh(
         community_id,
-        &CommunityEnvelope::Control(ControlPayload::MEKRotated {
+        &CommunityEnvelope::control(ControlPayload::MEKRotated {
             channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym: Some(me_hex),
@@ -220,3 +244,7 @@ fn install_minted<D: MekDistributeDeps>(
     deps.persist_received_mek(community_id, scope, mek);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "rotate_tests.rs"]
+mod tests;

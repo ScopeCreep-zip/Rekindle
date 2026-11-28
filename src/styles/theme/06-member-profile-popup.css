@@ -1,9 +1,5 @@
 @layer components {
 
-  .group-submenu-item:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
-  }
-
   .group-create-inline {
     display: flex;
     align-items: center;
@@ -40,7 +36,7 @@
 
   .avatar-upload-btn {
     padding: 6px 14px;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     color: var(--color-xfire-text);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 0.25rem;
@@ -48,11 +44,11 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .avatar-upload-btn:hover {
-    background: color-mix(in srgb, white 15%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 15%, transparent);
   }
 
 
@@ -83,19 +79,8 @@
   }
 
   .role-picker-item-active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-weight: 600;
-  }
-
-  .role-picker-check {
-    font-family: monospace;
-    font-size: 10px;
-    margin-right: 4px;
-    color: var(--color-xfire-text-dim);
-  }
-
-  .role-picker-item-active .role-picker-check {
-    color: var(--color-xfire-accent);
   }
 
   /* Timeout indicator badge on members */
@@ -108,16 +93,27 @@
     border-radius: 3px;
     font-size: 9px;
     font-weight: 700;
-    background: color-mix(in srgb, var(--color-xfire-away) 40%, transparent);
-    color: var(--color-xfire-away);
+    background: color-mix(in srgb, var(--color-xfire-away) 34%, transparent);
+    color: var(--color-xfire-away-text);
     flex-shrink: 0;
     margin-left: 2px;
   }
 
   /* Role management rows in settings */
 
+  /* The role's swatch, tag and position; a button that opens its editor
+   * (a div for @everyone, which has none). */
+  .settings-role-summary {
+    align-items: center;
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+    text-align: left;
+  }
+
   .settings-role-row:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
   .settings-role-color {
@@ -125,7 +121,7 @@
     height: 12px;
     border-radius: 2px;
     flex-shrink: 0;
-    border: 1px solid color-mix(in srgb, white 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-overlay) 15%, transparent);
     background: var(--settings-role-color, var(--color-xfire-text-dim));
   }
 
@@ -184,8 +180,8 @@
     height: 16px;
     padding: 0 4px;
     border-radius: 8px;
-    background: var(--color-xfire-busy);
-    color: white;
+    background: var(--color-xfire-danger);
+    color: var(--color-xfire-danger-fg);
     font-size: 10px;
     font-weight: 700;
     line-height: 16px;
@@ -214,8 +210,50 @@
     color: var(--color-xfire-text-dim);
   }
 
+  /* Its own colour: a skinned toolbar backs the label with `bg.panel`
+   * (plan E7.7.7), so the label's text is declared on that ground too. */
   .chat-peer-status-label {
     text-transform: capitalize;
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* A 1:1 chat whose friend request is not accepted yet (L-UI1). */
+  .chat-awaiting-accept {
+    padding: 4px 8px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* The safety number behind the header's shield (plan E2.3). */
+  .chat-safety-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .chat-safety-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-text-dim) 15%, transparent);
+  }
+
+  /* Bounded with its own scroll so the message list keeps the window's
+   * `flex: 1` and the footer stays down (audit U-8). */
+  .chat-safety-number {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 0;
+    max-height: 45%;
+    overflow-y: auto;
+    padding: 8px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
   }
 
   /* Message send status */
@@ -229,21 +267,41 @@
   }
 
   .message-status-sent {
-    color: var(--color-xfire-online);
+    color: var(--color-xfire-online-text);
   }
 
   .message-status-queued {
-    color: var(--color-xfire-away);
+    color: var(--color-xfire-away-text);
   }
 
   .message-status-failed {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-weight: 700;
   }
 
+  /* A post composed before the community key arrived (plan E3.2 S7l). */
+  .message-status-awaiting_key {
+    color: var(--color-xfire-away-text);
+  }
+
+  .message-status-note {
+    font-size: 10px;
+    margin-left: 4px;
+    color: var(--color-xfire-away-text);
+  }
+
+  .message-status-note-failed {
+    color: var(--color-xfire-danger-text);
+  }
+
   /* Profile action buttons */
+  /* Wraps at narrow widths: one unwrapped row is wider than the window
+     and, centred in .profile-content, spills past both edges. */
   .profile-actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
     gap: 8px;
     padding: 12px 0;
     margin-top: 8px;
@@ -254,7 +312,17 @@
   .network-banner {
     padding: 6px 12px;
     background: color-mix(in srgb, var(--color-xfire-away) 30%, var(--color-xfire-bg-dark));
-    color: var(--color-xfire-away);
+    color: var(--color-xfire-away-text);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  /* A paused inbound route (owner decision 65): it stays until the Host lifts it. */
+  .route-paused-status {
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--color-xfire-danger) 30%, var(--color-xfire-bg-dark));
+    color: var(--color-xfire-danger-text);
     font-size: 11px;
     font-weight: 600;
     text-align: center;
@@ -264,6 +332,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .network-banner {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 2s ease-in-out infinite;
     }
   }
@@ -272,17 +341,22 @@
   .action-bar-icon-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 16px;
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 3px;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
     position: relative;
   }
 
-  .action-bar-icon-btn:hover {
+  .action-bar-icon-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  .action-bar-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* Voice call button in chat header */
@@ -295,11 +369,11 @@
     border-radius: 3px;
     border: none;
     background: transparent;
-    color: var(--color-xfire-online);
+    color: var(--color-xfire-online-text);
     font-size: 14px;
     cursor: pointer;
     margin-left: auto;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .chat-call-btn:hover {
@@ -307,7 +381,7 @@
   }
 
   .chat-call-btn-active {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   .chat-call-btn-active:hover {
@@ -315,15 +389,16 @@
   }
 
   /* Retry button on failed messages */
-  .message-retry-btn {
+  .message-retry-btn,
+  .message-discard-btn {
     background: none;
     border: none;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     cursor: pointer;
     font-size: 10px;
     padding: 0 2px;
     margin-left: 2px;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
   }
 
   .message-retry-btn:hover {
@@ -356,7 +431,7 @@
 
   .settings-copy-btn {
     padding: 4px 10px;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     color: var(--color-xfire-text);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 0.25rem;
@@ -364,18 +439,18 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
     white-space: nowrap;
   }
 
   .settings-copy-btn:hover {
-    background: color-mix(in srgb, white 15%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 15%, transparent);
   }
 
   /* Channel management row in settings */
 
   .channel-manage-row:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
 
@@ -384,7 +459,7 @@
     font-size: 10px;
     color: var(--color-xfire-text-dim);
     padding: 1px 5px;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     border-radius: 3px;
     flex-shrink: 0;
   }

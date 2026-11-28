@@ -1,0 +1,185 @@
+//! The unlocked identity's audit chain, for both hosts (plan D1): the I/O
+//! around `rekindle_audit`'s restore and verify — the entries in the
+//! identity's database (`rekindle_db::repo::audit`), the MAC key and tail
+//! anchor in its vault (`rekindle_vault::typed::audit`).
+//!
+//! Appends are best-effort and never block the action they record: the
+//! chain advances in memory, the row is queued in order on the database
+//! thread, and the tail anchor is written to the vault. Nothing is written
+//! while locked: no identity database is open, and an unauthenticated
+//! caller must not write into one.
+
+use parking_lot::Mutex;
+use rekindle_audit::{AuditChain, AuditEntry, AuditKind, AuditRecord, Restored, Verified};
+use rekindle_db::Db;
+use rekindle_types::dto::audit::AuditEntryView;
+use rekindle_vault::typed::audit::{
+    load_audit_tail, load_or_create_audit_mac_key, persist_audit_tail,
+};
+use rekindle_vault::VaultHandle;
+
+/// The host's slot for the unlocked identity's chain (`None` while locked).
+pub type ChainSlot = Mutex<Option<AuditChain>>;
+
+/// Open `owner`'s chain into `slot` (unlock): it continues from the stored
+/// tail, or from the vault's anchor when rows were removed after it.
+///
+/// # Errors
+/// The vault is locked, or a store could not be read.
+pub async fn restore(
+    slot: &ChainSlot,
+    db: &Db,
+    vault: &VaultHandle,
+    owner: &str,
+) -> Result<Restored, String> {
+    let o = owner.to_string();
+    let stored = db
+        .call(move |conn| rekindle_db::repo::audit::load_tail(conn, &o))
+        .await
+        .map_err(|e| format!("audit chain tail: {e}"))?;
+    let (key, anchor) = {
+        let guard = vault.lock();
+        let vault = guard.as_ref().ok_or("the vault is locked")?;
+        (load_or_create_audit_mac_key(vault)?, load_audit_tail(vault))
+    };
+    let (chain, restored) = rekindle_audit::restore(zeroize::Zeroizing::new(key), anchor, stored);
+    *slot.lock() = Some(chain);
+    Ok(restored)
+}
+
+/// Append one entry for `owner`. A no-op while locked.
+pub fn append(
+    slot: &ChainSlot,
+    db: &Db,
+    vault: &VaultHandle,
+    owner: &str,
+    kind: AuditKind,
+    payload: serde_json::Value,
+    at_ms: i64,
+) {
+    let record = AuditRecord {
+        at_ms,
+        actor_pub: owner.to_string(),
+        kind,
+        payload,
+    };
+    let entry = {
+        let mut guard = slot.lock();
+        let Some(chain) = guard.as_mut() else {
+            return;
+        };
+        match chain.append(record) {
+            Ok(entry) => entry,
+            Err(e) => {
+                tracing::warn!(error = %e, "audit entry not serialized");
+                return;
+            }
+        }
+    };
+    let (owner, row) = (owner.to_string(), entry.clone());
+    db.fire("audit entry", move |conn| {
+        rekindle_db::repo::audit::insert_entry(conn, &owner, &row)
+    });
+    // The anchor in the vault, a separate encrypted file: whoever can edit
+    // the database cannot move it with a truncation.
+    if let Some(vault) = vault.lock().as_ref() {
+        if let Err(e) = persist_audit_tail(vault, entry.cursor, &entry.mac) {
+            tracing::warn!(cursor = entry.cursor, error = %e, "audit tail anchor not written");
+        }
+    }
+}
+
+/// Verify `owner`'s chain end to end.
+pub async fn verify(slot: &ChainSlot, db: &Db, owner: &str) -> Verified {
+    let o = owner.to_string();
+    let entries = match db
+        .call(move |conn| rekindle_db::repo::audit::load_all(conn, &o))
+        .await
+    {
+        Ok(entries) => entries,
+        Err(e) => {
+            return Verified::Broken {
+                length: 0,
+                at: None,
+                detail: format!("audit entries unreadable: {e}"),
+            }
+        }
+    };
+    let guard = slot.lock();
+    match guard.as_ref() {
+        Some(chain) => rekindle_audit::verify(chain, &entries),
+        None => Verified::Broken {
+            length: entries.len() as u64,
+            at: None,
+            detail: "no identity is unlocked".into(),
+        },
+    }
+}
+
+/// `owner`'s entries after `since`.
+///
+/// # Errors
+/// The database could not be read.
+pub async fn export(db: &Db, owner: &str, since: u64) -> Result<Vec<AuditEntry>, String> {
+    let owner = owner.to_string();
+    db.call(move |conn| rekindle_db::repo::audit::load_since(conn, &owner, since))
+        .await
+        .map_err(|e| format!("audit entries: {e}"))
+}
+
+/// Write `entries` to `path` as a JSON array, owner-only on Unix (the log
+/// names every security-relevant action). The path is the one the user
+/// picked in the frontend's save dialog, which already asked before
+/// replacing a file, so an existing file is replaced.
+///
+/// # Errors
+/// The entries could not be encoded or the file written.
+pub async fn write_export(path: &str, entries: &[AuditEntryView]) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    let bytes = serde_json::to_vec_pretty(entries).map_err(|e| format!("audit export: {e}"))?;
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(path)
+        .await
+        .map_err(|e| format!("cannot create {path}: {e}"))?;
+    file.write_all(&bytes)
+        .await
+        .map_err(|e| format!("cannot write {path}: {e}"))?;
+    file.sync_all()
+        .await
+        .map_err(|e| format!("cannot write {path}: {e}"))
+}
+
+/// Record the wrong passphrases an unlock cleared, as one entry.
+pub fn record_unlock_failures(
+    slot: &ChainSlot,
+    db: &Db,
+    vault: &VaultHandle,
+    owner: &str,
+    count: u32,
+    at_ms: i64,
+) {
+    if count > 0 {
+        append(
+            slot,
+            db,
+            vault,
+            owner,
+            AuditKind::UnlockFailures,
+            serde_json::json!({ "count": count }),
+            at_ms,
+        );
+    }
+}
+
+/// Close the chain (lock).
+pub fn close(slot: &ChainSlot) {
+    slot.lock().take();
+}
+
+#[cfg(test)]
+#[path = "audit_tests.rs"]
+mod tests;

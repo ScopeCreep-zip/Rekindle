@@ -1,0 +1,289 @@
+//! Identity rotation between friends (plan E2.3, `IdentityRotated` 0x0108).
+//!
+//! Under identity == address a friend's key changes only when they rotate
+//! their identity, so the rotation is a signed frame over the old session:
+//! the old identity and the new one both sign `IDENTITY_ROTATED ‖ old ‖
+//! new ‖ recipient`, binding the recipient so it cannot be replayed to
+//! someone else. The receiver checks both and holds the rotation for the
+//! user's review (owner ruling R1, threat model S1: never auto-accept);
+//! nothing moves until they accept it. Accepting moves the friend and their
+//! history to the new key, drops the old session (it is bound to the old
+//! identity), and marks the new key unverified: when the old one was
+//! verified, the change is recorded and escalates the next review
+//! (`VerifiedKeyChanged`). The next message to the new key opens a session
+//! from its bundle. Declining drops the rotation and changes nothing.
+//!
+//! The pending rotation lives in memory only (`FriendStores`, cleared at
+//! lock): after a restart it is gone, and the friend's client re-sends it
+//! on their next contact over the old session.
+
+use rekindle_codec::capnp_codec::direct::{DirectBody, IdentityRotated};
+use rekindle_crypto::{Identity, SafetyNumber};
+use rekindle_types::friend::FriendshipState;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
+
+use super::{state, verification, BackendHold, FriendError, FriendHost};
+use crate::operations::dm;
+
+/// The rotation frame from `old` to `new` for `recipient`
+/// (`rekindle_crypto::identity_rotation` owns the construction).
+#[must_use]
+pub fn rotation(old: &Identity, new: &Identity, recipient: &[u8; 32]) -> IdentityRotated {
+    let (sig_old, sig_new) = rekindle_crypto::identity_rotation::sign(old, new, recipient);
+    IdentityRotated {
+        new_identity: new.public_key_bytes(),
+        sig_old,
+        sig_new,
+    }
+}
+
+/// Whether `r`, from `old` to `recipient`, is signed by both identities.
+#[must_use]
+pub fn verified(old: &[u8; 32], recipient: &[u8; 32], r: &IdentityRotated) -> bool {
+    rekindle_crypto::identity_rotation::verify(
+        old,
+        &r.new_identity,
+        recipient,
+        &r.sig_old,
+        &r.sig_new,
+    )
+}
+
+/// Tell every friend not being removed that we are `new` now, before the
+/// identity moves; how many the notice reached.
+pub async fn notify_identity_rotated(host: &dyn FriendHost, new: &Identity) -> usize {
+    let Ok(local) = host.local_party() else {
+        return 0;
+    };
+    let friends: Vec<String> = state::friends(host)
+        .into_iter()
+        .filter(|f| f.friendship_state == FriendshipState::Accepted)
+        .map(|f| f.public_key)
+        .collect();
+    let mut notified = 0;
+    for friend in &friends {
+        let Ok(recipient) = rekindle_types::key_format::public_key_hex(friend) else {
+            continue;
+        };
+        let notice =
+            DirectBody::IdentityRotated(rotation(&local.identity, new, &recipient.to_bytes()));
+        // Sent now, not an outbox row: the notice is sealed and signed as
+        // the identity being retired, and a row re-sealed at a later
+        // attempt would carry the new key the friend does not know yet.
+        match dm::send_to_peer(host, friend, &notice).await {
+            Ok(()) => notified += 1,
+            Err(e) => tracing::warn!(to = %friend, error = %e, "IdentityRotated not sent"),
+        }
+    }
+    notified
+}
+
+/// A friend rotated their identity: both signatures are checked, then
+/// nothing moves. The rotation waits in [`FriendStores::pending_rotations`]
+/// and the backend holds its accept for the user's TrustChanging review
+/// (threat model S1: an identity-key change is never auto-accepted). Until
+/// it is accepted the new key is a stranger's: the gate refuses its frames
+/// and nothing is sent to it.
+///
+/// Whether it is done: `false` while no identity is unlocked or the hold
+/// could not be placed, so the message is kept for the replay.
+///
+/// [`FriendStores::pending_rotations`]: super::FriendStores::pending_rotations
+pub(crate) async fn on_identity_rotated(
+    host: &dyn FriendHost,
+    sender: &str,
+    r: &IdentityRotated,
+) -> bool {
+    let Ok(local) = host.local_party() else {
+        return false;
+    };
+    let Ok(old) = rekindle_types::key_format::public_key_hex(sender) else {
+        return true;
+    };
+    if !verified(&old.to_bytes(), &local.owner(), r) {
+        tracing::warn!(from = %sender, "dropping IdentityRotated: not signed by both identities");
+        return true;
+    }
+    if !is_friend(host, sender).await {
+        tracing::debug!(from = %sender, "dropping IdentityRotated from a non-friend");
+        return true;
+    }
+    // One per friend: a newer rotation replaces the older one (and its
+    // review, `hold_backend_intent`).
+    host.stores()
+        .pending_rotations
+        .lock()
+        .insert(sender.to_string(), r.new_identity);
+    let new_identity = hex::encode(r.new_identity);
+    if let Err(e) = host
+        .hold_backend_intent(BackendHold::IdentityRotation {
+            peer: sender.to_string(),
+            new_identity: new_identity.clone(),
+        })
+        .await
+    {
+        host.stores().pending_rotations.lock().remove(sender);
+        tracing::warn!(from = %sender, error = %e, "IdentityRotated not held — kept for the replay");
+        return false;
+    }
+    tracing::info!(from = %sender, to = %new_identity, "friend rotated their identity; held for review");
+    true
+}
+
+/// Whether `peer` is an accepted friend, by the receive gate's authority
+/// (the identity's database).
+async fn is_friend(host: &dyn FriendHost, peer: &str) -> bool {
+    let (Ok(store), Ok(owner)) = (host.friend_store(), state::owner(host)) else {
+        return false;
+    };
+    store.is_active_friend(&owner, peer).await.unwrap_or(false)
+}
+
+/// The new key of `peer`'s pending rotation: the key a review of its
+/// acceptance names (finding 79); `None` when none is pending.
+#[must_use]
+pub fn pending_key(host: &dyn FriendHost, peer: &str) -> Option<[u8; 32]> {
+    host.stores().pending_rotations.lock().get(peer).copied()
+}
+
+/// The safety number with `peer` now and the one with their pending new
+/// identity, as the review shows them; `None` when no rotation from
+/// `peer` is pending or no identity is unlocked.
+#[must_use]
+pub fn pending_safety_numbers(host: &dyn FriendHost, peer: &str) -> Option<(String, String)> {
+    let new_key = *host.stores().pending_rotations.lock().get(peer)?;
+    let (owner, _) = verification::keys(host, peer).ok()?;
+    let old_number = verification::safety_number(host, peer)?;
+    Some((old_number, SafetyNumber::new(&owner, &new_key).digits()))
+}
+
+/// The user accepted `peer`'s pending rotation: the friend row, history,
+/// verification row and old session move to the new key in one
+/// transaction (`rotate_peer`), the profile watch follows, and every
+/// frontend hears `KeyChanged`. The new key is unverified; when the old
+/// one was verified the change escalates the next review.
+///
+/// `reviewed` is the new key the user's review named: a rotation replaced
+/// since is refused and stays pending, with its own review held (finding
+/// 79 review, M2).
+///
+/// # Errors
+/// `NotFound` when no rotation from `peer` is pending or they are no
+/// longer a friend; `Conflict` when the pending one is not `reviewed`; the
+/// move's store error (the rotation stays pending).
+pub async fn accept(host: &dyn FriendHost, peer: &str, reviewed: &str) -> Result<(), FriendError> {
+    let new_key = reviewed_pending(host, peer, reviewed)?;
+    let (owner, old) = verification::keys(host, peer)?;
+    let now = host.clock().now_ms_i64();
+    let moved = state::db_call!(host, "move rotated friend", move |conn| {
+        rekindle_db::repo::peer_rekey::rotate_peer(conn, &owner, &old, &new_key, now)
+    })
+    .await?;
+    {
+        // Only the rotation moved: one that replaced it during the move
+        // is a key the user has not reviewed, so it stays for its review.
+        let mut pending = host.stores().pending_rotations.lock();
+        if pending.get(peer) == Some(&new_key) {
+            pending.remove(peer);
+        }
+    }
+    if !moved {
+        return Err(FriendError::NotFound(format!("{peer} is not a friend")));
+    }
+    let new_hex = hex::encode(new_key);
+    host.unwatch_friend(peer).await;
+    if let Some(mut friend) = state::take(host, peer) {
+        friend.public_key.clone_from(&new_hex);
+        friend.mailbox_dht_key = None;
+        // Our name was given for the old key (finding 79, `friend_nicknames`).
+        friend.nickname = friend
+            .nickname
+            .as_deref()
+            .map(rekindle_db::repo::friends::for_previous_key);
+        let profile = friend.dht_record_key.clone();
+        state::put(host, friend);
+        if let Some(profile) = profile {
+            host.watch_friend(&new_hex, &profile).await;
+        }
+    }
+    follow_chain(host, &new_hex).await;
+    host.publish(SubscriptionEvent::Friend(FriendEvent::KeyChanged {
+        peer_key: peer.to_string(),
+        new_key: new_hex.clone(),
+    }));
+    tracing::info!(from = %peer, to = %new_hex, "friend's identity rotation accepted");
+    Ok(())
+}
+
+/// The unwatch above released the watch on `new_hex`'s chain to us (plan
+/// E2.5): its record carries over, so it is watched again under the new
+/// key and diffed from the moved cursor (an entry appended while it was
+/// unwatched fires no change).
+async fn follow_chain(host: &dyn FriendHost, new_hex: &str) {
+    let owner = match state::owner(host) {
+        Ok(owner) => owner,
+        Err(e) => return tracing::warn!(error = %e, "rotated friend's chain not followed"),
+    };
+    let peer = new_hex.to_string();
+    let records = state::db_call!(host, "read rotated friend's chain record", move |conn| {
+        rekindle_db::repo::friends::peer_participant_record_key(conn, &owner, Some(&peer))
+    })
+    .await;
+    match records {
+        Ok(records) => {
+            for (peer, record) in records {
+                host.watch_participant(&peer, &record).await;
+            }
+            dm::stream::on_hint(host, new_hex);
+        }
+        Err(e) => tracing::warn!(error = %e, "rotated friend's chain record not read"),
+    }
+}
+
+/// The user declined `peer`'s pending rotation: it is dropped and nothing
+/// changes (the old friend, session and verification stay; nothing is
+/// sent to the new key).
+///
+/// # Errors
+/// `NotFound` when no rotation from `peer` is pending; `Conflict` when the
+/// pending one is not the `reviewed` key (it stays for its own review).
+pub fn decline(host: &dyn FriendHost, peer: &str, reviewed: &str) -> Result<(), FriendError> {
+    let named = reviewed_key(reviewed)?;
+    let mut pending = host.stores().pending_rotations.lock();
+    match pending.get(peer) {
+        None => Err(FriendError::NotFound(NOT_PENDING.to_string())),
+        Some(key) if *key != named => Err(FriendError::Conflict(REPLACED.to_string())),
+        Some(_) => {
+            pending.remove(peer);
+            tracing::info!(from = %peer, "friend's identity rotation declined");
+            Ok(())
+        }
+    }
+}
+
+/// `peer`'s pending rotation key when it is the `reviewed` one.
+fn reviewed_pending(
+    host: &dyn FriendHost,
+    peer: &str,
+    reviewed: &str,
+) -> Result<[u8; 32], FriendError> {
+    let named = reviewed_key(reviewed)?;
+    match host.stores().pending_rotations.lock().get(peer).copied() {
+        None => Err(FriendError::NotFound(NOT_PENDING.to_string())),
+        Some(key) if key != named => Err(FriendError::Conflict(REPLACED.to_string())),
+        Some(key) => Ok(key),
+    }
+}
+
+fn reviewed_key(reviewed: &str) -> Result<[u8; 32], FriendError> {
+    rekindle_types::key_format::public_key_hex(reviewed)
+        .map(|k| k.to_bytes())
+        .map_err(|e| FriendError::Invalid(format!("new key: {e}")))
+}
+
+const NOT_PENDING: &str = "no identity rotation from this friend is pending";
+const REPLACED: &str = "the identity rotation changed since it was reviewed: review the new one";
+
+#[cfg(test)]
+#[path = "identity_rotation_tests.rs"]
+mod tests;

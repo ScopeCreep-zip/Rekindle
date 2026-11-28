@@ -1,0 +1,218 @@
+//! Read paths: identity, membership, online members, open records.
+//!
+//! Every function here takes a lock, clones what it needs, and drops the
+//! guard before returning. `parking_lot` guards are `!Send`, and the
+//! trait methods these back are called from async contexts.
+
+use rekindle_governance::state::GovernanceState;
+use rekindle_governance_runtime::deps::{
+    CommunityMembership, OnlineMemberSnapshot, UserStatusKind,
+};
+use rekindle_governance_runtime::error::GovernanceRuntimeError;
+
+use rekindle_transport::session::CommunityMembership as SessionMembership;
+
+use super::HostGovernance;
+
+use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+
+impl HostGovernance {
+    /// Ed25519 identity secret, or `None` while the daemon is locked.
+    pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
+        self.ctx.identity_secret()
+    }
+
+    /// This device's op key for `community` from the device vault the
+    /// unlock opened (ADR 0022 rule 4); the guard drops before returning.
+    pub(super) fn device_op_key_impl(
+        &self,
+        community: &str,
+    ) -> Result<Option<zeroize::Zeroizing<[u8; 32]>>, GovernanceRuntimeError> {
+        let guard = self.ctx.device_vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+        rekindle_vault::typed::device_keys::load_device_op_key(vault, community)
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
+    }
+
+    pub(super) fn store_device_op_key_impl(
+        &self,
+        community: &str,
+        secret: &[u8; 32],
+    ) -> Result<(), GovernanceRuntimeError> {
+        let guard = self.ctx.device_vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+        rekindle_vault::typed::device_keys::store_device_op_key(vault, community, secret)
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
+    }
+
+    pub(super) fn store_device_record_impl(
+        &self,
+        community: &str,
+        record: &str,
+        owner: &str,
+    ) -> Result<(), GovernanceRuntimeError> {
+        let guard = self.ctx.device_vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+        rekindle_vault::typed::device_keys::store_device_record(vault, community, record, owner)
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
+    }
+
+    /// Our status: the host's own presence (plan E1.1).
+    pub(super) fn identity_status_impl(&self) -> UserStatusKind {
+        self.ctx.own_presence.status()
+    }
+
+    /// Our current private-route blob, or empty when no route is
+    /// allocated yet. Empty rather than an error because the trait
+    /// returns a bare `Vec<u8>`; callers write it into presence records
+    /// where an empty blob simply means "not reachable yet".
+    pub(super) fn our_route_blob_impl(&self) -> Vec<u8> {
+        let Ok(transport) = self.transport() else {
+            return Vec::new();
+        };
+        transport.personal_route_blob().unwrap_or_default()
+    }
+
+    /// Project the daemon's persisted membership onto the boundary
+    /// snapshot the runtime crate consumes.
+    ///
+    /// The two `CommunityMembership` types are deliberately distinct:
+    /// this one is the membership record (read from the store) with non-optional fields, the
+    /// other is the all-`Option` runtime view. Converting here is the
+    /// adapter doing its job, not duplication to collapse.
+    pub(super) fn community_membership_impl(
+        &self,
+        community_id: &str,
+    ) -> Option<CommunityMembership> {
+        let membership = &self.store_membership(community_id)?;
+
+        // The slot keypair is derived, not stored: the seed plus our
+        // global slot index reproduce it, and the seed is what lives in
+        // the vault. Global slot = segment * SLOTS_PER_SEGMENT + local
+        // index (architecture §15.2/§8.3); for the genesis segment the
+        // two are equal, which is what `None` falls back to.
+        //
+        // Goes through transport's string-typed helper rather than
+        // rekindle-protocol directly: this crate must not name a
+        // `veilid_core::KeyPair`, and does not depend on that crate.
+        let global_slot =
+            membership.segment_index.unwrap_or(0) * SLOTS_PER_SEGMENT + membership.slot_index;
+        let slot_keypair = membership.slot_seed.as_ref().and_then(|seed| {
+            rekindle_crypto::keypair_text::slot_keypair_text(seed, global_slot).ok()
+        });
+
+        Some(CommunityMembership {
+            anchor: Some(membership.anchor.clone()),
+            member_registry_key: Some(membership.registry_key.clone()),
+            my_pseudonym_hex: Some(membership.pseudonym_key.clone()),
+            my_subkey_index: Some(membership.slot_index),
+            my_segment_index: membership.segment_index,
+            slot_keypair,
+            slot_seed_hex: membership.slot_seed.as_ref().map(hex::encode),
+            channel_ids: self.channel_ids_impl(community_id),
+            mek_generation: membership.mek_generation,
+        })
+    }
+
+    pub(super) fn governance_state_impl(&self, community_id: &str) -> Option<GovernanceState> {
+        self.ctx.communities.governance_state(community_id)
+    }
+
+    fn channel_ids_impl(&self, community_id: &str) -> Vec<String> {
+        // The merged channels (plan E3.3: a channel is its `ChannelCreated`
+        // op, with no record).
+        (self
+            .ctx
+            .communities
+            .governance_state(community_id)
+            .into_iter())
+        .flat_map(|state| state.channels.into_keys())
+        .map(|id| hex::encode(id.0))
+        .collect()
+    }
+
+    /// The members shown online in `community_id`, on both modes: the
+    /// roster's members whose beat shows them present, each with the route
+    /// its `M`/6 published (plan E3.4 S5,
+    /// [`HostGovernance::present_members`]). Empty before the roster or a
+    /// beat reached us: nobody known online.
+    pub(super) fn online_members_impl(&self, community_id: &str) -> Vec<OnlineMemberSnapshot> {
+        self.present_members(community_id)
+            .into_iter()
+            .map(|m| OnlineMemberSnapshot {
+                status: crate::host::adapters::presence::view::shown_status(m.state).to_owned(),
+                pseudonym_hex: m.pseudonym_hex,
+                route_blob: m.route,
+                last_seen: m.seen_at,
+            })
+            .collect()
+    }
+
+    /// Every joined community's `(id, anchor)`.
+    ///
+    /// On this track `anchor` is non-optional in the persisted
+    /// record and doubles as the map key, so unlike the desktop adapter
+    /// there is no v1.0-legacy row to skip.
+    pub(super) fn list_community_governance_targets_impl(&self) -> Vec<(String, String)> {
+        self.store_memberships()
+            .into_iter()
+            .map(|m| (m.anchor.clone(), m.anchor))
+            .collect()
+    }
+
+    /// The membership of a joined community, read from the community store
+    /// (plan E3.1 B2: the store is authoritative on both modes).
+    pub(super) fn store_membership(&self, community_id: &str) -> Option<SessionMembership> {
+        self.ctx
+            .communities
+            .map()
+            .read()
+            .get(community_id)
+            .filter(|c| c.my_pseudonym_key.is_some())
+            .map(super::loader::membership)
+    }
+
+    /// Every joined community's membership, from the store.
+    pub(super) fn store_memberships(&self) -> Vec<SessionMembership> {
+        self.ctx
+            .communities
+            .map()
+            .read()
+            .values()
+            .filter(|c| c.my_pseudonym_key.is_some())
+            .map(super::loader::membership)
+            .collect()
+    }
+
+    /// Every joined community's `(id, registry_key, my_pseudonym_hex)`.
+    pub(super) fn list_registries_with_my_pseudonym_impl(
+        &self,
+    ) -> Vec<(String, String, Option<String>)> {
+        let guard = self.ctx.session.read();
+        let Some(session) = guard.as_ref() else {
+            return Vec::new();
+        };
+        session
+            .communities
+            .values()
+            .filter(|m| !m.registry_key.is_empty())
+            .map(|m| {
+                (
+                    m.anchor.clone(),
+                    m.registry_key.clone(),
+                    Some(m.pseudonym_key.clone()),
+                )
+            })
+            .collect()
+    }
+
+    pub(super) fn governance_overflow_keys_impl(&self, community_id: &str) -> Vec<String> {
+        self.ctx.communities.overflow_keys(community_id)
+    }
+}

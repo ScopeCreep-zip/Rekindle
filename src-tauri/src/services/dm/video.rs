@@ -7,23 +7,18 @@
 //! existing call sites in `state.rs` + `message_service.rs` compile
 //! unchanged, and keeps `send_dm_video_frame` — the outbound
 //! orchestration that fragments a frame and dispatches each chunk via
-//! the Signal-encrypted DM transport (`message_service::send_to_peer`).
+//! the ratchet-sealed 1:1 transport (`operations::dm::send_to_peer`, §6
+//! 0x0220 until E4.3.8).
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmVideoFragment};
 
-use crate::services::message_service;
 use crate::state::AppState;
-use rekindle_db::Db;
 
 // Re-export the moved primitives so existing import paths still work.
-pub use rekindle_dm::{DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
+pub use rekindle_dm::{AssembledFrame, DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
 
-/// Fragment a frame's encoded payload into ≤`FRAGMENT_PAYLOAD_LIMIT`
-/// chunks and send each as a `MessagePayload::DmVideoFragment` via the
-/// existing Signal-encrypted DM transport. Returns the number of
-/// fragments sent.
 /// One outbound DM video frame, decoded from the Tauri command's
 /// request shape. Bundled so the send fn stays under the argument
 /// budget.
@@ -37,9 +32,11 @@ pub struct DmVideoFrameSend {
     pub encoded_payload: Vec<u8>,
 }
 
+/// Fragment a frame's encoded payload into ≤`FRAGMENT_PAYLOAD_LIMIT`
+/// chunks and send each as a `DmVideoFragment` frame over the ratchet.
+/// Returns the number of fragments sent.
 pub async fn send_dm_video_frame(
     state: &Arc<AppState>,
-    pool: &Db,
     peer_pubkey: &str,
     frame: DmVideoFrameSend,
 ) -> Result<u32, String> {
@@ -66,7 +63,7 @@ pub async fn send_dm_video_frame(
         .map_err(|_| format!("frame too large to fragment ({} chunks)", chunks.len()))?;
 
     for (idx, chunk) in chunks.iter().enumerate() {
-        let payload = MessagePayload::DmVideoFragment {
+        let body = DirectBody::DmVideoFragment(DmVideoFragment {
             stream_id,
             frame_seq,
             fragment_index: u16::try_from(idx).expect("checked above"),
@@ -75,11 +72,43 @@ pub async fn send_dm_video_frame(
             codec: codec.clone(),
             timestamp,
             chunk: chunk.to_vec(),
-        };
+        });
         // Encrypted fail-closed: vulnerable users are protected from a
         // plaintext fallback that an attacker could trigger by
-        // corrupting the Signal session.
-        message_service::send_to_peer(state, pool, peer_pubkey, &payload).await?;
+        // corrupting the session.
+        rekindle_transport::operations::dm::send_to_peer(
+            crate::state_helpers::friend_host(state)?.as_ref(),
+            peer_pubkey,
+            &body,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
     Ok(u32::from(fragment_count))
+}
+
+/// Deliver `sender`'s reassembled frame to the DM video panel's per-peer
+/// `ipc::Channel` (a no-op when no panel is open), after noting it in the
+/// call's quality stats. DM video carries no parity: a completed frame is
+/// never FEC-recovered (plan E4.3 Q0 post-FEC loss).
+pub fn deliver_assembled_frame(state: &AppState, sender: &str, frame: AssembledFrame) {
+    use base64::Engine as _;
+    let stream_id_hex = hex::encode(frame.stream_id);
+    if let Some(media) = crate::state_helpers::voice_media(state) {
+        media
+            .quality()
+            .note_frame_completed(&stream_id_hex, sender, frame.frame_seq, false);
+    }
+    state.video_channels.send_dm(
+        sender,
+        crate::video_channels::DmVideoFrameMsg {
+            peer_pubkey: sender.to_owned(),
+            stream_id_hex,
+            frame_seq: frame.frame_seq,
+            keyframe: frame.keyframe,
+            codec: frame.codec,
+            timestamp: frame.timestamp,
+            encoded_payload_b64: base64::engine::general_purpose::STANDARD.encode(&frame.data),
+        },
+    );
 }

@@ -1,10 +1,9 @@
 //! Phase 14.r split — small I/O helpers reached by `deps_impl`.
 //!
 //! Each helper is a free fn used by exactly one trait method:
-//! `restart_audio_devices`, `resolve_peer_route`, `load_member_names`,
+//! `restart_audio_devices`, `resolve_peer_route`,
 //! `broadcast_media_capabilities`, `send_receiver_report`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::state::AppState;
@@ -29,15 +28,12 @@ pub(super) async fn resolve_peer_route_impl(
     state: &Arc<AppState>,
     peer_pubkey_hex: &str,
 ) -> Option<Vec<u8>> {
-    if let Some(blob) = state_helpers::cached_route_blob(state, peer_pubkey_hex) {
+    if let Some(blob) = state_helpers::peer_route(state, peer_pubkey_hex) {
         return Some(blob);
     }
-    if let Some(blob) =
-        crate::services::message_service::try_fetch_route_from_dht(state, peer_pubkey_hex).await
-    {
-        return Some(blob);
-    }
-    None
+    let host = state_helpers::friend_host(state).ok()?;
+    rekindle_transport::operations::dm::route::fetch_from_profile(host.as_ref(), peer_pubkey_hex)
+        .await
 }
 
 pub(super) fn broadcast_media_capabilities_impl(
@@ -47,7 +43,7 @@ pub(super) fn broadcast_media_capabilities_impl(
 ) -> Result<(), String> {
     use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
     let caps = local_media_capabilities(state);
-    let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+    let envelope = CommunityEnvelope::control(ControlPayload::MediaCapabilities {
         channel_id: channel_id.to_string(),
         max_pixel_count: caps.max_pixel_count,
         max_fps: caps.max_fps,
@@ -98,28 +94,6 @@ pub(super) fn log_voice_membership_impl(
             &pseudo,
         );
     }
-}
-
-pub(super) async fn load_community_member_names_impl(
-    state: &Arc<AppState>,
-    community_id: Option<&str>,
-) -> HashMap<String, String> {
-    let Some(cid) = community_id else {
-        return HashMap::new();
-    };
-    let Ok(pool) = state.db.current() else {
-        return HashMap::new();
-    };
-    let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
-        return HashMap::new();
-    };
-    let cid_owned = cid.to_string();
-    crate::db_helpers::db_call(&pool, move |conn| {
-        rekindle_db::repo::members::display_names(conn, &owner_key, &cid_owned)
-    })
-    .await
-    .map(|names| names.into_iter().collect())
-    .unwrap_or_default()
 }
 
 /// Ship a signed receiver report back to the peer whose stream it

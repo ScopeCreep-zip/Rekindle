@@ -55,7 +55,7 @@ vault files and Veilid storage that must stay in step, as described in
 
 ### `db_helpers.rs`
 
-`db_call`, `db_call_or_default`, `db_fire`: the three wrappers every
+`db_call` and `db_fire`: the two wrappers every
 command and service uses to reach the database thread. The SQL for the
 tables both hosts share is in `rekindle_db::repo` (identity, friends,
 pending requests, communities, members, governance cache, audit); the
@@ -65,11 +65,6 @@ closures passed here call those functions.
 
 Fire-and-forget writes to one `friends` column, taking the owner key
 from state; the SQL is `rekindle_db::repo::friends`.
-
-### `channel_repo.rs`
-
-Community channel CRUD against `channels` / `channel_overwrites` /
-`channel_pins` / `channel_slowmode_state`.
 
 ### `channel_materialize.rs`
 
@@ -88,24 +83,11 @@ Message persistence against `messages` / `message_delivery` /
 Read-side message view helpers. Builds the paginated history payloads
 the chat windows consume.
 
-### `envelope_store_sqlite.rs`
+### `services/audit.rs`
 
-SQLite-backed implementation of
-`rekindle_transport::EnvelopeStore`. Provides the durable retry queue
-for `pending_envelopes` and the seen-set for `seen_envelopes`.
-
-### `signal_stores.rs`
-
-The `rekindle_crypto` Signal store traits over the vault: an in-memory
-cache written through to `rekindle_vault::typed::signal`. Layers above
-go through `rekindle_crypto::signal::SignalSessionManager`.
-
-### `audit_repo/`
-
-Audit chain append, verify and restore over `rekindle_db::repo::audit`
-(the `audit_entries` SQL) and `rekindle_audit::TailCheck` (the vault
-tail-anchor rule). The MAC key
-lives in the vault. See [`audit-chain.md`](audit-chain.md).
+The desktop over `rekindle_node::host::audit` (both hosts' audit chain
+I/O): append, restore at unlock, verify, and the tamper signal. See
+[`audit-chain.md`](audit-chain.md).
 
 ### `audit_view.rs`
 
@@ -143,7 +125,7 @@ Arc<EventDispatch>`.
 
 The per-identity `VaultStore` handle (`StrongholdKeystore`, which derefs
 to the store) and its open / delete-file helpers. The typed helpers it
-re-exports are `rekindle_vault::typed::{signal, community_keys, mek,
+re-exports are `rekindle_vault::typed::{community_keys, mek,
 audit}` (plan C5.4), backed by SQLCipher double-encryption. See
 [`data-layer.md`](data-layer.md) for the vault layout and
 [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md)
@@ -152,7 +134,7 @@ for the migration rationale.
 ### `windows.rs`
 
 Window creation helpers — one function per window type
-(`open_login`, `open_buddy_list`, `open_chat_window`, `open_dm_window`,
+(`open_login`, `open_buddy_list`, `open_chat_window` (1:1 or group),
 `open_community_window`, `open_settings_window`, `open_profile_window`,
 `open_call_window`). Encapsulates frameless-transparent window options,
 label naming conventions, and "show existing or create" idempotence.

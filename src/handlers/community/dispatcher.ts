@@ -1,19 +1,27 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeCommunityEvents, subscribeVoiceEvents } from "../../ipc/channels";
-import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
+import {
+  subscribeCommunityEvents,
+  subscribeVoiceEvents,
+  type UnlistenFn,
+} from "../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
+import { reduceSubscriptionContent } from "./dispatcher_content";
+import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
 import {
   reduceMessages,
   reduceSubscriptionMessages,
   reduceSubscriptionSystem,
   reduceSubscriptionTyping,
 } from "./dispatcher_messages";
-import {
-  reduceVoice,
+import { reduceSubscriptionCrypto, reduceSubscriptionVoice, reduceVoice } from "./dispatcher_voice";
+
+const SUBSCRIPTION_SLICES = [
+  reduceSubscriptionMembership,
+  reduceSubscriptionMessages,
+  reduceSubscriptionSystem,
+  reduceSubscriptionTyping,
   reduceSubscriptionCrypto,
-  reduceSubscriptionVoice,
-} from "./dispatcher_voice";
-import { reduceSubscriptionContent } from "./dispatcher_content";
+  reduceSubscriptionContent,
+];
 
 /// Central community event dispatcher. Each incoming `CommunityEvent`
 /// is offered to the topic reducers in turn; the first one that
@@ -29,12 +37,14 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       // Each slice takes the families it owns and ignores the rest;
       // unlike the legacy reducers these do not report consumption,
       // because the daemon families are disjoint by construction.
-      reduceSubscriptionMembership(event);
-      reduceSubscriptionMessages(event);
-      reduceSubscriptionSystem(event);
-      reduceSubscriptionTyping(event);
-      reduceSubscriptionCrypto(event);
-      reduceSubscriptionContent(event);
+      // A slice that throws is reported and the others still run.
+      for (const reduce of SUBSCRIPTION_SLICES) {
+        try {
+          reduce(event);
+        } catch (err) {
+          console.error(`community event slice ${reduce.name} failed`, err, event);
+        }
+      }
       return;
     }
     if (reduceMembership(event)) return;

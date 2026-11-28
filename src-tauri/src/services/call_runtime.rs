@@ -6,7 +6,7 @@
 
 use rusqlite::params;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{CallMediaState, CallReaction, DirectBody};
 
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
@@ -71,7 +71,6 @@ pub fn get_active_call_inner(
 
 pub async fn send_call_media_state_inner(
     state: &SharedState,
-    pool: &Db,
     call_id: String,
     audio: bool,
     video: bool,
@@ -82,21 +81,24 @@ pub async fn send_call_media_state_inner(
         .get(&call_id)
         .map(|c| c.peer_pubkey.clone())
         .ok_or_else(|| format!("no active call with id {call_id}"))?;
-    let payload = MessagePayload::CallMediaState {
+    let body = DirectBody::CallMediaState(CallMediaState {
         call_id,
         audio,
         video,
         screen,
         timestamp_ms: rekindle_utils::timestamp_ms(),
-    };
-    crate::services::message_service::send_to_peer(state, pool, &peer_pubkey, &payload)
-        .await
-        .map_err(|e| format!("send_call_media_state: {e}"))
+    });
+    rekindle_transport::operations::dm::send_to_peer(
+        crate::state_helpers::friend_host(state)?.as_ref(),
+        &peer_pubkey,
+        &body,
+    )
+    .await
+    .map_err(|e| format!("send_call_media_state: {e}"))
 }
 
 pub async fn send_call_reaction_inner(
     state: &SharedState,
-    pool: &Db,
     call_id: String,
     emoji: String,
 ) -> Result<(), String> {
@@ -108,14 +110,18 @@ pub async fn send_call_reaction_inner(
         .get(&call_id)
         .map(|c| c.peer_pubkey.clone())
         .ok_or_else(|| format!("no active call with id {call_id}"))?;
-    let payload = MessagePayload::CallReaction {
+    let body = DirectBody::CallReaction(CallReaction {
         call_id,
         emoji,
         timestamp_ms: rekindle_utils::timestamp_ms(),
-    };
-    crate::services::message_service::send_to_peer(state, pool, &peer_pubkey, &payload)
-        .await
-        .map_err(|e| format!("send_call_reaction: {e}"))
+    });
+    rekindle_transport::operations::dm::send_to_peer(
+        crate::state_helpers::friend_host(state)?.as_ref(),
+        &peer_pubkey,
+        &body,
+    )
+    .await
+    .map_err(|e| format!("send_call_reaction: {e}"))
 }
 
 pub async fn get_missed_calls_inner(
@@ -133,7 +139,7 @@ pub async fn get_missed_calls_inner(
                 Ok(MissedCallRow {
                     call_id: row.get::<_, String>(0)?,
                     peer_key: row.get::<_, String>(1)?,
-                    kind: u8::try_from(row.get::<_, i64>(2)?).unwrap_or(0),
+                    kind: row.get::<_, u8>(2)?,
                     expired_at: row.get::<_, i64>(3)?,
                 })
             })?

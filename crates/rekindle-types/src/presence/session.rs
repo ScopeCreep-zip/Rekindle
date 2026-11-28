@@ -69,6 +69,19 @@ impl SessionStatus {
         }
     }
 
+    /// Parse a wire string [`Self::as_wire_str`] writes; `None` for any
+    /// other text. Invisible never arrives: the wire folds it to offline.
+    #[must_use]
+    pub fn from_wire_str(s: &str) -> Option<Self> {
+        match s {
+            "online" => Some(Self::Online),
+            "away" => Some(Self::Away),
+            "busy" => Some(Self::Busy),
+            INVISIBLE_WIRE_VALUE => Some(Self::Offline),
+            _ => None,
+        }
+    }
+
     /// `true` when peers should consider this status "available"
     /// (receive routing decisions + mention escalation).
     #[must_use]
@@ -84,12 +97,32 @@ impl SessionStatus {
     }
 }
 
+/// What the host makes of the user's input activity (plan E1.1): whether it
+/// can see it at all, and whether auto-away is holding the status.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum IdleState {
+    /// No compositor or display reports idle time here (a headless
+    /// `rekindled`, a Wayland compositor without `ext-idle-notify-v1`):
+    /// auto-away cannot arm.
+    Unavailable,
+    /// Idle time is readable and auto-away is not holding the status.
+    Active,
+    /// Auto-away set the status to Away; activity restores the status it
+    /// replaced.
+    AutoAway,
+}
+
 /// Where a member is focused right now. One field for both text and
 /// voice so the roster aggregates location uniformly. `channel_id` is
 /// the string id the frontend + community wire envelopes already use
 /// (hex of the 16-byte UUID) — no byte/string conversion at the hops.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum SessionLocation {
     Text { channel_id: String },
     Voice { channel_id: String },

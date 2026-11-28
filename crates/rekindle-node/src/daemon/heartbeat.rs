@@ -8,7 +8,8 @@
 //! forever.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 
 /// The beat interval outside a systemd watchdog, where only the subscriber
 /// loop itself reads it.
@@ -60,25 +61,5 @@ impl Heartbeat {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fresh_until_a_beat_is_missed() {
-        let tick = Duration::from_secs(1);
-        let heartbeat = Heartbeat::new(tick);
-        assert!(heartbeat.is_fresh());
-        heartbeat.beat();
-        assert!(heartbeat.is_fresh());
-        let stale = Heartbeat {
-            epoch: Instant::now()
-                .checked_sub(tick * 3)
-                .expect("monotonic clock covers three ticks"),
-            last_ms: AtomicU64::new(0),
-            tick,
-        };
-        assert!(!stale.is_fresh());
-        stale.beat();
-        assert!(stale.is_fresh());
-    }
-}
+#[path = "heartbeat_tests.rs"]
+mod tests;

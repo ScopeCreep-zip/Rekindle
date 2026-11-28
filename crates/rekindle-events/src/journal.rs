@@ -1,187 +1,376 @@
-//! Bounded in-memory event journal with monotonic cursors.
+//! The host's one event journal (plan D21, D3.2).
 //!
-//! Every journaled event gets a unique [`JournalCursor`]. A desktop window
-//! keeps the most recent cursor it saw in its own `sessionStorage`; when
-//! the page reloads it passes that cursor to `subscribe_events`, which
-//! sends it the entries from [`EventJournal::replay_since`] that were
-//! addressed to it — events newer than the cursor, in arrival order.
+//! Every `SubscriptionEvent` the host publishes is appended under a
+//! [`Cursor`] and sent to the live subscribers. An unlock and a lock each
+//! begin a new epoch: the ring is emptied (one identity's events never
+//! replay into another session) and every live subscriber is told
+//! [`StreamFrame::InvalidSession`].
 //!
-//! ## Persistence
+//! A subscription is taken under the journal's lock, which `publish` holds
+//! while it appends and sends, so the replay and the live stream neither
+//! overlap nor leave a gap. Every queue is bounded: a subscriber that falls
+//! more than the live capacity behind is sent `InvalidSession` and its
+//! stream ends, so it reloads instead of silently missing events.
 //!
-//! The journal is **in-memory only** — the [`AtomicU64`] cursor counter
-//! resets to `1` on every process start and the ring buffer is empty
-//! after `kill -9` + restart. Cold-start recovery for persisted state
-//! (DMs, community messages, friend requests) goes through their
-//! respective SQLite stores via the existing message-history Tauri
-//! commands; the journal handles the gap between "the event fired"
-//! and "the frontend's live listener was installed" within a single
-//! process lifetime.
-//!
-//! Phase 10 generalised the journal over `T` so the daemon track can
-//! store `SubscriptionEvent` while the Tauri track stores its typed
-//! `WebviewEvent`. Either way the cursor + ring semantics
-//! are identical.
+//! Some events are the session's state, not only news: a security alert an
+//! unlock raises (keys not in locked memory, the panic shortcut not
+//! registered, a broken audit chain) holds for as long as the session does,
+//! and it is raised before any frontend has connected. Those are published
+//! *standing* ([`SessionJournal::publish_standing`]): journaled and sent like
+//! any event, and also kept for the epoch, so a subscriber that connects
+//! later ([`SessionJournal::connect`], [`SessionJournal::standing`]) is
+//! handed them first, as a snapshot, then the live stream.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use parking_lot::RwLock;
+use rekindle_types::subscription_events::{
+    Cursor, Sequenced, StopReason, StreamFrame, SubscriptionEvent,
+};
+use rekindle_utils::RandomSource;
+use tokio::sync::broadcast;
 
-pub type JournalCursor = u64;
+/// How many events a reconnecting subscriber can catch up on.
+pub const RING_CAPACITY: usize = 10_000;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(bound(
-    serialize = "T: serde::Serialize",
-    deserialize = "T: serde::de::DeserializeOwned",
-))]
-pub struct JournalEntry<T> {
-    pub cursor: JournalCursor,
-    pub event: T,
+/// How far a live subscriber may fall behind before it must reload.
+pub const LIVE_CAPACITY: usize = 4_096;
+
+struct Ring {
+    epoch: u64,
+    /// The sequence number the next event gets.
+    next: u64,
+    events: VecDeque<Sequenced>,
+    /// This session's standing events, oldest first, with their cursors.
+    standing: Vec<Standing>,
 }
 
-pub struct EventJournal<T> {
-    next: AtomicU64,
-    ring: RwLock<VecDeque<JournalEntry<T>>>,
+/// One standing event. A keyed one is a piece of the session's current
+/// state ([`SessionJournal::publish_state`]): publishing under its key again
+/// replaces it, so the snapshot holds the latest value, never a history.
+#[derive(Clone)]
+struct Standing {
+    key: Option<String>,
+    sequenced: Sequenced,
+}
+
+impl Ring {
+    /// Give `event` the next cursor and keep it for replay.
+    fn append(&mut self, event: SubscriptionEvent, capacity: usize) -> Sequenced {
+        let cursor = Cursor {
+            epoch: self.epoch,
+            seq: self.next,
+        };
+        self.next += 1;
+        if self.events.len() >= capacity {
+            self.events.pop_front();
+        }
+        let sequenced = Sequenced { cursor, event };
+        self.events.push_back(sequenced.clone());
+        sequenced
+    }
+}
+
+/// The host's journal. One per host; its epoch changes with each unlock.
+pub struct SessionJournal {
+    ring: RwLock<Ring>,
+    live: broadcast::Sender<StreamFrame>,
     capacity: usize,
+    /// The host's RNG (plan C9.2): each epoch is drawn from it.
+    rng: Arc<dyn RandomSource>,
+    /// Set by [`SessionJournal::close`]: the stop frame goes out once.
+    closed: std::sync::atomic::AtomicBool,
 }
 
-impl<T> EventJournal<T> {
+/// A fresh random epoch below 2^53 (exact as a JavaScript number).
+fn new_epoch(rng: &dyn RandomSource) -> u64 {
+    let mut bytes = [0u8; 8];
+    rng.fill(&mut bytes);
+    u64::from_le_bytes(bytes) >> 11
+}
+
+impl SessionJournal {
+    /// The host's journal at the standard capacities, its epochs drawn
+    /// from `rng`, the host's RandomSource.
     #[must_use]
-    pub fn new(capacity: usize) -> Self {
+    pub fn with_rng(rng: Arc<dyn RandomSource>) -> Self {
+        Self::new(RING_CAPACITY, LIVE_CAPACITY, rng)
+    }
+
+    /// A journal keeping `capacity` events for replay, whose live
+    /// subscribers may fall `live_capacity` frames behind, its epochs
+    /// drawn from `rng`.
+    #[must_use]
+    pub fn new(capacity: usize, live_capacity: usize, rng: Arc<dyn RandomSource>) -> Self {
         Self {
-            next: AtomicU64::new(1),
-            ring: RwLock::new(VecDeque::with_capacity(capacity.min(128))),
+            ring: RwLock::new(Ring {
+                epoch: new_epoch(rng.as_ref()),
+                next: 1,
+                events: VecDeque::with_capacity(capacity.min(1024)),
+                standing: Vec::new(),
+            }),
+            live: broadcast::channel(live_capacity).0,
             capacity,
+            rng,
+            closed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
-    pub fn append(&self, event: T) -> JournalCursor {
-        let cursor = self.next.fetch_add(1, Ordering::Relaxed);
-        let mut g = self.ring.write();
-        if g.len() >= self.capacity {
-            g.pop_front();
+    /// The host is stopping: send [`StreamFrame::HostStopping`] to every
+    /// live subscriber, once (later calls send nothing). It is not
+    /// journaled, so no replay carries it (plan E7.1).
+    pub fn close(&self, reason: StopReason) {
+        if self.closed.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return;
         }
-        g.push_back(JournalEntry { cursor, event });
+        // No subscriber is not an error.
+        let _ = self.live.send(StreamFrame::HostStopping { reason });
+    }
+
+    /// Begin a new session (unlock and lock): a new epoch, the ring and the
+    /// standing events emptied, and every live subscriber told its cursor is
+    /// no longer valid.
+    pub fn begin(&self) {
+        let mut ring = self.ring.write();
+        ring.standing.clear();
+        Self::new_epoch_in(&mut ring, self.rng.as_ref());
+        // No subscriber is not an error.
+        let _ = self.live.send(StreamFrame::InvalidSession);
+    }
+
+    /// Events were lost before the journal saw them (the transport's
+    /// broadcast lagged): a new epoch within the same session. The ring is
+    /// emptied but the standing events stay, given cursors in the new epoch,
+    /// so every subscriber that reloads is handed them again.
+    pub fn resync(&self) {
+        let mut ring = self.ring.write();
+        let standing = std::mem::take(&mut ring.standing);
+        Self::new_epoch_in(&mut ring, self.rng.as_ref());
+        for kept in standing {
+            let sequenced = ring.append(kept.sequenced.event, self.capacity);
+            ring.standing.push(Standing {
+                key: kept.key,
+                sequenced,
+            });
+        }
+        // No subscriber is not an error.
+        let _ = self.live.send(StreamFrame::InvalidSession);
+    }
+
+    fn new_epoch_in(ring: &mut Ring, rng: &dyn RandomSource) {
+        ring.epoch = new_epoch(rng);
+        ring.next = 1;
+        ring.events.clear();
+    }
+
+    /// Journal `event` and send it to the live subscribers.
+    pub fn publish(&self, event: SubscriptionEvent) -> Cursor {
+        let mut ring = self.ring.write();
+        let sequenced = ring.append(event, self.capacity);
+        let cursor = sequenced.cursor;
+        let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
         cursor
     }
 
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.ring.read().len()
+    /// Journal `event` as one of the session's standing events: sent live
+    /// like [`Self::publish`], and kept until the session ends so a
+    /// subscriber that connects later is handed it ([`Self::connect`],
+    /// [`Self::standing`]).
+    pub fn publish_standing(&self, event: SubscriptionEvent) -> Cursor {
+        let mut ring = self.ring.write();
+        let sequenced = ring.append(event, self.capacity);
+        let cursor = sequenced.cursor;
+        ring.standing.push(Standing {
+            key: None,
+            sequenced: sequenced.clone(),
+        });
+        let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
+        cursor
     }
 
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.ring.read().is_empty()
+    /// Journal `event` as the current value of the session state `key` (a
+    /// voice roster, the call we are in): sent live like [`Self::publish`],
+    /// and kept as a standing event in place of the value `key` held before,
+    /// so a subscriber that connects later is handed the state as it is now
+    /// and then the live changes.
+    pub fn publish_state(&self, key: &str, event: SubscriptionEvent) -> Cursor {
+        let mut ring = self.ring.write();
+        ring.standing.retain(|s| s.key.as_deref() != Some(key));
+        let sequenced = ring.append(event, self.capacity);
+        let cursor = sequenced.cursor;
+        ring.standing.push(Standing {
+            key: Some(key.to_owned()),
+            sequenced: sequenced.clone(),
+        });
+        let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
+        cursor
     }
-}
 
-impl<T: Clone> EventJournal<T> {
-    pub fn replay_since(&self, since: JournalCursor) -> Vec<JournalEntry<T>> {
+    /// The state `key` ended (the call was left): later subscribers are not
+    /// handed its last value.
+    pub fn clear_state(&self, key: &str) {
+        let mut ring = self.ring.write();
+        ring.standing.retain(|s| s.key.as_deref() != Some(key));
+    }
+
+    /// This session's standing events with their cursors, oldest first: the
+    /// snapshot a window that just opened is handed before its live events.
+    #[must_use]
+    pub fn standing(&self) -> Vec<Sequenced> {
         self.ring
             .read()
+            .standing
             .iter()
-            .filter(|e| e.cursor > since)
-            .cloned()
+            .map(|s| s.sequenced.clone())
             .collect()
+    }
+
+    /// The current position: the cursor of the last event published in this
+    /// epoch (seq 0 before the first).
+    #[must_use]
+    pub fn head(&self) -> Cursor {
+        let ring = self.ring.read();
+        Cursor {
+            epoch: ring.epoch,
+            seq: ring.next - 1,
+        }
+    }
+
+    /// Subscribe from `from`: `None` for live events only; otherwise
+    /// [`Self::replay`]'s frames first, then live.
+    #[must_use]
+    pub fn subscribe(&self, from: Option<Cursor>) -> EventStream {
+        let ring = self.ring.read();
+        let live = self.live.subscribe();
+        let first = from
+            .map(|from| replay_from(&ring, from))
+            .unwrap_or_default();
+        EventStream {
+            source: Source::Journal {
+                first: first.into(),
+                live: Some(live),
+            },
+        }
+    }
+
+    /// A frontend connection's stream, the session's standing events first:
+    /// with no cursor (a frontend that just connected, or reloaded after
+    /// `InvalidSession`) all of them, then live; from a cursor this epoch
+    /// still serves (a frontend process started again with the cursor it
+    /// kept, which holds nothing it was shown) the standing events at or
+    /// before it, then [`Self::replay`]'s frames, then live. Every frame
+    /// comes in cursor order. Taken under the journal's lock, so the snapshot
+    /// and the live stream neither overlap nor leave a gap.
+    #[must_use]
+    pub fn connect(&self, from: Option<Cursor>) -> EventStream {
+        let ring = self.ring.read();
+        let live = self.live.subscribe();
+        let replay = from.map(|from| replay_from(&ring, from));
+        let served = replay
+            .as_ref()
+            .is_none_or(|frames| !matches!(frames.as_slice(), [StreamFrame::InvalidSession]));
+        let mut first: VecDeque<StreamFrame> = ring
+            .standing
+            .iter()
+            .filter(|s| served && from.is_none_or(|from| s.sequenced.cursor.seq <= from.seq))
+            .map(|s| StreamFrame::Event(Box::new(s.sequenced.clone())))
+            .collect();
+        first.extend(replay.unwrap_or_default());
+        EventStream {
+            source: Source::Journal {
+                first,
+                live: Some(live),
+            },
+        }
+    }
+
+    /// What followed `from` and `Resumed` when `from` is this epoch's and the
+    /// ring still covers it; otherwise `InvalidSession`. For a consumer that
+    /// takes live frames elsewhere (the GUI's windows share one live stream)
+    /// and so dedupes by cursor.
+    #[must_use]
+    pub fn replay(&self, from: Cursor) -> Vec<StreamFrame> {
+        replay_from(&self.ring.read(), from)
     }
 }
 
-impl<T> EventJournal<T> {
-    /// Empty the ring buffer **and** reset the cursor counter to 1.
-    ///
-    /// Called on logout so a subsequent login (same identity or
-    /// otherwise) cannot replay events that belonged to the previous
-    /// session — a privacy hazard for a vulnerable-users platform
-    /// where shared devices are common. Resetting the counter is
-    /// intentional: any cursor the frontend has persisted to
-    /// `sessionStorage` is now meaningless against the new journal
-    /// generation, but cross-session resume is best-effort and the
-    /// frontend treats empty replays as the cold-start default.
-    pub fn clear(&self) {
-        self.ring.write().clear();
-        self.next.store(1, Ordering::Relaxed);
+fn replay_from(ring: &Ring, from: Cursor) -> Vec<StreamFrame> {
+    let head = ring.next - 1;
+    let oldest = ring.events.front().map_or(ring.next, |e| e.cursor.seq);
+    // Served when the cursor is this epoch's, not ahead of the head, and
+    // nothing after it was evicted.
+    if from.epoch == ring.epoch && from.seq <= head && from.seq + 1 >= oldest {
+        let mut frames: Vec<StreamFrame> = ring
+            .events
+            .iter()
+            .filter(|e| e.cursor.seq > from.seq)
+            .cloned()
+            .map(|s| StreamFrame::Event(Box::new(s)))
+            .collect();
+        frames.push(StreamFrame::Resumed(Cursor {
+            epoch: ring.epoch,
+            seq: head,
+        }));
+        frames
+    } else {
+        vec![StreamFrame::InvalidSession]
+    }
+}
+
+/// One subscriber's stream: its replay, then the live frames — from this
+/// process's journal, or from a channel another transport feeds (the
+/// daemon client's bus stream, plan E1.1).
+pub struct EventStream {
+    source: Source,
+}
+
+enum Source {
+    Journal {
+        first: VecDeque<StreamFrame>,
+        live: Option<broadcast::Receiver<StreamFrame>>,
+    },
+    Channel(tokio::sync::mpsc::Receiver<StreamFrame>),
+}
+
+impl EventStream {
+    /// A stream fed by `frames`: the frames as the sender orders them (a
+    /// bus client relays the host's, replay and `Resumed` included).
+    #[must_use]
+    pub fn from_channel(frames: tokio::sync::mpsc::Receiver<StreamFrame>) -> Self {
+        Self {
+            source: Source::Channel(frames),
+        }
+    }
+
+    /// The next frame, or `None` once the stream has ended (the journal or
+    /// the channel is gone, or the subscriber fell behind and was sent
+    /// `InvalidSession`).
+    pub async fn next(&mut self) -> Option<StreamFrame> {
+        match &mut self.source {
+            Source::Channel(frames) => frames.recv().await,
+            Source::Journal { first, live } => {
+                if let Some(frame) = first.pop_front() {
+                    return Some(frame);
+                }
+                let receiver = live.as_mut()?;
+                match receiver.recv().await {
+                    Ok(frame) => Some(frame),
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(skipped, "event subscriber fell behind; it reloads");
+                        *live = None;
+                        Some(StreamFrame::InvalidSession)
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        *live = None;
+                        None
+                    }
+                }
+            }
+        }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rekindle_types::subscription_events::{NetworkEvent, SubscriptionEvent};
-
-    fn ev() -> SubscriptionEvent {
-        SubscriptionEvent::Network(NetworkEvent::AttachmentChanged {
-            attachment_state: "attached_good".into(),
-            is_attached: true,
-            public_internet_ready: true,
-            has_route: true,
-            media_route: rekindle_types::subscription_events::RouteAvailability::Available,
-        })
-    }
-
-    #[test]
-    fn cursors_are_monotonic() {
-        let j: EventJournal<SubscriptionEvent> = EventJournal::new(10);
-        let c1 = j.append(ev());
-        let c2 = j.append(ev());
-        assert_eq!(c2, c1 + 1);
-    }
-
-    #[test]
-    fn capacity_evicts_oldest() {
-        let j: EventJournal<SubscriptionEvent> = EventJournal::new(2);
-        let _c1 = j.append(ev());
-        let _c2 = j.append(ev());
-        let _c3 = j.append(ev());
-        assert_eq!(j.len(), 2);
-    }
-
-    #[test]
-    fn replay_since_returns_newer_only() {
-        let j: EventJournal<SubscriptionEvent> = EventJournal::new(10);
-        let c1 = j.append(ev());
-        let _c2 = j.append(ev());
-        let _c3 = j.append(ev());
-        let out = j.replay_since(c1);
-        assert_eq!(out.len(), 2);
-        assert!(out.iter().all(|entry| entry.cursor > c1));
-    }
-
-    /// Phase 10 — the journal must also work with non-`SubscriptionEvent`
-    /// payloads (the Tauri track uses `serde_json::Value`-shaped records).
-    #[test]
-    fn generic_payload_round_trips() {
-        let j: EventJournal<String> = EventJournal::new(4);
-        j.append("a".into());
-        j.append("b".into());
-        let out = j.replay_since(0);
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].event, "a");
-        assert_eq!(out[1].event, "b");
-    }
-
-    /// Phase 10 — `clear()` drops all entries AND resets the cursor so
-    /// post-logout replay can't surface previous-session events. This
-    /// is the privacy invariant the logout path depends on.
-    #[test]
-    fn clear_empties_ring_and_resets_cursor() {
-        let j: EventJournal<String> = EventJournal::new(8);
-        j.append("alice-secret-1".into());
-        j.append("alice-secret-2".into());
-        assert_eq!(j.len(), 2);
-        j.clear();
-        assert!(j.is_empty(), "ring must be empty after clear");
-        // Cursor restarts at 1 — a stale sessionStorage cursor from the
-        // previous session would now be GREATER than any cursor the
-        // new session will produce, so replay returns nothing.
-        let c = j.append("bob-fresh-1".into());
-        assert_eq!(c, 1, "post-clear cursor must restart at 1");
-        let leaked = j.replay_since(0);
-        assert_eq!(leaked.len(), 1, "only the post-clear event is visible");
-        assert_eq!(leaked[0].event, "bob-fresh-1");
-        assert!(
-            leaked.iter().all(|e| !e.event.contains("alice")),
-            "no alice-* events may survive into bob's session",
-        );
-    }
-}
+#[path = "journal_tests.rs"]
+mod tests;

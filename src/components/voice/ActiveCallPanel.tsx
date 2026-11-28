@@ -1,27 +1,24 @@
-import { Component, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { commands } from "../../ipc/commands";
-import { callsState, type CallEntry } from "../../stores/calls.store";
-import { voiceState, setVoiceState } from "../../stores/voice.store";
-import { settingsState, setSettingsState } from "../../stores/settings.store";
-import { friendsState } from "../../stores/friends.store";
-import { handleEndDmCall } from "../../actions/calls.actions";
 import {
-  ICON_HANGUP,
-  ICON_HEADPHONES,
-  ICON_HEADPHONES_OFF,
-  ICON_MIC,
-  ICON_MIC_OFF,
-  ICON_OPEN_IN_NEW,
-  ICON_PHONE,
-  ICON_SCREEN_SHARE,
-  ICON_VIDEO,
-  ICON_VIDEO_OFF,
-} from "../../icons";
-import VideoCallPanel from "./VideoCallPanel";
-import ReactionsTray from "./ReactionsTray";
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+  Show,
+} from "solid-js";
+import { handleEndDmCall } from "../../actions/calls.actions";
+import { commands } from "../../ipc/commands";
+import type { CallEntry } from "../../stores/calls.store";
+import { friendsState } from "../../stores/friends.store";
+import { setSettingsState, settingsState } from "../../stores/settings.store";
+import { setVoiceState, voiceState } from "../../stores/voice.store";
+import SkinGlyph from "../common/SkinGlyph";
 import ReactionFloater from "./ReactionFloater";
+import ReactionsTray from "./ReactionsTray";
+import VideoCallPanel from "./VideoCallPanel";
 
-export interface ActiveCallPanelProps {
+interface ActiveCallPanelProps {
   call: CallEntry;
   /** "inline" docks under the DM header; "popout" fills the call window. */
   mode?: "inline" | "popout";
@@ -39,6 +36,8 @@ export interface ActiveCallPanelProps {
 //   - quality bars     → reads voiceState.connectionQuality (populated by
 //                        the backend's ConnectionQuality voice event)
 const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
+  const microphoneId = createUniqueId();
+  const speakersId = createUniqueId();
   const [now, setNow] = createSignal(Date.now());
   let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -63,21 +62,29 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 
   const isVideoCall = createMemo(() => props.call.kind === "video");
 
-  const peerSpeaking = createMemo(() =>
-    voiceState.participants.find((p) => p.publicKey === props.call.peerKey)?.isSpeaking ?? false,
+  const peerSpeaking = createMemo(
+    () =>
+      voiceState.participants.find((p) => p.publicKey === props.call.peerKey)?.isSpeaking ?? false
   );
 
   const peerStatus = createMemo(() => friendsState.friends[props.call.peerKey]?.status ?? "online");
 
   const qualityBars = (): number => {
     switch (voiceState.connectionQuality) {
-      case "excellent": return 4;
-      case "good": return 3;
-      case "fair": return 2;
-      case "recovering": return 2;
-      case "poor": return 1;
-      case "lost": return 0;
-      default: return 3;
+      case "excellent":
+        return 4;
+      case "good":
+        return 3;
+      case "fair":
+        return 2;
+      case "recovering":
+        return 2;
+      case "poor":
+        return 1;
+      case "lost":
+        return 0;
+      default:
+        return 3;
     }
   };
 
@@ -85,11 +92,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
   // toggle so the peer's UI mounts/unmounts tiles in sync. Best-effort:
   // a failed ping is non-fatal because the actual frame stream (or
   // absence of it) is the authoritative truth.
-  async function pingMediaState(
-    audio: boolean,
-    video: boolean,
-    screen: boolean,
-  ): Promise<void> {
+  async function pingMediaState(audio: boolean, video: boolean, screen: boolean): Promise<void> {
     try {
       await commands.sendCallMediaState(props.call.callId, audio, video, screen);
     } catch (e) {
@@ -172,13 +175,14 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             <span class={`active-call-status active-call-status-${peerStatus()}`}>
               {peerStatus()}
             </span>
-            <span class="active-call-timer" aria-label="Call duration">
+            <span class="active-call-timer" role="timer" aria-label="Call duration">
               {elapsedLabel()}
             </span>
           </div>
         </div>
         <div
           class="active-call-quality"
+          role="img"
           title={`Connection quality: ${voiceState.connectionQuality}`}
           aria-label={`Connection quality: ${voiceState.connectionQuality}`}
         >
@@ -200,9 +204,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
           title={voiceState.isMuted ? "Unmute" : "Mute"}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.isMuted ? ICON_MIC_OFF : ICON_MIC}
-          </span>
+          <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
         </button>
         <button
           type="button"
@@ -212,9 +214,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label={voiceState.isDeafened ? "Undeafen" : "Deafen"}
           title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.isDeafened ? ICON_HEADPHONES_OFF : ICON_HEADPHONES}
-          </span>
+          <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
         </button>
         <Show when={isVideoCall()}>
           <button
@@ -225,9 +225,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             aria-label={voiceState.cameraOn ? "Turn off camera" : "Turn on camera"}
             title={voiceState.cameraOn ? "Turn off camera" : "Turn on camera"}
           >
-            <span class="nf-icon" aria-hidden="true">
-              {voiceState.cameraOn ? ICON_VIDEO : ICON_VIDEO_OFF}
-            </span>
+            <SkinGlyph name={voiceState.cameraOn ? "video" : "video-off"} />
           </button>
         </Show>
         {/* Wave 12 W12.11 — screen-share toggle. Available in both audio
@@ -241,7 +239,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label={voiceState.screenShareOn ? "Stop sharing screen" : "Share screen"}
           title={voiceState.screenShareOn ? "Stop sharing screen" : "Share screen"}
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_SCREEN_SHARE}</span>
+          <SkinGlyph name="screen-share" />
         </button>
         {/* Wave 12 W12.11 — emoji reactions tray. */}
         <ReactionsTray />
@@ -256,7 +254,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             aria-label="Pop out call"
             title="Pop out"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_OPEN_IN_NEW}</span>
+            <SkinGlyph name="open-in-new" />
           </button>
         </Show>
         <button
@@ -266,7 +264,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label="Hang up"
           title="Hang up"
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+          <SkinGlyph name="hangup" />
         </button>
       </div>
 
@@ -279,8 +277,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
         when={
           voiceState.cameraOn ||
           voiceState.screenShareOn ||
-          (props.call.peerMediaState?.video ??
-            (props.call.kind === "video")) ||
+          (props.call.peerMediaState?.video ?? props.call.kind === "video") ||
           (props.call.peerMediaState?.screen ?? false)
         }
       >
@@ -289,12 +286,13 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 
       <details class="active-call-devices">
         <summary class="active-call-devices-summary">
-          <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+          <SkinGlyph name="phone" />
           Audio devices
         </summary>
         <div class="active-call-device-row">
-          <label>Microphone</label>
+          <label for={microphoneId}>Microphone</label>
           <select
+            id={microphoneId}
             value={settingsState.selectedInputDevice ?? ""}
             onChange={(e) => void pickInputDevice(e.currentTarget.value)}
           >
@@ -305,8 +303,9 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           </select>
         </div>
         <div class="active-call-device-row">
-          <label>Speakers</label>
+          <label for={speakersId}>Speakers</label>
           <select
+            id={speakersId}
             value={settingsState.selectedOutputDevice ?? ""}
             onChange={(e) => void pickOutputDevice(e.currentTarget.value)}
           >
@@ -322,15 +321,3 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 };
 
 export default ActiveCallPanel;
-
-/// Convenience wrapper for inline mounts where the caller has only a
-/// peerKey and the active-call store entry needs lookup.
-export const ActiveDmCallPanel: Component<{ peerKey: string }> = (props) => {
-  const active = createMemo(() => {
-    const a = callsState.activeCall;
-    return a && a.peerKey === props.peerKey ? a : null;
-  });
-  return (
-    <Show when={active()}>{(call) => <ActiveCallPanel call={call()} mode="inline" />}</Show>
-  );
-};

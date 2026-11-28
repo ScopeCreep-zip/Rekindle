@@ -5,14 +5,13 @@
 // subscription are different tiers; sharing a module made every
 // component that renders a call control import the subscription wiring.
 
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { commands } from "../ipc/commands";
-import { subscribeVoiceEvents } from "../ipc/channels";
+import { subscribeVoiceEvents, type UnlistenFn } from "../ipc/channels";
 import { callType, sessionKey } from "../ipc/channels/voice_events";
-import { friendsState } from "../stores/friends.store";
-import { voiceState, setVoiceState } from "../stores/voice.store";
+import { commands } from "../ipc/commands";
 import { communityState } from "../stores/community.store";
 import { addToast } from "../stores/toast.store";
+import { setVoiceState, voiceState } from "../stores/voice.store";
+import { errorMessage } from "../utils/error";
 import { probeAndReportLocalVideoCapabilities } from "./video.actions";
 
 let voiceEventUnlisten: UnlistenFn | null = null;
@@ -29,11 +28,15 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       //
       // `activeCallType` is now derived from the scope rather than sent
       // as its own string, so the two can no longer disagree.
-      const { scope } = event.localJoined;
+      const { scope, joinHandshake, mediaReady } = event.localJoined;
+      // The handshake and media readiness as the Host had them when the
+      // session started (VN3), never assumed here.
       setVoiceState({
         isConnected: true,
         channelId: sessionKey(scope),
         activeCallType: callType(scope),
+        joinHandshake,
+        mediaReady,
       });
     } else if ("joined" in event) {
       const { pseudonym, displayName } = event.joined;
@@ -41,32 +44,20 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
         ...prev.filter((p) => p.publicKey !== pseudonym),
         {
           publicKey: pseudonym,
-          displayName: displayName ?? pseudonym,
+          displayName,
           isMuted: false,
           isSpeaking: false,
         },
       ]);
     } else if ("left" in event) {
       const { pseudonym } = event.left;
-      setVoiceState("participants", (prev) =>
-        prev.filter((p) => p.publicKey !== pseudonym),
-      );
+      setVoiceState("participants", (prev) => prev.filter((p) => p.publicKey !== pseudonym));
     } else if ("speakingChanged" in event) {
       const { pseudonym, speaking } = event.speakingChanged;
-      setVoiceState(
-        "participants",
-        (p) => p.publicKey === pseudonym,
-        "isSpeaking",
-        speaking,
-      );
+      setVoiceState("participants", (p) => p.publicKey === pseudonym, "isSpeaking", speaking);
     } else if ("muteChanged" in event) {
       const { targetPseudonym, muted } = event.muteChanged;
-      setVoiceState(
-        "participants",
-        (p) => p.publicKey === targetPseudonym,
-        "isMuted",
-        muted,
-      );
+      setVoiceState("participants", (p) => p.publicKey === targetPseudonym, "isMuted", muted);
     } else if ("connectionQuality" in event) {
       const q = event.connectionQuality;
       setVoiceState("connectionQuality", q.quality);
@@ -113,15 +104,9 @@ export async function handleJoinVoice(channelId: string, communityId?: string): 
       voiceEventUnlisten = await initVoiceEventListener();
     }
     await commands.joinVoiceChannel(channelId, communityId);
-    // Community joins start the three-way handshake: VoiceJoin is out,
-    // nobody has seen us yet. The backend's voiceJoinHandshake events
-    // advance this to "seen"/"connected".
-    if (communityId) {
-      setVoiceState("joinHandshake", "announced");
-      // Media-ready resets with the new session; the backend emits the
-      // first voiceMediaReady transition once the slot is seeded.
-      setVoiceState("mediaReady", null);
-    }
+    // The handshake and media readiness come with localJoined (VN3) and
+    // advance on the Host's events; nothing is set here after the join
+    // returns (that overwrote a "connected" that had already arrived).
     // Backend emits VoiceEvent::LocalJoined which the listener mirrors into
     // voiceState (isConnected + channelId + activeCallType). No manual set
     // here — that was the C1 bug: prior code set isConnected/channelId but
@@ -183,12 +168,17 @@ export async function handleLeaveVoice(): Promise<void> {
 }
 
 export async function handleToggleMute(): Promise<void> {
+  await handleSetMuted(!voiceState.isMuted);
+}
+
+/** Mute or unmute our microphone (a skin's MuteSelf / UnmuteSelf, plan SK2-A5). */
+export async function handleSetMuted(muted: boolean): Promise<void> {
   try {
-    const newMuted = !voiceState.isMuted;
-    await commands.setMute(newMuted);
-    setVoiceState("isMuted", newMuted);
+    await commands.setMute(muted);
+    setVoiceState("isMuted", muted);
   } catch (e) {
-    console.error("Failed to toggle mute:", e);
+    // Never silent: the Host's words (a pack's Mute in any window).
+    addToast(errorMessage(e), "error");
   }
 }
 
@@ -202,10 +192,7 @@ export async function handleToggleDeafen(): Promise<void> {
   }
 }
 
-export async function handleRequestToSpeak(
-  communityId: string,
-  channelId: string,
-): Promise<void> {
+export async function handleRequestToSpeak(communityId: string, channelId: string): Promise<void> {
   try {
     await commands.requestToSpeak(communityId, channelId);
   } catch (e) {
@@ -217,15 +204,10 @@ export async function handleRespondToSpeakRequest(
   communityId: string,
   channelId: string,
   requesterPseudonym: string,
-  granted: boolean,
+  granted: boolean
 ): Promise<void> {
   try {
-    await commands.respondToSpeakRequest(
-      communityId,
-      channelId,
-      requesterPseudonym,
-      granted,
-    );
+    await commands.respondToSpeakRequest(communityId, channelId, requesterPseudonym, granted);
   } catch (e) {
     console.error("Failed to respond to speak request:", e);
   }

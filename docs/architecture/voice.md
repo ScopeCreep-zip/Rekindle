@@ -1,5 +1,13 @@
 # Voice Architecture
 
+> **Status (2026-10-15).** [ADR 0015](../decisions/0015-media-engine.md) replaces the jitter buffer,
+> mixer and hand-derived control loops described below with one Rust media engine built from ported
+> production components (NetEQ-class playout, GoogCC trendline); the full rewrite of this page rides
+> plan step E4.3.8. [ADR 0016](../decisions/0016-sender-owned-call-media-keys.md) records the media-key
+> model (§"Channel media keys"). The former `src-tauri/src/services/voice/` files now live in
+> `crates/rekindle-voice/src/`; the desktop glue is `src-tauri/src/services/voice_adapter/` and
+> `voice_runtime.rs`.
+
 The voice pipeline carries low-latency audio between peers in 1:1 calls,
 DM/group-DM calls, and community voice channels. It is built on Veilid's
 `app_message` primitive over a 3-hop Tor-class `SafetySelection::Safe`
@@ -10,16 +18,17 @@ The implementation lives in two places:
 
 - **`crates/rekindle-voice/`** — pure-logic audio pipeline (capture,
   encode, transport, jitter, mix, playback).
-- **`src-tauri/src/services/voice/`** — the Tauri-side orchestration
-  (send/receive/MCU loops, signaling, election, device monitor, session
-  state, shutdown).
+- **`src-tauri/src/services/voice_adapter/`, `voice_runtime.rs`** — the
+  Tauri-side glue (Veilid egress, media keys, session setup, event
+  mapping). The send/receive/MCU loops, signaling, election, device
+  monitor, session state and shutdown live in `rekindle-voice`.
 
 This split lets the audio pipeline be unit-tested without Tauri or Veilid
 mocks.
 
 ## End-to-end pipeline
 
-```
+```text
                     ┌─────────────────────────┐
                     │      Microphone         │
                     └────────────┬────────────┘
@@ -82,10 +91,10 @@ OS threads. The crate bridges these threads to the Tokio runtime via
 |--------|-------|-----------|
 | Capture thread | `AudioCapture` | Microphone PCM → `mpsc::Sender<Vec<f32>>` |
 | Playback thread | `AudioPlayback` | `mpsc::Receiver<Vec<f32>>` → speaker |
-| Tokio task: send loop | `services/voice/send_loop.rs` | Drains capture, runs `AudioProcessor`, encodes, transports |
-| Tokio task: receive loop | `services/voice/receive_loop.rs` | Reads `VoicePacket`s from dispatch, jitters, decodes |
-| Tokio task: MCU loop | `services/voice/mcu_loop.rs` | Mutual-aid SFU mixer for >4-participant calls |
-| Tokio task: device monitor | `services/voice/device_monitor.rs` | Watches `device_error_rx` for hot-plug / device-failed events |
+| Tokio task: send loop | `rekindle-voice/src/send_loop/` | Drains capture, runs `AudioProcessor`, encodes, transports |
+| Tokio task: receive loop | `rekindle-voice/src/receive_loop/` | Reads `VoicePacket`s from dispatch, jitters, decodes |
+| Tokio task: MCU loop | `rekindle-voice/src/mcu_loop.rs` | Mutual-aid SFU mixer for >4-participant calls |
+| Tokio task: device monitor | `rekindle-voice/src/session/device_monitor.rs` | Watches `device_error_rx` for hot-plug / device-failed events |
 
 All cross-thread communication uses Tokio `mpsc` channels with bounded
 capacity (~100 frames ≈ 2 s of audio at 20 ms per frame). Backpressure
@@ -165,14 +174,18 @@ with the route blob from the per-peer registry entry. **Voice frames are
 loss-tolerant** — Opus FEC + PLC handle small gaps; retransmission would
 add latency without benefit, so failed frame sends are dropped after
 warn-level telemetry (W14.4 `VoiceEvent::PacketsDropped` with reason).
-**Voice signaling envelopes are NOT loss-tolerant** — they flow through
-the W16 `pending_envelopes` reliability primitive (per-recipient seq_ack,
-receiver dedup, route-aware retry up to 5 min, crash recovery for
-Dialing/Incoming states); see §Signaling and session state below.
+**Voice signaling envelopes are NOT loss-tolerant**; their reliability is
+D8's call transactions (plan E4.2). The W16 `pending_envelopes` primitive
+meant for them was never wired and was deleted (plan E2.3); see
+§Signaling and session state below.
 
-`VoiceMode` lets a session prefer ordered delivery (`PreferOrdered`)
-when the network conditions warrant it; the default is
-`NoPreference`, which Veilid optimises for latency.
+Frames are sent under `MessageClass::Voice` (LowLatency /
+`PreferUnordered`) to the peer's Media route, itself Unordered; call
+signals are control traffic, `MessageClass::Text` (Reliable /
+`PreferOrdered`), to the peer's General route. See
+`docs/protocol/overview.md` §Sequencing for the Veilid basis (plan VU
+decision 2). (`VoiceMode` is the mesh/MCU topology, not a sequencing
+choice.)
 
 ## Mutual-aid SFU pattern
 
@@ -185,45 +198,42 @@ SFU (Selective Forwarding Unit) without a dedicated server:
 | ≤ 4 | Full mesh | N − 1 |
 | > 4 | Mutual-aid SFU | 1 (to the elected SFU) |
 
-The SFU is selected deterministically by `services/voice/election.rs`:
-the online voice participant with the lowest `blake3(channel_id || own_pseudonym)`
-hash wins. Same input → same output → every peer agrees without
-coordination. The SFU role transfers automatically when the elected
-participant leaves; the new lowest-hash member takes over.
+**Today's code is an MCU, not an SFU.** The host is selected
+deterministically by `rekindle-voice/src/election.rs`: the participant
+whose pseudonym has the lowest XOR distance to `blake3(channel_id)`
+wins. Same input → same output → every peer agrees without
+coordination, and the role moves when the host leaves. The host
+(`mcu_loop.rs`) decodes and mixes the streams, so it is a participant
+that hears plaintext (threat model I13).
 
-Encoding stays at the speaker — the SFU does not transcode. It only fans
-out frames to the other listeners. Mixing happens locally on each
-listener via `AudioMixer`, summing per-participant streams with
-per-source gain.
+**Target (plan E4.4):** a forwarding-only relay that never decodes
+(D27), elected by maximum advertised uplink with ties broken by minimum
+`blake3(scope‖peer)`. Mixing then happens on each listener.
 
 ## Signaling and session state
 
-**Wave 13 / Wave 16 supersession**: Voice and call signaling moved off
-Veilid `app_call` (synchronous RPC) to fire-and-forget `app_message`,
-layered with the W16 `pending_envelopes` reliability primitive
-(per-recipient seq_ack, receiver dedup, durable retry up to 5 min,
-crash-survives recovery). Reasons:
+**Today:** call signals go by fire-and-forget `app_message` under the
+1:1 control profile (`MessageClass::Text`, `PreferOrdered`), with no
+receipt or retry. **Decided (D8, plan E4.2, not built):** every call
+signal is an `app_call` transaction after RFC 3261 §17: T1 = the route
+RTT doubling to T2 = 4 s with jitter, a timeout of 64·T1 (≈ 32 s), the
+callee re-sending Accept until acknowledged, one transaction in flight
+per session, over the D22 outbox streams. The Wave 13 / Wave 16 move to
+`app_message` (and its never-wired `pending_envelopes` layer, deleted in
+plan E2.3) is superseded by D8.
 
-- `app_call`'s synchronous RPC layer collapses at ~25 s under network
-  churn; a long ring window can lose the call mid-handshake.
-- `app_call` traffic shape leaks "this is a call signal" vs DM (a
-  privacy regression for vulnerable users).
-- Reference architectures (SimpleX, Signal RingRTC, WebRTC standard) all
-  use async signaling for the same reasons.
-
-The supersession applies to both 1:1 call signaling
+This applies to both 1:1 call signaling
 (`CallInvite`/`CallAccept`/`CallDecline`/`CallRinging`/`CallEnd`/
 `CallMediaState`) and group call signaling
 (`GroupCallOffer`/`GroupCallAccept`/`GroupCallDecline`).
 Receiver-side reliability is "voice peer accepted" knowledge via the
-`ChatEvent::CallAccept`/`CallConnected` path; senders learn delivery
-outcomes via `ChatEvent::EnvelopeDelivered`/`EnvelopeDeliveryFailed`.
+`ChatEvent::CallAccept`/`CallConnected` path.
 
 `services/calls/mod.rs` owns the call state machine; `services/calls/
 state.rs` defines the per-call status (Outgoing, Incoming, Connecting,
 Active); `services/calls/ring_timer.rs` enforces 30 s timeouts on
 Dialing and Incoming. Voice transport setup
-(`services/voice/session.rs`) only runs after the W14.1 permanent
+(`rekindle-voice/src/session/`) only runs after the W14.1 permanent
 ingress is in place — no per-call channel construction races.
 
 The Phase 14.q `CallRegistry` trait (defined in
@@ -240,7 +250,7 @@ decline, end) while the adapter owns the AppState writes and the
 `send_call_media_state`, `send_call_reaction`, `mute_caller_temp`,
 plus the group-call variants — all registered through `invoke.rs`.
 
-`services/voice/signaling.rs` retains the wire types for community
+`rekindle-voice/src/signaling/` retains the wire types for community
 voice operations (join/leave/handraise/server-mute) which still use a
 combination of governance entries and gossip. `session.rs` holds the
 per-channel session state in `VoiceSessionMap`. Session state lives in
@@ -263,7 +273,7 @@ signing key context) is process-bound and cannot meaningfully resume
 across crash. Only Dialing/Incoming envelopes persist (W16.3) so a
 30 s ring window survives a quick app restart.
 
-On disconnect or shutdown, `services/voice/shutdown.rs` joins the
+On disconnect or shutdown, `rekindle-voice/src/session/shutdown.rs` joins the
 background tasks, drops the cpal streams (which terminates the capture
 and playback threads), clears the registry's `voice_channel` field, and
 clears `state.voice_packet_tx` + `state.voice_packet_rx_staged` (W15.5).
@@ -273,7 +283,7 @@ clears `state.voice_packet_tx` + `state.voice_packet_rx_staged` (W15.5).
 `AudioCapture` and `AudioPlayback` accept a `device_error_tx: mpsc::Sender<String>`
 that fires on cpal `BuildStreamError`, `PlayStreamError`, or stream
 termination. The merged receiver is consumed by
-`services/voice/device_monitor.rs`, which:
+`rekindle-voice/src/session/device_monitor.rs`, which:
 
 1. Pauses the affected pipeline (capture or playback).
 2. Re-enumerates devices via `crates/rekindle-voice/src/device.rs`.
@@ -318,7 +328,7 @@ The wire packet is `schemas/voice_packet.capnp` behind the one-byte
 `'V'` media tag, signed under `rekindle-voice-packet-v2`. The SFrame
 plaintext is a VAD level byte followed by the Opus frame.
 
-## Channel media keys (plan C7.20)
+## Channel media keys (plan C7.20, ADR 0016)
 
 Community call media — voice and video — is not under a MEK. Each
 participant keys its own media and hands the key to each participant on
@@ -326,32 +336,66 @@ its roster (`rekindle_secrets::media_sender_key`; RFC 9605 §5.1 sender
 keys, the MatrixRTC per-member model). No rotator is elected: every
 sender owns its own key, so there is nothing to agree on.
 
-- **Key.** A random 32-byte secret per channel session, with a random
-  starting index. Video derives its frame key from it
-  (`video_frame_key`).
-- **Distribution.** `ControlPayload::VoiceMediaKey`, HPKE Auth-sealed
-  from our channel pseudonym to the recipient's, with AAD binding
-  channel ‖ recipient ‖ index. It is sent to the channel roster and
-  opened only by its recipient.
-- **Join.** A joiner gets our current key if it is under 10 s old;
-  otherwise we rotate and send the new key to everyone (MatrixRTC's
-  share-or-rotate rule), so a late joiner cannot read earlier media.
-- **Leave.** When a participant leaves the channel, is expired from
-  the roster, or leaves the community (kicked, banned, departed), we
-  rotate and send the new key to everyone left. The new key is used
-  after 5 s, and rotations within that delay coalesce.
+- **Key.** A random 32-byte secret per channel session. The key index
+  is RFC 9605 §5.1's two-part KID, `generation = index >> 8`,
+  `step = index & 0xff`, starting at a random 32-bit generation. Video
+  derives its frame key from the secret (`video_frame_key`).
+- **Session key (C7.29 G2).** Each participant makes an X25519 key per
+  channel session (`media_sender_key::session::SessionKey`, held by the
+  keyring) and announces its public half on `VoiceJoin`, `VoiceJoinAck`
+  and each `VoiceRosterEntry` (`sessionKey`, `sessionKeySig`), signed by
+  its pseudonym over `rekindle-media-session-key-v1 ‖ community ‖
+  channel ‖ key`. A key is learned only under that signature
+  (`learn_session_key`). The secret is dropped (zeroized) with the
+  keyring at `ChannelSenderKeyStore::end`/`clear`, so a recorded
+  `VoiceMediaKey` stays closed after the session even if the pseudonym
+  is later seized (RFC 9180 §9.1).
+- **Distribution.** `ControlPayload::VoiceMediaKey` (@71; request @72,
+  ack @73): HPKE Base to the recipient's session key, AAD channel ‖
+  recipient ‖ index, plus the sender's pseudonym signature over
+  `rekindle-media-key-sig-v1 ‖ channel ‖ recipient ‖ index ‖ sealed`
+  (`signature`). It is sent pairwise to the channel roster, acknowledged
+  and retried, and opened only by its recipient. Nothing is sealed to a
+  participant whose session key we do not hold; its join or ack brings
+  one, and it asks with `VoiceMediaKeyRequest` meanwhile.
+- **Join (C7.29 G1).** On a join a sender whose key sealed a frame steps
+  it forward (`sframe::ratchet`: `HKDF-Expand(HKDF-Extract("", key),
+  "SFrame 1.0 Ratchet", 32)`), erases the previous step and sends the
+  new step to the joiner only; existing receivers derive it, at most
+  `MAX_RATCHET_AHEAD` = 5 steps (RingRTC `MAX_OOO_RATCHETS`). Joins while
+  the key is unused coalesce into one step. A join at step 255 starts a
+  new generation instead, sent to everyone, and the joiner waits for it.
+  The keyring records each participant's admission index, and a
+  `VoiceMediaKeyRequest` is answered with keys from that index on
+  (`shareable_for`), so a joiner never gets a key that sealed frames
+  before it joined. A voice frame's KID carries only the step, so the
+  receiver tries each held generation's candidate at that step and keeps
+  the one that opens (`receive_candidates`, `confirm`).
+- **Leave (C7.29 G3, G4).** When a participant leaves the channel or is
+  expired from the roster, we start a new generation with a fresh secret,
+  sent to everyone left and used after 5 s. At most one rotation is
+  pending (RingRTC): a leave during the delay marks another, started
+  when the pending one is applied (`follow_up`), so no index is ever
+  bound to two secrets and a leaver hears at most ~10 s after leaving.
+  A member leaving the community (kicked, banned, departed;
+  `member_departed`, `Departure::LeftCommunity`) always rotates, in a
+  stage channel too; only a stage listener leaving on its own does not.
 - **Missing key.** A frame under an index we lack sends a
   `VoiceMediaKeyRequest` to its sender (at most once per sender every
   10 s). The sender answers only a requester on its roster.
 - **Retention.** Five keys per sender, so frames in flight across a
   rotation still open.
-- **Stage channels** never rotate on a listener's join or leave
-  (§10.7: anyone may listen). A joiner still gets every speaker's
-  current key.
+- **Stage channels** never rotate on a listener's voluntary join or
+  leave (§10.7: anyone may listen). *Gap (C7.29 G4):* today they do not
+  rotate when a listener is kicked or banned either; C7.29 makes every
+  community departure rotate.
 
-For 1:1 and DM/group-DM calls, the call key is derived deterministically
-via X25519 ECDH over the participants' identity keys plus the call ID as
-HKDF salt. See [`crates.md`](crates.md) for the `rekindle-calls` crate.
+For 1:1 calls, the call key is X25519 ECDH between fresh per-call
+ephemeral keypairs (`rekindle_calls::fresh_keypair`, `derive_call_key`)
+with the call ID as HKDF salt, so it is forward-secret. Group calls
+(`rekindle-calls/src/group.rs`) still wrap an initiator-made key per
+participant; E4.2 moves them onto the sender-owned keyring and deletes
+`wrap_call_key`. See [`crates.md`](crates.md) for the `rekindle-calls` crate.
 
 ## Where to look
 
@@ -367,13 +411,13 @@ HKDF salt. See [`crates.md`](crates.md) for the `rekindle-calls` crate.
 | Veilid `app_message` transport | `crates/rekindle-voice/src/transport.rs` |
 | Device enumeration | `crates/rekindle-voice/src/device.rs` |
 | Threading helpers | `crates/rekindle-voice/src/audio_thread.rs` |
-| Send loop (capture → encode → transport) | `src-tauri/src/services/voice/send_loop.rs` |
-| Receive loop (transport → jitter → decode) | `src-tauri/src/services/voice/receive_loop.rs` |
-| MCU mixer loop | `src-tauri/src/services/voice/mcu_loop.rs` |
-| Voice signaling (join/leave/hand-raise) | `src-tauri/src/services/voice/signaling.rs` |
-| SFU rotator election | `src-tauri/src/services/voice/election.rs` |
-| Per-channel session map | `src-tauri/src/services/voice/session.rs` |
-| Device hot-plug monitor | `src-tauri/src/services/voice/device_monitor.rs` |
-| Graceful shutdown | `src-tauri/src/services/voice/shutdown.rs` |
+| Send loop (capture → encode → transport) | `crates/rekindle-voice/src/send_loop/` |
+| Receive loop (transport → jitter → decode) | `crates/rekindle-voice/src/receive_loop/` |
+| MCU mixer loop | `crates/rekindle-voice/src/mcu_loop.rs` |
+| Voice signaling (join/leave/hand-raise) | `crates/rekindle-voice/src/signaling/` |
+| MCU host election (E4.4: forwarding relay) | `crates/rekindle-voice/src/election.rs` |
+| Per-channel session map | `crates/rekindle-voice/src/session/` |
+| Device hot-plug monitor | `crates/rekindle-voice/src/session/device_monitor.rs` |
+| Graceful shutdown | `crates/rekindle-voice/src/session/shutdown.rs` |
 | IPC commands | `src-tauri/src/commands/voice.rs` |
 | Frontend voice store / panel | `src/stores/voice.store.ts`, `src/components/voice/` |

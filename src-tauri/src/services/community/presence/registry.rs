@@ -1,29 +1,21 @@
 //! Phase 21 REDO — thin facade.
 //!
-//! `write_our_presence` + `persist_discovered_registry_members` +
-//! `decrypt_history_ranges` bodies live in
+//! `write_our_presence` + `decrypt_history_ranges` bodies live in
 //! `rekindle_presence::community::{...}` parameterised over
 //! `CommunityPresenceDeps`. `ensure_registry_open` stays src-tauri
 //! because it mutates `community.open_community_records` (an
 //! AppState-specific bookkeeping field) and the surrounding lock
 //! ordering is intricate.
-//!
-//! Re-exports `DiscoveredRow` (the per-row scan tuple) for the
-//! still-src-tauri-side `poll.rs::presence_poll_tick` orchestrator.
-//! When 21.i-REDO ports `presence_poll_tick`, this file collapses
-//! further (or disappears entirely).
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 use crate::services::presence_adapter::build_adapter;
 use crate::state::AppState;
 use crate::state_helpers;
 
 use rekindle_presence::CommunityPresenceDeps;
-/// Per-row tuple yielded by the per-segment registry scan. Re-exported
-/// from the crate so callers in the still-src-tauri-side
-/// `poll.rs::presence_poll_tick` keep compiling.
-pub(crate) use rekindle_presence::DiscoveredRow;
 
 /// Ensure the community holds its member-registry record, **writable** when we
 /// hold a writer keypair.
@@ -43,18 +35,22 @@ pub(crate) async fn ensure_registry_open(
         let c = communities.get(community_id).ok_or("community not found")?;
         (
             c.leases.registry.is_some(),
-            c.registry_owner_keypair.clone().or(c.slot_keypair.clone()),
+            c.registry_owner_keypair
+                .as_ref()
+                .map(|key| key.as_str())
+                .or(c.slot_keypair.as_deref())
+                .map(|key| Zeroizing::new(key.to_owned())),
         )
     };
     if held {
         return Ok(());
     }
-    let key = registry_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("presence_poll: bad registry key: {e}"))?;
-    let writer = writer.and_then(|w| w.parse::<veilid_core::KeyPair>().ok());
     let lease = state_helpers::record_pool(state)?
-        .acquire(&key, writer)
+        .acquire(
+            registry_key,
+            writer.as_ref().map(|key| key.as_str()),
+            OpenIntent::Hold,
+        )
         .await
         .map_err(|e| format!("presence_poll: failed to open registry: {e}"))?;
     if let Some(cs) = state.communities.write().get_mut(community_id) {
@@ -78,13 +74,8 @@ pub(crate) async fn ensure_registry_open(
 /// helper: looks up registry key + slot credentials + history
 /// ranges + W26 signs + writes via the crate orchestrator.
 ///
-/// Exposed as a public src-tauri surface for the
-/// `update_community_presence` Tauri command — when the user
-/// changes their status or game info, the gossip envelope reaches
-/// online peers immediately AND this call refreshes the registry
-/// row so peers reading the registry directly (returning members,
-/// fresh joiners) see the new status without waiting for the next
-/// presence-poll cadence tick. The lower-level
+/// Called when the presence sharing consent changes, so the redaction
+/// takes effect at once. The lower-level
 /// `rekindle_presence::write_our_presence(deps, …)` stays the
 /// crate's authoritative builder; this facade does the AppState
 /// lookups that the orchestrator does inline inside
@@ -122,49 +113,4 @@ pub async fn write_our_presence(state: &Arc<AppState>, community_id: &str) {
         },
     )
     .await;
-}
-
-pub(crate) fn persist_discovered_registry_members(
-    state: &Arc<AppState>,
-    community_id: &str,
-    discovered_members: &[DiscoveredRow],
-    member_roles: &std::collections::HashMap<String, Vec<u32>>,
-    banned_members: &std::collections::HashSet<String>,
-) {
-    let Some(adapter) = build_adapter(state) else {
-        tracing::debug!(
-            community = %community_id,
-            "persist_discovered_registry_members: adapter unavailable",
-        );
-        return;
-    };
-    rekindle_presence::persist_discovered_registry_members(
-        &adapter,
-        community_id,
-        discovered_members,
-        member_roles,
-        banned_members,
-    );
-}
-
-/// W11.2 — decrypt history ranges from a peer's presence row using
-/// the MEK generation declared by the sender. Stays src-tauri because
-/// the only caller is the still-src-tauri-side message-receive path
-/// in `super::super`; lifting it would force a trivial trait method
-/// for a 12-LoC body.
-pub(in crate::services::community) fn decrypt_history_ranges(
-    state: &Arc<AppState>,
-    community_id: &str,
-    encrypted: &rekindle_types::presence::EncryptedHistoryRanges,
-) -> Option<Vec<rekindle_types::presence::HistoryRange>> {
-    // Current generation only: a member the last rotation removed holds
-    // only the replaced key, and its presence must not read.
-    let mek = state_helpers::current_mek(
-        state,
-        community_id,
-        rekindle_types::channel_keys::KeyScope::Community,
-    )
-    .filter(|mek| mek.generation() == encrypted.mek_generation)?;
-    let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
-    serde_json::from_slice(&plaintext).ok()
 }

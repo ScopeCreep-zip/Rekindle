@@ -15,13 +15,6 @@ const MAX_ANIMATED_EMOJIS: usize = 50;
 const MAX_STICKERS: usize = 30;
 const MAX_SOUNDBOARD_SOUNDS: usize = 48;
 
-// Architecture §19.1 (lines 2520-2531) — onboarding shape limits.
-const MAX_ONBOARDING_QUESTIONS: usize = 5;
-const MAX_ONBOARDING_OPTIONS_PER_QUESTION: usize = 10;
-const MAX_ONBOARDING_GUIDE_STEPS: usize = 10;
-const MAX_ONBOARDING_WELCOME_CHARS: usize = 500;
-const MAX_ONBOARDING_QUESTION_TITLE_CHARS: usize = 100;
-
 pub(super) fn expression_within_limits(
     kind: &str,
     animated: bool,
@@ -57,39 +50,10 @@ pub(super) fn expression_within_limits(
     }
 }
 
-/// Architecture §19.1 line 2520-2531 — onboarding shape caps. We
-/// enforce these at the validate layer (in addition to the Tauri
-/// command pre-flight) so a tampered governance entry that exceeds
-/// limits is dropped on the floor by every honest peer.
-pub(super) fn onboarding_within_limits(
-    mode: &str,
-    questions: &[rekindle_types::governance::OnboardingQuestion],
-    welcome_message: Option<&str>,
-    guide_steps: &[rekindle_types::governance::GuideStep],
-) -> bool {
-    if !matches!(mode, "default" | "guided" | "gated") {
-        return false;
-    }
-    if questions.len() > MAX_ONBOARDING_QUESTIONS {
-        return false;
-    }
-    if guide_steps.len() > MAX_ONBOARDING_GUIDE_STEPS {
-        return false;
-    }
-    if let Some(text) = welcome_message {
-        if text.chars().count() > MAX_ONBOARDING_WELCOME_CHARS {
-            return false;
-        }
-    }
-    for question in questions {
-        if question.title.chars().count() > MAX_ONBOARDING_QUESTION_TITLE_CHARS {
-            return false;
-        }
-        if question.options.len() > MAX_ONBOARDING_OPTIONS_PER_QUESTION {
-            return false;
-        }
-    }
-    true
+/// Architecture §19.1 — an onboarding flow's mode is one of three. The
+/// counts and texts are bounds (`super::bounds`).
+pub(super) fn onboarding_mode_valid(mode: &str) -> bool {
+    matches!(mode, "default" | "guided" | "gated")
 }
 
 /// Architecture §18.3 — soundboard entries must carry valid duration /

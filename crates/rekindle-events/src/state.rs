@@ -1,4 +1,4 @@
-//! Mutable subscription state — unread counts, typing, presence, voice.
+//! Mutable subscription state — friend requests, typing, presence, voice.
 //!
 //! All state is owned by the `SubscriptionManager` behind a `RwLock`.
 //! Readers (TUI badge queries) take a read lock. Writers (event handlers)
@@ -6,68 +6,20 @@
 //! on read — no background cleanup task needed.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use rekindle_types::subscription_events::PresenceSnapshot;
 
 /// Combined subscription state. One instance per `SubscriptionManager`.
 #[derive(Debug, Default)]
 pub struct SubscriptionState {
-    pub unread: UnreadState,
+    /// Pending inbound friend requests (`UnreadContext::FriendRequests`).
+    /// Channel and DM counts are the Host's, derived from the read markers
+    /// (plan E3.1, D25).
+    pub friend_requests: u32,
     pub typing: TypingState,
     pub presence: PresenceState,
     pub voice: VoiceState,
-}
-
-// ── Unread tracking ────────────────────────────────────────────────────
-
-/// Unread message counts across all contexts.
-#[derive(Debug, Default)]
-pub struct UnreadState {
-    /// (community_governance_key, channel_id) → unread count.
-    pub channels: HashMap<(String, String), u32>,
-    /// peer_public_key → unread DM count.
-    pub dms: HashMap<String, u32>,
-    /// Pending inbound friend request count.
-    pub friend_requests: u32,
-}
-
-impl UnreadState {
-    /// Increment channel unread count. Returns the new count.
-    pub fn increment_channel(&mut self, community: &str, channel: &str) -> u32 {
-        let key = (community.to_string(), channel.to_string());
-        let count = self.channels.entry(key).or_insert(0);
-        *count = count.saturating_add(1);
-        *count
-    }
-
-    /// Increment DM unread count. Returns the new count.
-    pub fn increment_dm(&mut self, peer_key: &str) -> u32 {
-        let count = self.dms.entry(peer_key.to_string()).or_insert(0);
-        *count = count.saturating_add(1);
-        *count
-    }
-
-    /// Mark a channel as read. Returns the previous count.
-    pub fn mark_channel_read(&mut self, community: &str, channel: &str) -> u32 {
-        let key = (community.to_string(), channel.to_string());
-        self.channels.remove(&key).unwrap_or(0)
-    }
-
-    /// Mark a DM conversation as read. Returns the previous count.
-    pub fn mark_dm_read(&mut self, peer_key: &str) -> u32 {
-        self.dms.remove(peer_key).unwrap_or(0)
-    }
-
-    /// Remove all unread state for a community (on leave).
-    pub fn remove_community(&mut self, community: &str) {
-        self.channels.retain(|k, _| k.0 != community);
-    }
-
-    /// Remove all unread state for a DM peer (on unfriend).
-    pub fn remove_dm_peer(&mut self, peer_key: &str) {
-        self.dms.remove(peer_key);
-    }
 }
 
 // ── Typing indicators ──────────────────────────────────────────────────
@@ -75,13 +27,13 @@ impl UnreadState {
 /// Typing indicator expiry duration.
 const TYPING_EXPIRY_SECS: u64 = 5;
 
-/// Ephemeral typing state. Entries auto-expire after 5 seconds.
+/// Ephemeral channel typing state. Entries auto-expire after 5 seconds.
+/// DM typing is the Host's ([`crate::typing`], plan E2.3), which E3.4's
+/// channel typing moves onto.
 #[derive(Debug, Default)]
 pub struct TypingState {
     /// (community, channel) → [(pseudonym, last_typing_instant)].
     pub channels: HashMap<(String, String), Vec<TypingEntry>>,
-    /// peer_key → last_typing_instant (DM context).
-    pub dms: HashMap<String, Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,46 +103,9 @@ impl TypingState {
         expired
     }
 
-    /// Record DM typing. Returns `true` if this is a new typing start.
-    pub fn set_dm_typing(&mut self, peer_key: &str) -> bool {
-        let is_new = !self.dms.contains_key(peer_key);
-        self.dms.insert(peer_key.to_string(), Instant::now());
-        is_new
-    }
-
-    /// Check if a peer is typing in DM (auto-expires).
-    pub fn is_dm_typing(&self, peer_key: &str) -> bool {
-        let cutoff = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
-            .expect("typing expiry within uptime");
-        self.dms.get(peer_key).is_some_and(|ts| *ts > cutoff)
-    }
-
-    /// Collect expired DM typers (for emitting TypingStopped).
-    pub fn collect_expired_dm_typers(&mut self) -> Vec<String> {
-        let cutoff = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
-            .expect("typing expiry within uptime");
-        let mut expired = Vec::new();
-        for (peer_key, ts) in &self.dms {
-            if *ts <= cutoff {
-                expired.push(peer_key.clone());
-            }
-        }
-        for key in &expired {
-            self.dms.remove(key);
-        }
-        expired
-    }
-
     /// Remove all typing state for a community (on leave).
     pub fn remove_community(&mut self, community: &str) {
         self.channels.retain(|k, _| k.0 != community);
-    }
-
-    /// Remove DM typing state for a peer (on unfriend).
-    pub fn remove_dm_peer(&mut self, peer_key: &str) {
-        self.dms.remove(peer_key);
     }
 }
 
@@ -315,6 +230,7 @@ impl PresenceState {
 #[derive(Debug, Clone)]
 pub struct VoiceParticipantInfo {
     pub pseudonym_key: String,
+    pub display_name: String,
     pub muted: bool,
     pub deafened: bool,
     pub joined_at: u64,
@@ -333,17 +249,26 @@ pub struct VoiceState {
 
 impl VoiceState {
     /// Add or update a voice participant.
-    pub fn join(&mut self, community: &str, channel: &str, pseudonym: &str, timestamp: u64) {
+    pub fn join(
+        &mut self,
+        community: &str,
+        channel: &str,
+        pseudonym: &str,
+        display_name: &str,
+        timestamp: u64,
+    ) {
         let key = (community.to_string(), channel.to_string());
         let participants = self.channels.entry(key).or_default();
         if let Some(p) = participants
             .iter_mut()
             .find(|p| p.pseudonym_key == pseudonym)
         {
+            display_name.clone_into(&mut p.display_name);
             p.last_heartbeat = Instant::now();
         } else {
             participants.push(VoiceParticipantInfo {
                 pseudonym_key: pseudonym.to_string(),
+                display_name: display_name.to_owned(),
                 muted: false,
                 deafened: false,
                 joined_at: timestamp,

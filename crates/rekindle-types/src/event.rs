@@ -9,7 +9,15 @@ use serde::{Deserialize, Serialize};
 /// URL/string the UI renders as a link; `InGame` references a game
 /// title (the rich-presence id) and an optional server address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+// Tags stay snake_case (`"in_game"`, `"voice_channel"`: what the webview
+// matches on); `InGame`'s fields are camelCase like every other payload
+// field (plan C7.26).
+#[serde(
+    tag = "type",
+    content = "data",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum EventLocation {
     /// Event happens in a voice channel of this community.
     VoiceChannel(crate::id::ChannelId),
@@ -114,12 +122,55 @@ impl RsvpStatus {
 }
 
 /// Maximum lengths from spec §21 line 2622-2623.
+/// An event as its creator enters it (plan E3.1 E4): `create_event`'s
+/// `request` and `CommunityRequest::EventCreate`'s body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewEvent {
+    pub title: String,
+    pub description: String,
+    pub start_time: u64,
+    pub end_time: Option<u64>,
+    pub channel_id: Option<String>,
+    pub max_attendees: Option<u32>,
+    /// Architecture §21: the peer-cached cover image's hash.
+    pub cover_image_ref: Option<String>,
+    /// Architecture §21: the recurrence rule (`None` for a one-off).
+    pub recurrence: Option<RecurrenceRule>,
+    /// Architecture §21: where it happens.
+    pub location: Option<EventLocation>,
+}
+
+/// The fields an event edit sets; `None` keeps the stored value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventEdit {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub channel_id: Option<String>,
+    pub max_attendees: Option<u32>,
+}
+
+/// An event id: `evt_` and 32 lowercase hex digits (an `EventId`'s 16
+/// bytes), so the id a command mints and the one merged governance names
+/// are the same string.
+#[must_use]
+pub fn is_event_id(id: &str) -> bool {
+    id.strip_prefix("evt_").is_some_and(|hex| {
+        hex.len() == 32
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
 pub const MAX_EVENT_NAME_CHARS: usize = 100;
 pub const MAX_EVENT_DESCRIPTION_CHARS: usize = 1000;
 
 /// One RSVP entry attached to an `EventInfo`. String fields preserve
-/// the existing on-the-wire shape used by `EventRsvpChanged` and the
-/// `BootstrapResponse` event broadcasts.
+/// the existing on-the-wire shape used by `EventRsvpChanged`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventRsvp {
@@ -169,32 +220,5 @@ pub struct EventInfo {
 }
 
 #[cfg(test)]
-mod info_tests {
-    use super::*;
-
-    #[test]
-    fn event_info_roundtrip() {
-        let e = EventInfo {
-            id: "evt_01".into(),
-            title: "raid night".into(),
-            description: "bring potions".into(),
-            creator_pseudonym: "abcd".into(),
-            start_time: 1_000,
-            end_time: Some(2_000),
-            channel_id: Some("ch_01".into()),
-            max_attendees: Some(40),
-            created_at: 500,
-            status: "scheduled".into(),
-            rsvps: vec![EventRsvp {
-                pseudonym_key: "abcd".into(),
-                status: "going".into(),
-            }],
-            cover_image_ref: Some("blake3:abcdef".into()),
-            recurrence: None,
-            location: None,
-        };
-        let json = serde_json::to_string(&e).unwrap();
-        let back: EventInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(e, back);
-    }
-}
+#[path = "event_info_tests.rs"]
+mod info_tests;

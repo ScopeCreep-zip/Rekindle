@@ -1,0 +1,257 @@
+//! Who may deliver what (plan E2.3; audit G1, G9): the block list, then
+//! the friend gate for a frame's kind ([`sender_admitted`]), and for a
+//! PreKeyInit its own rule ([`may_open_session`]), judged before any
+//! prekey is looked up. The B5 rejection of an init asks the same
+//! predicate, so the two can never disagree.
+
+use rekindle_codec::capnp_codec::direct::DmTypeId;
+use rekindle_types::friend::FriendshipState;
+
+use crate::operations::friend::{is_blocked, state, FriendHost};
+
+/// A sender's stored friendship: `None` for a stranger.
+pub(crate) type Status = Option<FriendshipState>;
+
+/// Our friend store, owner or the friendship row could not be read: nothing
+/// was judged (review RV5 M1), never the stranger status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Unreadable;
+
+/// Why a sender's frame goes no further than the block list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Barred {
+    /// The sender is blocked: dropped silently, a call answered the empty
+    /// receipt (LV23 review, amending RV5 R1's NAK, which told the
+    /// blocked they were blocked).
+    Blocked,
+    /// Our block list or the sender's friendship is unreadable: nothing
+    /// was judged (fail closed, answered retry later).
+    Unreadable,
+}
+
+/// The sender's stored friendship when they are not blocked, or why not
+/// (logged): [`Barred::Blocked`], or [`Barred::Unreadable`] when the block
+/// list cannot be read. The gate reads the stored row (the Host's friend
+/// authority), so a frame dispatched before the projection loads is
+/// judged on it.
+pub(crate) async fn unblocked(host: &dyn FriendHost, sender_hex: &str) -> Result<Status, Barred> {
+    match is_blocked(host, sender_hex).await {
+        Ok(false) => friendship_authoritative(host, sender_hex)
+            .await
+            .map_err(|Unreadable| Barred::Unreadable),
+        Ok(true) => {
+            tracing::debug!(from = %sender_hex, "dropping frame from a blocked user");
+            Err(Barred::Blocked)
+        }
+        Err(e) => {
+            tracing::warn!(from = %sender_hex, error = %e, "block list unreadable; dropping frame");
+            Err(Barred::Unreadable)
+        }
+    }
+}
+
+/// Whether `sender` may deliver a `kind` now: not blocked, and the friend
+/// gate for the kind. The unlock replay asks it of every row, so a message
+/// decrypted before a block or a removal is judged when it is applied.
+pub(crate) async fn admitted(host: &dyn FriendHost, sender_hex: &str, kind: DmTypeId) -> bool {
+    match unblocked(host, sender_hex).await {
+        Ok(status) => frame_admitted(host, sender_hex, kind, status, false).await,
+        Err(_) => false,
+    }
+}
+
+/// Whether `sender` may deliver `kind` by the friend gate alone (not
+/// blocked, and its friendship admits the kind), never the group one.
+pub(crate) async fn friend_admitted(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+) -> bool {
+    match unblocked(host, sender_hex).await {
+        Ok(status) => kind_admitted(sender_hex, kind, status),
+        Err(_) => false,
+    }
+}
+
+/// Whether a sender who is not blocked, with `status`, may deliver `kind`
+/// alone or as a PreKeyInit's first payload (`init`): the friend gate,
+/// else the group admission (plan E2.6: a member of a group we hold, for
+/// the group kinds only); logged when both refuse.
+pub(crate) async fn frame_admitted(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+    status: Status,
+    init: bool,
+) -> bool {
+    if init {
+        return init_admitted(host, sender_hex, kind, status).await;
+    }
+    if sender_admitted(kind, status)
+        || crate::operations::group_dm::admitted(host, sender_hex, kind, false).await
+    {
+        return true;
+    }
+    kind_admitted(sender_hex, kind, status)
+}
+
+/// [`sender_admitted`], logged when it refuses.
+pub(crate) fn kind_admitted(sender_hex: &str, kind: DmTypeId, status: Status) -> bool {
+    let admitted = sender_admitted(kind, status);
+    if !admitted && not_yet(status) {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "not admitted yet: our request to the sender is outstanding — retry later");
+    } else if !admitted {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "dropping frame: sender not admitted for this kind");
+    }
+    admitted
+}
+
+/// Whether `sender` (not blocked), with `status`, may open a session with
+/// a PreKeyInit whose first payload is `kind`: [`may_open_session`], with
+/// whether a reset of ours is outstanding, else the group admission (a
+/// member of a group we hold, for a pairwise group control kind only;
+/// plan E2.6); logged when both refuse. The B5 rejection asks the same.
+pub(crate) async fn init_admitted(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+    status: Status,
+) -> bool {
+    // Whether we asked for the reset is our stored request, checked and
+    // consumed in the transaction that accepts the init
+    // (`Reinitiation::Requested`, plan audit D-4).
+    let reset_outstanding = kind == DmTypeId::SessionResetAccept;
+    let admitted = may_open_session(kind, status, reset_outstanding)
+        || (crate::operations::group_dm::opens_member_session(kind)
+            && crate::operations::group_dm::admitted(host, sender_hex, kind, true).await);
+    if !admitted && not_yet(status) {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "PreKeyInit not admitted yet: our request to the sender is outstanding — retry later");
+    } else if !admitted && invited_member(host, sender_hex, kind).await {
+        tracing::info!(from = %sender_hex, ?kind,
+            "PreKeyInit not admitted yet: we have not answered the group's invite — retry later");
+    } else if !admitted {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "dropping PreKeyInit: sender may not open a session with this kind");
+    }
+    admitted
+}
+
+/// Whether a frame the gate refused from a sender with `status` is refused
+/// only for now (real-app finding GDI1): we asked them (`PendingOut`), so
+/// their accept is on its way and frames they framed under the session it
+/// opens (a group invite right after the accept) can arrive first. Nothing
+/// is admitted early: the frame is not opened, stored or acknowledged; a
+/// call is answered retry later (`direct::RETRY_LATER`, RV5 M2) so the
+/// sender's receipted stream attempts it again after the accept commits,
+/// where a NAK ended its row for good. A stranger (`None`, nothing asked)
+/// and every other status stay refused.
+pub(crate) fn not_yet(status: Status) -> bool {
+    status == Some(FriendshipState::PendingOut)
+}
+
+/// [`crate::operations::group_dm`]'s `invited_member`: a PreKeyInit whose
+/// first payload is a pairwise group control kind, from a member of an
+/// invite we have not answered, is refused only for now (real-app finding
+/// GD1), as [`not_yet`] is for a sender we asked.
+pub(crate) async fn invited_member(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+) -> bool {
+    crate::operations::group_dm::invited_member(host, sender_hex, kind).await
+}
+
+/// Whether a frame the gate refused (`init`: a PreKeyInit whose first
+/// payload is `kind`) is refused only for now: [`not_yet`], or an init
+/// from a member of a group invite we have not answered ([`invited_member`]).
+pub(crate) async fn refused_for_now(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+    status: Status,
+    init: bool,
+) -> bool {
+    not_yet(status) || (init && invited_member(host, sender_hex, kind).await)
+}
+
+/// The sender's friendship as the identity's database holds it.
+///
+/// # Errors
+/// [`Unreadable`] when the store, our owner or the row cannot be read
+/// (review RV5 M1: a stranger's status would NAK a friend for our fault,
+/// and admit as a stranger a kind strangers may send).
+pub(crate) async fn friendship_authoritative(
+    host: &dyn FriendHost,
+    sender: &str,
+) -> Result<Status, Unreadable> {
+    let unreadable = |e: &dyn std::fmt::Display| {
+        tracing::warn!(error = %e, from = %sender, "friend status unreadable; failing closed");
+        Unreadable
+    };
+    let store = host.friend_store().map_err(|e| unreadable(&e))?;
+    let owner = state::owner(host).map_err(|e| unreadable(&e))?;
+    store
+        .status_of(&owner, sender)
+        .await
+        .map_err(|e| unreadable(&e))
+}
+
+/// Whether a sender with friendship `status` may deliver a `kind`.
+///
+/// - A friend request, a reject, and a removal and its ack come from
+///   anyone not blocked (blocking is checked before this), and so does a
+///   relay envelope: the relay forwards for a friend of the target, not of
+///   ours. A `WakeNotify` is not among them: only a friend we registered
+///   as our push relay wakes us (plan audit G10).
+/// - `FriendAccept` (a PreKeyInit's first payload) comes from a sender we
+///   sent a request to (`PendingOut`) or one already `Accepted`: the higher
+///   side of a crossing request is `Accepted` with no session when the
+///   lower side's accept arrives. Never from a stranger or a `Removing` row
+///   (plan C7.25).
+/// - Everything else needs `Accepted`.
+pub(crate) fn sender_admitted(kind: DmTypeId, status: Status) -> bool {
+    match kind {
+        DmTypeId::FriendRequest
+        | DmTypeId::Unfriended
+        | DmTypeId::UnfriendedAck
+        | DmTypeId::RelayEnvelope => true,
+        DmTypeId::FriendAccept => matches!(
+            status,
+            Some(FriendshipState::PendingOut | FriendshipState::Accepted)
+        ),
+        _ => status == Some(FriendshipState::Accepted),
+    }
+}
+
+/// Whether a sender with `status` may open a session with a PreKeyInit
+/// carrying `kind` (audit G1), before any prekey is looked up:
+///
+/// - `FriendAccept`: a sender we asked (`PendingOut`), or one already
+///   `Accepted` (the higher side of a crossing request);
+/// - `SessionResetAccept`: an `Accepted` friend we asked for a reset
+///   (`reset_outstanding`, B11);
+/// - `DmText`, `DmEdit`, `DmDelete`, `DmReaction`: an `Accepted` friend;
+/// - anything else: nobody (the codec refuses those first payloads too).
+///
+/// The session half of the rule (an `Accepted` sender with no established
+/// session, or only our own unanswered init) is the ratchet's
+/// `Reinitiation::Refused`, which also refuses before any prekey lookup.
+pub(crate) fn may_open_session(kind: DmTypeId, status: Status, reset_outstanding: bool) -> bool {
+    let accepted = status == Some(FriendshipState::Accepted);
+    match kind {
+        DmTypeId::FriendAccept => matches!(
+            status,
+            Some(FriendshipState::PendingOut | FriendshipState::Accepted)
+        ),
+        DmTypeId::SessionResetAccept => accepted && reset_outstanding,
+        DmTypeId::DmText | DmTypeId::DmEdit | DmTypeId::DmDelete | DmTypeId::DmReaction => accepted,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+#[path = "admission_tests.rs"]
+mod tests;

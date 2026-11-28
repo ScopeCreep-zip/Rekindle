@@ -25,6 +25,10 @@ impl GossipDeps for DaemonGossipAdapter {
         self.ctx.unlock_scope_or_closed()
     }
 
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::clone(&self.ctx.rng)
+    }
+
     // ---------- Mesh bookkeeping ----------
 
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {
@@ -34,7 +38,7 @@ impl GossipDeps for DaemonGossipAdapter {
     // ---------- Overlay reads ----------
 
     fn current_peers(&self, community_id: &str) -> Option<Vec<PeerInfo>> {
-        self.current_peers_impl(community_id)
+        Some(self.current_peers_impl(community_id))
     }
 
     fn peer_reliability_scores(&self, community_id: &str) -> HashMap<String, f64> {
@@ -48,7 +52,7 @@ impl GossipDeps for DaemonGossipAdapter {
     // ---------- Overlay mutations ----------
 
     fn enqueue_pending_mesh(&self, community_id: &str, signed: SignedEnvelope) {
-        Self::enqueue_pending_mesh_impl(community_id, &signed);
+        self.enqueue_pending_mesh_impl(community_id, signed);
     }
 
     fn update_peer_route(
@@ -67,33 +71,19 @@ impl GossipDeps for DaemonGossipAdapter {
     /// recording, because it would look like the feature works.
     fn record_peer_reliability(&self, _community_id: &str, _peer_key: &str, _success: bool) {}
 
-    /// Same store, same absence. The desktop writes a `message_delivery`
-    /// row per attempt; the daemon has no table to write it to, and
-    /// gossip is best-effort by design (PATH 2, "Durability: None"), so
-    /// the delivery record is an observability nicety rather than part
-    /// of the protocol.
-    async fn record_delivery(
-        &self,
-        _message_id: &str,
-        _community_id: &str,
-        _recipient: &str,
-        _status: &str,
-    ) {
-    }
-
     // ---------- Route resolution ----------
 
-    /// Re-read a peer's route blob from their registry presence row.
-    ///
-    /// The roster the presence poll materialised is the source: every
-    /// row behind it was W26-verified when it was scanned, so a route
-    /// taken from here is one the named pseudonym actually signed.
+    /// A send to the peer's route failed: the Host forgets its cached
+    /// route and re-reads the peer's `M`/6 once, pinned to its
+    /// `MemberJoined` owner and verified under its pseudonym (plan E3.4
+    /// S4).
     async fn resolve_peer_route_from_dht(
         &self,
         community_id: &str,
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>> {
-        self.resolve_peer_route_impl(community_id, peer_pseudonym)
+        crate::host::adapters::governance::HostGovernance::new(std::sync::Arc::clone(&self.ctx))
+            .reread_member_route(community_id, peer_pseudonym)
             .await
     }
 

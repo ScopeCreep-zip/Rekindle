@@ -1,17 +1,21 @@
-import { Component, Show, For, createSignal, createEffect } from "solid-js";
-import type { Thread } from "../../stores/community.store";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import type { Message } from "../../stores/chat.store";
+import type { Thread } from "../../stores/community.store";
+import { messageCount } from "../../utils/formatting";
 import MessageBubble from "../chat/MessageBubble";
-import { ICON_CLOSE, ICON_THREAD, ICON_ARCHIVE } from "../../icons";
 import LiveRegion from "../common/LiveRegion";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadPanelProps {
   thread: Thread | null;
   communityId: string;
   messages: Message[];
   onClose: () => void;
+  /** The Host's reason we may not reply in this thread's channel (SEND_IN_THREADS), or null. */
+  replyDenied: string | null;
   onSend: (communityId: string, threadId: string, body: string) => void;
   onArchive: (communityId: string, threadId: string) => void;
+  onUnarchive: (communityId: string, threadId: string) => void;
   onReply?: (message: Message) => void;
   onReaction?: (messageId: string, emoji: string) => void;
   onRemoveReaction?: (messageId: string, emoji: string) => void;
@@ -22,6 +26,8 @@ interface ThreadPanelProps {
   onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
   onClosePoll?: (pollId: string) => void;
   myPseudonymKey?: string | null;
+  /** A pseudonym's display name (the window's member resolver). */
+  nameOf: (pseudonymKey: string) => string;
 }
 
 const ThreadPanel: Component<ThreadPanelProps> = (props) => {
@@ -50,7 +56,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
   }
 
   function senderName(msg: Message): string {
-    return msg.isOwn ? "You" : msg.senderId;
+    return msg.isOwn ? "You" : props.nameOf(msg.senderId);
   }
 
   return (
@@ -58,11 +64,12 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
       {(thread) => (
         <div class="thread-panel">
           <div class="thread-panel-header">
-            <span class="nf-icon">{ICON_THREAD}</span>
+            <SkinGlyph name="thread" />
             <div class="thread-panel-title-group">
               <span class="thread-panel-title">{thread().name}</span>
               <div class="thread-panel-meta">
-                Started by {thread().creatorPseudonym} · {thread().messageCount} messages
+                Started by {props.nameOf(thread().creatorPseudonym)} ·{" "}
+                {messageCount(thread().messageCount)}
                 <Show when={thread().lastMessageAt > 0}>
                   {` · last active ${new Date(thread().lastMessageAt * 1000).toLocaleString()}`}
                 </Show>
@@ -70,22 +77,36 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             </div>
             <Show when={!thread().archived}>
               <button
+                type="button"
                 class="thread-panel-archive-btn"
                 onClick={() => props.onArchive(props.communityId, thread().id)}
                 title="Archive thread"
                 aria-label="Archive thread"
               >
-                <span class="nf-icon" aria-hidden="true">{ICON_ARCHIVE}</span>
+                <SkinGlyph name="archive" />
               </button>
             </Show>
             <button
+              type="button"
               class="modal-close-btn"
               onClick={props.onClose}
               aria-label="Close thread"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+              <SkinGlyph name="close" />
             </button>
           </div>
+          <Show when={thread().archived}>
+            <div class="thread-panel-archived" role="status">
+              <span>This thread is archived. A reply reopens it.</span>
+              <button
+                type="button"
+                class="thread-panel-archive-btn"
+                onClick={() => props.onUnarchive(props.communityId, thread().id)}
+              >
+                Unarchive
+              </button>
+            </div>
+          </Show>
           <LiveRegion
             class="thread-panel-messages"
             ref={(el) => (containerRef = el)}
@@ -99,8 +120,16 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
                   senderName={senderName(msg)}
                   myPseudonymKey={props.myPseudonymKey}
                   onReply={props.onReply}
-                  onReaction={props.onReaction ? (emoji) => props.onReaction!(msg.serverMessageId!, emoji) : undefined}
-                  onRemoveReaction={props.onRemoveReaction ? (emoji) => props.onRemoveReaction!(msg.serverMessageId!, emoji) : undefined}
+                  onReaction={
+                    props.onReaction
+                      ? (emoji) => props.onReaction!(msg.serverMessageId!, emoji)
+                      : undefined
+                  }
+                  onRemoveReaction={
+                    props.onRemoveReaction
+                      ? (emoji) => props.onRemoveReaction!(msg.serverMessageId!, emoji)
+                      : undefined
+                  }
                   onPin={props.onPin}
                   onCreatePoll={props.onCreatePoll}
                   onEdit={props.onEdit}
@@ -114,7 +143,12 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
           <div class="message-input-wrapper">
             <textarea
               class="message-input message-input-field"
-              placeholder={thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."}
+              placeholder={
+                thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."
+              }
+              disabled={props.replyDenied !== null}
+              title={props.replyDenied ?? undefined}
+              aria-description={props.replyDenied ?? undefined}
               value={body()}
               onInput={(e) => setBody(e.currentTarget.value)}
               onKeyDown={handleKeyDown}

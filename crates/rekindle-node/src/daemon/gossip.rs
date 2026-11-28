@@ -11,7 +11,8 @@
 //!
 //! They now all send here, and this encodes the envelope the way the
 //! desktop does — Cap'n Proto `CommunityEnvelope` inside a
-//! `SignedEnvelope`, unframed on `app_message`. That is what makes
+//! `SignedEnvelope`, after the `'G'` ingress tag on `app_message`
+//! (`rekindle_codec::ingress::gossip_datagram`, plan E2.3). That is what makes
 //! cross-track gossip work at all: before this the daemon put postcard
 //! bytes inside a `TypeId::GossipBroadcast` frame, which no desktop peer
 //! could parse, and rejected the desktop's unframed Cap'n Proto in
@@ -40,7 +41,7 @@ use super::dispatch::DaemonContext;
 use super::gossip_adapter::DaemonGossipAdapter;
 
 /// One broadcast for the worker.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum GossipRequest {
     /// Something we are originating — sign it and fan it out.
     ///
@@ -101,7 +102,10 @@ pub fn forward(tx: &GossipSender, envelope: SignedEnvelope) {
     let _ = tx.send(GossipRequest::Forward(envelope));
 }
 
-/// Drain broadcast requests until the daemon shuts down.
+/// Drain broadcast requests until the host's exit is done: the worker
+/// stops after the exit's teardown, not at the stop request, so the
+/// teardown's own sends (the quit's `HeadAdvanced` hint, plan E3.4) go out
+/// on a signal stop as on a lock.
 ///
 /// One adapter for the worker's lifetime — see the module docs on
 /// `resolve_gate`. Each request is awaited to the point where the
@@ -109,7 +113,13 @@ pub fn forward(tx: &GossipSender, envelope: SignedEnvelope) {
 pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
     let adapter = Arc::new(DaemonGossipAdapter::new(Arc::clone(&ctx)));
     tracing::info!("gossip worker started");
-    while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
+    while let Some(Some(request)) = ctx.shutdown.run_until_workers_stop(rx.recv()).await {
+        if let Some(community) = removed_from(&ctx, &request) {
+            // Every sender checks the removal itself; this one is the
+            // backstop for a send queued before the teardown.
+            tracing::info!(community, "gossip: nothing sent for a removed community");
+            continue;
+        }
         let send = async {
             match request {
                 GossipRequest::Originate {
@@ -120,9 +130,7 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
                         Arc::clone(&adapter),
                         &community_id,
                         &envelope,
-                    )
-                    .await
-                    {
+                    ) {
                         tracing::warn!(
                             community = %community_id,
                             %error,
@@ -132,15 +140,35 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
                 }
                 GossipRequest::Forward(signed) => {
                     let community_id = signed.community_id.clone();
-                    rekindle_gossip::send_to_mesh_raw(Arc::clone(&adapter), &community_id, signed);
+                    if let Err(error) = rekindle_gossip::send_to_mesh_raw(
+                        Arc::clone(&adapter),
+                        &community_id,
+                        signed,
+                    ) {
+                        tracing::warn!(community = %community_id, %error, "queued gossip datagram refused");
+                    }
                 }
             }
         };
         // Gossip is PATH 2 with "Durability: None": a send cut off at
-        // shutdown costs latency, never content.
-        if ctx.shutdown.run_until(send).await.is_none() {
+        // the workers' stop costs latency, never content.
+        if ctx.shutdown.run_until_workers_stop(send).await.is_none() {
             break;
         }
     }
     tracing::info!("gossip worker stopped");
+}
+
+/// The community `request` is for, when we were removed from it (plan
+/// E3.2 S9 own removal): a removed member sends nothing for it, neither
+/// its own gossip nor a relay of anyone's, as Signal's inactive group.
+fn removed_from<'r>(ctx: &DaemonContext, request: &'r GossipRequest) -> Option<&'r str> {
+    let community = match request {
+        GossipRequest::Originate { community_id, .. } => community_id,
+        GossipRequest::Forward(signed) => &signed.community_id,
+    };
+    ctx.communities
+        .own_removal(community)
+        .is_some()
+        .then_some(community.as_str())
 }

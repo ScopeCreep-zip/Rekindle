@@ -1,0 +1,423 @@
+//! Channel messages in `messages` (`conversation_type = 'channel'`), on both
+//! hosts (plan E3.1 E2: the desktop's `message_repo` moved here so the
+//! daemon stores channel messages too).
+
+use rekindle_types::message::SendState;
+use rusqlite::{params, Connection};
+
+use crate::row::get;
+
+/// Full column set for a channel-message row insert. Mirrors the `messages`
+/// table shape; grouping the fields keeps the insert under the argument
+/// budget while each field stays explicit at the construction site.
+pub struct ChannelMessageInsert<'a> {
+    pub owner_key: &'a str,
+    pub channel_id: &'a str,
+    pub sender_key: &'a str,
+    pub body: &'a str,
+    pub timestamp: i64,
+    pub is_read: bool,
+    pub mek_generation: Option<i64>,
+    pub message_id: &'a str,
+    pub lamport_ts: u64,
+    pub automod_blurred: bool,
+    pub forwarded_from_author: Option<&'a str>,
+    pub flags: u32,
+    pub attachment_json: Option<&'a str>,
+    /// `Delivered` for a received row; our own post's state otherwise
+    /// (plan D1).
+    pub send_state: SendState,
+    /// The message id of the message this one replies to; stored as its
+    /// local row (`reply_to_id`) when we hold that parent.
+    pub reply_to: Option<&'a str>,
+    /// A received message that mentions us (plan E3.1, D25), from
+    /// `rekindle_channel::mentions`; never set on our own post.
+    pub mentions_me: bool,
+}
+
+/// Insert one channel message row.
+///
+/// # Errors
+/// The insert failed.
+pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Result<()> {
+    let lamport_ts = i64::try_from(msg.lamport_ts).unwrap_or(i64::MAX);
+    let reply_to_id = match msg.reply_to {
+        Some(parent) => row_id_by_message_id(conn, msg.owner_key, msg.channel_id, parent)?,
+        None => None,
+    };
+    conn.execute(
+        "INSERT INTO messages \
+         (owner_key, conversation_id, conversation_type, sender_key, body, automod_blurred, timestamp, is_read, \
+          mek_generation, message_id, lamport_ts, forwarded_from_author, flags, attachment_json, \
+          send_state, reply_to_id, mentions_me) \
+         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            msg.owner_key,
+            msg.channel_id,
+            msg.sender_key,
+            msg.body,
+            i32::from(msg.automod_blurred),
+            msg.timestamp,
+            msg.is_read,
+            msg.mek_generation,
+            msg.message_id,
+            lamport_ts,
+            msg.forwarded_from_author,
+            i64::from(msg.flags),
+            msg.attachment_json,
+            msg.send_state.as_str(),
+            reply_to_id,
+            i32::from(msg.mentions_me),
+        ],
+    )?;
+    Ok(())
+}
+
+/// Mark the stored channel message `message_id` as unreadable for
+/// `reason` (`UndecryptableReason::as_str`): its body stays empty.
+///
+/// # Errors
+/// The update failed.
+pub fn mark_undecryptable(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+    reason: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET undecryptable_reason = ?4 \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND message_id = ?3",
+        params![owner_key, channel_id, message_id, reason],
+    )?;
+    Ok(())
+}
+
+/// The local row id of the channel message `message_id`, when we hold it.
+///
+/// # Errors
+/// The query failed.
+pub fn row_id_by_message_id(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT id FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND message_id = ?3 LIMIT 1",
+        params![owner_key, channel_id, message_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// What we hold of a channel message a record read returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeldMessage {
+    /// Stored and shown; `blurred` when the gate hid it.
+    Shown { blurred: bool },
+    /// Its author deleted it (plan E3.3 E3): the record's copy is not shown.
+    Deleted,
+}
+
+/// What we hold of the channel message `message_id`, when we hold it.
+///
+/// # Errors
+/// The query failed.
+pub fn held(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<HeldMessage>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT automod_blurred, deleted_at IS NOT NULL FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND message_id = ?3 LIMIT 1",
+        params![owner_key, channel_id, message_id],
+        |row| {
+            Ok(if row.get::<_, bool>(1)? {
+                HeldMessage::Deleted
+            } else {
+                HeldMessage::Shown {
+                    blurred: row.get::<_, i64>(0)? != 0,
+                }
+            })
+        },
+    )
+    .optional()
+}
+
+/// The timestamp (ms) of `sender_key`'s latest stored post in `channel_id`
+/// at or before `at_or_before_ms`, other than the post `message_id` itself
+/// (when it has one): the
+/// post a received one's slowmode is judged against (plan E3.1 FX2). Every
+/// admitted or hidden post is stored and a dropped one is not, so the
+/// stored rows are the posts we hold.
+///
+/// # Errors
+/// The query failed.
+pub fn latest_by_sender_at_or_before(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    sender_key: &str,
+    at_or_before_ms: i64,
+    message_id: Option<&str>,
+) -> rusqlite::Result<Option<i64>> {
+    conn.query_row(
+        "SELECT MAX(timestamp) FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND sender_key = ?3 AND timestamp <= ?4 \
+           AND (?5 IS NULL OR message_id IS NOT ?5)",
+        params![
+            owner_key,
+            channel_id,
+            sender_key,
+            at_or_before_ms,
+            message_id
+        ],
+        |row| row.get(0),
+    )
+}
+
+/// The local row (`reply_to_id`) that our stored channel message
+/// `message_id` replies to, or `None` when it is not a reply or not stored.
+pub fn reply_row_id(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::OptionalExtension as _;
+    let row: Option<Option<i64>> = conn
+        .query_row(
+            "SELECT reply_to_id FROM messages \
+             WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+               AND message_id = ?3 LIMIT 1",
+            params![owner_key, channel_id, message_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(row.flatten())
+}
+
+/// The sender and plaintext of one stored channel message, the fields a
+/// forward re-encrypts (the forwarder never fetches the source from the DHT).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForwardSource {
+    pub sender_key: String,
+    pub body: String,
+    /// The message id of the stored parent it replies to.
+    pub reply_to: Option<String>,
+}
+
+/// Look up a stored channel message by its protocol message id.
+///
+/// # Errors
+/// The query failed.
+pub fn find_by_message_id(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<ForwardSource>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT m.sender_key, m.body, p.message_id FROM messages m \
+         LEFT JOIN messages p ON p.id = m.reply_to_id \
+         WHERE m.owner_key = ?1 AND m.conversation_id = ?2 AND m.conversation_type = 'channel' \
+           AND m.message_id = ?3 LIMIT 1",
+        params![owner_key, channel_id, message_id],
+        |row| {
+            Ok(ForwardSource {
+                sender_key: row.get(0)?,
+                body: row.get(1)?,
+                reply_to: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// What a stored received channel message tells the notification gate:
+/// whether it mentions us (the receive pipeline's reader-validated verdict,
+/// plan E3.1 D25) and its wire `flags`. `None` when no row has the id.
+///
+/// # Errors
+/// The read failed.
+pub fn notify_fields(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<(bool, u32)>> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        "SELECT mentions_me, flags FROM messages \
+         WHERE owner_key = ?1 AND conversation_type = 'channel' AND message_id = ?2 LIMIT 1",
+        params![owner_key, message_id],
+        |row| Ok((get::<bool>(row, "mentions_me")?, get::<u32>(row, "flags")?)),
+    )
+    .optional()
+}
+
+/// One stored channel message, read strictly (plan D2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredChannelMessage {
+    pub id: i64,
+    pub sender_key: String,
+    pub body: String,
+    pub automod_blurred: bool,
+    pub timestamp: i64,
+    pub message_id: Option<String>,
+    pub forwarded_from_author: Option<String>,
+    pub attachment_json: Option<String>,
+    pub flags: u32,
+    pub send_state: SendState,
+    /// Why our `failed` post was not delivered, as the user reads it.
+    pub failure_reason: Option<String>,
+    /// When its author last edited it, in seconds (plan E3.3).
+    pub edited_at: Option<i64>,
+    /// The moderator who removed it (plan E3.3 M4); its body is gone.
+    pub removed_by: Option<String>,
+    /// A history-gap marker row (plan E3.3, D23): the sender's channel
+    /// outbox reaches this chain seq and no read reached it; body empty.
+    pub history_gap_through: Option<u64>,
+    /// Stored without its body, and why (`mark_undecryptable`).
+    pub undecryptable_reason: Option<String>,
+}
+
+/// Up to `limit` messages of `channel_id`, oldest first; with `before`, only
+/// those older than it. A message its author deleted is not one; one a moderator removed is, with its
+/// body gone and `removed_by` set (plan E3.3 M4). Ordered by the message lamport (the wall clock when
+/// a row has none), ties by sender, as every peer orders a channel.
+///
+/// # Errors
+/// The query failed or a row is malformed.
+pub fn page(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    before: Option<i64>,
+    limit: u32,
+) -> rusqlite::Result<Vec<StoredChannelMessage>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
+                attachment_json, flags, send_state, failure_reason, edited_at, deleted_by, \
+                history_gap_through, undecryptable_reason \
+         FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND (deleted_at IS NULL OR deleted_by IS NOT NULL) AND (?3 IS NULL OR timestamp < ?3) \
+         ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?4",
+    )?;
+    let rows = stmt.query_map(params![owner_key, channel_id, before, limit], |row| {
+        let stored: String = get(row, "send_state")?;
+        let send_state = SendState::parse(&stored).ok_or_else(|| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                format!("unknown send state {stored}").into(),
+            )
+        })?;
+        Ok(StoredChannelMessage {
+            id: get(row, "id")?,
+            sender_key: get(row, "sender_key")?,
+            body: get(row, "body")?,
+            automod_blurred: get::<i64>(row, "automod_blurred")? != 0,
+            timestamp: get(row, "timestamp")?,
+            message_id: get(row, "message_id")?,
+            forwarded_from_author: get(row, "forwarded_from_author")?,
+            attachment_json: get(row, "attachment_json")?,
+            flags: get(row, "flags")?,
+            send_state,
+            failure_reason: get(row, "failure_reason")?,
+            edited_at: get(row, "edited_at")?,
+            removed_by: get(row, "deleted_by")?,
+            history_gap_through: get::<Option<i64>>(row, "history_gap_through")?
+                .map(u64::try_from)
+                .transpose()
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Integer,
+                        Box::new(e),
+                    )
+                })?,
+            undecryptable_reason: get(row, "undecryptable_reason")?,
+        })
+    })?;
+    let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    out.reverse();
+    Ok(out)
+}
+
+/// Our post `message_id` of a channel did not reach its readers: it reads
+/// `failed` with `reason` (plan E3.2 S9, F9-3; S7l's key deadline). A post
+/// still waiting, written, or failed takes it; a received message never
+/// (its state is `delivered`). Whether a row changed.
+///
+/// # Errors
+/// The write failed.
+pub fn fail_own_post(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+    reason: &str,
+) -> rusqlite::Result<bool> {
+    let changed = conn.execute(
+        "UPDATE messages SET send_state = 'failed', failure_reason = ?3 \
+         WHERE owner_key = ?1 AND message_id = ?2 AND conversation_type = 'channel' \
+           AND send_state IN ('awaiting_key', 'queued', 'sent', 'failed')",
+        params![owner_key, message_id, reason],
+    )?;
+    Ok(changed > 0)
+}
+
+/// The lamport range of the stored messages of each channel of
+/// `community_id`: `(channel, oldest, newest)`, a channel with no
+/// lamport-stamped message left out. The ranges our history ad names
+/// (plan E3.4 S7, `M`/5).
+///
+/// # Errors
+/// The query failed or a row is malformed.
+pub fn history_ranges(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+) -> rusqlite::Result<Vec<(String, u64, u64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT conversation_id, MIN(lamport_ts) AS oldest, MAX(lamport_ts) AS newest \
+         FROM messages \
+         WHERE owner_key = ?1 AND conversation_type = 'channel' AND lamport_ts > 0 \
+           AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) \
+         GROUP BY conversation_id ORDER BY conversation_id",
+    )?;
+    let rows = stmt.query_map(params![owner_key, community_id], |row| {
+        let lamport = |name: &str| {
+            get::<i64>(row, name).and_then(|v| {
+                u64::try_from(v).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Integer,
+                        Box::new(e),
+                    )
+                })
+            })
+        };
+        Ok((
+            get::<String>(row, "conversation_id")?,
+            lamport("oldest")?,
+            lamport("newest")?,
+        ))
+    })?;
+    rows.collect()
+}
+
+#[cfg(test)]
+#[path = "channel_tests.rs"]
+mod tests;

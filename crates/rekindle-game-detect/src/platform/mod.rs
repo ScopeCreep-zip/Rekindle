@@ -25,11 +25,27 @@ pub mod macos;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
+/// A process table for one scan. `sysinfo` keeps a `/proc` file open per
+/// indexed process and thread on Linux, up to half `RLIMIT_NOFILE`, to
+/// speed up later refreshes (`sysinfo` 0.32.1 `lib.rs:113-118`). A scan
+/// here builds a fresh table each time, so that cache buys nothing, and it
+/// pushed the app past 1,024 descriptors within seconds of start (1,195
+/// thread and 362 process stat files on the Linux machine, 2026-11-17),
+/// where the vendored libdbus's `select()`-based `_dbus_poll` overflows its
+/// stack `fd_set` and the process aborts ("stack smashing detected"). The
+/// limit is set to 0 once, before the first refresh, as `sysinfo` requires.
+pub(crate) fn process_table() -> sysinfo::System {
+    static NO_HELD_FILES: std::sync::Once = std::sync::Once::new();
+    NO_HELD_FILES.call_once(|| {
+        // `false` off Linux, where nothing is held; nothing to report.
+        let _ = sysinfo::set_open_files_limit(0);
+    });
+    sysinfo::System::new()
+}
+
 /// List all running process names on the current platform.
 pub fn list_process_names() -> Vec<String> {
-    use sysinfo::System;
-
-    let mut sys = System::new();
+    let mut sys = process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     sys.processes()
@@ -49,9 +65,7 @@ pub fn list_process_names() -> Vec<String> {
 /// (the Windows copy credited `CreateToolhelp32Snapshot`, which
 /// `sysinfo` uses internally but this code does not name).
 pub fn get_process_path(pid: u32) -> Option<String> {
-    use sysinfo::System;
-
-    let mut sys = System::new();
+    let mut sys = process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     let sysinfo_pid = sysinfo::Pid::from_u32(pid);
     sys.process(sysinfo_pid)
@@ -64,9 +78,7 @@ pub fn get_process_path(pid: u32) -> Option<String> {
 /// than [`list_process_names`] alone. Same story as
 /// [`get_process_path`] — one cross-platform implementation, not two.
 pub fn list_processes_with_paths() -> Vec<(String, Option<String>)> {
-    use sysinfo::System;
-
-    let mut sys = System::new();
+    let mut sys = process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     sys.processes()
         .values()
@@ -76,6 +88,17 @@ pub fn list_processes_with_paths() -> Vec<(String, Option<String>)> {
             (name, path)
         })
         .collect()
+}
+
+/// Whether a process of this name names its game only in its arguments,
+/// so the scanner reads its command line before matching: a Wine/Proton
+/// loader on Linux (see [`alternate_lookup_names`]); nothing elsewhere.
+/// Every other process's argv is never read.
+pub(crate) fn game_named_in_args(process_name: &str) -> bool {
+    cfg!(target_os = "linux") && {
+        let name = process_name.to_ascii_lowercase();
+        name.contains("wine") || name.contains("proton")
+    }
 }
 
 /// Extra names to try against the game database when the raw process
@@ -132,63 +155,5 @@ pub fn alternate_lookup_names(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::alternate_lookup_names;
-
-    /// An ordinary native binary yields no extra candidates, except on
-    /// Windows where the other `.exe` spelling is always worth a try.
-    #[test]
-    fn plain_process_name_is_cheap() {
-        let alts = alternate_lookup_names("some-daemon", None, &[]);
-        #[cfg(target_os = "windows")]
-        assert_eq!(alts, vec!["some-daemon.exe".to_string()]);
-        #[cfg(not(target_os = "windows"))]
-        assert!(alts.is_empty(), "got {alts:?}");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn app_bundle_yields_bundle_name() {
-        assert_eq!(
-            alternate_lookup_names(
-                "steam_osx",
-                Some("/Applications/Steam.app/Contents/MacOS/steam_osx"),
-                &[],
-            ),
-            vec!["Steam".to_string()]
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn non_bundle_path_yields_nothing() {
-        assert!(alternate_lookup_names("ls", Some("/bin/ls"), &[]).is_empty());
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn proton_game_yields_the_windows_exe() {
-        let args = vec![
-            "wine64".to_string(),
-            "Z:\\games\\eldenring.exe".to_string(),
-            "--skip-intro".to_string(),
-        ];
-        assert_eq!(
-            alternate_lookup_names("wine64", None, &args),
-            vec!["eldenring.exe".to_string()]
-        );
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn exe_and_bare_spellings_are_paired() {
-        assert_eq!(
-            alternate_lookup_names("cs2.exe", None, &[]),
-            vec!["cs2".to_string()]
-        );
-        assert_eq!(
-            alternate_lookup_names("cs2", None, &[]),
-            vec!["cs2.exe".to_string()]
-        );
-    }
-}
+#[path = "mod_tests.rs"]
+mod tests;

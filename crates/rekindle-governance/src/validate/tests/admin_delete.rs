@@ -1,0 +1,140 @@
+//! `AdminDelete` is checked against the writer's permissions in the
+//! message's channel: `MANAGE_MESSAGES` after that channel's overwrites,
+//! and only where the writer can read; and (plan E3.3 M1) only of a post
+//! whose author ranks no higher than the writer.
+
+use std::collections::{HashMap, HashSet};
+
+use rekindle_types::id::{ChannelId, RoleId};
+use rekindle_types::permissions::{DEFAULT_EVERYONE, VIEW_CHANNELS};
+
+use super::super::validate_write;
+use crate::state::{GovernanceState, OverwriteState, RoleState};
+use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::permissions::MANAGE_MESSAGES;
+
+const DELETE_CHANNEL: ChannelId = ChannelId([5; 16]);
+const MODERATOR_ROLE: RoleId = RoleId([9; 16]);
+const ADMIN_ROLE: RoleId = RoleId([10; 16]);
+
+fn key(byte: u8) -> PseudonymKey {
+    PseudonymKey([byte; 32])
+}
+
+fn role(name: &str, permissions: u64, position: u32) -> RoleState {
+    RoleState {
+        name: name.into(),
+        permissions,
+        position,
+        color: 0,
+        hoist: false,
+        mentionable: false,
+        self_assignable: false,
+        exclusion_group: None,
+        stamp: crate::fixture::stamp(1),
+    }
+}
+
+/// `key(1)` created the community; `key(2)` and `key(5)` hold a role with
+/// `MANAGE_MESSAGES`; `key(4)` holds a higher one; `key(3)` holds only
+/// @everyone.
+fn community() -> GovernanceState {
+    GovernanceState {
+        creators: std::collections::BTreeSet::from([key(1)]),
+        roles: HashMap::from([
+            (RoleId([0; 16]), role("everyone", DEFAULT_EVERYONE, 0)),
+            (MODERATOR_ROLE, role("moderator", MANAGE_MESSAGES, 1)),
+            (ADMIN_ROLE, role("admin", MANAGE_MESSAGES, 2)),
+        ]),
+        role_assignments: HashMap::from([
+            (key(2), HashSet::from([MODERATOR_ROLE])),
+            (key(5), HashSet::from([MODERATOR_ROLE])),
+            (key(4), HashSet::from([ADMIN_ROLE])),
+        ]),
+        ..GovernanceState::default()
+    }
+}
+
+/// A delete of a post by `author`.
+fn delete_of(author: u8) -> GovernanceEntry {
+    GovernanceEntry::AdminDelete {
+        message_id: [7; 16],
+        channel_id: DELETE_CHANNEL,
+        author: key(author),
+        reason: None,
+    }
+}
+
+/// A delete of a post by the @everyone member `key(3)`.
+fn delete() -> GovernanceEntry {
+    delete_of(3)
+}
+
+/// A member overwrite's target id: the pseudonym in lowercase hex.
+fn member_hex(member: &PseudonymKey) -> String {
+    use std::fmt::Write as _;
+    member
+        .0
+        .iter()
+        .fold(String::with_capacity(64), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        })
+}
+
+fn deny_for_moderator(state: &mut GovernanceState, deny: u64) {
+    state.overwrites.insert(
+        (DELETE_CHANNEL, member_hex(&key(2))),
+        OverwriteState {
+            target_type: "member".into(),
+            allow: 0,
+            deny,
+            stamp: crate::fixture::stamp(3),
+        },
+    );
+}
+
+#[test]
+fn a_manage_messages_holder_may_delete_in_a_channel_they_read() {
+    assert!(validate_write(&key(2), &delete(), &community()));
+}
+
+#[test]
+fn a_member_without_manage_messages_may_not_delete() {
+    assert!(!validate_write(&key(3), &delete(), &community()));
+}
+
+#[test]
+fn a_channel_hidden_from_the_moderator_refuses_the_delete() {
+    let mut state = community();
+    deny_for_moderator(&mut state, VIEW_CHANNELS);
+    assert!(!validate_write(&key(2), &delete(), &state));
+}
+
+#[test]
+fn a_channel_denying_manage_messages_refuses_the_delete() {
+    let mut state = community();
+    deny_for_moderator(&mut state, MANAGE_MESSAGES);
+    assert!(!validate_write(&key(2), &delete(), &state));
+}
+
+#[test]
+fn a_moderator_may_remove_a_post_of_an_equal_rank() {
+    assert!(validate_write(&key(2), &delete_of(5), &community()));
+    assert!(validate_write(&key(2), &delete_of(2), &community()));
+}
+
+#[test]
+fn a_moderator_may_not_remove_a_higher_ranked_authors_post() {
+    let state = community();
+    assert!(!validate_write(&key(2), &delete_of(4), &state));
+    assert!(validate_write(&key(4), &delete_of(2), &state));
+}
+
+#[test]
+fn only_the_creator_removes_the_creators_post() {
+    let state = community();
+    assert!(!validate_write(&key(4), &delete_of(1), &state));
+    assert!(validate_write(&key(1), &delete_of(4), &state));
+}

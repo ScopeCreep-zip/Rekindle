@@ -99,13 +99,31 @@ impl TabBarState {
     /// which tab is highlighted. Called by App after every view transition.
     pub fn sync_to_view(&mut self, view: &crate::views::ViewKind) {
         use crate::views::ViewKind;
+        use rekindle_types::dto::infoview::InfoviewSubject;
         let tab_id = match view {
-            ViewKind::Dashboard | ViewKind::Doctor | ViewKind::IdentitySettings => "dashboard",
-            ViewKind::DmInbox | ViewKind::DmThread { .. } => "dms",
-            ViewKind::FriendList => "friends",
+            ViewKind::Dashboard
+            | ViewKind::Doctor
+            | ViewKind::IdentitySettings
+            | ViewKind::Favourites
+            | ViewKind::InstalledGames
+            | ViewKind::Profile { peer_key: None, .. }
+            | ViewKind::Infoview {
+                subject: InfoviewSubject::Own | InfoviewSubject::Selection,
+            } => "dashboard",
+            ViewKind::DmInbox | ViewKind::DmThread { .. } | ViewKind::GroupDms => "dms",
+            ViewKind::FriendList
+            | ViewKind::Profile { .. }
+            | ViewKind::Infoview {
+                subject: InfoviewSubject::Friend { .. } | InfoviewSubject::FriendGroup { .. },
+            } => "friends",
             ViewKind::ChannelWatch { .. }
             | ViewKind::CommunityInfo { .. }
-            | ViewKind::VoiceSession { .. } => "communities",
+            | ViewKind::VoiceSession { .. }
+            | ViewKind::Infoview {
+                subject: InfoviewSubject::Community { .. },
+            } => "communities",
+            ViewKind::Activity => "activity",
+            ViewKind::Servers => "servers",
         };
         self.select_by_id(tab_id);
     }
@@ -221,77 +239,5 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &Th
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_tabs() -> Vec<Tab> {
-        vec![
-            Tab {
-                label: "Dashboard".into(),
-                id: "dash".into(),
-                unread: 0,
-            },
-            Tab {
-                label: "dev-team".into(),
-                id: "com1".into(),
-                unread: 2,
-            },
-            Tab {
-                label: "gaming".into(),
-                id: "com2".into(),
-                unread: 0,
-            },
-            Tab {
-                label: "DMs".into(),
-                id: "dms".into(),
-                unread: 5,
-            },
-        ]
-    }
-
-    #[test]
-    fn next_wraps() {
-        let mut bar = TabBarState::new(test_tabs());
-        assert_eq!(bar.selected, 0);
-        bar.next();
-        assert_eq!(bar.selected, 1);
-        bar.next();
-        bar.next();
-        bar.next();
-        assert_eq!(bar.selected, 0); // wrapped
-    }
-
-    #[test]
-    fn prev_wraps() {
-        let mut bar = TabBarState::new(test_tabs());
-        bar.prev();
-        assert_eq!(bar.selected, 3); // wrapped to last
-    }
-
-    #[test]
-    fn select_by_index() {
-        let mut bar = TabBarState::new(test_tabs());
-        bar.select(2);
-        assert_eq!(bar.selected, 2);
-        assert_eq!(bar.selected_id(), Some("com2"));
-    }
-
-    #[test]
-    fn select_out_of_bounds_is_noop() {
-        let mut bar = TabBarState::new(test_tabs());
-        bar.select(99);
-        assert_eq!(bar.selected, 0);
-    }
-
-    #[test]
-    fn selected_id_returns_correct() {
-        let bar = TabBarState::new(test_tabs());
-        assert_eq!(bar.selected_id(), Some("dash"));
-    }
-
-    #[test]
-    fn empty_tabs() {
-        let bar = TabBarState::new(Vec::new());
-        assert_eq!(bar.selected_id(), None);
-    }
-}
+#[path = "tab_bar_tests.rs"]
+mod tests;

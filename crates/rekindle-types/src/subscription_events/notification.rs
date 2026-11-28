@@ -40,26 +40,18 @@ pub enum NotificationEvent {
     },
 
     /// An app-level alert that belongs to no channel — network
-    /// connectivity, a decrypt failure, and the like.
-    SystemAlert { title: String, body: String },
+    /// connectivity, a decrypt failure, a contact declining a request, and
+    /// the like. `subject` is the contact `body` names, when it names one
+    /// ([`NotificationEvent::contact_alert`]), so the notification policy
+    /// can leave them out without reading the text.
+    SystemAlert {
+        title: String,
+        body: String,
+        subject: Option<AlertSubject>,
+    },
 
     /// A newer release is available.
     UpdateAvailable { version: String },
-
-    /// A peer sent a `SessionResetRequest`.
-    ///
-    /// Needs a human decision: the user must compare `safety_number`
-    /// with the peer out-of-band before accepting, so a frontend has to
-    /// prompt rather than auto-accept.
-    SessionResetRequested {
-        peer_public_key: String,
-        peer_display_name: String,
-        /// Hex-encoded short safety number (8 hex chars = 32 bits) for
-        /// out-of-band comparison — bigger than a phone number, small
-        /// enough to read aloud. BLAKE3 of the sorted identity key pair,
-        /// so both sides compute the same value.
-        safety_number: String,
-    },
 
     /// An incoming call, on the ring channel.
     ///
@@ -79,70 +71,38 @@ pub enum NotificationEvent {
     },
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// The contact a [`NotificationEvent::SystemAlert`] names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertSubject {
+    /// Their display name, as the alert's `body` shows it.
+    pub display_name: String,
+    /// The alert's text with no name in it ("A contact …"), shown when
+    /// `Preferences.notification_content` is `nothing`.
+    pub unnamed_body: String,
+}
 
-    #[test]
-    fn postcard_round_trips_every_variant() {
-        let events = vec![
-            NotificationEvent::MessageReceived {
-                title: "t".into(),
-                body: "b".into(),
-                community_id: "c".into(),
-                channel_id: "ch".into(),
-                sound_ref: Some("ping".into()),
-            },
-            NotificationEvent::SystemAlert {
-                title: "t".into(),
-                body: "b".into(),
-            },
-            NotificationEvent::UpdateAvailable {
-                version: "1.2.3".into(),
-            },
-            NotificationEvent::SessionResetRequested {
-                peer_public_key: "pk".into(),
-                peer_display_name: "Ada".into(),
-                safety_number: "deadbeef".into(),
-            },
-            NotificationEvent::CallIncoming {
-                call_id: "id".into(),
-                from: "pk".into(),
-                display_name: "Ada".into(),
-                kind: "audio".into(),
-                expires_at_ms: 1234,
-                is_group: false,
-            },
-        ];
-        for event in events {
-            let bytes = postcard::to_allocvec(&event).expect("postcard encode");
-            let back: NotificationEvent = postcard::from_bytes(&bytes).expect("postcard decode");
-            assert_eq!(format!("{event:?}"), format!("{back:?}"));
+impl NotificationEvent {
+    /// A [`Self::SystemAlert`] about one contact: `named` is the text with
+    /// `display_name` in it, `unnamed` the same text naming no one.
+    #[must_use]
+    pub fn contact_alert(
+        title: impl Into<String>,
+        display_name: impl Into<String>,
+        named: impl Into<String>,
+        unnamed: impl Into<String>,
+    ) -> Self {
+        Self::SystemAlert {
+            title: title.into(),
+            body: named.into(),
+            subject: Some(AlertSubject {
+                display_name: display_name.into(),
+                unnamed_body: unnamed.into(),
+            }),
         }
     }
-
-    /// Pins the JSON `src/ipc/channels/notification_events.ts` parses.
-    #[test]
-    fn json_shape_is_what_the_webview_parses() {
-        let event = NotificationEvent::UpdateAvailable {
-            version: "1.2.3".into(),
-        };
-        assert_eq!(
-            serde_json::to_string(&event).unwrap(),
-            r#"{"updateAvailable":{"version":"1.2.3"}}"#
-        );
-
-        let call = NotificationEvent::CallIncoming {
-            call_id: "id".into(),
-            from: "pk".into(),
-            display_name: "Ada".into(),
-            kind: "audio".into(),
-            expires_at_ms: 1234,
-            is_group: true,
-        };
-        assert_eq!(
-            serde_json::to_string(&call).unwrap(),
-            r#"{"callIncoming":{"callId":"id","from":"pk","displayName":"Ada","kind":"audio","expiresAtMs":1234,"isGroup":true}}"#
-        );
-    }
 }
+
+#[cfg(test)]
+#[path = "notification_tests.rs"]
+mod tests;

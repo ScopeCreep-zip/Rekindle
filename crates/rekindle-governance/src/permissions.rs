@@ -11,7 +11,18 @@ use rekindle_types::permissions::{
     READ_HISTORY, SEND_MESSAGES, SPEAK, STREAM, TIMEOUT_MEMBERS, USE_VOICE_ACTIVITY, VIEW_CHANNELS,
 };
 
+use crate::overwrite::OverwriteTarget;
 use crate::state::GovernanceState;
+
+mod capabilities;
+mod roster;
+pub use capabilities::{
+    channel_permission_bit, channel_permission_name, denied_capabilities, denied_in_channel,
+    denied_permissions, CapabilityDenial, PERMISSION_NAMES,
+};
+pub use roster::{channel_read_roster, is_restricted};
+#[cfg(test)]
+mod overwrite_tests;
 
 /// Whether `member` may rotate the community key under `state` — be
 /// elected rotator and write a `MEKGenerationBump` (plan D20). Evaluated
@@ -22,6 +33,24 @@ use crate::state::GovernanceState;
 pub fn may_rotate_mek(member: &PseudonymKey, state: &GovernanceState) -> bool {
     rekindle_types::permissions::Permissions(compute_permissions(member, None, state, 0))
         .may_rotate_mek()
+}
+
+/// Whether `member` holds a creator seat now (plan E3.2 S7s, lead
+/// decisions (17), (25), (53)): one of the cert's creator set
+/// ([`GovernanceState::is_creator`]), not departed, and never departed.
+/// Creator power is granted by this, never by cert membership alone: a
+/// creator who left gave the seat up for good, a re-join included (its
+/// `MemberLeft` folds a `departed_heads` entry, which a re-join keeps and
+/// the state root covers), and the creator set changes only through a
+/// successor (decisions (24)–(26)). No creator removes, bans or times out
+/// another (decision (53)), so a seat ends only by its holder's leave. A
+/// successor community pins its own cert, so its seats are its own
+/// creator set.
+#[must_use]
+pub fn holds_creator_seat(member: &PseudonymKey, state: &GovernanceState) -> bool {
+    state.is_creator(member)
+        && !state.departed_heads.contains_key(member)
+        && !state.is_departed(member)
 }
 
 /// Compute effective permissions for a member in a specific context.
@@ -40,8 +69,8 @@ pub fn compute_permissions(
     state: &GovernanceState,
     now_unix: u64,
 ) -> u64 {
-    // Step 0: Creator always has all permissions
-    if state.creator.as_ref() == Some(member) {
+    // Step 0: a seated creator has all permissions (decision (53))
+    if holds_creator_seat(member, state) {
         return ALL;
     }
 
@@ -72,7 +101,7 @@ pub fn compute_permissions(
     // Steps 4-6: Channel-specific overwrites (only if channel specified)
     if let Some(ch_id) = channel_id {
         // Step 4: @everyone channel overwrites
-        let everyone_key = (*ch_id, format!("{everyone_role_id:?}"));
+        let everyone_key = (*ch_id, OverwriteTarget::Role(everyone_role_id).key());
         if let Some(ow) = state.overwrites.get(&everyone_key) {
             perms &= !ow.deny;
             perms |= ow.allow;
@@ -83,7 +112,7 @@ pub fn compute_permissions(
         let mut role_deny: u64 = 0;
         if let Some(member_roles) = state.role_assignments.get(member) {
             for role_id in member_roles {
-                let key = (*ch_id, format!("{role_id:?}"));
+                let key = (*ch_id, OverwriteTarget::Role(*role_id).key());
                 if let Some(ow) = state.overwrites.get(&key) {
                     role_allow |= ow.allow;
                     role_deny |= ow.deny;
@@ -93,18 +122,21 @@ pub fn compute_permissions(
         perms = (perms & !role_deny) | role_allow;
 
         // Step 6: Member-specific channel overwrites (highest priority)
-        let member_hex = hex_encode_pseudonym(member);
-        let member_key = (*ch_id, member_hex);
+        let member_key = (*ch_id, OverwriteTarget::Member(member.clone()).key());
         if let Some(ow) = state.overwrites.get(&member_key) {
             perms &= !ow.deny;
             perms |= ow.allow;
         }
     }
 
-    // Step 7: Timed-out members get only VIEW_CHANNELS | READ_HISTORY
+    // Step 7: a timed-out member *retains* at most VIEW_CHANNELS |
+    // READ_HISTORY (architecture §9.1 bit 7 "restrict a member to",
+    // §20.5 "retains only"; communities-overview §permissions step 8
+    // "clamp"). The timeout masks what steps 1-6 computed; it never
+    // grants a bit, so a channel an overwrite closes stays closed.
     if let Some(timeout) = state.timeouts.get(member) {
         if !timeout.is_expired(now_unix) {
-            perms = VIEW_CHANNELS | READ_HISTORY;
+            perms &= VIEW_CHANNELS | READ_HISTORY;
         }
     }
 
@@ -127,16 +159,6 @@ pub fn compute_permissions(
     }
 
     perms
-}
-
-fn hex_encode_pseudonym(key: &PseudonymKey) -> String {
-    use std::fmt::Write as _;
-    key.0.iter().fold(String::with_capacity(64), |mut acc, b| {
-        // `write!` into one buffer rather than `format!` per byte: the
-        // latter allocates a String for every one of the 32 bytes.
-        let _ = write!(acc, "{b:02x}");
-        acc
-    })
 }
 
 /// Whether `perms` carries any moderation capability.
@@ -174,188 +196,5 @@ pub fn has_all_capabilities(perms: u64, mask: u64) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::state::{GovernanceState, RoleState, TimeoutState};
-    use rekindle_types::permissions::{BYPASS_SLOWMODE, DEFAULT_EVERYONE};
-    use std::collections::{HashMap, HashSet};
-
-    fn pseudo(b: u8) -> PseudonymKey {
-        PseudonymKey([b; 32])
-    }
-
-    fn rid(b: u8) -> RoleId {
-        RoleId([b; 16])
-    }
-
-    fn base_state() -> GovernanceState {
-        let everyone_role = RoleState {
-            name: "everyone".into(),
-            permissions: DEFAULT_EVERYONE,
-            position: 0,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-            lamport: 1,
-        };
-        let mut roles = HashMap::new();
-        roles.insert(rid(0), everyone_role);
-
-        GovernanceState {
-            creator: Some(pseudo(1)),
-            roles,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn creator_has_all() {
-        let state = base_state();
-        let perms = compute_permissions(&pseudo(1), None, &state, 0);
-        assert_eq!(perms, ALL);
-    }
-
-    #[test]
-    fn everyone_gets_defaults() {
-        let state = base_state();
-        let perms = compute_permissions(&pseudo(99), None, &state, 0);
-        assert!(perms & SEND_MESSAGES != 0);
-        assert!(perms & VIEW_CHANNELS != 0);
-        assert!(perms & READ_HISTORY != 0);
-        assert_eq!(perms & BAN_MEMBERS, 0);
-        assert_eq!(perms & ADMINISTRATOR, 0);
-    }
-
-    #[test]
-    fn everyone_can_connect_to_voice() {
-        // Regression: a non-creator member must receive CONNECT (and
-        // USE_VOICE_ACTIVITY) from DEFAULT_EVERYONE so the canonical
-        // voice-join gate (require_permission → has_all_capabilities) passes.
-        // A permission bit-layout mismatch previously denied every non-owner
-        // member voice access.
-        let state = base_state();
-        let perms = compute_permissions(&pseudo(99), None, &state, 0);
-        assert!(has_all_capabilities(perms, CONNECT), "member lacks CONNECT");
-        assert!(has_all_capabilities(perms, USE_VOICE_ACTIVITY));
-    }
-
-    #[test]
-    fn administrator_bypasses_all() {
-        let mut state = base_state();
-        let admin_role = RoleState {
-            name: "admin".into(),
-            permissions: ADMINISTRATOR,
-            position: 1,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-            lamport: 2,
-        };
-        state.roles.insert(rid(1), admin_role);
-        let mut assignments = HashSet::new();
-        assignments.insert(rid(1));
-        state.role_assignments.insert(pseudo(5), assignments);
-
-        let perms = compute_permissions(&pseudo(5), None, &state, 0);
-        assert_eq!(perms, ALL);
-    }
-
-    #[test]
-    fn timeout_strips_permissions() {
-        let mut state = base_state();
-        state.timeouts.insert(
-            pseudo(10),
-            TimeoutState {
-                duration_seconds: 3600,
-                started_at: 1000,
-                lamport: 5,
-            },
-        );
-
-        // Not expired (now=1500, expires at 4600)
-        let perms = compute_permissions(&pseudo(10), None, &state, 1500);
-        assert!(perms & VIEW_CHANNELS != 0);
-        assert!(perms & READ_HISTORY != 0);
-        assert_eq!(perms & SEND_MESSAGES, 0);
-        assert_eq!(perms & BAN_MEMBERS, 0);
-
-        // Expired (now=5000)
-        let perms = compute_permissions(&pseudo(10), None, &state, 5000);
-        assert!(
-            perms & SEND_MESSAGES != 0,
-            "timeout expired, perms restored"
-        );
-    }
-
-    #[test]
-    fn no_view_channels_strips_everything() {
-        let mut state = base_state();
-        // Override @everyone to have no VIEW_CHANNELS
-        state.roles.insert(
-            rid(0),
-            RoleState {
-                name: "everyone".into(),
-                permissions: SEND_MESSAGES, // has send but NOT view
-                position: 0,
-                color: 0,
-                hoist: false,
-                mentionable: false,
-                self_assignable: false,
-                exclusion_group: None,
-                lamport: 1,
-            },
-        );
-
-        let perms = compute_permissions(&pseudo(99), None, &state, 0);
-        assert_eq!(perms, 0, "no VIEW_CHANNELS → everything stripped");
-    }
-
-    #[test]
-    fn implicit_deps_no_send_strips_mention() {
-        let mut state = base_state();
-        state.roles.insert(
-            rid(0),
-            RoleState {
-                name: "everyone".into(),
-                permissions: VIEW_CHANNELS | READ_HISTORY | MENTION_EVERYONE, // mention but no send
-                position: 0,
-                color: 0,
-                hoist: false,
-                mentionable: false,
-                self_assignable: false,
-                exclusion_group: None,
-                lamport: 1,
-            },
-        );
-
-        let perms = compute_permissions(&pseudo(99), None, &state, 0);
-        assert_eq!(perms & MENTION_EVERYONE, 0, "no SEND → MENTION stripped");
-    }
-
-    #[test]
-    fn has_capability_single_bit() {
-        assert!(has_capability(
-            BYPASS_SLOWMODE | SEND_MESSAGES,
-            BYPASS_SLOWMODE
-        ));
-        assert!(!has_capability(SEND_MESSAGES, BYPASS_SLOWMODE));
-        assert!(!has_capability(0, MANAGE_COMMUNITY));
-    }
-
-    #[test]
-    fn has_all_capabilities_requires_every_bit() {
-        let mask = SEND_MESSAGES | EMBED_LINKS;
-        assert!(has_all_capabilities(
-            SEND_MESSAGES | EMBED_LINKS | VIEW_CHANNELS,
-            mask
-        ));
-        assert!(!has_all_capabilities(SEND_MESSAGES, mask));
-        assert!(has_all_capabilities(ALL, mask));
-        // Empty mask is vacuously satisfied.
-        assert!(has_all_capabilities(0, 0));
-    }
-}
+#[path = "permissions_tests.rs"]
+mod tests;

@@ -1,6 +1,6 @@
 # 0008 — Runtime / adapter / pure-logic layering in `src-tauri/src/services/`
 
-- **Status:** Accepted
+- **Status:** Accepted; **Superseded by [0020](0020-domain-logic-in-host-and-tier-crates.md)**
 - **Date:** 2026-06
 
 ## Context and problem statement

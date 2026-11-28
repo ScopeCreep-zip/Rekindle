@@ -7,16 +7,43 @@
 use crate::commands::window::NetworkStatus;
 use crate::state::SharedState;
 
+/// The own-records stage as the network status carries it (plan E2.5
+/// FC3); `pending` while no Host is unlocked.
+fn own_records(
+    state: &SharedState,
+) -> (
+    rekindle_types::subscription_events::OwnRecordsPhase,
+    Option<String>,
+) {
+    state
+        .host
+        .current()
+        .map(|host| host.own_records_stage())
+        .unwrap_or_default()
+        .phase()
+}
+
 pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
-    let (has_route, media_route) = crate::services::veilid::route_status(state);
+    let (general_route, media_route) = crate::services::veilid::route_status(state);
+    let own_route_down = crate::services::veilid::route_down(state);
+    let can_write = state.lifecycle.state().can_write();
+    let bars = state.network_strength.shown();
+    let (own_records, own_records_error) = own_records(state);
+    let route_paused = crate::services::veilid::route_paused(state);
     let node = state.node.read();
     match node.as_ref() {
         Some(handle) => NetworkStatus {
             attachment_state: handle.attachment_state.clone(),
             is_attached: handle.is_attached,
             public_internet_ready: handle.public_internet_ready,
-            has_route,
+            general_route,
             media_route,
+            can_write,
+            bars,
+            own_records,
+            own_records_error: own_records_error.clone(),
+            route_paused,
+            own_route_down,
             profile_dht_key: handle.profile_dht_key.clone(),
             friend_list_dht_key: handle.friend_list_dht_key.clone(),
         },
@@ -24,10 +51,20 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             attachment_state: "detached".to_string(),
             is_attached: false,
             public_internet_ready: false,
-            has_route: false,
+            general_route: rekindle_types::subscription_events::RouteAvailability::Idle,
             media_route,
+            can_write,
+            bars,
+            own_records,
+            own_records_error,
+            route_paused,
+            own_route_down,
             profile_dht_key: None,
             friend_list_dht_key: None,
         },
     }
 }
+
+#[cfg(test)]
+#[path = "window_runtime_tests.rs"]
+mod tests;

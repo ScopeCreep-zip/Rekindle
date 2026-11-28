@@ -1,21 +1,24 @@
 //! Input validation for the daemon security boundary.
 //!
 //! [`validate_request`] checks every string and bounded number of an
-//! [`IpcRequest`] once, in `router::dispatch`, before any handler runs:
-//! handlers receive only well-formed input. The match is exhaustive, so a
+//! [`IpcRequest`] once, in the host's gate (`host/gate.rs`) for every
+//! frontend, before any handler runs: handlers receive only well-formed
+//! input. The match is exhaustive, so a
 //! new variant cannot reach a handler unvalidated. The CLI may also
 //! validate for UX; the daemon enforces.
 
+use rekindle_governance::validate::bounds;
 use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
-use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{
-    self, KeyFormatError, MAX_DESCRIPTION_LEN, MAX_MESSAGE_LEN, MAX_NAME_LEN, MAX_NOTE_LEN,
-    MAX_SERVER_ADDRESS_LEN, MAX_STATUS_LEN, MAX_TOPIC_LEN,
+    self, KeyFormatError, MAX_NAME_LEN, MAX_STATUS_LEN, MAX_TOPIC_LEN,
 };
-use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
 use rekindle_ipc::noise_keys::validate_agent_name;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, DESTROY_CONFIRMATION, WIPE_CONFIRMATION};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, ServersRequest};
+
+/// Largest identity archive (base64) an import takes: the bus's whole
+/// application frame (`framing::MAX_APP_FRAME`, 16 MiB).
+const MAX_ARCHIVE_LEN: usize = rekindle_ipc::framing::MAX_APP_FRAME as usize;
 
 /// Largest page a history or inbox query returns: Discord's message-list
 /// `limit` (1-100).
@@ -26,12 +29,6 @@ type Checked = Result<(), IpcResponse>;
 /// Map a `key_format` rejection to the 400 the IPC caller sees.
 fn reject(label: &str, e: &KeyFormatError) -> IpcResponse {
     IpcResponse::error(400, format!("invalid {label}: {e}"))
-}
-
-fn record_key(s: &str, label: &str) -> Checked {
-    key_format::record_key(s)
-        .map(drop)
-        .map_err(|e| reject(label, &e))
 }
 
 fn public_key(s: &str, label: &str) -> Checked {
@@ -76,6 +73,14 @@ fn text(s: &str, max: usize, label: &str) -> Checked {
         .map_err(|e| reject(label, &e))
 }
 
+/// A message body: the shared rule (not blank, bounded, no format
+/// characters), as a received one meets too.
+fn message_body(body: &str) -> Checked {
+    key_format::message_body(body)
+        .map(drop)
+        .map_err(|e| reject("message body", &e))
+}
+
 fn opt<T: ?Sized>(value: Option<&T>, check: impl FnOnce(&T) -> Checked) -> Checked {
     value.map_or(Ok(()), check)
 }
@@ -89,13 +94,6 @@ fn key_scope(s: &str) -> Checked {
     hex16(s, "channel id")
 }
 
-fn message_body(body: &str) -> Checked {
-    if body.trim().is_empty() {
-        return Err(IpcResponse::error(400, "message body cannot be empty"));
-    }
-    text(body, MAX_MESSAGE_LEN, "message body")
-}
-
 fn page(limit: u32) -> Checked {
     if (1..=MAX_PAGE).contains(&limit) {
         Ok(())
@@ -107,8 +105,10 @@ fn page(limit: u32) -> Checked {
     }
 }
 
+/// A slowmode interval: the bound every governance reader applies
+/// ([`bounds::slowmode_ok`]).
 fn slowmode(seconds: u32) -> Checked {
-    if seconds <= MAX_SLOWMODE_SECONDS {
+    if bounds::slowmode_ok(seconds) {
         Ok(())
     } else {
         Err(IpcResponse::error(
@@ -118,26 +118,39 @@ fn slowmode(seconds: u32) -> Checked {
     }
 }
 
-fn confirmation(given: &str, required: &str) -> Checked {
-    if given == required {
-        Ok(())
-    } else {
-        Err(IpcResponse::error(
-            400,
-            format!("confirmation must be exactly '{required}'"),
-        ))
+/// A commit's proof: a typed name within the longest name a subject has.
+/// A passphrase is opaque.
+fn proof(proof: &rekindle_types::intent::IntentProof) -> Checked {
+    match proof {
+        rekindle_types::intent::IntentProof::Typed(name) => text(name, MAX_NAME_LEN, "typed name"),
+        rekindle_types::intent::IntentProof::Commit
+        | rekindle_types::intent::IntentProof::Acknowledged
+        | rekindle_types::intent::IntentProof::Passphrase(_) => Ok(()),
     }
 }
 
-/// Validate a presence status string: online, away, busy or invisible.
-fn status(status: &str) -> Checked {
-    match status {
-        "online" | "away" | "busy" | "invisible" => Ok(()),
-        other => Err(IpcResponse::error(
+/// A status a user may pick: Offline is the host's teardown's alone;
+/// "Appear Offline" is Invisible, which peers cannot tell from it.
+fn presence_status(status: rekindle_types::presence::SessionStatus) -> Checked {
+    if status == rekindle_types::presence::SessionStatus::Offline {
+        return Err(IpcResponse::error_with_remediation(
             400,
-            format!("invalid status '{other}' — expected: online, away, busy, invisible"),
-        )),
+            "offline is set by locking or logging out",
+            "pick invisible to appear offline",
+        ));
     }
+    Ok(())
+}
+
+/// An avatar image: not empty, within the bus's frame.
+fn avatar(image: &[u8]) -> Checked {
+    if image.is_empty() || image.len() > MAX_ARCHIVE_LEN {
+        return Err(IpcResponse::error(
+            400,
+            format!("invalid avatar: 1 to {MAX_ARCHIVE_LEN} bytes"),
+        ));
+    }
+    Ok(())
 }
 
 /// Validate a channel kind string.
@@ -160,14 +173,18 @@ fn agent_name(name: &str) -> Checked {
         .map_err(|e| IpcResponse::error(400, format!("invalid agent name: {e}")))
 }
 
-/// Each capability is a token in the agent-name grammar, declared once.
-/// The set becomes a closed vocabulary when agents gain authority (D1).
+/// Each capability is one of the closed vocabulary
+/// (`AgentCapability`), declared once.
 fn capabilities(capabilities: &[String]) -> Checked {
     let mut seen = std::collections::HashSet::new();
     for capability in capabilities {
-        validate_agent_name(capability)
-            .map_err(|e| IpcResponse::error(400, format!("invalid capability: {e}")))?;
-        if !seen.insert(capability.as_str()) {
+        let Some(parsed) = rekindle_ipc::protocol::AgentCapability::parse(capability) else {
+            return Err(IpcResponse::error(
+                400,
+                format!("unknown capability '{capability}'"),
+            ));
+        };
+        if !seen.insert(parsed) {
             return Err(IpcResponse::error(
                 400,
                 format!("capability '{capability}' declared twice"),
@@ -177,189 +194,325 @@ fn capabilities(capabilities: &[String]) -> Checked {
     Ok(())
 }
 
+/// A new identity's display name, and a passphrase that is not empty.
+/// A new identity: a name, when given, is a valid display name (a blank one
+/// is refused, not taken for none); the passphrase is not empty.
+fn new_identity(display_name: Option<&str>, passphrase: &str) -> Checked {
+    if let Some(name) = display_name {
+        rekindle_types::presence::limits::display_name(name)
+            .map_err(|e| reject("display name", &e))?;
+    }
+    if passphrase.is_empty() {
+        return Err(IpcResponse::error(400, "invalid passphrase: empty"));
+    }
+    Ok(())
+}
+
+/// A quick-wipe arming (plan E7.1): a duress passphrase, and a panic
+/// shortcut shaped as `app_settings.panic_shortcut`'s CHECK allows
+/// (`Modifier+Key`, letters, digits and `+`, 3 to 64 characters).
+fn quick_wipe_arm(duress_passphrase: &str, shortcut: Option<&str>) -> Checked {
+    if duress_passphrase.is_empty() {
+        return Err(IpcResponse::error(400, "invalid duress passphrase: empty"));
+    }
+    if let Some(s) = shortcut {
+        let shaped = (3..=64).contains(&s.len())
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
+            && s.split('+').count() >= 2
+            && s.split('+').all(|part| !part.is_empty());
+        if !shaped {
+            return Err(IpcResponse::error(
+                400,
+                "invalid panic shortcut: Modifier+Key, letters and digits",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// An identity archive (base64) within the bus's frame.
+fn identity_archive(archive: &str) -> Checked {
+    if archive.is_empty() || archive.len() > MAX_ARCHIVE_LEN {
+        return Err(IpcResponse::error(
+            400,
+            format!("invalid archive: 1 to {MAX_ARCHIVE_LEN} base64 characters"),
+        ));
+    }
+    Ok(())
+}
+
+/// Our own presence, profile and links.
+fn own(request: &IpcRequest) -> Checked {
+    match request {
+        IpcRequest::PresenceSet { status } => presence_status(*status),
+        IpcRequest::PresenceSetMessage { message } => {
+            if message.is_empty() {
+                return Ok(());
+            }
+            text(message, MAX_STATUS_LEN, "status message")
+        }
+        IpcRequest::ProfileSetBio { bio } => rekindle_types::presence::limits::bio(bio)
+            .map(drop)
+            .map_err(|e| reject("bio", &e)),
+        IpcRequest::ProfileSetNickname { display_name } => {
+            rekindle_types::presence::limits::display_name(display_name)
+                .map(drop)
+                .map_err(|e| reject("display name", &e))
+        }
+        // The kind is a closed set; that the bytes are of it is
+        // `rekindle-image`'s check, on decode.
+        IpcRequest::ProfileSetAvatar { image, kind: _ } => avatar(image),
+        IpcRequest::SetReadReceiptsEnabled { .. }
+        | IpcRequest::SetShareGameTotals { .. }
+        | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetAutoAway { .. }
+        | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::SetKeepActivityLog { .. } => Ok(()),
+        // A window label is the shell's own short name; a subject names a
+        // friend by key, a group by id, a community by anchor or name.
+        IpcRequest::InfoviewGet { subject, window } => {
+            if window.is_empty() || window.len() > crate::host::infoview::MAX_WINDOW_LABEL {
+                return Err(IpcResponse::error(400, "invalid window label"));
+            }
+            match subject {
+                rekindle_ipc::protocol::InfoviewSubject::Friend { public_key }
+                    if public_key.len() != 64
+                        || !public_key.bytes().all(|b| b.is_ascii_hexdigit()) =>
+                {
+                    Err(IpcResponse::error(400, "invalid public key"))
+                }
+                rekindle_ipc::protocol::InfoviewSubject::Community { community }
+                    if community.is_empty() || community.len() > 256 =>
+                {
+                    Err(IpcResponse::error(400, "invalid community"))
+                }
+                _ => Ok(()),
+            }
+        }
+        // A page is 1–100 entries (the feed keeps at most 500); any row id
+        // is a cursor, one no longer stored answers nothing.
+        IpcRequest::ActivityList { limit, .. } => {
+            if (1..=100).contains(limit) {
+                Ok(())
+            } else {
+                Err(IpcResponse::error(400, format!("invalid limit: {limit}")))
+            }
+        }
+        // Game id 0 is "no database entry", never a game to hide or keep a
+        // favourite server for.
+        IpcRequest::Servers(ServersRequest::FavouriteAdd { game_id, label, .. }) => {
+            if *game_id == 0 {
+                return Err(IpcResponse::error(400, "invalid game id: 0"));
+            }
+            rekindle_types::key_format::text(
+                label,
+                rekindle_types::game_server::MAX_FAVOURITE_LABEL_LEN,
+            )
+            .map(|_| ())
+            .map_err(|e| IpcResponse::error(400, format!("invalid label: {e}")))
+        }
+        IpcRequest::GameHide { game_id }
+        | IpcRequest::GameUnhide { game_id }
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteRemove { game_id, .. }
+            | ServersRequest::RecentRemove { game_id, .. },
+        ) => {
+            if *game_id == 0 {
+                Err(IpcResponse::error(400, "invalid game id: 0"))
+            } else {
+                Ok(())
+            }
+        }
+        IpcRequest::AuditExport { since: _, path } => {
+            if path.is_empty() || !std::path::Path::new(path).is_absolute() {
+                return Err(IpcResponse::error(400, "expected an absolute export path"));
+            }
+            Ok(())
+        }
+        IpcRequest::GameLaunch {
+            game_id,
+            server,
+            source,
+        } => {
+            if server.is_some() != source.names_server() {
+                return Err(IpcResponse::error(
+                    400,
+                    "an installed launch takes no server; every other source one",
+                ));
+            }
+            rekindle_game_detect::launcher::launch_target(
+                rekindle_game_detect::GameDatabase::shared(),
+                *game_id,
+                server.as_ref(),
+                rekindle_game_detect::installed::SteamLayout::CURRENT,
+            )
+            .map(drop)
+            .map_err(|e| IpcResponse::error(400, format!("cannot launch: {e}")))
+        }
+        IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
+            .map(drop)
+            .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
+        other => unreachable!("{} is not one of our own requests", other.name()),
+    }
+}
+
 /// Validate every field of `request`. The first malformed field answers
 /// 400; nothing past this point sees malformed input.
 pub fn validate_request(request: &IpcRequest) -> Checked {
     match request {
-        // The passphrase is opaque: any bytes may be one.
-        IpcRequest::Unlock { passphrase: _ }
-        | IpcRequest::Lock
+        // A passphrase is opaque: any bytes may be one (a new identity's
+        // may not be empty, below).
+        IpcRequest::Lock
+        | IpcRequest::Logout
+        | IpcRequest::IdentityList
+        | IpcRequest::IdentityExport { passphrase: _ }
+        | IpcRequest::IdentityRotate { passphrase: _ }
         | IpcRequest::Status
         | IpcRequest::Shutdown
         | IpcRequest::IdentityShow
-        | IpcRequest::IdentityExport
-        | IpcRequest::IdentityRotate
+        | IpcRequest::PrekeyStatus
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
-        | IpcRequest::CommunityList
-        | IpcRequest::PrekeyReplenish
+        | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendCode
+        | IpcRequest::FriendTokenRotate
+        | IpcRequest::FriendInviteList
+        | IpcRequest::FriendBlockedList
+        | IpcRequest::FriendGroupDelete { group_id: _ }
+        | IpcRequest::PresenceGet
+        | IpcRequest::GameTotalsGet
+        | IpcRequest::HiddenGamesGet
+        | IpcRequest::InstalledGamesGet
+        | IpcRequest::Servers(
+            ServersRequest::FavouritesGet | ServersRequest::View | ServersRequest::Refresh,
+        )
+        | IpcRequest::ProfileBioGet
+        | IpcRequest::Undo { id: _ }
+        | IpcRequest::AuditVerify
         | IpcRequest::GamePresenceClear
         | IpcRequest::VoiceLeave
         | IpcRequest::NetworkStatus
         | IpcRequest::NetworkPeers
         | IpcRequest::PolicyReload
+        | IpcRequest::IdentityWipe
+        | IpcRequest::QuickWipeDisarm
+        | IpcRequest::QuickWipeTrigger
+        | IpcRequest::IntentCancel { .. }
         // The bus server owns subscriptions; dispatch refuses them.
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. } => Ok(()),
 
-        IpcRequest::IdentityCreate { display_name } => rekindle_types::presence::limits::display_name(display_name)
-            .map(drop)
-            .map_err(|e| reject("display name", &e)),
-        IpcRequest::IdentityDestroy { confirmation: given } => {
-            confirmation(given, DESTROY_CONFIRMATION)
+        IpcRequest::Unlock {
+            identity,
+            passphrase: _,
         }
-        IpcRequest::IdentityWipe { confirmation: given } => confirmation(given, WIPE_CONFIRMATION),
+        | IpcRequest::IdentityDelete { identity } => public_key(identity, "identity"),
+        IpcRequest::IdentityCreate {
+            display_name,
+            passphrase,
+        } => new_identity(display_name.as_deref(), passphrase),
+        IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
+        IpcRequest::QuickWipeArm {
+            duress_passphrase,
+            shortcut,
+        } => quick_wipe_arm(duress_passphrase, shortcut.as_deref()),
+        IpcRequest::IntentCommit { proof: given, .. } => proof(given),
 
-        IpcRequest::FriendAdd { target, message } => {
-            record_key(target, "target mailbox key")?;
-            text(message, MAX_NOTE_LEN, "message")
+        IpcRequest::FriendAddFromCode { .. }
+        | IpcRequest::FriendAccept { .. }
+        | IpcRequest::FriendBlock { .. }
+        | IpcRequest::FriendSetNickname { .. }
+        | IpcRequest::FriendGroupMove { .. }
+        | IpcRequest::FriendReject { .. }
+        | IpcRequest::FriendRemove { .. }
+        | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
+        | IpcRequest::FriendUnblock { .. }
+        | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionReinitiate { .. }
+        | IpcRequest::SessionResetAccept { .. }
+        | IpcRequest::IdentityRotationAccept { .. }
+        | IpcRequest::IdentityRotationDecline { .. }
+        | IpcRequest::SessionResetDecline { .. }
+        | IpcRequest::FriendAddFromInvite { .. }
+        | IpcRequest::FriendInviteCancel { .. }
+        | IpcRequest::FriendGroupCreate { .. }
+        | IpcRequest::FriendGroupRename { .. }
+        | IpcRequest::DmSend { .. }
+        | IpcRequest::DmTyping { .. }
+        | IpcRequest::DmInbox { .. }
+        | IpcRequest::DmHistory { .. }
+        | IpcRequest::DmMarkRead { .. }
+        | IpcRequest::OutboxRetry { .. }
+        | IpcRequest::OutboxDiscard { .. } => friends::check(request),
+        IpcRequest::GroupDm(GroupDmRequest::Create { .. } | GroupDmRequest::Accept {
+.. } | GroupDmRequest::Decline { .. } | GroupDmRequest::Leave { .. } |
+GroupDmRequest::Rename { .. } | GroupDmRequest::Invite { .. } |
+GroupDmRequest::Send { .. } | GroupDmRequest::Typing { .. } |
+GroupDmRequest::List | GroupDmRequest::Messages { .. } |
+GroupDmRequest::MarkRead { .. }) | IpcRequest::Lobby(_) |
+IpcRequest::DisappearingSet { .. } | IpcRequest::DisappearingGet { .. } => group_dm::check(request),
+        IpcRequest::GameInviteSend {
+            public_key: key,
+            game_id,
+            ..
+        } => {
+            if *game_id == 0 {
+                return Err(IpcResponse::error(400, "invalid game id: 0"));
+            }
+            public_key(key, "public key")
         }
-        IpcRequest::FriendAccept { public_key: key }
-        | IpcRequest::FriendReject { public_key: key }
-        | IpcRequest::FriendRemove { public_key: key } => public_key(key, "public key"),
+        IpcRequest::AvatarGet { public_key: key }
+        | IpcRequest::FriendGameTotalsGet { public_key: key }
+        | IpcRequest::FriendBioGet { public_key: key }
+        | IpcRequest::IdentitySafetyNumber { peer: key }
+        | IpcRequest::IdentityMarkVerified { peer: key }
+        | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
-        IpcRequest::CommunityCreate {
-            name: community_name,
-            description,
-            approval_required: _,
-        } => {
-            name(community_name, "community")?;
-            text(description, MAX_DESCRIPTION_LEN, "description")
-        }
-        IpcRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
-            IpcResponse::error(
-                400,
-                format!(
-                    "join requires a full invite link \
-                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
-                ),
-            )
-        }),
-        IpcRequest::CommunityLeave { governance_key }
-        | IpcRequest::CommunityInfo { governance_key }
-        | IpcRequest::CommunityPendingMembers { governance_key } => community(governance_key),
-        IpcRequest::CommunityApprove {
-            governance_key,
-            member_pseudonym,
-        } => {
-            community(governance_key)?;
-            pseudonym(member_pseudonym, "member pseudonym")
-        }
-        IpcRequest::CommunityReject {
-            governance_key,
-            member_pseudonym,
-            reason,
-        } => {
-            community(governance_key)?;
-            pseudonym(member_pseudonym, "member pseudonym")?;
-            text(reason, MAX_NOTE_LEN, "reason")
-        }
-        IpcRequest::CommunityTransferOwnership {
-            governance_key,
-            new_owner_pseudonym,
-        } => {
-            community(governance_key)?;
-            pseudonym(new_owner_pseudonym, "new owner pseudonym")
-        }
+        IpcRequest::Community(request) => community::check(request),
+        IpcRequest::Transfer(request) => transfers::check(request),
+        IpcRequest::LocalSearch { scope, query } => local_search::check(scope, query),
 
-        IpcRequest::ChannelList { community: c }
-        | IpcRequest::MekList { community: c }
-        | IpcRequest::RoleList { community: c }
-        | IpcRequest::BanList { community: c }
-        | IpcRequest::InviteList { community: c }
-        // Role ids, invite use counts and expiries are governance rules,
-        // checked where the op is validated.
-        | IpcRequest::RoleDelete {
-            community: c,
-            role_id: _,
-        }
-        | IpcRequest::InviteCreate {
-            community: c,
-            max_uses: _,
-            expires_seconds: _,
-        } => community(c),
-        IpcRequest::ChannelCreate {
-            community: c,
-            name: channel_name,
-            kind,
-            category,
-            topic,
-            slowmode_seconds,
-        } => {
-            community(c)?;
-            name(channel_name, "channel")?;
-            channel_kind(kind)?;
-            opt(category.as_deref(), |n| name(n, "category"))?;
-            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
-            slowmode(*slowmode_seconds)
-        }
-        IpcRequest::ChannelDelete {
-            community: c,
-            channel_id,
-        } => {
-            community(c)?;
-            channel(channel_id)
-        }
-        IpcRequest::ChannelUpdate {
-            community: c,
-            channel_id,
-            name: new_name,
-            topic,
-            slowmode_seconds,
-        } => {
-            community(c)?;
-            channel(channel_id)?;
-            opt(new_name.as_deref(), |n| name(n, "channel"))?;
-            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
-            opt(slowmode_seconds.as_ref(), |s| slowmode(*s))
-        }
-        IpcRequest::ChannelSend {
-            community: c,
-            channel: ch,
-            body,
-            reply_to: _,
-        } => {
-            community(c)?;
-            channel(ch)?;
-            message_body(body)
-        }
-        IpcRequest::ChannelHistory {
-            community: c,
-            channel: ch,
-            limit,
-        } => {
-            community(c)?;
-            channel(ch)?;
-            page(*limit)
-        }
-
-        IpcRequest::DmSend { peer_key, body } => {
-            public_key(peer_key, "peer key")?;
-            message_body(body)
-        }
-        IpcRequest::DmTyping {
-            peer_key,
-            typing: _,
-        } => public_key(peer_key, "peer key"),
-        IpcRequest::DmInbox { limit } => page(*limit),
-
-        IpcRequest::MekRotate {
-            community: c,
-            channel: ch,
-        }
-        | IpcRequest::MekRequest {
-            community: c,
-            channel: ch,
-            generation: _,
-        } => {
-            community(c)?;
-            key_scope(ch)
-        }
-
-        IpcRequest::PresenceSet { status: s, message } => {
-            status(s)?;
-            opt(message.as_deref(), |m| text(m, MAX_STATUS_LEN, "status message"))
-        }
+        IpcRequest::PresenceSet { .. }
+        | IpcRequest::PresenceSetMessage { .. }
+        | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::ProfileSetBio { .. }
+        | IpcRequest::SetReadReceiptsEnabled { .. }
+        | IpcRequest::SetShareGameTotals { .. }
+        | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetAutoAway { .. }
+        | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::SetKeepActivityLog { .. }
+        | IpcRequest::ActivityList { .. }
+        | IpcRequest::InfoviewGet { .. }
+        | IpcRequest::GameHide { .. }
+        | IpcRequest::GameUnhide { .. }
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteAdd { .. }
+            | ServersRequest::FavouriteRemove { .. }
+            | ServersRequest::RecentRemove { .. },
+        )
+        | IpcRequest::ProfileSetAvatar { .. }
+        | IpcRequest::AuditExport { .. }
+        | IpcRequest::LinkOpen { .. }
+        | IpcRequest::GameLaunch { .. } => own(request),
+        IpcRequest::SkinList
+        | IpcRequest::SkinGet { .. }
+        | IpcRequest::SkinFile { .. }
+        | IpcRequest::SkinFrames
+        | IpcRequest::SkinImport { .. }
+        | IpcRequest::SkinRemove { .. }
+        | IpcRequest::SkinSelect { .. }
+        | IpcRequest::SkinSetLogin { .. }
+        | IpcRequest::SkinKeep { .. }
+        | IpcRequest::SkinValidateDraft { .. }
+        | IpcRequest::SkinDraftStart { .. }
+        | IpcRequest::SkinExportDraft { .. }
+        | IpcRequest::SkinDraftCheck { .. }
+        | IpcRequest::SkinExportSchema { .. }
+        | IpcRequest::RunSkinAction { .. }
+        | IpcRequest::SkinSelectionSet { .. }
+        | IpcRequest::SkinApplyFailed { .. } => crate::host::skin::check(request),
         IpcRequest::GamePresenceSet {
             game_name,
             game_id: _,
@@ -368,98 +521,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         } => {
             name(game_name, "game")?;
             opt(server_address.as_deref(), |a| {
-                key_format::name(a, MAX_SERVER_ADDRESS_LEN)
+                rekindle_types::game_server::ServerAddress::parse(a)
                     .map(drop)
-                    .map_err(|e| reject("server address", &e))
-            })
-        }
-
-        IpcRequest::RoleCreate {
-            community: c,
-            name: role_name,
-            permissions: _,
-            color: _,
-            position: _,
-        } => {
-            community(c)?;
-            name(role_name, "role")
-        }
-        IpcRequest::RoleUpdate {
-            community: c,
-            role_id: _,
-            name: new_name,
-            permissions: _,
-            color: _,
-        } => {
-            community(c)?;
-            opt(new_name.as_deref(), |n| name(n, "role"))
-        }
-        IpcRequest::RoleAssign {
-            community: c,
-            member_pseudonym,
-            role_id: _,
-        }
-        | IpcRequest::RoleUnassign {
-            community: c,
-            member_pseudonym,
-            role_id: _,
-        } => {
-            community(c)?;
-            pseudonym(member_pseudonym, "member pseudonym")
-        }
-
-        IpcRequest::Kick {
-            community: c,
-            target_pseudonym,
-        }
-        | IpcRequest::Unban {
-            community: c,
-            target_pseudonym,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")
-        }
-        IpcRequest::Ban {
-            community: c,
-            target_pseudonym,
-            reason,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")?;
-            opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
-        }
-        IpcRequest::Timeout {
-            community: c,
-            target_pseudonym,
-            duration_seconds,
-            reason,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")?;
-            if !(1..=MAX_TIMEOUT_SECONDS).contains(duration_seconds) {
-                return Err(IpcResponse::error(
-                    400,
-                    format!(
-                        "timeout must be 1-{MAX_TIMEOUT_SECONDS} seconds, got {duration_seconds}"
-                    ),
-                ));
-            }
-            opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
-        }
-
-        IpcRequest::InviteRevoke {
-            community: c,
-            invite_code,
-        } => {
-            community(c)?;
-            key_format::hex16_id(invite_code).map(drop).map_err(|e| {
-                IpcResponse::error(
-                    400,
-                    format!(
-                        "invalid invite id: {e} — revoke takes the 16-byte invite id from \
-                         `invite list`, not the raw code, which is never published"
-                    ),
-                )
+                    .map_err(|e| IpcResponse::error(400, format!("invalid server address: {e}")))
             })
         }
 
@@ -485,5 +549,32 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
     }
 }
 
+mod channel_admin;
+mod channels;
+mod community;
+mod community_events;
+mod community_fields;
+mod community_onboarding;
+mod community_profile;
+mod expressions;
+mod friends;
+mod group_dm;
+mod local_search;
+#[cfg(test)]
+mod overwrite_target_tests;
+mod pins;
+mod rich_messaging;
 #[cfg(test)]
 mod tests;
+mod transfers;
+
+/// The conversation a validated `DisappearingSet` or `DisappearingGet` names (plan E7.1): a
+/// group's 32-hex id, else a friend's key.
+#[must_use]
+pub fn conversation_kind(conversation: &str) -> rekindle_types::message::ConversationType {
+    if conversation.len() == 32 {
+        rekindle_types::message::ConversationType::GroupDm
+    } else {
+        rekindle_types::message::ConversationType::Dm
+    }
+}

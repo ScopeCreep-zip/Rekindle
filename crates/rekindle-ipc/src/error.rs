@@ -35,6 +35,11 @@ pub enum IpcError {
     #[error("Noise handshake failed: {reason}")]
     HandshakeFailed { reason: String },
 
+    /// The two ends were built from different protocol sources (plan D3.2):
+    /// their frames would not decode, so the connection is refused.
+    #[error("client and host builds differ (client {client}, host {host}); run matching builds")]
+    BuildMismatch { client: String, host: String },
+
     /// Noise handshake timed out.
     #[error("Noise handshake timed out after {timeout_ms}ms")]
     HandshakeTimeout { timeout_ms: u64 },

@@ -1,9 +1,10 @@
 [package]
 name = "rekindle-cli"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Command-line frontend for Rekindle, a client of the rekindled daemon"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -16,17 +17,20 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+base64 = "0.22"
 chrono = { version = "0.4", features = [ "serde", "clock" ], default-features = false }
 clap = { version = "4", features = [ "derive", "env", "std", "help", "usage", "error-context" ] }
 clap_complete = "4"
 comfy-table = "7"
 dialoguer = "0.11"
 owo-colors = "4"
+parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 toml = "0.8"
 tracing = { workspace = true }
+uuid = "1"
 zeroize = { version = "1", features = [ "derive" ] }
 
 # A frontend links the bus client and the shared types — never the node.

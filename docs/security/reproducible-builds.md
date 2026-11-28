@@ -106,10 +106,12 @@ Even without full reproducibility, users can do partial verification:
 1. **Build from source** following
    [`../user/install.md`](../user/install.md) "Building from source".
 2. **Generate the SBOM** locally:
+
    ```sh
    cargo install cargo-cyclonedx --locked
    cargo cyclonedx --format json
    ```
+
 3. **Compare the dependency graph** against the released SBOM. The
    CycloneDX file lists every crate version; mismatches are easy to
    spot.
@@ -131,7 +133,7 @@ cd Rekindle
 export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
 nix develop .#frontend
 pnpm install --frozen-lockfile
-pnpm tauri build
+pnpm bundle
 
 # Hash the artefact
 sha256sum src-tauri/target/release/bundle/<os>/Rekindle*

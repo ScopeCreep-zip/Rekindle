@@ -1,17 +1,12 @@
-import { Component, createMemo, createSignal, onCleanup, Show } from "solid-js";
-import type { MessageAttachment } from "../../stores/chat.store";
+import { type Component, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { handleLoadVoiceMessage } from "../../actions/community.actions";
-import { ICON_DOWNLOAD } from "../../icons";
+import type { MessageAttachment } from "../../stores/chat.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface VoiceMessagePlayerProps {
   communityId: string;
   channelId: string;
   attachment: MessageAttachment;
-  /** Voice metadata pulled from the message body's JSON (durationMs +
-   *  waveform b64). Architecture §16.4 voice messages carry this in the
-   *  carrying Message body so it propagates with the attachment offer. */
-  durationMs: number;
-  waveform: Uint8Array;
 }
 
 const PEAK_BAR_W = 2;
@@ -35,46 +30,57 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
   const [audio, setAudio] = createSignal<HTMLAudioElement | null>(null);
   const [position, setPosition] = createSignal(0);
   let objectUrl: string | null = null;
+  // Decoded by the Host from the audio itself (plan E5.1), never the
+  // sender's claim; unknown until the audio is fetched.
+  const [durationMs, setDurationMs] = createSignal(0);
+  const [waveform, setWaveform] = createSignal<Uint8Array>(new Uint8Array());
 
   const loaded = createMemo(() => audio() !== null);
 
   // Render bars from the waveform peak bytes — full vs already-played split
   // is computed from `position / durationMs`.
-  const totalBars = createMemo(() => props.waveform.length);
+  const totalBars = createMemo(() => waveform().length);
   const playedBars = createMemo(() => {
-    if (props.durationMs <= 0) return 0;
-    return Math.round((position() / props.durationMs) * totalBars());
+    if (durationMs() <= 0) return 0;
+    return Math.round((position() / durationMs()) * totalBars());
   });
 
   async function loadAudio(): Promise<HTMLAudioElement | null> {
     setFetching(true);
     try {
-      const blob = await handleLoadVoiceMessage(
+      const loadedNote = await handleLoadVoiceMessage(
         props.communityId,
         props.channelId,
         props.attachment.attachmentId,
-        props.attachment.mimeType,
+        props.attachment.mimeType
       );
-      if (!blob) return null;
-      objectUrl = URL.createObjectURL(blob);
+      if (!loadedNote) return null;
+      setDurationMs(loadedNote.durationMs);
+      setWaveform(loadedNote.waveform);
+      objectUrl = URL.createObjectURL(loadedNote.blob);
       return new Audio(objectUrl);
     } finally {
       setFetching(false);
     }
   }
 
+  async function prepare(): Promise<HTMLAudioElement | null> {
+    const existing = audio();
+    if (existing || fetching()) return existing;
+    const el = await loadAudio();
+    if (!el) return null;
+    el.addEventListener("timeupdate", () => setPosition(Math.round(el.currentTime * 1000)));
+    el.addEventListener("ended", () => {
+      setPlaying(false);
+      setPosition(0);
+    });
+    setAudio(el);
+    return el;
+  }
+
   async function togglePlay(): Promise<void> {
-    let el = audio();
-    if (!el) {
-      el = await loadAudio();
-      if (!el) return;
-      el.addEventListener("timeupdate", () => setPosition(Math.round(el!.currentTime * 1000)));
-      el.addEventListener("ended", () => {
-        setPlaying(false);
-        setPosition(0);
-      });
-      setAudio(el);
-    }
+    const el = await prepare();
+    if (!el) return;
     if (playing()) {
       el.pause();
       setPlaying(false);
@@ -83,6 +89,12 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
       setPlaying(true);
     }
   }
+
+  // Fetch on show, as Signal downloads voice notes, so the length and
+  // waveform are there before the first play.
+  onMount(() => {
+    void prepare();
+  });
 
   onCleanup(() => {
     const el = audio();
@@ -96,6 +108,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
   return (
     <div class="voice-message">
       <button
+        type="button"
         class="voice-message-play-btn"
         onClick={() => void togglePlay()}
         disabled={fetching()}
@@ -103,18 +116,18 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
       >
         <Show
           when={!loaded() && !fetching()}
-          fallback={<span class="nf-icon">{playing() ? "\u{F03E4}" : "\u{F040A}"}</span>}
+          fallback={<SkinGlyph name={playing() ? "pause" : "play"} />}
         >
-          <span class="nf-icon">{ICON_DOWNLOAD}</span>
+          <SkinGlyph name="download" />
         </Show>
       </button>
-      <div class="voice-message-waveform" aria-label="voice message waveform">
+      <div class="voice-message-waveform" role="img" aria-label="voice message waveform">
         {Array.from({ length: totalBars() }, (_v, i) => {
-          const peak = props.waveform[i] ?? 0;
+          const peak = waveform()[i] ?? 0;
           const heightPx =
-            PEAK_HEIGHT_MIN_PX +
-            ((PEAK_HEIGHT_MAX_PX - PEAK_HEIGHT_MIN_PX) * peak) / 255;
-          const klass = i < playedBars() ? "voice-message-bar voice-message-bar-played" : "voice-message-bar";
+            PEAK_HEIGHT_MIN_PX + ((PEAK_HEIGHT_MAX_PX - PEAK_HEIGHT_MIN_PX) * peak) / 255;
+          const klass =
+            i < playedBars() ? "voice-message-bar voice-message-bar-played" : "voice-message-bar";
           return (
             <span
               class={klass}
@@ -128,7 +141,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
         })}
       </div>
       <span class="voice-message-duration">
-        {formatDuration(playing() ? position() : props.durationMs)}
+        {formatDuration(playing() ? position() : durationMs())}
       </span>
     </div>
   );

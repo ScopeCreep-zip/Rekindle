@@ -7,7 +7,7 @@
 //! (the wrapped `libcrux` type has no `Zeroize` impl of its own to
 //! derive against) and the shared secrets it produces via `Zeroizing`.
 //!
-//! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.9/src/`)
+//! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.10/src/`)
 //!
 //! - Public key: 1184 bytes (`CPA_PKE_PUBLIC_KEY_SIZE`)
 //! - Private key: 2400 bytes (`SECRET_KEY_SIZE`)
@@ -19,7 +19,7 @@
 //! Phase 3b plugs these into `rekindle-crypto::signal::pqxdh::handshake`.
 
 use libcrux_ml_kem::mlkem768::{
-    portable::{decapsulate, encapsulate, generate_key_pair},
+    portable::{decapsulate, encapsulate, generate_key_pair, validate_public_key},
     MlKem768Ciphertext, MlKem768KeyPair, MlKem768PrivateKey, MlKem768PublicKey,
 };
 use rand::RngCore;
@@ -34,6 +34,8 @@ pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
 /// Byte length of an ML-KEM-768 private key (full FIPS-203 secret blob,
 /// includes implicit-rejection PRF state). Used for VaultStore persistence.
 pub const ML_KEM_SECRET_KEY_BYTES: usize = 2400;
+/// ML-KEM key generation's seed `d ‖ z` (FIPS 203 §7.1), 64 bytes.
+pub const ML_KEM_KEYGEN_SEED_BYTES: usize = libcrux_ml_kem::KEY_GENERATION_SEED_SIZE;
 
 /// ML-KEM-768 secret key, zeroized on drop.
 ///
@@ -63,9 +65,17 @@ impl MlKemSecret {
     /// `(d, z)` seed. Returns the secret + public halves.
     #[must_use]
     pub fn generate() -> (Self, MlKemPublic) {
-        let mut seed = [0u8; libcrux_ml_kem::KEY_GENERATION_SEED_SIZE];
-        rand::rngs::OsRng.fill_bytes(&mut seed);
-        let kp: MlKem768KeyPair = generate_key_pair(seed);
+        let mut seed = zeroize::Zeroizing::new([0u8; ML_KEM_KEYGEN_SEED_BYTES]);
+        rand::rngs::OsRng.fill_bytes(&mut *seed);
+        Self::from_seed(&seed)
+    }
+
+    /// The keypair FIPS 203's `ML-KEM.KeyGen_internal(d, z)` derives from a
+    /// 64-byte seed `d ‖ z`: the caller's generator supplies it (the
+    /// Host's, so a seeded simulation mints the same keys; plan E2.4).
+    #[must_use]
+    pub fn from_seed(seed: &[u8; ML_KEM_KEYGEN_SEED_BYTES]) -> (Self, MlKemPublic) {
+        let kp: MlKem768KeyPair = generate_key_pair(*seed);
         let (sk, pk) = kp.into_parts();
         (
             Self {
@@ -102,23 +112,24 @@ impl MlKemSecret {
 
     /// Parse a private key from its 2400-byte representation. Returns
     /// `None` if the length is wrong. Caller is responsible for the
-    /// bytes coming from a trusted source (VaultStore-encrypted at rest).
+    /// bytes coming from a trusted source (the identity database).
+    ///
+    /// The staging copy is `Zeroizing`, and the key is written into a
+    /// box allocated first, so no unwiped copy of the secret is left on
+    /// this frame or in a freed allocation.
     #[must_use]
     pub fn from_secret_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != ML_KEM_SECRET_KEY_BYTES {
-            return None;
-        }
-        let mut value = [0u8; ML_KEM_SECRET_KEY_BYTES];
-        value.copy_from_slice(bytes);
-        Some(Self {
-            inner: Box::new(MlKem768PrivateKey::from(value)),
-        })
+        let value: Zeroizing<[u8; ML_KEM_SECRET_KEY_BYTES]> =
+            Zeroizing::new(bytes.try_into().ok()?);
+        let mut inner = Box::<MlKem768PrivateKey>::default();
+        *inner = MlKem768PrivateKey::from(&*value);
+        Some(Self { inner })
     }
 
     /// Extract the corresponding public key from the FIPS-203 secret-key
     /// layout. The ML-KEM-768 private key embeds the encapsulation key
     /// (public) at offset `CPA_PKE_SECRET_KEY_SIZE = 1152`, length
-    /// `CPA_PKE_PUBLIC_KEY_SIZE = 1184` — see `libcrux-ml-kem-0.0.9/src/
+    /// `CPA_PKE_PUBLIC_KEY_SIZE = 1184` — see `libcrux-ml-kem-0.0.10/src/
     /// constants.rs`. This lets us reconstruct a `PreKeyBundle`'s PQ
     /// public field from just the stored secret blob.
     #[must_use]
@@ -137,7 +148,7 @@ impl MlKemSecret {
 impl MlKemSecret {
     /// Zero the private key bytes in place, without consuming `self`.
     ///
-    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.9's `MlKemPrivateKey<SIZE>`,
+    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.10's `MlKemPrivateKey<SIZE>`,
     /// via its `impl_generic_struct!` macro) implements neither `Zeroize`
     /// nor `AsMut<[u8]>` — but the same macro DOES give it `Default`
     /// (all-zero) and `From<Self> for [u8; SIZE]` (by value). That pair is
@@ -173,9 +184,22 @@ impl MlKemPublic {
     /// via [`MlKemSecret::decapsulate`].
     #[must_use]
     pub fn encapsulate(&self) -> EncapsulationOutput {
-        let mut rnd = [0u8; libcrux_ml_kem::ENCAPS_SEED_SIZE];
-        rand::rngs::OsRng.fill_bytes(&mut rnd);
-        let (ct, ss) = encapsulate(&self.inner, rnd);
+        // The encapsulation seed `m` determines the shared secret (FIPS
+        // 203 §6.2), so it is wiped like one.
+        let mut rnd = Zeroizing::new([0u8; libcrux_ml_kem::ENCAPS_SEED_SIZE]);
+        rand::rngs::OsRng.fill_bytes(&mut *rnd);
+        self.encapsulate_with_seed(&rnd)
+    }
+
+    /// FIPS 203's `ML-KEM.Encaps_internal(ek, m)` (§6.2) with the caller's
+    /// 32-byte `m`. Private: production draws `m` from `OsRng` in
+    /// [`Self::encapsulate`]; the known-answer tests (`pq_keys_kat.rs`)
+    /// pass NIST's `m` through the same path.
+    fn encapsulate_with_seed(
+        &self,
+        m: &Zeroizing<[u8; libcrux_ml_kem::ENCAPS_SEED_SIZE]>,
+    ) -> EncapsulationOutput {
+        let (ct, ss) = encapsulate(&self.inner, **m);
         EncapsulationOutput {
             ciphertext: ct.as_ref().to_vec(),
             shared_secret: Zeroizing::new(ss),
@@ -191,23 +215,16 @@ impl MlKemPublic {
     }
 
     /// Parse a public key from its 1184-byte wire representation.
-    /// Returns `None` if the length is wrong. Validity (lattice-point
-    /// well-formedness) is NOT checked here — the caller is expected to
-    /// follow up with `libcrux_ml_kem::mlkem768::portable::validate_public_key`
-    /// if defending against adversarial input.
+    /// Returns `None` if the length is wrong or the key fails FIPS 203
+    /// §7.2's encapsulation-key check (every coefficient of `t` reduced
+    /// mod q: `ByteEncode12(ByteDecode12(ek)) == ek`), via libcrux's
+    /// `validate_public_key`. Every key from a peer comes through here,
+    /// so none is encapsulated to unchecked.
     #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != ML_KEM_PUBLIC_KEY_BYTES {
-            return None;
-        }
-        let mut value = [0u8; ML_KEM_PUBLIC_KEY_BYTES];
-        value.copy_from_slice(bytes);
-        // `MlKem768PublicKey` is a tuple-struct-like with `pub(crate) value`.
-        // We can't construct it directly here. The crate exposes `From<&[u8; N]>`
-        // via `impl_generic_struct!` — check by trying both.
-        Some(Self {
-            inner: Box::new(MlKem768PublicKey::from(value)),
-        })
+        let value: &[u8; ML_KEM_PUBLIC_KEY_BYTES] = bytes.try_into().ok()?;
+        let inner = Box::new(MlKem768PublicKey::from(value));
+        validate_public_key(&inner).then_some(Self { inner })
     }
 }
 
@@ -224,87 +241,9 @@ pub fn ml_kem_ciphertext_from_bytes(bytes: &[u8]) -> Option<MlKem768Ciphertext> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "pq_keys_kat.rs"]
+mod kat;
 
-    #[test]
-    fn round_trip_encapsulate_decapsulate() {
-        let (sk, pk) = MlKemSecret::generate();
-        let out = pk.encapsulate();
-        let ct = ml_kem_ciphertext_from_bytes(&out.ciphertext)
-            .expect("ciphertext is exactly 1088 bytes");
-        let recovered = sk.decapsulate(&ct);
-        assert_eq!(*out.shared_secret, *recovered, "shared secret must match");
-    }
-
-    #[test]
-    fn public_key_byte_roundtrip() {
-        let (_sk, pk) = MlKemSecret::generate();
-        let bytes = pk.as_bytes().to_vec();
-        assert_eq!(bytes.len(), ML_KEM_PUBLIC_KEY_BYTES);
-        let restored = MlKemPublic::from_bytes(&bytes).expect("valid length");
-        assert_eq!(restored.as_bytes(), bytes.as_slice());
-    }
-
-    #[test]
-    fn wrong_secret_returns_different_shared_secret() {
-        // ML-KEM-768 implicit rejection: decapsulating with the wrong
-        // secret returns a deterministic-but-different shared secret
-        // (NOT an error). This is by design for IND-CCA2 security.
-        let (sk_alice, pk_alice) = MlKemSecret::generate();
-        let (sk_bob, _pk_bob) = MlKemSecret::generate();
-        let out = pk_alice.encapsulate();
-        let ct = ml_kem_ciphertext_from_bytes(&out.ciphertext).unwrap();
-        let alice_view = sk_alice.decapsulate(&ct);
-        let bob_view = sk_bob.decapsulate(&ct);
-        assert_eq!(*out.shared_secret, *alice_view);
-        assert_ne!(*out.shared_secret, *bob_view);
-    }
-
-    #[test]
-    fn from_bytes_rejects_wrong_length() {
-        assert!(MlKemPublic::from_bytes(&[0u8; 1183]).is_none());
-        assert!(MlKemPublic::from_bytes(&[0u8; 1185]).is_none());
-        assert!(ml_kem_ciphertext_from_bytes(&[0u8; 1087]).is_none());
-        assert!(ml_kem_ciphertext_from_bytes(&[0u8; 1089]).is_none());
-    }
-
-    #[test]
-    fn distinct_keypairs_have_distinct_public_keys() {
-        // Sanity: OsRng-driven keypair generation produces unique keys.
-        let (_, a) = MlKemSecret::generate();
-        let (_, b) = MlKemSecret::generate();
-        assert_ne!(a.as_bytes(), b.as_bytes());
-    }
-
-    #[test]
-    fn public_extracted_from_secret_matches_paired_public() {
-        let (sk, pk) = MlKemSecret::generate();
-        let extracted = sk.public();
-        assert_eq!(extracted.as_bytes(), pk.as_bytes());
-    }
-
-    #[test]
-    fn secret_byte_roundtrip_preserves_public() {
-        let (sk, pk) = MlKemSecret::generate();
-        let sk_bytes = sk.as_secret_bytes().to_vec();
-        let restored = MlKemSecret::from_secret_bytes(&sk_bytes).expect("valid length");
-        assert_eq!(restored.public().as_bytes(), pk.as_bytes());
-    }
-
-    #[test]
-    fn drop_zeroizes_the_private_key_bytes() {
-        // Exercises exactly the logic `Drop::drop` runs, without reading
-        // memory after deallocation (undefined behavior) to prove it.
-        let (mut sk, _pk) = MlKemSecret::generate();
-        assert!(
-            sk.as_secret_bytes().iter().any(|&b| b != 0),
-            "freshly generated key should not already be all-zero"
-        );
-        sk.zeroize_in_place();
-        assert!(
-            sk.as_secret_bytes().iter().all(|&b| b == 0),
-            "private key bytes must be zero after the zeroize Drop runs"
-        );
-    }
-}
+#[cfg(test)]
+#[path = "pq_keys_tests.rs"]
+mod tests;

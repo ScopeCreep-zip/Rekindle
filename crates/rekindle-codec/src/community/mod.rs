@@ -2,19 +2,15 @@
 //! plan C8): envelopes, governance and record layouts, with no Veilid.
 
 pub mod audit_log;
-pub mod automod;
 pub mod channel_record;
 pub mod envelope;
 pub mod types;
 
 // Re-export types for convenient access via `dht::community::*`
 pub use audit_log::{AuditAction, AuditChange, AuditLogEntry, AuditTarget};
-pub use automod::{
-    AutoModAction, AutoModConfig, AutoModRule, AutoModTrigger, RaidAction, RaidProtection,
-};
 pub use envelope::{
     sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
-    PresenceGameInfo, SignedEnvelope,
+    SignedEnvelope,
 };
 // `CoordinatorInfo`, `MemberPresence` and `SignedPresence` used to be
 // re-exported here. All three were v1.0 coordinator-era types with no
@@ -22,8 +18,8 @@ pub use envelope::{
 // name, carrying `is_coordinator` / `coordinator_since`. The live
 // presence type is `rekindle_types::presence::MemberPresence`.
 pub use types::{
-    BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
-    InviteEntry, MemberSummary, ModerationLevel, RoleEntryV2,
+    BanEntry, CategoryEntry, ChannelKind, CommunityMetadataV2, CommunityPolicy, InviteEntry,
+    ModerationLevel,
 };
 
 use serde::{Deserialize, Serialize};

@@ -1,9 +1,10 @@
 [package]
 name = "rekindle-secrets"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Cryptographic security boundary for Rekindle — all secret key material lives here"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -14,6 +15,9 @@ blake3 = "1"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hkdf = "0.12"
 rekindle-types = { path = "../rekindle-types" }
+# `RandomSource` (plan C9.2): keys an engine mints come from its injected
+# generator, so a seeded run fixes them. AEAD nonces stay on `OsRng`.
+rekindle-utils = { path = "../rekindle-utils" }
 sha2 = "0.10"
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 # RFC 9180 HPKE for MEK wrapping v2 — the same crate veilid-core uses
@@ -24,8 +28,19 @@ hex = "0.4"
 hpke = { version = "0.14", default-features = false, features = [ "alloc", "getrandom", "x25519", "hkdfsha2", "chacha" ] }
 libcrux-ml-kem = { workspace = true }
 parking_lot = { workspace = true }
+# `forked_random`: ChaCha20 with fast-key erasure, the cipher state wiped on
+# drop (audit C-1).
+chacha20 = { version = "0.9", features = [ "zeroize" ] }
 rand = { workspace = true }
+# `friend_token`: the request token's base32 spelling and its
+# constant-time comparison (plan E2.5, D17).
+data-encoding = "2"
+subtle = "2"
 zeroize = { version = "1", features = [ "derive" ] }
+# `locked::LockedBox` (plan E7.1, roadmap 5.2): `region::lock` is a safe
+# function (mlock / VirtualLock), so the crate stays `forbid(unsafe_code)`.
+region = "4"
+tracing = { workspace = true }
 
 [dev-dependencies]
 curve25519-dalek = { version = "4.1", features = [ "rand_core", "digest" ] }

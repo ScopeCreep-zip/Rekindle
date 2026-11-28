@@ -161,9 +161,36 @@ pub enum ChatEvent { /* ... */ }
 pub enum UserStatus { Online, Away, Busy, Offline }
 ```
 
+### Modules are files
+
+Every module is its own file; an inline `mod name { … }` fails `cargo xtask
+check-inline-modules`, which `cargo xtask check` runs (a body that is only an
+`include!(…)`, such as a Cap'n Proto generated module, is not inline). Unit
+tests live beside the code they test in `<stem>_tests.rs`, declared from it as
+
+```rust
+#[cfg(test)]
+#[path = "<stem>_tests.rs"]
+mod tests;
+```
+
+`cargo xtask outline-modules` rewrites every inline module the same way
+(`<stem>_<name>.rs` plus `#[path]`), deterministically, so run it rather than
+outlining by hand. A branch that was in flight when trunk outlined its modules
+runs `cargo xtask outline-modules` (and commits the result) before it merges
+trunk, so the merge meets files on both sides instead of inline blocks.
+
+The gates know test code by how a file is declared, never by its name
+(`xtask/src/test_code.rs`): a file is test code when the `mod` item that loads
+it carries `#[cfg(test)]` or sits inside test code, or when it belongs to a
+test or bench target (`tests/`, `benches/`, `[[test]]`, `[[bench]]`). A
+`foo_tests.rs` declared without `#[cfg(test)]` is shipped code and is checked
+like any other.
+
 ### Testing patterns
 
-- Pure-logic crates: unit tests in-file (`#[cfg(test)] mod tests`).
+- Pure-logic crates: unit tests in `<stem>_tests.rs`, declared
+  `#[cfg(test)] #[path = "<stem>_tests.rs"] mod tests;` (see above).
 - CRDT merge: property tests with `proptest`; pin regressions.
 - Cross-module integration: in `tests/` or `services/<feature>/tests.rs`.
 - Security-sensitive changes: regression test mandatory — see
@@ -178,7 +205,6 @@ let pool = state.db.current()?;
 
 // Use db_helpers::* for all DB access:
 db_call(pool, |conn| { /* sync rusqlite */ }).await?
-db_call_or_default(pool, |conn| { /* sync rusqlite */ }, default).await
 db_fire(pool, |conn| { /* sync rusqlite, fire-and-forget */ })
 ```
 
@@ -235,8 +261,9 @@ Stores hold reactive signals, expose action functions, and call
 
 ### Handlers
 
-Backend events are subscribed via `safeListen()` in
-`src/handlers/<feature>.ts`. Each handler file is named for the
+Backend events are subscribed via the `subscribe*` functions of
+`src/ipc/channels/` in `src/handlers/<feature>.ts`; each window then
+calls `startEventStream()` once (ADR 0013). Each handler file is named for the
 event channel it owns and exports a setup function called once at
 startup.
 

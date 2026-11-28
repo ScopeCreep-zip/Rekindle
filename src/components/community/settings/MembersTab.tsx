@@ -1,34 +1,24 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import StatusDot from "../../status/StatusDot";
-import RoleTag from "../RoleTag";
-import type { Community, Member, Role } from "../../../stores/community.store";
-import type { ConfirmOptions } from "./types";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
-  handleRemoveCommunityMember,
-  handleBanMember,
   handleAssignRole,
-  handleUnassignRole,
-  handleTimeoutMember,
-  handleRemoveTimeout,
+  handleBanMember,
   handleExpandCommunitySegment,
+  handleRemoveCommunityMember,
+  handleRemoveTimeout,
+  handleTimeoutMember,
+  handleUnassignRole,
 } from "../../../actions/community.actions";
-import { highestPosition } from "../../../ipc/permissions";
-import {
-  ICON_SHIELD,
-  ICON_TIMEOUT,
-  ICON_ACCOUNT_REMOVE,
-  ICON_BAN,
-} from "../../../icons";
+import type { Community, Member, Role } from "../../../stores/community.store";
+import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
+import SkinGlyph from "../../common/SkinGlyph";
+import StatusDot from "../../status/StatusDot";
+import GovernancePublicationStatus from "../GovernancePublicationStatus";
+import RoleTag from "../RoleTag";
 
 interface MembersTabProps {
   community: Community;
-  myRoleIds: number[];
-  canManageRoles: boolean;
-  canKick: boolean;
-  canBan: boolean;
-  canModerate: boolean;
-  canManageCommunity: boolean;
-  requestConfirm: (opts: ConfirmOptions) => void;
+  /** Why we may not expand the community, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
 }
 
 const SLOTS_PER_SEGMENT = 255;
@@ -41,12 +31,10 @@ const MembersTab: Component<MembersTabProps> = (props) => {
   const filteredMembers = () => {
     const q = searchQuery().toLowerCase().trim();
     if (!q) return props.community.members;
-    return props.community.members.filter((m) =>
-      m.displayName.toLowerCase().includes(q),
-    );
+    return props.community.members.filter((m) => m.displayName.toLowerCase().includes(q));
   };
 
-  function toggleMemberRole(pseudonymKey: string, roleId: number, has: boolean): void {
+  function toggleMemberRole(pseudonymKey: string, roleId: string, has: boolean): void {
     if (has) {
       handleUnassignRole(props.community.id, pseudonymKey, roleId);
     } else {
@@ -54,36 +42,21 @@ const MembersTab: Component<MembersTabProps> = (props) => {
     }
   }
 
-  function memberAllRoles(member: Member): { name: string; color: number }[] {
+  function memberAllRoles(member: Member): Role[] {
     return member.roleIds
       .map((id) => props.community.roles.find((r) => r.id === id))
       .filter((r): r is Role => r != null && r.name !== "@everyone")
-      .sort((a, b) => b.position - a.position)
-      .map((r) => ({ name: r.name, color: r.color }));
+      .sort((a, b) => b.position - a.position);
   }
 
-  function canManageMember(member: Member): boolean {
-    const myPos = highestPosition(props.myRoleIds, props.community.roles);
-    const memberPos = highestPosition(member.roleIds, props.community.roles);
-    return myPos > memberPos && member.pseudonymKey !== props.community.myPseudonymKey;
+  // What we may do to a member is the Host's per-member verdict (plan
+  // E3.2 S9): the validator's rank rule, never a rank compared here.
+  function kickMember(member: Member): void {
+    void handleRemoveCommunityMember(props.community.id, member.pseudonymKey);
   }
 
-  function confirmKick(member: Member): void {
-    props.requestConfirm({
-      title: "Kick Member",
-      message: `Kick ${member.displayName} from the community?`,
-      confirmLabel: "Kick",
-      action: () => handleRemoveCommunityMember(props.community.id, member.pseudonymKey),
-    });
-  }
-
-  function confirmBan(member: Member): void {
-    props.requestConfirm({
-      title: "Ban Member",
-      message: `Ban ${member.displayName}? They will not be able to rejoin.`,
-      confirmLabel: "Ban",
-      action: () => handleBanMember(props.community.id, member.pseudonymKey),
-    });
+  function banMember(member: Member): void {
+    void handleBanMember(props.community.id, member.pseudonymKey);
   }
 
   // Plate Gate (architecture §15): admins see two-state banner — a
@@ -97,7 +70,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
   const remaining = () => Math.max(0, capacity() - props.community.members.length);
   const canExpandMore = () => segmentCount() < MAX_SEGMENTS;
   const expansionBannerVariant = (): "warning" | "alert" | null => {
-    if (!props.canManageCommunity || !canExpandMore()) return null;
+    if (!canExpandMore()) return null;
     if (remaining() === 0) return "alert";
     if (remaining() <= PLATE_WARNING_REMAINING) return "warning";
     return null;
@@ -116,6 +89,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
 
   return (
     <div class="settings-section">
+      <GovernancePublicationStatus communityId={props.community.id} />
       <Show when={expansionBannerVariant() !== null}>
         <div
           class={`plate-gate-banner plate-gate-banner-${expansionBannerVariant()}`}
@@ -126,36 +100,36 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               when={expansionBannerVariant() === "alert"}
               fallback={
                 <>
-                  <strong>Approaching segment limit ({remaining()} slots left).</strong>{" "}
-                  Expand to a new SMPL segment so the community can keep admitting
-                  members. Each segment holds up to {SLOTS_PER_SEGMENT} more members.
+                  <strong>Approaching segment limit ({remaining()} slots left).</strong> Expand to a
+                  new SMPL segment so the community can keep admitting members. Each segment holds
+                  up to {SLOTS_PER_SEGMENT} more members.
                 </>
               }
             >
-              <strong>This community has reached its segment capacity.</strong>{" "}
-              Expand to a new SMPL segment to admit more members. Each segment
-              holds up to {SLOTS_PER_SEGMENT} additional members.
+              <strong>This community has reached its segment capacity.</strong> Expand to a new SMPL
+              segment to admit more members. Each segment holds up to {SLOTS_PER_SEGMENT} additional
+              members.
             </Show>
           </div>
           <button
+            type="button"
             class="plate-gate-banner-btn"
-            disabled={expanding()}
+            disabled={expanding() || props.manageDenied !== null}
+            title={props.manageDenied ?? undefined}
+            aria-description={props.manageDenied ?? undefined}
             onClick={() => void onClickExpand()}
           >
             {expanding() ? "Expanding…" : "Expand community"}
           </button>
         </div>
       </Show>
-      <Show when={props.canManageCommunity && (props.community.segments?.length ?? 0) > 0}>
+      <Show when={(props.community.segments?.length ?? 0) > 0}>
         <div class="plate-gate-status">
-          Plate Gate: {segmentCount()} segments · capacity {capacity()} ·
-          {" "}{props.community.members.length} members ·{" "}
-          {remaining()} slots open
+          Plate Gate: {segmentCount()} segments · capacity {capacity()} ·{" "}
+          {props.community.members.length} members · {remaining()} slots open
         </div>
       </Show>
-      <div class="member-list-header">
-        Members — {props.community.members.length}
-      </div>
+      <div class="member-list-header">Members — {props.community.members.length}</div>
       <input
         class="form-input member-search-input"
         type="text"
@@ -171,85 +145,114 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               <span class="member-name">{member.displayName}</span>
               <div class="member-roles-row">
                 <For each={memberAllRoles(member)}>
-                  {(role) => <RoleTag name={role.name} color={role.color} />}
+                  {(role) => (
+                    <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+                  )}
                 </For>
               </div>
               <Show when={member.timeoutUntil}>
-                <span class="nf-icon timeout-indicator" title="Timed out">{ICON_TIMEOUT}</span>
+                <SkinGlyph
+                  name="timeout"
+                  class="timeout-indicator"
+                  title="Timed out"
+                  label="Timed out"
+                />
               </Show>
             </div>
-            <Show when={canManageMember(member)}>
-              <div class="settings-member-actions">
-                <Show when={props.canManageRoles}>
+            {/* Never-hide: every action is drawn for every member, each disabled
+                with the Host's reason for this member (rank, permission, self). */}
+            <div class="settings-member-actions">
+              <button
+                type="button"
+                class="form-btn-secondary"
+                disabled={member.moderation.manageRoles !== null}
+                title={member.moderation.manageRoles ?? undefined}
+                aria-description={member.moderation.manageRoles ?? undefined}
+                onClick={() =>
+                  setRolePickerTarget(
+                    rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
+                  )
+                }
+              >
+                <SkinGlyph name="shield" /> Roles
+              </button>
+              <Show
+                when={!member.timeoutUntil}
+                fallback={
                   <button
+                    type="button"
                     class="form-btn-secondary"
-                    onClick={() => setRolePickerTarget(
-                      rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
-                    )}
+                    disabled={member.moderation.timeout !== null}
+                    title={member.moderation.timeout ?? undefined}
+                    aria-description={member.moderation.timeout ?? undefined}
+                    onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
                   >
-                    <span class="nf-icon">{ICON_SHIELD}</span> Roles
+                    <SkinGlyph name="timeout" /> Untimeout
                   </button>
-                </Show>
-                <Show when={props.canModerate}>
-                  <Show when={!member.timeoutUntil} fallback={
-                    <button
-                      class="form-btn-secondary"
-                      onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
-                    >
-                      <span class="nf-icon">{ICON_TIMEOUT}</span> Untimeout
-                    </button>
-                  }>
-                    <select
-                      class="timeout-select"
-                      onChange={(e) => {
-                        const secs = Number(e.currentTarget.value);
-                        if (secs > 0) {
-                          handleTimeoutMember(props.community.id, member.pseudonymKey, secs, null);
-                          e.currentTarget.value = "";
-                        }
-                      }}
-                    >
-                      <option value="">Timeout...</option>
-                      <option value="60">1 min</option>
-                      <option value="300">5 min</option>
-                      <option value="600">10 min</option>
-                      <option value="1800">30 min</option>
-                      <option value="3600">1 hour</option>
-                      <option value="86400">1 day</option>
-                    </select>
-                  </Show>
-                </Show>
-                <Show when={props.canKick}>
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => confirmKick(member)}
-                  >
-                    <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Kick
-                  </button>
-                </Show>
-                <Show when={props.canBan}>
-                  <button
-                    class="form-btn-danger"
-                    onClick={() => confirmBan(member)}
-                  >
-                    <span class="nf-icon">{ICON_BAN}</span> Ban
-                  </button>
-                </Show>
-              </div>
-            </Show>
+                }
+              >
+                <select
+                  class="timeout-select"
+                  disabled={member.moderation.timeout !== null}
+                  title={member.moderation.timeout ?? undefined}
+                  aria-description={member.moderation.timeout ?? undefined}
+                  onChange={(e) => {
+                    const secs = Number(e.currentTarget.value);
+                    if (secs > 0) {
+                      handleTimeoutMember(props.community.id, member.pseudonymKey, secs, null);
+                      e.currentTarget.value = "";
+                    }
+                  }}
+                >
+                  <option value="">Timeout...</option>
+                  <option value="60">1 min</option>
+                  <option value="300">5 min</option>
+                  <option value="600">10 min</option>
+                  <option value="1800">30 min</option>
+                  <option value="3600">1 hour</option>
+                  <option value="86400">1 day</option>
+                </select>
+              </Show>
+              <button
+                type="button"
+                class="form-btn-secondary"
+                disabled={member.moderation.kick !== null}
+                title={member.moderation.kick ?? undefined}
+                aria-description={member.moderation.kick ?? undefined}
+                onClick={() => kickMember(member)}
+              >
+                <SkinGlyph name="account-remove" /> Kick
+              </button>
+              <button
+                type="button"
+                class="form-btn-danger"
+                disabled={member.moderation.ban !== null}
+                title={member.moderation.ban ?? undefined}
+                aria-description={member.moderation.ban ?? undefined}
+                onClick={() => banMember(member)}
+              >
+                <SkinGlyph name="ban" /> Ban
+              </button>
+            </div>
             <Show when={rolePickerTarget() === member.pseudonymKey}>
               <div class="role-picker-list settings-role-picker">
-                <For each={props.community.roles.filter((r) => r.id !== 0).sort((a, b) => b.position - a.position)}>
+                <For
+                  each={props.community.roles
+                    .filter((r) => r.id !== EVERYONE_ROLE_ID)
+                    .sort((a, b) => b.position - a.position)}
+                >
                   {(role) => {
                     const has = () => member.roleIds.includes(role.id);
                     return (
-                      <div
-                        class={`role-picker-item ${has() ? "role-picker-item-active" : ""}`}
-                        onClick={() => toggleMemberRole(member.pseudonymKey, role.id, has())}
-                      >
-                        <input type="checkbox" class="role-picker-checkbox" checked={has()} readOnly />
+                      <label class={`role-picker-item ${has() ? "role-picker-item-active" : ""}`}>
+                        <input
+                          type="checkbox"
+                          class="role-picker-checkbox"
+                          checked={has()}
+                          onChange={() => toggleMemberRole(member.pseudonymKey, role.id, has())}
+                        />
                         {role.name}
-                      </div>
+                      </label>
                     );
                   }}
                 </For>

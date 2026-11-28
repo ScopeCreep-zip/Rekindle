@@ -1,30 +1,52 @@
+//! Read markers and unread counts (plan E3.1 G1, D25) and the members on
+//! screen (plan E3.4 Q1): Host calls.
+
+use rekindle_ipc::protocol::UnreadRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::community::ChannelUnreadView;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
+use crate::host_call;
 use crate::state::SharedState;
-
-use crate::services::community_unread_runtime::UnreadCountEntry;
 
 #[tauri::command]
 pub async fn mark_channel_read(
+    state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
     last_message_id: String,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Unread(UnreadRequest::ChannelMarkRead {
+        community: community_id,
+        channel: channel_id,
+        up_to: last_message_id,
+    }));
+    host_call::call(&state, request).await
+}
+
+/// The members the member list shows (plan E3.4 Q1, at most 50): the Host
+/// keeps their beats live beside the ring's.
+#[tauri::command]
+pub async fn set_members_on_screen(
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = (pool, last_message_id);
-    crate::services::community_unread_runtime::mark_channel_read_inner(
-        state.inner(),
-        &community_id,
-        &channel_id,
-    );
-    Ok(())
+    community_id: String,
+    members: Vec<String>,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Unread(UnreadRequest::MembersOnScreen {
+        community: community_id,
+        members,
+    }));
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
 pub async fn get_unread_counts(
-    community_id: String,
     state: State<'_, SharedState>,
-) -> Result<Vec<UnreadCountEntry>, String> {
-    crate::services::community_unread_runtime::get_unread_counts_inner(state.inner(), &community_id)
+    community_id: String,
+) -> Result<Done<Vec<ChannelUnreadView>>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Unread(UnreadRequest::UnreadCounts {
+        community: community_id,
+    }));
+    host_call::call(&state, request).await
 }

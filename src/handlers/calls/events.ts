@@ -1,15 +1,14 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeChatEvents } from "../../ipc/channels";
-import { isLegacy } from "../../ipc/channels/chat_events";
-import { callsState, setCallsState, type CallEntry } from "../../stores/calls.store";
-import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
-import { settingsState } from "../../stores/settings.store";
-import { setNotificationState } from "../../stores/notification.store";
-import { setVoiceState } from "../../stores/voice.store";
-import { friendsState } from "../../stores/friends.store";
-import { playBusyTone, playIncomingRing, playOutgoingRingback } from "../../utils/ringtone";
 import { startRing, stopActiveRing } from "../../actions/calls_ring";
+import { subscribeChatEvents, type UnlistenFn } from "../../ipc/channels";
+import { commands } from "../../ipc/commands";
+import { authState } from "../../stores/auth.store";
+import { type CallEntry, callsState, setCallsState } from "../../stores/calls.store";
+import { friendsState } from "../../stores/friends.store";
+import { setNotificationState } from "../../stores/notification.store";
+import { settingsState } from "../../stores/settings.store";
+import { addToast } from "../../stores/toast.store";
+import { setVoiceState } from "../../stores/voice.store";
+import { playBusyTone, playIncomingRing, playOutgoingRingback } from "../../utils/ringtone";
 
 /// Wave 12 W12.8 — push a `missed_call` row into the notification inbox
 /// so the user sees a Call-back / Send Message action even after the
@@ -19,10 +18,10 @@ function pushMissedCallNotification(
   callId: string,
   peerKey: string,
   kind: "audio" | "video",
-  outgoing: boolean,
+  outgoing: boolean
 ): void {
   const friend = friendsState.friends[peerKey];
-  const name = friend?.displayName ?? peerKey.slice(0, 12) + "…";
+  const name = friend?.displayName ?? `${peerKey.slice(0, 12)}…`;
   setNotificationState("notifications", (prev) => [
     ...prev,
     {
@@ -37,7 +36,6 @@ function pushMissedCallNotification(
       callKind: kind,
     },
   ]);
-  setNotificationState("unreadCount", (c) => c + 1);
 }
 
 /// Wires the call-signalling family into `calls.store`. Components read
@@ -61,8 +59,6 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
   };
   const toast = (message: string): void => asOwner(() => addToast(message, "info"));
   return subscribeChatEvents((event) => {
-    if (isLegacy(event)) return;
-
     if ("channelMessage" in event) {
       const msg = event.channelMessage;
       if ("conversationFocusRequested" in msg) {
@@ -101,8 +97,30 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       return;
     }
 
+    if ("groupStarted" in call) {
+      // GV3 — our own group call, ringing its invitees, from the Host's
+      // payload (as `started` seeds a 1:1's outgoing call): its group's
+      // window shows Cancel until it connects or ends.
+      const { callId, kind, participants, groupId, expiresAtMs } = call.groupStarted;
+      setCallsState("outgoingGroupCall", {
+        callId,
+        initiatorKey: authState.publicKey ?? "",
+        displayName: authState.displayName ?? "",
+        kind: kind as "audio" | "video",
+        participants,
+        groupId,
+        accepted: [],
+        startedAtMs: Date.now(),
+        expiresAtMs,
+      });
+      if (settingsState.ringtoneEnabled) {
+        asOwner(() => startRing(playOutgoingRingback({ volume: settingsState.ringtoneVolume })));
+      }
+      return;
+    }
+
     if ("incoming" in call) {
-      const { callId, from, displayName, kind, participants, isGroup, expiresAtMs } =
+      const { callId, from, displayName, kind, participants, isGroup, groupId, expiresAtMs } =
         call.incoming;
 
       if (isGroup) {
@@ -116,6 +134,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
             displayName,
             kind: kind as "audio" | "video",
             participants,
+            groupId,
             accepted: [],
             startedAtMs: Date.now(),
             expiresAtMs,
@@ -156,15 +175,23 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
     }
 
     if ("connected" in call) {
-      const { callId, direct } = call.connected;
+      const { callId, direct, groupId } = call.connected;
       asOwner(stopActiveRing);
 
       if (direct == null) {
         // Wave 12 W12.9 — promote a group call to active. A group call
         // has no single peer, which is exactly what `direct: null` says.
+        // Our own ring answered (GV3): it becomes the active call.
+        const ours = callsState.outgoingGroupCall;
+        if (ours && ours.callId === callId) {
+          setCallsState("activeGroupCall", { ...ours, groupId });
+          setCallsState("outgoingGroupCall", null);
+          return;
+        }
         const head = callsState.incomingGroupCalls.find((c) => c.callId === callId);
         if (head) {
-          setCallsState("activeGroupCall", { ...head, accepted: [head.initiatorKey] });
+          // The connect's group as the Host sends it, never the ring's in its place.
+          setCallsState("activeGroupCall", { ...head, groupId, accepted: [head.initiatorKey] });
           setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
         }
         return;
@@ -257,7 +284,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       const cur = callsState.activeGroupCall;
       if (cur && cur.callId === callId) {
         setCallsState("activeGroupCall", "accepted", (a) =>
-          a.filter((p) => p !== participantPubkey),
+          a.filter((p) => p !== participantPubkey)
         );
       }
       return;
@@ -280,10 +307,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       // Wave 12 W12.6 — peer flipped audio/video/screen. Drop if our
       // local last-update is newer (last-write-wins per timestamp).
       const { callId, audio, video, screen, timestampMs } = call.mediaStateChanged;
-      const updateSlot = (
-        slot: "activeCall" | "outgoingCall",
-        entry: CallEntry | null,
-      ): void => {
+      const updateSlot = (slot: "activeCall" | "outgoingCall", entry: CallEntry | null): void => {
         if (entry == null || entry.callId !== callId) return;
         const cur = entry.peerMediaState;
         if (cur && cur.timestampMs >= timestampMs) return;
@@ -327,6 +351,9 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       if (callsState.activeGroupCall?.callId === callId) {
         setCallsState("activeGroupCall", null);
       }
+      if (callsState.outgoingGroupCall?.callId === callId) {
+        setCallsState("outgoingGroupCall", null);
+      }
       setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
       setCallsState("incomingCalls", (prev) => prev.filter((c) => c.callId !== callId));
       if (reason) {
@@ -339,12 +366,15 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
 export async function refreshMissedCalls(): Promise<void> {
   try {
     const rows = await commands.getMissedCalls();
-    setCallsState("missed", rows.map((r) => ({
-      callId: r.callId,
-      peerKey: r.peerKey,
-      kind: r.kind,
-      expiredAt: r.expiredAt,
-    })));
+    setCallsState(
+      "missed",
+      rows.map((r) => ({
+        callId: r.callId,
+        peerKey: r.peerKey,
+        kind: r.kind,
+        expiredAt: r.expiredAt,
+      }))
+    );
   } catch (e) {
     console.error("Failed to refresh missed calls:", e);
   }

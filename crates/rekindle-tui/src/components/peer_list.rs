@@ -1,8 +1,9 @@
 //! Peer list — right sidebar showing community members.
 //!
-//! Displays community members grouped by presence status:
-//! Online, Away, Busy, Offline. Each member shows a presence glyph
-//! + text label (never color alone) + display name.
+//! Displays community members under the groups the Host decided
+//! (`CommunityMemberView::group`: hoisted roles, Online, Offline), in the
+//! Host's order, as the desktop does. Each member shows a presence glyph
+//! + display name (never color alone).
 //!
 //! Source patterns:
 //! - oxicord `presentation/widgets/guilds_tree.rs` — tree rendering
@@ -17,7 +18,8 @@ use ratatui::Frame;
 use super::Component;
 use crate::action::Action;
 use crate::helpers;
-use crate::presence_fmt::{capitalize_status, presence_indicator, presence_rank};
+use crate::presence_fmt::presence_indicator;
+use rekindle_types::dto::community::{CommunityMemberView, MemberGroup};
 
 /// A member entry for display.
 #[derive(Debug, Clone)]
@@ -30,6 +32,31 @@ pub struct PeerEntry {
     pub status: String,
     /// Role label (e.g., "owner", "admin").
     pub role: Option<String>,
+    /// The member-list group the Host put this member in.
+    pub group: MemberGroup,
+}
+
+impl From<CommunityMemberView> for PeerEntry {
+    fn from(m: CommunityMemberView) -> Self {
+        let role =
+            (!m.display_role.is_empty() && m.display_role != "@everyone").then_some(m.display_role);
+        Self {
+            key: m.pseudonym_key,
+            display_name: m.display_name,
+            status: m.status,
+            role,
+            group: m.group,
+        }
+    }
+}
+
+/// A group's header text.
+fn group_label(group: &MemberGroup) -> &str {
+    match group {
+        MemberGroup::Role { name, .. } => name,
+        MemberGroup::Online => "Online",
+        MemberGroup::Offline => "Offline",
+    }
 }
 
 /// Peer list component.
@@ -55,15 +82,9 @@ impl PeerList {
         }
     }
 
-    /// Replace the member list.
+    /// Replace the member list, kept in the Host's order.
     pub fn set_members(&mut self, members: Vec<PeerEntry>) {
         self.members = members;
-        // Sort by presence: online first, then away, busy, offline, unknown
-        self.members.sort_by(|a, b| {
-            presence_rank(&a.status)
-                .cmp(&presence_rank(&b.status))
-                .then(a.display_name.cmp(&b.display_name))
-        });
     }
 
     /// Number of members.
@@ -76,24 +97,24 @@ impl PeerList {
         self.members.is_empty()
     }
 
-    /// Build list items grouped by presence status.
-    fn build_items(&self) -> Vec<ListItem<'static>> {
+    /// The list's lines: a header before each group, then its members.
+    fn build_lines(&self) -> Vec<Line<'static>> {
         let mut items = Vec::new();
-        let mut current_status: Option<&str> = None;
+        let mut current: Option<&MemberGroup> = None;
 
         for member in &self.members {
-            let status = member.status.as_str();
-            if current_status != Some(status) {
-                current_status = Some(status);
-                let count = self.members.iter().filter(|m| m.status == status).count();
-                let header = format!(" {} ({count})", capitalize_status(status));
-                items.push(ListItem::new(Line::from(Span::styled(
-                    header,
-                    Style::new().bold().dim(),
-                ))));
+            if current != Some(&member.group) {
+                current = Some(&member.group);
+                let count = self
+                    .members
+                    .iter()
+                    .filter(|m| m.group == member.group)
+                    .count();
+                let header = format!(" {} ({count})", group_label(&member.group));
+                items.push(Line::from(Span::styled(header, Style::new().bold().dim())));
             }
 
-            let (glyph, _label) = presence_indicator(status, self.use_unicode);
+            let (glyph, _label) = presence_indicator(&member.status, self.use_unicode);
             let name = helpers::sanitize_for_display(&member.display_name);
             let role_badge = member
                 .role
@@ -108,10 +129,15 @@ impl PeerList {
                 Span::styled(role_badge, Style::new().dim()),
                 Span::styled(format!(" {key_short}"), Style::new().dim()),
             ]);
-            items.push(ListItem::new(line));
+            items.push(line);
         }
 
         items
+    }
+
+    /// Build list items under the Host's groups.
+    fn build_items(&self) -> Vec<ListItem<'static>> {
+        self.build_lines().into_iter().map(ListItem::new).collect()
     }
 }
 
@@ -164,77 +190,5 @@ impl Component for PeerList {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_members() -> Vec<PeerEntry> {
-        vec![
-            PeerEntry {
-                key: "pk1".into(),
-                display_name: "alice".into(),
-                status: "online".into(),
-                role: Some("admin".into()),
-            },
-            PeerEntry {
-                key: "pk2".into(),
-                display_name: "bob".into(),
-                status: "offline".into(),
-                role: None,
-            },
-            PeerEntry {
-                key: "pk3".into(),
-                display_name: "carol".into(),
-                status: "online".into(),
-                role: None,
-            },
-        ]
-    }
-
-    #[test]
-    fn set_members_sorts_by_presence() {
-        let mut list = PeerList::new(true);
-        list.set_members(test_members());
-        // Online members should come first
-        assert_eq!(list.members[0].status, "online");
-        assert_eq!(list.members[1].status, "online");
-        assert_eq!(list.members[2].status, "offline");
-    }
-
-    #[test]
-    fn len_and_is_empty() {
-        let mut list = PeerList::new(true);
-        assert!(list.is_empty());
-        assert_eq!(list.len(), 0);
-        list.set_members(test_members());
-        assert!(!list.is_empty());
-        assert_eq!(list.len(), 3);
-    }
-
-    #[test]
-    fn presence_indicator_unicode() {
-        let (glyph, label) = presence_indicator("online", true);
-        assert_eq!(glyph, "●");
-        assert_eq!(label, "[ONLINE]");
-    }
-
-    #[test]
-    fn presence_indicator_ascii() {
-        let (glyph, label) = presence_indicator("online", false);
-        assert_eq!(glyph, "o");
-        assert_eq!(label, "[ONLINE]");
-    }
-
-    #[test]
-    fn presence_rank_ordering() {
-        assert!(presence_rank("online") < presence_rank("away"));
-        assert!(presence_rank("away") < presence_rank("busy"));
-        assert!(presence_rank("busy") < presence_rank("offline"));
-        assert!(presence_rank("offline") < presence_rank("unknown"));
-    }
-
-    #[test]
-    fn capitalize_works() {
-        assert_eq!(capitalize_status("online"), "Online");
-        assert_eq!(capitalize_status(""), "");
-    }
-}
+#[path = "peer_list_tests.rs"]
+mod tests;

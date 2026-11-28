@@ -12,7 +12,7 @@ or jump to a specific crate via the section anchors.
 Shared type definitions for the Rekindle v2.0 community system. Zero
 logic, zero I/O, zero async — every other Rekindle crate depends on
 this. Modules: `analytics`, `attachment`, `channel`, `cross_device_sync`,
-`error`, `event`, `expression`, `governance`, `id`, `invite`,
+`error`, `event`, `expression`, `governance`, `id`, `image_kind`, `invite`,
 `link_preview`, `permissions`, `presence`, `search`. These types
 **replace** the v1.0 types that used to live in `rekindle-protocol`.
 
@@ -48,7 +48,7 @@ Double-encrypted SQLCipher store that **replaces** the previous
 
 The 32-byte salt lives in `{vault_path}.salt` sidecar (plaintext — salts
 only need to be unique per install). Modules: `key`, `schema`, `store`,
-`error`, and `typed::{signal, community_keys, mek, audit}`: one module of
+`error`, and `typed::{community_keys, mek, audit, owner_keys}`: one module of
 helpers per kind of secret, so every host stores them the same way (plan
 C5.4). See [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md).
 
@@ -72,13 +72,19 @@ Dependencies: `blake3`, `serde`, `zeroize`.
 Rekindle's wire types and their encodings, with no Veilid (plan C8,
 ADR 0014). Every tier crate that needs a wire type depends on this crate, not
 on `rekindle-protocol`. Modules:
+
 - the generated `*_capnp` modules (built from `schemas/` by this crate's
   `build.rs`), `capnp_codec` and `capnp_envelope`;
 - `community` (`CommunityEnvelope`, `ControlPayload`, the community
   `SignedEnvelope`, governance and metadata types, `channel_record` page
   types and their signed encoding);
-- `message` (`MessageEnvelope`, `MessagePayload`, invite blobs, signing
-  bytes);
+- `capnp_codec::direct` (the 1:1 wire, plan E2.3: `DmFrame`,
+  `DmContent`, `SealedContent`, the `DmTypeId` registry and one body type
+  per kind; schema `schemas/direct.capnp`);
+- `ingress` (the `'D'` 1:1 and `'G'` gossip datagram tags and `classify`;
+  an untagged datagram is dropped);
+- `message` (invite blobs and the community RPC DTOs; `MessageEnvelope` and
+  `MessagePayload` are deleted);
 - `friend` (`FriendEntry`);
 - `envelope` (the gossip `SignedEnvelope` build/verify);
 - `dedup` (sliding-window cache: envelope ID → seen-at);
@@ -101,22 +107,45 @@ functions take `&rusqlite::Connection` so several share one transaction;
 `cargo xtask check-sqlite` keeps SQL here, in `rekindle-vault` and in
 `rekindle-asql`.
 
-Dependencies: `rekindle-types`, `rekindle-audit`, `rekindle-utils`,
+The 1:1 ratchet's storage (plan E2.3): `ratchet::{initiate_and_record_outbound,
+encrypt_and_record_outbound, decrypt_and_record_inbound, accept_init}` run
+`rekindle_crypto::signal::SessionRecord` inside `Db::call`, one transaction per
+message before any send, so the single `Db` thread serializes every message for a
+peer, `accept_init` consuming a one-time key and refilling its slot in the
+same transaction (B8) and `discard_pending_init` for a `PreKeyRejected`
+(B6); `prekeys` over `signal_prekeys` and the `prekey_slots_used`,
+`prekey_rejections` and `prekey_lr_inits` tables (plan E2.4: store a minted
+set, apply maintenance, the unlock reconciliation's `published_values`,
+`status`, the rejection limits and the archive sweep);
+`repo::signal_identities` (verification and `VerifiedKeyChanged`) and
+`repo::unprocessed` (the D24 receive pipeline's decrypted, unapplied messages).
+
+Dependencies: `rekindle-types`, `rekindle-audit`, `rekindle-crypto` (the ratchet
+and prekey material; cross-cutting, plan E2.3), `rekindle-utils`,
 `rekindle-asql`, `rusqlite` (bundled SQLCipher, as `rekindle-vault`
-builds it), `serde`, `serde_json`, `thiserror`, `tracing`.
+builds it), `hex`, `serde`, `serde_json`, `thiserror`, `tracing`, `zeroize`.
 
 ### rekindle-records
 
 DHT record lifecycle management for the v2.0 universal SMPL schema
-(`o_cnt: 0`, 255 member slots — the "Q-pid equation"). Houses the
-durable write retry queue. Modules: `lifecycle` (open / close /
-republish / refresh), `retry` (`WriteQueueHandle` — durable SMPL write
-retry with backoff), `schema` (universal SMPL schema constants +
-helpers).
+(`o_cnt: 0`, 255 member slots — the "Q-pid equation"), and the Veilid-free
+ports. Modules: `chain` (plan E2.5, primitive N2: the append-only chain on
+`&dyn RecordPort` — a participant record's `HEAD` names the newest sealed
+DFLT(1) page, written once with its owner keypair dropped, each page names the
+one before it, and `read_after(cursor)` walks back to the cursor and stops at
+the retire mark carried in `HEAD`, reporting a retired gap; pages are Cap'n Proto
+`schemas/chain.capnp` through `rekindle-codec`), `lease` (lease ids, subkey sets, community leases),
+`lifecycle` (open / close / republish / refresh), `port` (plan C9.1: the
+`RecordPort`/`RecordStore`, `RoutePort` and `AppMessagePort` traits, with
+keys, keypairs and route ids as Veilid's text, `PortEvent`, `PortSet` and
+`PortError`; `rekindle-protocol` implements them over Veilid), `retry`
+(`WriteQueueHandle` — durable SMPL write retry with backoff), `schema`
+(the named record schemas as `RecordSchema` builders, and the universal
+SMPL constants).
 
-Dependencies: `rekindle-types`, `rekindle-secrets`. **No `veilid-core`** —
-this crate wraps Veilid abstractions but never calls `veilid_core` directly;
-concrete I/O is plumbed in by the integration layer.
+Dependencies: `rekindle-types`, `rekindle-codec`, `async-trait`, `serde`,
+`serde_json`, `thiserror`, `tokio` (`sync`). **No `veilid-core`**, and no `veilid_core`
+named anywhere in it (`cargo xtask check-veilid-dht-calls`).
 
 ### rekindle-events
 
@@ -124,7 +153,14 @@ Reusable event primitives hoisted out of `rekindle-transport::subscriptions`
 so `src-tauri`'s Phase 10 `event_resume` flow can use them without
 pulling in `veilid-core`. Modules: `dedup` (`EventDedup`), `state`
 (`SubscriptionState`), `state_effects` (effect application), `journal`
-(`EventJournal` + `JournalCursor` for Tauri reconnect replay).
+(`EventJournal` + `JournalCursor` for Tauri reconnect replay), `typing`
+(plan E2.3: `TypingExpiry`, the receiver's lapse of an unrefreshed start,
+and `TypingSessions`, the sender's refresh and idle stop, keyed by
+`TypingContext` over the Host's clock). Typing lives here because it is
+event state both tracks need without a transport: the Host drives the 1:1
+deadlines (`rekindle_transport::operations::{typing, dm::typing}`), and
+E2.6's group typing (`rekindle-dm`, Tier 7) and E3.4's channel typing
+(with its own per-start TTL) use the same two types.
 
 `rekindle-transport` keeps its `SubscriptionManager` (which **is** the
 pipeline); this crate publishes the building blocks. See
@@ -196,19 +232,81 @@ timeseries align all metrics to the same 30-day x-axis.
 
 Dependencies: `rekindle-types`, `rusqlite`.
 
+### rekindle-image
+
+The one image decoder (plan E7.11). Every image Rekindle takes from
+outside (our avatar now; community avatars and banners when E3.1 ports
+them; skin pictures in E7.7.1) goes through
+`decode_limited(bytes, declared: ImageKind, &DecodeLimits) -> Result<Decoded,
+ImageError>`. The caller declares the kind (`rekindle_types::image_kind::
+ImageKind`, PNG, JPEG or GIF: the file picker's MIME type, a file's
+extension, a skin's manifest); the magic bytes must match it
+(`ImageError::KindMismatch`) and only that kind's decoder runs, so a
+crafted file never picks its own decoder (the FORCEDENTRY path). The header
+is read and its sides and pixel count checked before any pixel buffer is
+allocated (`ImageError::TooLarge`); the decode then runs under
+`image::Limits` (`max_image_width`, `max_image_height`, `max_alloc`, which
+`image` passes to the `png` crate as `png::Limits`). `Frames::First` reads a
+GIF's first frame; `Frames::AtMost(n)` reads every frame, counting them and
+summing their buffers against `max_alloc`. Output is re-encoded with no
+metadata carried over: `encode_png`, `encode_gif`, `encode_webp` (lossless),
+and `fit_within` scales a picture down. WebP is never decoded.
+
+Dependencies: `rekindle-types`, `image` (`png`, `jpeg`, `gif`, `webp`
+features: pure-Rust `png`, `zune-jpeg`, `gif`, `image-webp`), `thiserror`.
+`#![forbid(unsafe_code)]`; no Veilid, no Tauri.
+
+### rekindle-skin
+
+The skin package format `rekindle-skin/1` (plan E7.7.1). Every skin, the
+built-in ones included, passes this crate before a byte reaches a
+frontend; a refusal is `rekindle_types::dto::skin::SkinError { entry,
+rule }` and nothing is partly applied.
+
+- `package::read(bytes) -> Result<Package, SkinError>`: the outer size
+  (≤ 16 MiB) and the strict in-memory zip walk. Only stored entries are
+  read, so nothing is inflated. Each local header must repeat its central
+  record, and the CRC-32 is checked. Refused: encrypted entries, data
+  descriptors, symbolic links (Unix mode or Windows reparse point) and
+  special files, backslashes, absolute and drive paths, `..`, empty or `.`
+  components, names outside `manifest.json`, root `*.json` token files,
+  `assets/`, `sounds/` and `icons/`, duplicate names, names that collide by
+  case or NFC (Pidgin CVE-2014-3697), overlapping entries, > 512 entries, a
+  missing manifest.
+- `manifest::parse(&Package) -> Result<SkinManifest, SkinError>`: ≤ 128 KiB (raised from 64 KiB in SK2-A2: the tree carries each node's triggers; Symbiosis's main window alone is 65,968 bytes).
+  The format major is read first, so an unknown major is refused before any
+  other key; then `deny_unknown_fields`. Text rules: `name` ≤ 64 scalars,
+  `description` ≤ 280, both NFC with no control or bidi characters;
+  `license` a strict SPDX expression or the full text; the shapes of
+  `source`, `author` and `signature`; one variant or more, one per base and
+  contrast, each naming a root token file the package holds.
+- `limits`: the package bounds of the plan's §6 ledger.
+
+Tokens and the registry, images, sounds, accessibility checks and the
+`rekindle-skin-helper` binary are the rest of E7.7.1.
+
+Dependencies: `rekindle-types`, `crc32fast`, `serde`, `serde_json`,
+`spdx`, `unicode-normalization`. `#![forbid(unsafe_code)]`; no Veilid, no
+Tauri, no file or network I/O.
+
 ## Tier 4 — Routing & Lifecycle
 
 ### rekindle-route
 
-Route policy and the peer route cache. Our own routes are allocated,
-healed and released by `rekindle_protocol::own_routes::OwnRoutes` (plan
-C7.9: one owner per node, a general and a media class, no fallback between
-them). Modules: `cache` (`RouteCache` — per-peer route blob + TTL eviction),
-`contexts` (per-purpose `RoutingContext` factories), `lifecycle` (the
-watchdog cadence and the peer-cache TTL).
+Route policy, the peer route cache and the owner of our own routes.
+Modules: `cache` (`RouteCache` — per-peer route blob + TTL eviction),
+`contexts` (per-purpose routing-context factories), `lifecycle` (the
+watchdog cadence and the peer-cache TTL), `own_routes` (`OwnRoutes`: our
+routes are allocated, healed and released here, plan C7.9 — one owner per
+node, a general and a media class, no fallback between them, single-flight
+and ready-gated allocation with backoff; generic over a `RouteAllocator`,
+which `rekindle_protocol::own_routes::VeilidRouteAllocator` implements over
+Veilid and a simulator can fake, plan C9.1), `profile` and `relay`.
 
-Dependencies: `rekindle-types`, `blake3`, `tokio`. **No `veilid-core`** —
-contexts are passed in from above.
+Dependencies: `rekindle-types`, `rekindle-records` (`RouteClass`,
+`RouteState`), `rekindle-lifecycle` (`SessionScope`), `async-trait`,
+`blake3`, `parking_lot`, `tokio`, `tokio-util`, `tracing`. **No
+`veilid-core`** — the allocator is passed in from above.
 
 ### rekindle-lifecycle
 
@@ -226,6 +324,58 @@ See [`lifecycle-fsm.md`](lifecycle-fsm.md).
 
 Dependencies: `tokio`, `tokio-util` (`rt`), `futures-util` (`catch_unwind`),
 `parking_lot`.
+
+### rekindle-record-pool
+
+The session's DHT record pool (plan C7.2, D4; ADR 0021): `RecordPool`, the
+only code that opens, closes, watches, reads or writes a DHT record. It runs
+on an `Arc<dyn rekindle_records::port::DhtBackend>` and is the
+`RecordPort` the transport node uses. Modules: the crate root (leases over
+`rekindle_records::lease::LeaseTable`, the one retry layer within
+`RETRY_BUDGET`, admit/drain/teardown/end), `call` (every backend call a task
+on the pool's `SessionScope`; a caller that leaves drops only its wait),
+`io` (get, inspect, honest `set`), `read` (which subkeys need a network
+read), `durable` (held writes and their re-push, `Settled`), `watch` (watch
+plans and the one watch-death owner: re-arm with backoff and forgiveness on
+`tokio::time`), `closer` (`RecordCloser`: an ended session's records closed
+after its calls finish), `keepalive` (record warming cadence) and `port`
+(the `RecordPort` impl). The Veilid backend is
+`rekindle_protocol::dht::backend::VeilidDht`; `rekindle_protocol::dht::pool`
+re-exports this crate. Its unit tests run on an in-crate test backend on
+tokio's paused clock.
+
+Dependencies: `rekindle-records`, `rekindle-lifecycle` (`SessionScope`),
+`rekindle-utils` (`RandomSource`), `async-trait`, `futures`, `parking_lot`,
+`tokio`, `tokio-util`, `tracing`. **No `veilid-core`** — listed in
+`VEILID_FREE` (`cargo xtask check-veilid-dht-calls`).
+
+### rekindle-outbox
+
+The one owner of every send intent (plan E2.5, D22). A send is a row in an
+ordered stream `<kind>:<scope>` — kinds `dm`, `friend_handshake`,
+`dht_write`, `channel_post`, `media_key`, `group_dm` (E2.6),
+`governance_op`, `mek_transfer` (E3.2: a community key sealed to one
+member, receipted by its `MekTransferAck`, discarded on a departure) and
+`bootstrap` (E3.2: a joiner's `MemberJoined` handed to its inviter when no
+member was online at the join, receipted by the answered frontier;
+`signaling` arrives at E4.1) — written with its local echo in one transaction and
+attempted by `next_at` until it settles. Modules: `state` (one vocabulary,
+`queued < sent < delivered < read` plus `failed`, merged monotonically;
+`delivered`/`read` only from a peer ack, `failed` only over an unsettled
+state), `stream` (`StreamKind`, each kind's `OutboxRetry`: exponential
+backoff with equal jitter drawn from the injected `RandomSource`), `deps`
+(`OutboxDeps`: storage, attempt, clock, RNG and the state-change publish)
+and `engine` (`Outbox`: `enqueue`, `pump`, `run`, `acknowledge`, `retry`
+under the same client id, `discard`, `receive` dedupe, `unsettled`). Each
+row's deadline is `DELIVERY_HORIZON` (D24) unless its stream sets an
+earlier end; past it the row fails and wedges its stream head until Retry
+or Discard. Storage is `rekindle_db::repo::outbox`; `OutboxDeps` is
+implemented once in `rekindle-node/src/host/adapters/outbox/`. No SQL, no
+Veilid.
+
+Dependencies: `rekindle-types` (`SendState`), `rekindle-utils` (`Clock`,
+`RandomSource`), `rekindle-crypto` (`horizon::DELIVERY_HORIZON`),
+`async-trait`, `thiserror`, `tokio`, `tokio-util`, `tracing`.
 
 ## Tier 5 — Gossip Mesh & Presence
 
@@ -272,24 +422,6 @@ Public surface includes `presence_poll_tick`, `compute_rebuild_plan`,
 `compute_merged_roles`, `PRESENCE_ROW_CAP`, plus timing constants
 (`STEADY_TICK_INTERVAL_SECS`, `RAPID_TICK_INTERVAL_SECS`,
 `STALE_HEARTBEAT_SECS`, `MAX_SYNC_ATTEMPTS`).
-
-### rekindle-friendship
-
-Three-tier inbox-scan coordinator. Friend requests land in a per-peer
-DHT inbox; scanning every second wastes the network, scanning every
-minute makes UX laggy. The coordinator fans three independent triggers
-into one stream of scans:
-
-1. **`watch_rx`** — `watch::Receiver<u64>` that fires on
-   Veilid `ValueChanged`. ~1 s end-to-end when the watch is healthy.
-2. **30-second poll** — backstop for silent watch death under route
-   churn.
-3. **Direct trigger** — `mpsc::Sender<()>` exposed via the Tauri command
-   `friendship_scan_now`.
-
-All three debounce on a 500 ms coalesce window. Modules: `coordinator`
-(`InboxScanCoordinator`, `InboxScanner`, `ScanError`), `watch_trigger`,
-`veilid_scanner`.
 
 ## Tier 6 — Governance
 
@@ -341,15 +473,14 @@ Modules: `send`, `receive`, `pipeline`, `stage`, `threads`, `reactions`,
 
 ### rekindle-dm
 
-Direct messages and group DMs (architecture §27). DMs are SMPL records
-with `o_cnt: 0`, exactly 2 member subkeys, and a MEK derived
-deterministically via X25519 ECDH between the two identity keys (no
-separate key-exchange round trip). Group DMs wrap the MEK per recipient.
+Group DMs (architecture §27.2): SMPL records with `o_cnt: 0`, one member
+subkey each, and a random MEK wrapped per recipient. The 1:1 SMPL DM (2
+member subkeys, an ECDH MEK) was deleted by plan E2.3; E2.6 replaces the
+group path with sender-owned keys.
 Pure logic — no DHT, no Tauri. The `src-tauri/services/dm/` layer wires
 it to Veilid and SQLite via the `DmStore` trait (`SqliteDmStore` impl
-included). Modules: `invite` (`DmInvite`, `GroupDmInvite`,
-`GroupDmParticipant`), `mek` (`derive_dm_mek` → HKDF, `ratchet_dm_mek`,
-`DmMekChain`), `error`.
+included). Modules: `invite` (`GroupDmInvite`, `GroupDmParticipant`),
+`mek` (`ratchet_dm_mek`, `DmMekChain`), `error`.
 
 ### rekindle-calls
 
@@ -402,37 +533,35 @@ Dependencies include `reed-solomon-erasure` for FEC.
 ### rekindle-protocol
 
 Veilid networking, DHT record management, Cap'n Proto serialization, and
-routing for the **desktop app**. Hosts the v1.0 `MessageEnvelope` /
-`MessagePayload` types still used for 1:1 friend traffic (DM invites,
-friend requests, relay payloads, presence inline updates).
+routing for the **desktop app**. The v1.0 `MessageEnvelope` /
+`MessagePayload` types and the `messaging` module (`envelope`, `sender`,
+`receiver`, `signing`, `replay`) are deleted: the 1:1 wire is `DmFrame` in
+`rekindle-codec` (plan E2.3), sent and opened by `rekindle-transport`
+(`operations::{dm, direct}`).
 
-Top-level modules: `node` (`RekindleNode` lifecycle), `routing` (private
-route allocation, peer route import), `peer` (address resolution),
-`capnp_codec` (encode / decode helpers), `messaging` (`envelope`,
-`sender`, `receiver`), `dht` (`profile`, `presence`, `friends`,
-`conversation`, `account`, `mailbox`, `channel`, `short_array`, `log`,
-`community/{envelope, manifest, member_registry, channel_record,
-audit_log, automod, onboarding, permissions_v2, types}`), `error`.
-
-`MessagePayload` variants cover: `DirectMessage`, `ChannelMessage`,
-`FriendRequest/Accept/Reject`, `ProfileKeyRotated`, `PresenceUpdate`,
-`Unfriended`, `RelayOffer/Withdraw/Ack/Envelope`,
-`DmInvite/Accept/Decline`, `GroupDmInvite`, `DmLeave`,
-`RegisterPushRelay`, `UnregisterPushRelay`, `WakeNotify`,
-`StatusRequest/Response`.
+Top-level modules: `node` (`RekindleNode` lifecycle), `own_routes`
+(private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `prekeys`, `friends`,
+`account`, `mailbox`, `pool`, `route_imports`,
+`community/{member_registry, channel_record}`), `error`.
 
 ### rekindle-crypto
 
-Cryptographic operations including Ed25519 identity, Signal Protocol
-session handling, group MEK primitives, and HKDF-derived DHT record
+Cryptographic operations including Ed25519 identity, the Signal Protocol
+state machines (pure; persistence is `rekindle-db`'s), group MEK
+primitives, and HKDF-derived DHT record
 keys. Modules: `identity` (Ed25519 keypair, sign / verify, hex
-helpers), `keychain` (`Keychain` trait, vault / key constants),
-`dht_crypto` (`DhtRecordKey` — account/conversation key derivation +
+helpers), `dht_crypto` (`DhtRecordKey` — account key derivation +
 XChaCha20-Poly1305 encrypt / decrypt), `group/{media_key, pseudonym}`
 (`MediaEncryptionKey` with generation tracking; community pseudonym
-derivation), `signal/{session, prekeys, store, memory_stores,
-test_stores}` (X3DH + Double Ratchet session manager — vault-backed
-Signal stores now, previously Stronghold-backed).
+derivation), `signal/{dr, record, pqxdh, prekeys,
+prekey_material, prekey_record}` (the spec Double Ratchet, the pure `SessionRecord`,
+PQXDH rev. 3 with SKec/SKscka, the in-memory `PreKeyBundle` assembled from
+a verified record, the prekey minting `rekindle-db`'s prekeys run, and the
+prekey record's ids, signing and pure decisions `plan_maintenance` (B1) and
+`pick_slot` (B2); plans E2.2-E2.4. `SignalSessionManager`, the
+non-spec ratchet and the vault-backed Signal stores are deleted), `fingerprint` (`SafetyNumber`: Signal's 5200×SHA-512 numeric
+fingerprint and its scannable form, E2.3) and `horizon` (`DELIVERY_HORIZON`,
+the one constant every delivery retention bound derives from, D24).
 
 ### rekindle-game-detect
 
@@ -476,39 +605,62 @@ resolves its files in, on the `dirs` release Tauri uses. It lives here,
 not in `rekindle-db`, because the thin frontends must not link the
 backend (`check-frontend-boundaries`).
 
-### rekindle-e2e-server
+### rekindle-netsim
 
-HTTP IPC bridge that exposes Tauri commands over `localhost:3001` so
-Playwright tests can drive the real Rust backend without the Tauri
-webview. Used when `VITE_E2E=true`. Single binary `e2e_server`.
+A seeded, deterministic network simulator (plan C9.3), `publish = false`
+and Veilid-free. It implements the ports of `rekindle_records::port` in
+memory: `FakeRecords`/`FakePool` (Veilid's record rules: publish on first
+write, schema-admitted writers checked through `parse_keypair_text`,
+sticky writers via `rekindle_records::lease::LeaseTable`, local seq + 1 and
+supersede, per-node local copies and watches), `FakeRoutes` over the real
+`rekindle_route::own_routes::OwnRoutes` with a `FakeAllocator`, and
+`FakeMessages` (size cap, call timeout). `SimClock` and `SimRandom` are
+injected into each Host (plan C9.2). A pump delivers the events in flight in
+an order drawn from the seed and records a semantic `Trace`. Faults:
+try again, offline, stale reads, partition and heal, dropped messages,
+unanswered calls, clock skew, watch and route death, a modified client's
+write, a same-seq conflict. `rekindle-node` takes it as a dev-dependency
+only; its scenarios are in `crates/rekindle-node/tests/netsim/`.
+
+Dependencies: `rekindle-records`, `rekindle-route`, `rekindle-crypto`,
+`rekindle-secrets`, `rekindle-types`, `rekindle-utils`, `async-trait`,
+`base64`, `blake3`, `parking_lot`, `rand`, `tokio`, `tracing`.
 
 ## Daemon and CLI Track
 
 ### rekindle-transport
 
-The **sole Veilid boundary** on the daemon track. Every other crate in
-the track depends on `rekindle-transport` and never imports
-`veilid-core` directly. The crate is split into two `veilid_core`-aware
-modules and a body of pure logic:
+One of the four crates allowed to link veilid-core (ADR 0014:
+`rekindle-protocol`, `rekindle-transport`, `rekindle-node`, and
+`rekindle-desktop` until F1), checked transitively by
+`cargo xtask check-boundaries`. It links Veilid only through
+`rekindle-protocol` and names no Veilid type (plan C9.1): `TransportNode`
+is built from a `PortSet` (`rekindle_records::port`) — started by
+`TransportNode::start` over `rekindle_protocol::ports::VeilidPorts`, handed
+the desktop's ports by `adopt_outbound`, or a simulator's by `from_ports`.
 
-- `broadcast/` — outbound: sends, DHT writes, route management, node
-  lifecycle. The only outbound module that imports `veilid_core`.
-- `subscriptions/` — inbound: event dispatch, DHT watches, value-change
-  routing. The only inbound module that imports `veilid_core`.
+- `broadcast/` — outbound: sends (`AppMessagePort`), DHT writes
+  (`RecordPort`), route management (`RoutePort`), node lifecycle.
+- `subscriptions/` — inbound: dispatch of `PortEvent`s, DHT watches,
+  value-change routing.
 - Everything else (`operations/`, `payload/`, `crypto/`, `session/`,
-  `community/`, `gossip.rs`, `frame.rs`, `query.rs`, `handler.rs`, …)
-  contains zero `veilid_core` imports.
+  `community/`, `gossip.rs`, `frame.rs`, `query.rs`, `handler.rs`, …) is
+  business logic over those two.
 
 Public API re-exports include `TransportNode` (its routes via
-`TransportNode::own_routes`), `Sender`,
+`TransportNode::routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `InboundHandler`, `GossipMesh`,
-`SignalSessionManager`, `Session`, `QueryEngine`, plus per-feature
-operation modules (`operations::{community, channel, dm, friend, voice,
-mek, presence, roles, moderation, invites, identity}`).
+`Session`, `QueryEngine`, plus per-feature
+operation modules (`operations::{community, channel, dm, direct, friend,
+prekeys, voice, mek, presence, relay, identity, …}`; `prekeys` keeps our
+prekey record (publish, the unlock reconciliation, B1 maintenance,
+`PrekeyStatus`), picks from a friend's (B2/B3), and sends and answers
+`PreKeyRejected` (B5–B7); `direct` opens inbound `DmFrame`s:
+`frame`, `handlers`, the sealed-frame `replay` guard).
 
 Dependencies: `rekindle-types`, `rekindle-utils`, `rekindle-events`,
-`rekindle-secrets`, `rekindle-crypto`, `rekindle-calls`, `rekindle-route`,
-`veilid-core`, `ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `hkdf`,
+`rekindle-secrets`, `rekindle-crypto`, `rekindle-route`,
+`rekindle-protocol`, `rekindle-records`, `ed25519-dalek`, `aes-gcm`, `hkdf`,
 `blake3`, `bitflags`, `postcard`.
 
 ### rekindle-node
@@ -518,13 +670,16 @@ state, and serves CLI/TUI/Tauri frontends plus automation bots over a
 Noise-IK encrypted IPC bus (`rekindle-ipc`). It ships as the `rekindled`
 binary (`src/bin/rekindled.rs`). Modules: `host/` (composition root:
 `lock` — one daemon per data root, `policy` — the fail-closed admin-policy
-loader, `bus_key`, `watchdog`), `validation` (request validation),
-`daemon/` (`handler`, `community_rpc`, `governance_rpc`, `friend_inbox`,
-`dispatch/`), `state/` (session, config, path).
+loader, `bus_key`, `watchdog`, `identity` — the identity store both hosts
+use, `session` — the daemon's session projected from it, `adapters` — the
+friend and 1:1 operations' Host and the MEK store over the vault), `validation` (request validation),
+`daemon/` (`handler`, `community_rpc`, `governance_adapter`, `gossip_adapter`,
+`presence_adapter`, `mek_rotation`, `dispatch/`), `state/` (the audit log, the unlocked signing key).
 
 `rekindle-node` depends on `rekindle-ipc`, `rekindle-transport`,
 `rekindle-types`, `rekindle-lifecycle`, `snow` (the bus keypair),
-`keyring`, `rustix`, and `sd-notify` (systemd `READY=1` + watchdog). It
+`rekindle-vault` and `rekindle-db` (the identity store, `host::identity`),
+`rustix`, and `sd-notify` (systemd `READY=1` + watchdog). It
 never imports `veilid-core` directly.
 
 ### rekindle-ipc

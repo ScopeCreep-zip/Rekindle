@@ -19,7 +19,7 @@
   }
 
   .sidebar-section-more:hover {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Emoji picker expanded ─── */
@@ -56,13 +56,13 @@
     padding: 2px 4px;
     border-radius: 3px;
     opacity: 0.6;
-    transition: opacity 0.15s;
+    transition: opacity var(--motion-duration-fast);
   }
 
   .emoji-picker-tab:hover,
   .emoji-picker-tab-active {
     opacity: 1;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .emoji-picker-scroll {

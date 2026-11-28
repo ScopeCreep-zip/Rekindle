@@ -10,12 +10,14 @@
 //! - Has explicit timeout handling on all network calls
 //! - Logs at `info` level on success, `warn` on recoverable failure
 
-pub mod calls;
-pub mod channel;
 pub mod community;
+pub mod direct;
 pub mod dm;
 pub mod friend;
+pub mod group_dm;
 pub mod identity;
 pub mod mek;
-pub mod presence;
+pub mod prekeys;
+pub mod relay;
+pub mod typing;
 pub mod voice;

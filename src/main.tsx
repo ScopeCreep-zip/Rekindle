@@ -1,19 +1,28 @@
 /* @refresh reload */
+
+import { createSignal, lazy, Match, onMount, Suspense, Switch } from "solid-js";
 import { render } from "solid-js/web";
-import { createSignal, onMount, Match, Switch, lazy, Suspense } from "solid-js";
 import "./styles/global.css";
 import AnnounceRegion from "./components/common/AnnounceRegion";
+import IntentDialog from "./components/common/IntentDialog";
+import KeyboardShortcutsDialog from "./components/common/KeyboardShortcutsDialog";
+import LocalSearchPanel from "./components/common/LocalSearchPanel";
+import ToastContainer from "./components/common/Toast";
+import { useAppearanceChord } from "./hooks/useAppearanceChord";
+import { useSkin } from "./hooks/useSkin";
+import { useWindowInactive } from "./hooks/useWindowInactive";
 
 // Lazy-load window components so each webview only compiles
 // the module tree it actually renders (login → 1 tree, not 6).
 const LoginWindow = lazy(() => import("./windows/LoginWindow"));
 const BuddyListWindow = lazy(() => import("./windows/BuddyListWindow"));
 const ChatWindow = lazy(() => import("./windows/ChatWindow"));
-const DmWindow = lazy(() => import("./windows/DmWindow"));
 const CommunityWindow = lazy(() => import("./windows/CommunityWindow"));
 const SettingsWindow = lazy(() => import("./windows/SettingsWindow"));
 const ProfileWindow = lazy(() => import("./windows/ProfileWindow"));
 const CallWindow = lazy(() => import("./windows/CallWindow"));
+const SkinEditorWindow = lazy(() => import("./windows/SkinEditorWindow"));
+const SkinPopupWindow = lazy(() => import("./windows/SkinPopupWindow"));
 
 const UnknownRoute = lazy(() => import("./windows/UnknownRoute"));
 
@@ -22,6 +31,12 @@ const UnknownRoute = lazy(() => import("./windows/UnknownRoute"));
 /// the buddy list.
 function App() {
   const [route, setRoute] = createSignal(window.location.pathname);
+  // Every window's skin regions follow its focus (plan E7.7.2).
+  useWindowInactive();
+  // Every window shows the device's skin and follows its changes.
+  useSkin();
+  // Mod+, opens Appearance from any window (plan SK14).
+  useAppearanceChord(route);
 
   onMount(() => {
     setRoute(window.location.pathname);
@@ -35,6 +50,14 @@ function App() {
        * live region to write into, regardless of which window is
        * currently rendered by the route Switch. */}
       <AnnounceRegion />
+      {/* Every window renders the review of its own Host calls (ADR 0019)
+       * and the undo offer of what ran, so both mount once here. */}
+      <IntentDialog />
+      <ToastContainer />
+      {/* The keyboard-shortcuts help (wiring guide §13f), Mod+/ in any window. */}
+      <KeyboardShortcutsDialog />
+      {/* The skin's Search (plan E7.2 G11), in the scope the Host picks. */}
+      <LocalSearchPanel />
       <Suspense>
         <Switch fallback={<UnknownRoute />}>
           <Match when={route() === "/login"}>
@@ -45,9 +68,6 @@ function App() {
           </Match>
           <Match when={route().startsWith("/chat")}>
             <ChatWindow />
-          </Match>
-          <Match when={route().startsWith("/dm")}>
-            <DmWindow />
           </Match>
           <Match when={route().startsWith("/community")}>
             <CommunityWindow />
@@ -60,6 +80,12 @@ function App() {
           </Match>
           <Match when={route().startsWith("/call")}>
             <CallWindow />
+          </Match>
+          <Match when={route() === "/skin-editor"}>
+            <SkinEditorWindow />
+          </Match>
+          <Match when={route().startsWith("/popup/")}>
+            <SkinPopupWindow />
           </Match>
         </Switch>
       </Suspense>

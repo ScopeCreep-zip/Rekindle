@@ -10,7 +10,7 @@
 //! `GossipDeps` trait. The pre-port src-tauri module collapses to a
 //! thin facade.
 
-pub mod broadcast;
+pub mod channel_send;
 pub mod dedup;
 pub mod deps;
 pub mod lamport;
@@ -20,7 +20,8 @@ pub mod peer_select;
 pub mod rate_limit;
 pub mod resolve_gate;
 
+pub use channel_send::{send_to_channel_peers, send_to_channel_peers_now};
 pub use deps::{GossipDeps, GossipError, PeerInfo};
-pub use mesh_broadcast::{send_to_channel_peers, send_to_mesh, send_to_mesh_raw, MAX_PENDING_MESH};
+pub use mesh_broadcast::{send_to_mesh, send_to_mesh_awaited, send_to_mesh_raw, MAX_PENDING_MESH};
 pub use peer_select::{scores_from_counters, sort_peers_by_reliability};
 pub use resolve_gate::ResolveGate;

@@ -19,8 +19,9 @@ The model and its surroundings:
   replaced the v1 coordinator model.
 - Three-path delivery (SMPL write, gossip, watch / inspect) and the
   chiral notification model.
-- The universal SMPL schema (`o_cnt: 0`, 255 slots), record layout
-  per community, subkey overflow with the continuation chain.
+- Records: the anchor and member-sovereign member records for
+  governance (ADR 0011), and the SMPL schema (`o_cnt: 0`, 255 slots)
+  that channel records and the member registry keep until plan E3.4.
 - Strand Relay and the five mutual-aid patterns.
 - Permission bitfield layout and the resolution algorithm.
 - Honest tradeoffs versus Discord, features intentionally omitted,

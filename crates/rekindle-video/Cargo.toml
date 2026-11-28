@@ -1,24 +1,25 @@
 [package]
 name = "rekindle-video"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Video & screen-share fragmentation/reassembly (architecture §10.6)"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
+blake3 = "1"
 hex = { workspace = true }
 parking_lot = { workspace = true }
-rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-blake3 = "1"
 # Architecture §10.6 line 4080 — FEC data on VideoFragment so a small
 # number of dropped fragments doesn't force a keyframe re-request.
 reed-solomon-erasure = "6"

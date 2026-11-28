@@ -120,12 +120,13 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
 
 /// Has this pseudonym been admitted?
 ///
-/// The creator is admitted by construction — they wrote the genesis
+/// A seated creator (decision (53): one who left re-joins like any
+/// member) is admitted by construction — they wrote the genesis
 /// entries, so requiring an approval they could only give themselves
 /// would lock them out of their own community on the first merge.
 fn is_admitted(gov_state: &GovernanceState, pseudonym_hex: &str) -> bool {
     let key = rekindle_types::id::PseudonymKey::from_hex_lossy(pseudonym_hex);
-    if gov_state.creator.as_ref() == Some(&key) {
+    if rekindle_governance::permissions::holds_creator_seat(&key, gov_state) {
         return true;
     }
     gov_state
@@ -155,71 +156,5 @@ pub async fn find_my_slot<D: GovernanceRuntimeDeps>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::is_admitted;
-    use rekindle_governance::state::{AdmissionDecision, GovernanceState};
-    use rekindle_types::governance::AdmissionMode;
-    use rekindle_types::id::PseudonymKey;
-
-    fn key(byte: u8) -> PseudonymKey {
-        PseudonymKey([byte; 32])
-    }
-    fn hex_of(byte: u8) -> String {
-        hex::encode([byte; 32])
-    }
-
-    #[test]
-    fn an_approved_member_is_admitted() {
-        let mut state = GovernanceState::default();
-        state.admitted.insert(
-            key(1),
-            AdmissionDecision {
-                approved: true,
-                lamport: 4,
-            },
-        );
-        assert!(is_admitted(&state, &hex_of(1)));
-    }
-
-    /// A rejected member holds a slot — `o_cnt: 0` cannot stop them —
-    /// but is not counted. This is the whole enforcement point.
-    #[test]
-    fn a_rejected_member_is_not_admitted() {
-        let mut state = GovernanceState::default();
-        state.admitted.insert(
-            key(2),
-            AdmissionDecision {
-                approved: false,
-                lamport: 4,
-            },
-        );
-        assert!(!is_admitted(&state, &hex_of(2)));
-    }
-
-    #[test]
-    fn an_undecided_member_is_not_admitted() {
-        assert!(!is_admitted(&GovernanceState::default(), &hex_of(3)));
-    }
-
-    /// The creator wrote the genesis entries, so requiring an approval
-    /// they could only give themselves would lock them out of their own
-    /// community on the first merge.
-    #[test]
-    fn the_creator_is_admitted_without_a_decision() {
-        let state = GovernanceState {
-            creator: Some(key(9)),
-            ..Default::default()
-        };
-        assert!(state.admitted.is_empty());
-        assert!(is_admitted(&state, &hex_of(9)));
-    }
-
-    /// Default is `Open` — every community that predates the admission
-    /// entries must keep admitting everyone, or the roster would empty
-    /// itself on upgrade.
-    #[test]
-    fn absent_admission_policy_means_open() {
-        let state = GovernanceState::default();
-        assert_eq!(state.effective_admission_mode(), AdmissionMode::Open);
-    }
-}
+#[path = "roster_tests.rs"]
+mod tests;

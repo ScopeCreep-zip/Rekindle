@@ -5,11 +5,11 @@
 //! [`CallSignalingDeps`] so this crate stays free of `AppState`,
 //! `tauri::AppHandle`, and direct `veilid-core` references. The
 //! src-tauri adapter (lands in 14.h) implements the deps trait against
-//! `AppState` + `message_service::send_to_peer_raw` + `services::voice::*`.
+//! `AppState` + the transport's `operations::dm::send_to_peer` + `services::voice::*`.
 //!
 //! Pre-Phase-14 these lived in `src-tauri/services/calls/mod.rs`.
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{CallClosed, CallRinging, DirectBody};
 
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
@@ -88,9 +88,13 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
         return;
     }
 
+    let registry = deps.registry();
+    if !make_room_for_invite(deps, sender_hex, call_id).await {
+        return;
+    }
+
     // W13.15 glare resolution.
     let our_pubkey = deps.owner_key().unwrap_or_default();
-    let registry = deps.registry();
     if let Some(outgoing) = registry.outgoing_to_peer(sender_hex) {
         let we_win = our_pubkey.as_str() < sender_hex;
         if we_win {
@@ -130,12 +134,7 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
 
     // Best-effort CallRinging ack so the caller's UI can flip
     // "Calling…" → "Ringing…". Failure logs but doesn't block.
-    let ringing = MessagePayload::CallRinging {
-        call_id: call_id.to_string(),
-    };
-    if let Err(e) = deps.send_to_peer(sender_hex, ringing).await {
-        tracing::debug!(call = %call_id, error = %e, "CallRinging ack send failed");
-    }
+    send_ringing(deps, sender_hex, call_id).await;
 
     // W13.2 — schedule local 30 s timeout. Delegated to the adapter
     // so it can do the full sleep → status-check → registry remove
@@ -171,13 +170,6 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         return;
     }
 
-    // W14.1 — pre-stage the voice receive channel BEFORE any await
-    // points so packets arriving during the rest of the accept handler
-    // buffer in the channel rather than getting dropped at dispatch.
-    // Adapter is responsible for the actual `voice_packet_tx/rx_staged`
-    // mpsc setup on AppState.
-    deps.pre_stage_voice_channel();
-
     let registry = deps.registry();
     let (my_secret, peer_pubkey, kind) = {
         let Some(call) = registry.get(call_id) else {
@@ -200,6 +192,22 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         };
         (secret, call.peer_pubkey.clone(), call.kind)
     };
+
+    // Plan CE3: the answer settles our invite's outbox row.
+    deps.settle_call_invite(call_id, true).await;
+
+    // Plan CE2 (30): the peer answering this call has left any other call
+    // with us; end it (and its media) before this call's media starts. It
+    // awaits only when such a call exists, so on the usual path nothing
+    // awaits before the pre-stage below.
+    crate::signaling::lifecycle::supersede_stale_with(deps, &peer_pubkey, call_id).await;
+
+    // W14.1 — pre-stage the voice receive channel BEFORE any other
+    // await so packets arriving during the rest of the accept handler
+    // buffer in the channel rather than getting dropped at dispatch.
+    // Adapter is responsible for the actual `voice_packet_tx/rx_staged`
+    // mpsc setup on AppState.
+    deps.pre_stage_voice_channel();
 
     // Derive call_key. On failure, drop the call + emit CallEnded.
     let call_key = match crate::derive_call_key(&my_secret, acceptor_x25519_pub, call_id) {
@@ -232,12 +240,9 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     // Bring up voice. Adapter handles the W14.1 pre-stage internally.
     if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
-        deps.shutdown_voice_session().await;
-        let hangup = MessagePayload::CallEnd {
-            call_id: call_id.to_string(),
-            reason: format!("voice session failed: {e}"),
-        };
-        let _ = deps.send_to_peer(&peer_pubkey, hangup).await;
+        deps.shutdown_voice_session(call_id).await;
+        let reason = format!("voice session failed: {e}");
+        crate::signaling::lifecycle::commit_end(deps, &peer_pubkey, call_id, &reason).await;
         deps.emit_event(CallSignalEvent::CallEnded {
             call_id: call_id.to_string(),
             peer_public_key: peer_pubkey,
@@ -252,6 +257,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         call.status = CallStatus::Active;
         registry.insert(call);
     }
+    deps.spawn_consent_watch(call_id.to_string(), deps.now_ms());
     deps.emit_event(CallSignalEvent::CallConnected {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.clone(),
@@ -275,7 +281,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
 
 /// Receive arm for `CallDecline` (W13.8). Caller-side. Idempotent;
 /// silently no-ops on unknown call_id or wrong peer.
-pub fn handle_decline_received<D: CallSignalingDeps + ?Sized>(
+pub async fn handle_decline_received<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
     call_id: &str,
@@ -288,6 +294,7 @@ pub fn handle_decline_received<D: CallSignalingDeps + ?Sized>(
         .is_some()
         && registry.remove(call_id).is_some();
     if removed {
+        deps.settle_call_invite(call_id, true).await;
         deps.emit_event(CallSignalEvent::CallDeclined {
             call_id: call_id.to_string(),
             peer_public_key: sender_hex.to_string(),
@@ -300,7 +307,7 @@ pub fn handle_decline_received<D: CallSignalingDeps + ?Sized>(
 /// has the invite and is ringing. Verifies the ringing is for a call
 /// we actually own (defends against a forged ringing for someone else's
 /// call_id).
-pub fn handle_ringing_received<D: CallSignalingDeps + ?Sized>(
+pub async fn handle_ringing_received<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
     call_id: &str,
@@ -312,11 +319,96 @@ pub fn handle_ringing_received<D: CallSignalingDeps + ?Sized>(
     if !known {
         return;
     }
+    // Plan CE3: the callee holds the invite; its row stops re-sending.
+    deps.settle_call_invite(call_id, true).await;
     deps.emit_event(CallSignalEvent::CallRinging {
         call_id: call_id.to_string(),
         peer_public_key: sender_hex.to_string(),
     });
 }
+
+/// Receive arm for `CallEnd` (W13.9): the peer hung up or cancelled, in
+/// any state. Idempotent: a `CallEnd` for a call we no longer hold, or
+/// from another peer, is a no-op. Only `call_id`'s media is torn down
+/// (plan CE2, lead decision 30): a late `CallEnd` for a superseded call
+/// never stops the new call's media.
+pub async fn handle_end_received<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    sender_hex: &str,
+    call_id: &str,
+    reason: String,
+) {
+    let registry = deps.registry();
+    let ours = registry
+        .get(call_id)
+        .is_some_and(|c| c.peer_pubkey == sender_hex);
+    let Some(removed) = ours.then(|| registry.remove(call_id)).flatten() else {
+        tracing::debug!(call = %call_id, "CallEnd for a call we do not hold; ignoring");
+        return;
+    };
+    let was_voice_up = matches!(removed.status, CallStatus::Active | CallStatus::Connecting);
+    drop(removed); // Zeroize the call's secrets now.
+    if was_voice_up {
+        deps.shutdown_voice_session(call_id).await;
+    }
+    tracing::info!(call = %call_id, %reason, "remote ended DM call");
+    deps.emit_event(CallSignalEvent::CallEnded {
+        call_id: call_id.to_string(),
+        peer_public_key: sender_hex.to_string(),
+        reason,
+        voice_was_up: was_voice_up,
+    });
+}
+
+/// Plan CE1, decision 22 (c): whether an invite for `call_id` from
+/// `sender_hex` may ring. A repeated invite for a call we hold does not
+/// ring again. A call with the same peer under another call id (Incoming,
+/// Connecting or Active) is stale, since the peer has left it, and is ended
+/// here first. A Connecting or Active call with another peer answers this
+/// invite busy. Our own Outgoing call to the sender is glare's, after this.
+async fn make_room_for_invite<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    sender_hex: &str,
+    call_id: &str,
+) -> bool {
+    let registry = deps.registry();
+    if let Some(held) = registry.get(call_id) {
+        tracing::debug!(call = %call_id, "repeated CallInvite for a call we hold; not ringing again");
+        if held.peer_pubkey == sender_hex && matches!(held.status, CallStatus::Incoming) {
+            // Plan CE3: our first CallRinging may be lost; the caller's
+            // outbox re-sends the invite until one arrives.
+            send_ringing(deps, sender_hex, call_id).await;
+        }
+        return false;
+    }
+    if registry.ended_recently(call_id) {
+        tracing::debug!(call = %call_id, "re-sent CallInvite for a call that ended; not ringing");
+        return false;
+    }
+    for call in registry.list_all() {
+        let up = matches!(call.status, CallStatus::Active | CallStatus::Connecting);
+        if call.peer_pubkey != sender_hex && up {
+            send_decline(deps, sender_hex, call_id, BUSY).await;
+            return false;
+        }
+    }
+    crate::signaling::lifecycle::supersede_stale_with(deps, sender_hex, call_id).await;
+    true
+}
+
+/// Best-effort `CallRinging` to the caller: it settles their invite's
+/// outbox row (plan CE3) and flips their UI to "Ringing…".
+async fn send_ringing<D: CallSignalingDeps + ?Sized>(deps: &D, caller: &str, call_id: &str) {
+    let ringing = DirectBody::CallRinging(CallRinging {
+        call_id: call_id.to_string(),
+    });
+    if let Err(e) = deps.send_to_peer(caller, ringing).await {
+        tracing::debug!(call = %call_id, error = %e, "CallRinging ack send failed");
+    }
+}
+
+/// The decline reason an invite gets while we are in another call.
+pub const BUSY: &str = "busy";
 
 /// Helper — fire a `CallDecline` at a peer without inserting any
 /// CallState (used for malformed-invite + temp-mute rejections).
@@ -326,10 +418,10 @@ async fn send_decline<D: CallSignalingDeps + ?Sized>(
     call_id: &str,
     reason: &str,
 ) {
-    let payload = MessagePayload::CallDecline {
+    let payload = DirectBody::CallDecline(CallClosed {
         call_id: call_id.to_string(),
         reason: reason.to_string(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(peer_pubkey, payload).await {
         tracing::debug!(call = %call_id, error = %e, "CallDecline send failed");
     }
@@ -352,15 +444,11 @@ async fn cancel_outgoing_for_glare<D: CallSignalingDeps + ?Sized>(
         .remove(call_id)
         .is_some_and(|c| matches!(c.status, CallStatus::Active | CallStatus::Connecting));
     if was_voice_up {
-        deps.shutdown_voice_session().await;
+        deps.shutdown_voice_session(call_id).await;
     }
-    let payload = MessagePayload::CallEnd {
-        call_id: call_id.to_string(),
-        reason: "glare-resolved-we-lost".into(),
-    };
-    if let Err(e) = deps.send_to_peer(peer_pubkey, payload).await {
-        tracing::debug!(call = %call_id, error = %e, "CallEnd (glare) send failed");
-    }
+    deps.settle_call_invite(call_id, false).await;
+    crate::signaling::lifecycle::commit_end(deps, peer_pubkey, call_id, "glare-resolved-we-lost")
+        .await;
     deps.emit_event(CallSignalEvent::CallEnded {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.to_string(),

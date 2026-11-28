@@ -1,0 +1,275 @@
+//! App messages, calls and route death on the simulated network, against
+//! the Veilid behaviour the app depends on ([`crate::messages`]).
+
+use std::time::Duration;
+
+use rekindle_records::port::{PortError, PortEvent, RouteClass, RouteState};
+use rekindle_types::config::SafetyProfile;
+
+use crate::tests::{attached, recv};
+use crate::{call_timeout, Fault, Netsim};
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn messages_and_calls_reach_the_route_s_owner() {
+    let (sim, mut nodes) = Netsim::nodes(2, 5);
+    let pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let blob = tokio::time::timeout(
+        Duration::from_secs(5),
+        nodes[1].ports.routes.available_own(RouteClass::General),
+    )
+    .await
+    .unwrap();
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    nodes[0]
+        .ports
+        .messages
+        .send(&target, &profile, b"hello".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"hello")
+    );
+
+    let caller = nodes[0].ports.messages.clone();
+    let call = tokio::spawn(async move { caller.call(&target, &profile, b"ping".to_vec()).await });
+    let event = recv(&mut nodes[1]).await;
+    let PortEvent::AppCall {
+        call_id, message, ..
+    } = event
+    else {
+        panic!("expected a call");
+    };
+    assert_eq!(message, b"ping");
+    nodes[1]
+        .ports
+        .messages
+        .reply(call_id, b"pong".to_vec())
+        .await
+        .unwrap();
+    assert_eq!(call.await.unwrap().unwrap(), b"pong");
+    assert!(matches!(
+        nodes[0]
+            .ports
+            .messages
+            .send(
+                &rekindle_records::port::PeerTarget::new("gone".into()),
+                &SafetyProfile::default_dht(),
+                vec![1]
+            )
+            .await,
+        Err(PortError::RouteUnusable(_))
+    ));
+    assert!(matches!(
+        nodes[0]
+            .ports
+            .messages
+            .send(
+                &nodes[0].ports.routes.import(&blob).unwrap(),
+                &SafetyProfile::default_dht(),
+                vec![0; rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN + 1]
+            )
+            .await,
+        Err(PortError::MessageTooLarge { .. })
+    ));
+    pump.abort();
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_unanswered_call_times_out_and_a_partition_drops() {
+    let (sim, mut nodes) = Netsim::nodes(2, 6);
+    let _pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let blob = nodes[1]
+        .ports
+        .routes
+        .available_own(RouteClass::General)
+        .await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    sim.fault(Fault::Unanswered {
+        node: 1,
+        unanswered: true,
+    });
+    let started = tokio::time::Instant::now();
+    assert!(nodes[0]
+        .ports
+        .messages
+        .call(&target, &profile, vec![1])
+        .await
+        .is_err());
+    assert!(started.elapsed() >= call_timeout(&profile));
+    sim.fault(Fault::Partition {
+        a: vec![0],
+        b: vec![1],
+    });
+    nodes[0]
+        .ports
+        .messages
+        .send(&target, &profile, vec![2])
+        .await
+        .unwrap();
+    sim.quiesce().await;
+    while let Ok(event) = nodes[1].events.try_recv() {
+        assert!(
+            !matches!(event, PortEvent::AppMessage { .. }),
+            "partitioned"
+        );
+    }
+}
+
+/// A lost answer (Veilid's reply private route failing past the callee's
+/// first hop): the callee gets the call and its reply succeeds, the caller
+/// times out at its deadline; once the fault ends, answers come back.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_lost_answer_reaches_the_callee_and_times_the_caller_out() {
+    let (sim, mut nodes) = Netsim::nodes(2, 6);
+    let _pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let blob = nodes[1]
+        .ports
+        .routes
+        .available_own(RouteClass::General)
+        .await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    sim.fault(Fault::AnswerLost {
+        node: 1,
+        lost: true,
+    });
+    for (body, lost) in [(b"one", true), (b"two", false)] {
+        let caller = nodes[0].ports.messages.clone();
+        let (to, asked) = (target.clone(), profile.clone());
+        let started = tokio::time::Instant::now();
+        let call = tokio::spawn(async move { caller.call(&to, &asked, body.to_vec()).await });
+        let PortEvent::AppCall {
+            call_id, message, ..
+        } = recv(&mut nodes[1]).await
+        else {
+            panic!("expected a call");
+        };
+        assert_eq!(message, body, "the question reached the callee");
+        nodes[1]
+            .ports
+            .messages
+            .reply(call_id, b"done".to_vec())
+            .await
+            .expect("the callee's answer is sent");
+        let answer = call.await.unwrap();
+        if lost {
+            assert!(matches!(answer, Err(PortError::Timeout(_))), "{answer:?}");
+            assert!(started.elapsed() >= call_timeout(&profile));
+            sim.fault(Fault::AnswerLost {
+                node: 1,
+                lost: false,
+            });
+        } else {
+            assert_eq!(answer.unwrap(), b"done");
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn route_death_reaches_the_owner_only() {
+    let (sim, mut nodes) = Netsim::nodes(2, 8);
+    let _pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let blob = nodes[1]
+        .ports
+        .routes
+        .available_own(RouteClass::General)
+        .await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    nodes[0].ports.routes.import(&blob).unwrap();
+    sim.fault(Fault::RouteDeath { node: 1 });
+    let PortEvent::RouteChange { dead, .. } = recv(&mut nodes[1]).await else {
+        panic!("expected a route change");
+    };
+    assert!(!dead.is_empty());
+    // The importer hears nothing: its sends are lost.
+    assert!(nodes[0].events.try_recv().is_err());
+    // The owner forgets the dead route and allocates a new one, as the
+    // transport's dispatch has it do.
+    nodes[1].ports.routes.on_dead_own(&dead);
+    let fresh = tokio::time::timeout(
+        Duration::from_secs(30),
+        nodes[1].ports.routes.available_own(RouteClass::General),
+    )
+    .await
+    .unwrap();
+    assert_ne!(fresh, blob);
+    assert!(matches!(
+        *nodes[1]
+            .ports
+            .routes
+            .own_state(RouteClass::General)
+            .borrow(),
+        RouteState::Available { .. }
+    ));
+}
+
+/// An unordered send to an Ordered route whose hops were proven only on its
+/// ordering is lost (a question times out), while an ordered one to the
+/// same route arrives and an unordered one to the Media (Unordered) route
+/// arrives ([`Fault::UnprovenUnorderedHops`]).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn unordered_sends_to_an_ordered_route_cross_unproven_hops() {
+    let (sim, mut nodes) = Netsim::nodes(2, 5);
+    let _pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let mut blobs = Vec::new();
+    for class in [RouteClass::General, RouteClass::Media] {
+        let blob = tokio::time::timeout(
+            Duration::from_secs(5),
+            nodes[1].ports.routes.available_own(class),
+        )
+        .await
+        .unwrap();
+        blobs.push(blob);
+    }
+    attached(&mut nodes[1]).await;
+    let general = nodes[0].ports.routes.import(&blobs[0]).unwrap();
+    let media = nodes[0].ports.routes.import(&blobs[1]).unwrap();
+    sim.fault(Fault::UnprovenUnorderedHops {
+        node: 1,
+        unproven: true,
+    });
+    let (ordered, unordered) = (
+        SafetyProfile::default_text(),
+        SafetyProfile::default_voice(),
+    );
+    let messages = &nodes[0].ports.messages;
+    messages
+        .send(&general, &unordered, b"lost".to_vec())
+        .await
+        .unwrap();
+    messages
+        .send(&general, &ordered, b"ordered".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"ordered"),
+        "the unordered message is lost, the ordered one arrives"
+    );
+    nodes[0]
+        .ports
+        .messages
+        .send(&media, &unordered, b"media".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"media"),
+        "media frames to the Unordered route arrive"
+    );
+    let answer = nodes[0]
+        .ports
+        .messages
+        .call(&general, &unordered, b"q".to_vec())
+        .await;
+    assert!(matches!(answer, Err(PortError::Timeout(_))));
+}

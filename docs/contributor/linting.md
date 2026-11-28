@@ -51,6 +51,9 @@ lefthook run pre-push            # cargo clippy + cargo test
 every subsequent `git commit` and `git push` runs the configured
 linters automatically.
 
+src/ipc/invoke.ts is the only source file allowed to import the Tauri core Channel and invoke names directly.
+The boundary exposes typed IPC to the rest of the frontend.
+
 ### Per-tool ad-hoc
 
 Each linter is also runnable on its own:
@@ -59,7 +62,6 @@ Each linter is also runnable on its own:
 # Rust
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo audit
 cargo deny check
 cargo vet check
 
@@ -97,7 +99,7 @@ Two workflows orchestrate these in CI:
 
 | Workflow | Covers |
 |----------|--------|
-| [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `cargo fmt`, `cargo clippy`, `cargo test`, pnpm install + Playwright mock-IPC suite, Tauri build smoke per OS |
+| [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `cargo fmt`, `cargo clippy`, `cargo test`, Tauri build smoke per OS (the real-app UI suite needs a desktop session and runs outside CI) |
 | [`../../.github/workflows/lint.yml`](../../.github/workflows/lint.yml) | Everything else — frontend (Biome / stylelint / knip), TOML, Markdown + lychee, SQL, workflows (actionlint + zizmor), shell, Nix, typos, gitleaks, Cap'n Proto |
 | [`../../.github/workflows/audit.yml`](../../.github/workflows/audit.yml) | RustSec advisories + cargo-deny + pnpm audit (daily + per-PR) |
 | [`../../.github/workflows/dependency-review.yml`](../../.github/workflows/dependency-review.yml) | Per-PR dep diff |
@@ -110,8 +112,8 @@ Two workflows orchestrate these in CI:
 ### Rust
 
 `rustfmt` and `clippy` are stdlib — no alternatives. For supply-chain
-auditing we use `cargo-audit` (RustSec advisory DB), `cargo-deny`
-(license + bans + sources policy), and `cargo-vet` (cryptographic
+auditing we use `cargo-deny` (RustSec advisory DB through its
+advisories check, plus license + bans + sources policy), and `cargo-vet` (cryptographic
 audit attestations). Specific selection rationale lives in
 [`../security/supply-chain-policy.md`](../security/supply-chain-policy.md)
 and the dedicated agent reports synthesised here.
@@ -321,7 +323,7 @@ the binaries pre-installed.
 - [shfmt](https://github.com/mvdan/sh)
 - [nixfmt RFC-48](https://github.com/NixOS/nixfmt)
 - [statix](https://github.com/oppiliappan/statix)
-- [deadnix](https://github.com/nix-community/deadnix)
+- [deadnix](https://github.com/astro/deadnix)
 - [gitleaks](https://github.com/gitleaks/gitleaks)
 - [lefthook](https://lefthook.dev/)
 - [`../security/supply-chain-policy.md`](../security/supply-chain-policy.md)

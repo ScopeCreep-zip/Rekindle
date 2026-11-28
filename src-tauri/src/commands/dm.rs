@@ -1,93 +1,20 @@
-//! Tauri commands for direct messages (architecture §27).
-//!
-//! The wire-level orchestration (creating SMPL records, sending invites,
-//! deriving MEKs) lives in `services/dm/`. These commands are thin
-//! adapters for the frontend.
+//! The DM video frame commands (E4.1, E4.3.8). The group-DM commands are
+//! E2.6 slice G3's, over `rekindle-dm`.
 
 use tauri::State;
 
-use crate::services::dm;
 use crate::state::SharedState;
-
-#[tauri::command]
-pub async fn list_dms(
-    state: State<'_, SharedState>,
-) -> Result<Vec<dm::store::DmConversation>, String> {
-    let pool = state.db.current()?;
-    Ok(dm::list_dm_conversations(state.inner(), &pool).await)
-}
-
-#[tauri::command]
-pub async fn start_dm(
-    bob_public_key: String,
-    alice_pseudonym: String,
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
-    let pool = state.db.current()?;
-    dm::start_dm(state.inner(), &pool, &bob_public_key, &alice_pseudonym).await
-}
-
-#[tauri::command]
-pub async fn accept_dm_invite(
-    record_key: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    dm::accept_dm_invite(state.inner(), &pool, &record_key).await
-}
-
-#[tauri::command]
-pub async fn decline_dm_invite(
-    record_key: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    dm::decline_dm_invite(state.inner(), &pool, &record_key).await
-}
-
-#[tauri::command]
-pub async fn send_dm_message(
-    record_key: String,
-    body: String,
-    idempotency_key: uuid::Uuid,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    // Phase 5 — gate writes on lifecycle.
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    // Phase 8 — idempotency dedupes click-spam.
-    let state_for_cache = state.inner().clone();
-    let pool_for_cache = pool.clone();
-    state
-        .idempotency
-        .wrap(idempotency_key, || async move {
-            dm::send_dm_message(&state_for_cache, &pool_for_cache, &record_key, &body).await
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn get_dm_messages(
-    record_key: String,
-    limit: Option<i64>,
-    state: State<'_, SharedState>,
-) -> Result<Vec<dm::store::DmMessageRecord>, String> {
-    let pool = state.db.current()?;
-    let limit = limit.unwrap_or(200);
-    Ok(dm::load_dm_messages(state.inner(), &pool, &record_key, limit).await)
-}
 
 /// W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
 ///
 /// Mirrors `commands::community::video::send_video_frame` but routes
-/// 1:1 via the Signal-encrypted `send_envelope_to_peer` path instead
-/// of mesh fan-out, and uses no community MEK (Signal Double Ratchet
+/// 1:1 over the peer's ratchet session (`operations::dm::send_to_peer`)
+/// instead of mesh fan-out, and uses no community MEK (the Double Ratchet
 /// already covers confidentiality + authenticity).
 ///
 /// The frontend produces VP9 chunks via WebCodecs and base64-encodes
 /// them for IPC; the backend chunks to the 4 KB transport budget, wraps each chunk in a
-/// `DmVideoFragment` payload, and sends through the existing DM
+/// `DmVideoFragment` (0x0220) frame, and sends through the 1:1
 /// transport. Returns the number of fragments dispatched.
 #[tauri::command]
 pub async fn send_dm_video_frame(
@@ -95,14 +22,8 @@ pub async fn send_dm_video_frame(
     request: SendDmVideoFrameRequest,
     state: State<'_, SharedState>,
 ) -> Result<u32, String> {
-    let pool = state.db.current()?;
-    crate::services::dm_runtime::send_dm_video_frame_inner(
-        state.inner(),
-        &pool,
-        peer_pubkey,
-        request,
-    )
-    .await
+    crate::services::dm_runtime::send_dm_video_frame_inner(state.inner(), peer_pubkey, request)
+        .await
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -125,9 +46,12 @@ pub struct SendDmVideoFrameRequest {
 pub async fn register_dm_video_channel(
     peer_pubkey: String,
     on_frame: tauri::ipc::Channel<crate::video_channels::DmVideoFrameMsg>,
+    webview: tauri::Webview,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    state.video_channels.register_dm(peer_pubkey, on_frame);
+    state
+        .video_channels
+        .register_dm(webview.label(), peer_pubkey, on_frame);
     Ok(())
 }
 

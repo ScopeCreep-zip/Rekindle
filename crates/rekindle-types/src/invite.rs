@@ -1,72 +1,54 @@
-//! Invite secrets for self-sovereign community join.
+//! Invite secrets for self-sovereign community join (plan E3.2, ADR 0011).
 //!
-//! In v2.0, invites are distributed out-of-band (deep links, QR codes, peer share).
-//! The invite blob contains everything a joiner needs: governance key, registry key,
-//! slot seed, channel keys, and current MEK. Encrypted with HKDF(invite_code).
+//! Invites are distributed out-of-band (deep links, QR codes, peer share).
+//! The blob names what a joiner reads from the DHT with nobody online: the
+//! community anchor `A` and the inviter's member record `M`, whose `Frontier`
+//! is where the joiner's walk of the op DAG starts. It carries no community
+//! key (the joiner asks for it, D11) and no channel keys (`ChannelCreated`
+//! names each channel record). Encrypted with HKDF(invite_code).
 
 use serde::{Deserialize, Serialize};
 
-/// Decrypted invite secrets — everything needed to join a community.
+/// Hard ceiling on per-invite reuse. Even if `CommunityPolicy` permits a
+/// higher value, readers reject the entry. Combined with the per-inviter
+/// active-invite cap, this bounds the worst-case reachable joiners
+/// from a single rogue inviter at `max_active_invites * MAX_USES_PER_INVITE`.
 ///
-/// The invite code (shared out-of-band) is the HKDF key that decrypts this blob.
-/// The governance_key in the deep link URL identifies the community.
+/// Set deliberately conservative — the Discord-equivalent invite is
+/// usually 1, 25, or unlimited (`max_uses=0`). We forbid unlimited and
+/// cap at 100, which is enough for legitimate community-link sharing
+/// (small groups, classroom rosters, conference attendees) without
+/// granting attacker leverage.
+pub const MAX_USES_PER_INVITE: u32 = 100;
+
+/// Decrypted invite secrets: everything a joiner needs to join.
+///
+/// The invite code (shared out-of-band) is the HKDF key that decrypts this
+/// blob; the anchor in the deep link identifies the community.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteSecrets {
-    /// DHT key of the SMPL governance record (community identifier).
-    pub governance_key: String,
-    /// DHT key of the SMPL member registry record.
-    pub registry_key: String,
-    /// Private route blob to the inviting member for bootstrap bundle app_call.
-    pub inviter_route_blob: Vec<u8>,
-    /// 32-byte slot seed for deriving SMPL member slot keypairs (hex-encoded).
-    pub slot_seed: String,
-    /// Current MEK wire bytes (generation LE + key, base64-encoded).
-    pub mek_wire_bytes: String,
-    /// Channel record keys for direct channel access.
-    pub channel_keys: Vec<ChannelKeyInfo>,
+    /// DHT key of the community anchor `A` (the community identifier).
+    pub anchor: String,
+    /// DHT key of the inviter's member record `M`.
+    pub inviter_member_record: String,
+    /// The inviter's community pseudonym (hex): the joiner reads the
+    /// inviter's current route from `M`/6 and verifies it under this key
+    /// (plan E3.2 S7c.8), rather than carrying a route blob frozen at
+    /// minting, which dies with the inviter's route.
+    pub inviter_pseudonym: String,
     /// Community display name (for UI before full state is loaded).
     pub community_name: String,
-}
-
-/// A channel's DHT record key bundled in invite secrets.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelKeyInfo {
-    /// Channel identifier (hex-encoded 16-byte UUID).
-    pub channel_id: String,
-    /// DHT key of the channel's SMPL record.
-    pub record_key: String,
-    /// Channel display name.
-    pub name: String,
+    /// DHT key of the SMPL member registry record (deleted by E3.4).
+    pub registry_key: String,
+    /// 32-byte slot seed for deriving SMPL member slot keypairs (hex-encoded;
+    /// deleted by E3.4).
+    pub slot_seed: String,
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn invite_secrets_serde_roundtrip() {
-        let secrets = InviteSecrets {
-            governance_key: "VLD0:gov123".into(),
-            registry_key: "VLD0:reg456".into(),
-            inviter_route_blob: vec![1, 2, 3, 4],
-            slot_seed: "ab".repeat(32),
-            mek_wire_bytes: "base64mekdata".into(),
-            channel_keys: vec![ChannelKeyInfo {
-                channel_id: "ch1".into(),
-                record_key: "VLD0:ch789".into(),
-                name: "general".into(),
-            }],
-            community_name: "Test Community".into(),
-        };
-        let json = serde_json::to_string(&secrets).unwrap();
-        let back: InviteSecrets = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.governance_key, "VLD0:gov123");
-        assert_eq!(back.inviter_route_blob, vec![1, 2, 3, 4]);
-        assert_eq!(back.channel_keys.len(), 1);
-    }
-}
+#[path = "invite_tests.rs"]
+mod tests;
 
 // ── Invite deep link ─────────────────────────────────────────────────
 
@@ -75,23 +57,35 @@ use crate::key_format::{self, Hex16Id, KeyFormatError, RecordKeyStr};
 /// Scheme and path prefix of every invite link.
 const INVITE_PREFIX: &str = "rekindle://invite/";
 /// Longest invite URL accepted. A canonical link with two two-segment
-/// record keys is 236 bytes.
-pub const MAX_INVITE_URL_LEN: usize = 256;
+/// record keys, a 20-digit op seq and a 10-digit frontier seq is 333 bytes.
+pub const MAX_INVITE_URL_LEN: usize = 352;
 
-/// The three components an invite link carries.
+/// The components an invite link carries.
 ///
 /// Lives in Tier 1 so every frontend (desktop deep links, the daemon's
 /// `CommunityJoin`, the CLI) accepts exactly the same link, and every
 /// producer builds it with [`InviteLink::to_url`].
 ///
-/// Format: `rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}`,
-/// where both keys are Veilid record keys and the code is 32 lowercase hex
-/// (16 random bytes).
+/// Format: `rekindle://invite/{anchor}/{secrets_record_key}/{invite_code}/
+/// {invite_op}/{invite_op_seq}/{frontier_seq}`, where both keys are Veilid
+/// record keys, the code is 32 lowercase hex (16 random bytes), the op is
+/// 64 lowercase hex and both seqs are canonical decimal.
+///
+/// The last three name what the inviter had on the DHT when it handed the
+/// link out (plan IV1b, lead decision (28)): its `InviteCreated` op (hash and
+/// seq in its own chain; the author and its record are in the secrets) and
+/// the seq its frontier (`M`/3) was written at. A joiner whose frontier read
+/// settles below that seq fetches the op by this ref instead of refusing the
+/// invite as unknown. They disclose nothing the link does not already open:
+/// the op is on the inviter's op log, which the secrets name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InviteLink {
-    pub governance_key: RecordKeyStr,
+    pub anchor: RecordKeyStr,
     pub secrets_record_key: RecordKeyStr,
     pub invite_code: Hex16Id,
+    pub invite_op: crate::governance::OpHash,
+    pub invite_op_seq: u64,
+    pub frontier_seq: u32,
 }
 
 /// Why a string is not an invite link.
@@ -101,16 +95,43 @@ pub enum InviteLinkError {
     NotAnInvite,
     #[error("invite link is {got} bytes, max {max}")]
     TooLong { max: usize, got: usize },
-    #[error("invite link needs a governance key, a secrets key and a code")]
+    #[error(
+        "invite link needs an anchor, a secrets key, a code, an op, its seq and a frontier seq"
+    )]
     MissingPart,
     #[error("invite link has extra path segments")]
     ExtraPart,
-    #[error("invite governance key: {0}")]
-    GovernanceKey(KeyFormatError),
+    #[error("invite anchor: {0}")]
+    Anchor(KeyFormatError),
     #[error("invite secrets key: {0}")]
     SecretsRecordKey(KeyFormatError),
     #[error("invite code: {0}")]
     InviteCode(KeyFormatError),
+    #[error("invite op: not 64 lowercase hex")]
+    InviteOp,
+    #[error("invite {0} seq: not a canonical decimal")]
+    Seq(&'static str),
+}
+
+/// `text` as 32 bytes of lowercase hex.
+fn op_hash(text: &str) -> Result<crate::governance::OpHash, InviteLinkError> {
+    let lower = text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    let bytes = hex::decode(text).ok().filter(|_| lower);
+    let bytes = bytes.and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok());
+    bytes
+        .map(crate::governance::OpHash)
+        .ok_or(InviteLinkError::InviteOp)
+}
+
+/// `text` as a canonical decimal (digits only, no leading zero), so
+/// [`InviteLink::to_url`] gives back the same text.
+fn seq<T: std::str::FromStr>(text: &str, which: &'static str) -> Result<T, InviteLinkError> {
+    let canonical =
+        text.bytes().all(|b| b.is_ascii_digit()) && (text == "0" || !text.starts_with('0'));
+    canonical
+        .then(|| text.parse().ok())
+        .flatten()
+        .ok_or(InviteLinkError::Seq(which))
 }
 
 impl InviteLink {
@@ -134,18 +155,23 @@ impl InviteLink {
                 .filter(|p| !p.is_empty())
                 .ok_or(InviteLinkError::MissingPart)
         };
-        let governance_key = next()?;
+        let anchor = next()?;
         let secrets_record_key = next()?;
         let invite_code = next()?;
+        let invite_op = next()?;
+        let invite_op_seq = next()?;
+        let frontier_seq = next()?;
         if parts.next().is_some() {
             return Err(InviteLinkError::ExtraPart);
         }
         Ok(Self {
-            governance_key: key_format::record_key(governance_key)
-                .map_err(InviteLinkError::GovernanceKey)?,
+            anchor: key_format::record_key(anchor).map_err(InviteLinkError::Anchor)?,
             secrets_record_key: key_format::record_key(secrets_record_key)
                 .map_err(InviteLinkError::SecretsRecordKey)?,
             invite_code: key_format::hex16_id(invite_code).map_err(InviteLinkError::InviteCode)?,
+            invite_op: op_hash(invite_op)?,
+            invite_op_seq: seq(invite_op_seq, "op")?,
+            frontier_seq: seq(frontier_seq, "frontier")?,
         })
     }
 
@@ -153,8 +179,13 @@ impl InviteLink {
     #[must_use]
     pub fn to_url(&self) -> String {
         format!(
-            "{INVITE_PREFIX}{}/{}/{}",
-            self.governance_key, self.secrets_record_key, self.invite_code
+            "{INVITE_PREFIX}{}/{}/{}/{}/{}/{}",
+            self.anchor,
+            self.secrets_record_key,
+            self.invite_code,
+            hex::encode(self.invite_op.0),
+            self.invite_op_seq,
+            self.frontier_seq
         )
     }
 }
@@ -163,9 +194,22 @@ impl InviteLink {
 const PAIRING_PREFIX: &str = "rekindle://pair";
 /// Every Rekindle URL.
 const SCHEME_PREFIX: &str = "rekindle://";
-/// Longest friend-invite URL accepted from the OS. A friend invite carries
-/// a signed blob with a PQXDH prekey bundle and a route blob.
-pub const MAX_FRIEND_INVITE_URL_LEN: usize = 16 * 1024;
+/// Longest friend-invite URL accepted from the OS. A friend invite is a
+/// signed blob of keys, a display name and its request inbox capability
+/// (the inbox record key and the one-time writer's keypair text), with no
+/// route and no prekey bundle (plans C7.25, E2.5). The worst case — a
+/// 64-character name of 4-byte characters (256 B), three record keys and
+/// the writer text at 92 B each, a 36-character invite id, a 20-digit
+/// `issued_at` and the 88-character signature, as JSON base64url'd behind
+/// `rekindle://` — encodes to 1,331 bytes. 2 KiB holds it with headroom
+/// (`rekindle-codec`'s `the_worst_case_invite_url_fits_the_deep_link_cap`
+/// builds it).
+pub const MAX_FRIEND_INVITE_URL_LEN: usize = 2 * 1024;
+
+/// How long a friend invite is honoured after it is minted: 7 days, the
+/// one expiry every host and the UI use (plan E2.5, D17). It bounds the
+/// harvest window of a leaked invite (B11).
+pub const FRIEND_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// What an OS deep link asks for, before any network access.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,8 +217,11 @@ pub enum DeepLink {
     /// `rekindle://invite/...`: join a community.
     CommunityInvite(InviteLink),
     /// `rekindle://<base64url blob>`: add a friend. The blob is decoded and
-    /// its signature checked by `rekindle_protocol::messaging`.
+    /// its signature and recency checked by the Host's review
+    /// (`rekindle_transport::operations::friend::open_invite`).
     FriendInvite(String),
+    /// `rekindle://add/...`: a friend code, fully validated.
+    Add(crate::friend_code::FriendCode),
     /// `rekindle://pair?...`: link a new device. Never accepted from an OS
     /// deep link, because an attacker-supplied pairing URI would steer this
     /// device into pairing with the attacker; pairing codes are pasted or
@@ -191,6 +238,11 @@ pub enum DeepLinkError {
     TooLong { max: usize, got: usize },
     #[error(transparent)]
     CommunityInvite(#[from] InviteLinkError),
+    #[error(transparent)]
+    FriendCode(#[from] crate::friend_code::FriendCodeError),
+    /// `rekindle://` followed by anything but one base64url blob.
+    #[error("not a rekindle:// link this app opens")]
+    Unknown,
 }
 
 impl DeepLink {
@@ -204,154 +256,26 @@ impl DeepLink {
         if url.starts_with(PAIRING_PREFIX) {
             return Ok(Self::Pairing);
         }
-        if !url.starts_with(SCHEME_PREFIX) {
-            return Err(DeepLinkError::NotRekindle);
+        if url.starts_with(crate::friend_code::FRIEND_CODE_PREFIX) {
+            return Ok(Self::Add(crate::friend_code::FriendCode::parse(url)?));
         }
+        let Some(blob) = url.strip_prefix(SCHEME_PREFIX) else {
+            return Err(DeepLinkError::NotRekindle);
+        };
         if url.len() > MAX_FRIEND_INVITE_URL_LEN {
             return Err(DeepLinkError::TooLong {
                 max: MAX_FRIEND_INVITE_URL_LEN,
                 got: url.len(),
             });
         }
+        let is_b64url = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+        if blob.is_empty() || !blob.bytes().all(is_b64url) {
+            return Err(DeepLinkError::Unknown);
+        }
         Ok(Self::FriendInvite(url.to_owned()))
     }
 }
 
 #[cfg(test)]
-mod invite_link_tests {
-    use super::{DeepLink, DeepLinkError, InviteLink, InviteLinkError, MAX_INVITE_URL_LEN};
-
-    const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
-    const CODE: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
-
-    fn link(gov: &str, sec: &str, code: &str) -> String {
-        format!("rekindle://invite/{gov}/{sec}/{code}")
-    }
-
-    #[test]
-    fn parses_and_round_trips_a_canonical_link() {
-        let gov = format!("VLD0:{B64}:{B64}");
-        let sec = format!("VLD0:{B64}");
-        let url = link(&gov, &sec, CODE);
-        let parsed = InviteLink::parse(&format!("  {url}\n")).unwrap();
-        assert_eq!(parsed.governance_key.as_str(), gov);
-        assert_eq!(parsed.secrets_record_key.as_str(), sec);
-        assert_eq!(parsed.invite_code.as_str(), CODE);
-        assert_eq!(parsed.to_url(), url);
-        assert!(url.len() <= MAX_INVITE_URL_LEN);
-    }
-
-    #[test]
-    fn rejects_everything_else() {
-        let k = format!("VLD0:{B64}");
-        let cases = [
-            (
-                "https://example.com".to_owned(),
-                InviteLinkError::NotAnInvite,
-            ),
-            (
-                format!("rekindle://community/{k}/{k}/{CODE}"),
-                InviteLinkError::NotAnInvite,
-            ),
-            (
-                format!("rekindle://invite/{k}/{k}"),
-                InviteLinkError::MissingPart,
-            ),
-            (
-                format!("rekindle://invite/{k}//{CODE}"),
-                InviteLinkError::MissingPart,
-            ),
-            (
-                format!("{}/", link(&k, &k, CODE)),
-                InviteLinkError::ExtraPart,
-            ),
-            (
-                link(&k, &k, &format!("{CODE}/x")),
-                InviteLinkError::ExtraPart,
-            ),
-        ];
-        for (url, err) in cases {
-            assert_eq!(InviteLink::parse(&url), Err(err), "{url}");
-        }
-        assert!(matches!(
-            InviteLink::parse(&link(&format!("VLD1:{B64}"), &k, CODE)),
-            Err(InviteLinkError::GovernanceKey(_))
-        ));
-        assert!(matches!(
-            InviteLink::parse(&link(&k, "VLD0:short", CODE)),
-            Err(InviteLinkError::SecretsRecordKey(_))
-        ));
-        assert!(matches!(
-            InviteLink::parse(&link(&k, &k, &format!("{CODE}00"))),
-            Err(InviteLinkError::InviteCode(_))
-        ));
-        assert!(matches!(
-            InviteLink::parse(&link(&k, &k, &CODE.to_uppercase())),
-            Err(InviteLinkError::InviteCode(_))
-        ));
-        assert!(matches!(
-            InviteLink::parse(&format!("rekindle://invite/{}", "A".repeat(300))),
-            Err(InviteLinkError::TooLong { .. })
-        ));
-    }
-
-    #[test]
-    fn classifies_deep_links() {
-        let k = format!("VLD0:{B64}");
-        let invite = link(&k, &k, CODE);
-        assert!(matches!(
-            DeepLink::parse(&invite),
-            Ok(DeepLink::CommunityInvite(_))
-        ));
-        assert!(matches!(
-            DeepLink::parse("rekindle://invite/bad"),
-            Err(DeepLinkError::CommunityInvite(_))
-        ));
-        assert_eq!(
-            DeepLink::parse("rekindle://pair?code=1"),
-            Ok(DeepLink::Pairing)
-        );
-        assert_eq!(
-            DeepLink::parse(" rekindle://eyJhIjoxfQ "),
-            Ok(DeepLink::FriendInvite("rekindle://eyJhIjoxfQ".into()))
-        );
-        assert_eq!(
-            DeepLink::parse("https://x"),
-            Err(DeepLinkError::NotRekindle)
-        );
-        assert!(matches!(
-            DeepLink::parse(&format!("rekindle://{}", "A".repeat(20_000))),
-            Err(DeepLinkError::TooLong { .. })
-        ));
-    }
-
-    /// The hostile corpus the webview spec used to probe. Every entry is
-    /// rejected before anything is held for consent.
-    #[test]
-    fn hostile_invite_links_are_rejected() {
-        let corpus = [
-            "rekindle://invite/".to_owned(),
-            "rekindle://invite/a".to_owned(),
-            "rekindle://invite/!!!!#@@@@".to_owned(),
-            "rekindle://invite/QUFBQUFBQUFBQQ==#Wm16YnRtbk9hQQ==".to_owned(),
-            "rekindle://invite/<script>alert(1)</script>#key".to_owned(),
-            "rekindle://invite/../../../etc/passwd#k".to_owned(),
-            "rekindle://invite/blob';DROP TABLE friends;--#k".to_owned(),
-            format!(
-                "rekindle://invite/{}#{}",
-                "A".repeat(100_000),
-                "B".repeat(10_000)
-            ),
-            "rekindle://invite/aaa%00bbb#%00".to_owned(),
-            "rekindle://invite/aaa\u{0}bbb/x/y".to_owned(),
-            "rekindle://invite/aaa%01%02%03#%04".to_owned(),
-            "rekindle://invite/blob\u{202E}#key".to_owned(),
-            format!("rekindle://invite/VLD0:{B64}/VLD0:{B64}/{CODE}#frag"),
-            format!("rekindle://invite/VLD0:{B64}/VLD0:{B64}/{CODE}?q=1"),
-        ];
-        for url in &corpus {
-            assert!(InviteLink::parse(url).is_err(), "{url:.60}");
-            assert!(DeepLink::parse(url).is_err(), "{url:.60}");
-        }
-    }
-}
+#[path = "invite_invite_link_tests.rs"]
+mod invite_link_tests;

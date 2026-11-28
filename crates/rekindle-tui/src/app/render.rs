@@ -7,8 +7,8 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::Frame;
 
 use super::super::action::{Action, OverlayKind, SearchMode, ToastLevel};
-use super::super::components::confirm_dialog;
 use super::super::components::help_bar;
+use super::super::components::intent_overlay;
 use super::super::components::search_overlay::SearchItem;
 use super::super::components::status_bar;
 use super::super::components::tab_bar;
@@ -65,8 +65,9 @@ impl App {
                 mode,
                 breadcrumb: self.breadcrumb(),
                 node_attached: self.node_was_connected,
-                peer_count: 0,
+                bars: self.network_bars,
                 hints: hints_line,
+                route_alert: self.route_alert.text(),
             },
             &self.theme,
         );
@@ -78,7 +79,7 @@ impl App {
         if let Some(overlay) = self.nav.overlay().cloned() {
             self.render_overlay(frame, content, &overlay);
         }
-        confirm_dialog::render(frame, content, &self.confirm, &self.theme);
+        intent_overlay::render(frame, content, &self.intent, &self.theme);
         self.search.render(frame, content, &self.theme);
         if !self.notifications.is_empty() {
             self.notifications.render(frame, area, &self.theme);
@@ -144,7 +145,7 @@ impl App {
             }
             "communities" => {
                 if let Some(first) = self.cached_communities.first() {
-                    let gov = first.governance_key.clone();
+                    let gov = first.anchor.clone();
                     self.nav.navigate(
                         ViewKind::CommunityInfo {
                             community: gov.clone(),
@@ -173,6 +174,16 @@ impl App {
                     .navigate(ViewKind::FriendList, self.theme.use_unicode());
                 self.load_friend_list();
             }
+            "activity" => {
+                self.nav
+                    .navigate(ViewKind::Activity, self.theme.use_unicode());
+                self.load_activity(None);
+            }
+            "servers" => {
+                self.nav
+                    .navigate(ViewKind::Servers, self.theme.use_unicode());
+                self.load_servers_view();
+            }
             _ => {}
         }
     }
@@ -192,7 +203,17 @@ impl App {
                 format!("{} / #{channel} (voice)", self.community_name(community))
             }
             ViewKind::FriendList => "Friends".into(),
+            ViewKind::GroupDms => "Groups".into(),
             ViewKind::Doctor => "Doctor".into(),
+            ViewKind::Profile { peer_key: None, .. } => "Dashboard > Profile".into(),
+            ViewKind::Profile { name, .. } => {
+                format!("Friends > {}", crate::helpers::sanitize_for_display(name))
+            }
+            ViewKind::Favourites => "Dashboard > Favourite servers".into(),
+            ViewKind::Activity => "Activity".into(),
+            ViewKind::InstalledGames => "Dashboard > Installed games".into(),
+            ViewKind::Servers => "Servers".into(),
+            ViewKind::Infoview { subject } => self.infoview_breadcrumb(subject),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))
             }
@@ -209,7 +230,7 @@ impl App {
                         label: c.name.clone(),
                         detail: "community".into(),
                         action: Action::ShowCommunityInfo {
-                            community: c.governance_key.clone(),
+                            community: c.anchor.clone(),
                         },
                     })
                     .collect();
@@ -237,6 +258,33 @@ impl App {
                     label: "Doctor".into(),
                     detail: "diagnostics".into(),
                     action: Action::ShowDoctor,
+                });
+                items.push(SearchItem {
+                    label: "Activity".into(),
+                    detail: "view".into(),
+                    action: Action::ShowActivity,
+                });
+                items.push(SearchItem {
+                    label: "Servers".into(),
+                    detail: "view".into(),
+                    action: Action::ShowServers,
+                });
+                items.push(SearchItem {
+                    label: "Infoview".into(),
+                    detail: "view".into(),
+                    action: Action::ShowInfoview {
+                        subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
+                    },
+                });
+                items.push(SearchItem {
+                    label: "Favourite servers".into(),
+                    detail: "games".into(),
+                    action: Action::ShowFavourites,
+                });
+                items.push(SearchItem {
+                    label: "Installed games".into(),
+                    detail: "games".into(),
+                    action: Action::ShowInstalledGames,
                 });
                 items
             }
@@ -281,6 +329,23 @@ impl App {
                     label: "Doctor".into(),
                     detail: String::new(),
                     action: Action::ShowDoctor,
+                },
+                SearchItem {
+                    label: "Activity".into(),
+                    detail: String::new(),
+                    action: Action::ShowActivity,
+                },
+                SearchItem {
+                    label: "Servers".into(),
+                    detail: String::new(),
+                    action: Action::ShowServers,
+                },
+                SearchItem {
+                    label: "Infoview".into(),
+                    detail: String::new(),
+                    action: Action::ShowInfoview {
+                        subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
+                    },
                 },
             ],
         }

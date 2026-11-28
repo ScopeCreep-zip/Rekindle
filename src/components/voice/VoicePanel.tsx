@@ -1,14 +1,12 @@
-import { Component, For, Show } from "solid-js";
-import { voiceState } from "../../stores/voice.store";
-import VoiceParticipantItem from "./VoiceParticipant";
-import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../actions/voice.actions";
+import { type Component, For, Show } from "solid-js";
 import {
-  ICON_MIC,
-  ICON_MIC_OFF,
-  ICON_HEADPHONES,
-  ICON_HEADPHONES_OFF,
-  ICON_HANGUP,
-} from "../../icons";
+  handleLeaveVoice,
+  handleToggleDeafen,
+  handleToggleMute,
+} from "../../actions/voice.actions";
+import { voiceState } from "../../stores/voice.store";
+import SkinGlyph from "../common/SkinGlyph";
+import VoiceParticipantItem from "./VoiceParticipant";
 
 /// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
 /// participant list — reachable from any channel while in a call. The full
@@ -39,34 +37,33 @@ const VoicePanel: Component = () => {
         <Show when={voiceState.isConnected}>
           <div class="voice-panel-controls">
             <button
+              type="button"
               class={`voice-btn ${voiceState.isMuted ? "voice-btn-active" : ""}`}
               onClick={handleToggleMute}
               title={voiceState.isMuted ? "Unmute" : "Mute"}
               aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
               aria-pressed={voiceState.isMuted}
             >
-              <span class="nf-icon" aria-hidden="true">
-                {voiceState.isMuted ? ICON_MIC_OFF : ICON_MIC}
-              </span>
+              <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
             </button>
             <button
+              type="button"
               class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
               onClick={handleToggleDeafen}
               title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
               aria-label={voiceState.isDeafened ? "Undeafen output" : "Deafen output"}
               aria-pressed={voiceState.isDeafened}
             >
-              <span class="nf-icon" aria-hidden="true">
-                {voiceState.isDeafened ? ICON_HEADPHONES_OFF : ICON_HEADPHONES}
-              </span>
+              <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
             </button>
             <button
+              type="button"
               class="voice-btn voice-btn-disconnect"
               onClick={handleLeaveVoice}
               title="Disconnect"
               aria-label="Leave voice channel"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+              <SkinGlyph name="hangup" />
             </button>
           </div>
         </Show>

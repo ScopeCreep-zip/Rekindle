@@ -1,0 +1,137 @@
+@layer components {
+
+  /* The Infoview's Activity section (plan E7.15 IV6): the local feed,
+   * newest first, each line the Host's entry and when it happened. */
+  .activity-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 0;
+    font-family: var(--font-family-xfire);
+  }
+
+  .activity-feed-title,
+  .activity-feed-empty {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .activity-feed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+  }
+
+  .activity-feed-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .activity-feed-text {
+    color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  .activity-feed-time {
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+  }
+
+  .activity-feed-mismatch {
+    color: var(--color-xfire-danger-text);
+    font-size: 10px;
+  }
+
+  .activity-feed-more {
+    align-self: flex-start;
+  }
+
+  /* The Infoview's sections (plan E7.15 IV6): the Host's order, each a
+   * title, its rows and the Host's links. */
+  .infoview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    overflow-y: auto;
+    font-family: var(--font-family-xfire);
+  }
+
+  .infoview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .infoview-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-xfire-text);
+  }
+
+  .infoview-empty,
+  .infoview-meta {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .infoview-text {
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  .infoview-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .infoview-link,
+  .servers-view-action {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .infoview-link {
+    color: var(--color-xfire-link);
+  }
+
+  /* A server row's action takes the row's own text colours, which hold on
+   * each of its grounds (plain, hover, selected): the skin's link colour on
+   * the row's tints falls under 4.5:1 (Symbiosis selected 4.00:1, Onyx
+   * hovered 4.41:1; WCAG 1.4.3). The underline still marks it an action. */
+  .servers-view-action {
+    color: var(--color-xfire-text);
+  }
+
+  /* A Join the Host refuses (plan E7.15 IV3c): disabled text, still focusable. */
+  .infoview-link[aria-disabled="true"],
+  .servers-view-action[aria-disabled="true"] {
+    text-decoration: none;
+    cursor: not-allowed;
+  }
+
+  .infoview-link[aria-disabled="true"] {
+    color: var(--color-xfire-text-disabled);
+  }
+
+  /* In a server row, the row's dim text: disabled text on its selected tint
+   * is 3.22:1 in Symbiosis. */
+  .servers-view-action[aria-disabled="true"] {
+    color: var(--color-xfire-text-dim);
+  }
+}

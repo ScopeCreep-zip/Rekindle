@@ -11,29 +11,44 @@
 //!
 //! See architecture doc §9.3 for the enforcement model.
 
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GovernanceEntry, SuccessorShape};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{
     ADMINISTRATOR, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, KICK_MEMBERS,
     MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS, MANAGE_MESSAGES,
-    MANAGE_ROLES, MANAGE_THREADS, SEND_MESSAGES, TIMEOUT_MEMBERS,
+    MANAGE_ROLES, MANAGE_THREADS, TIMEOUT_MEMBERS,
 };
 
-use crate::permissions::compute_permissions;
+use crate::permissions::{compute_permissions, holds_creator_seat};
 use crate::state::GovernanceState;
 
 mod automod;
+pub mod bounds;
 mod limits;
+pub mod target;
 mod threads;
 
 use automod::validate_automod_rule;
-use limits::{expression_within_limits, onboarding_within_limits, soundboard_meta_valid};
+use limits::{expression_within_limits, onboarding_mode_valid, soundboard_meta_valid};
 use threads::validate_thread_create;
 
-// Architecture §19.3 — welcome screen featured channels max 5.
-const MAX_WELCOME_SCREEN_CHANNELS: usize = 5;
-
 pub fn validate_write(
+    writer: &PseudonymKey,
+    entry: &GovernanceEntry,
+    state: &GovernanceState,
+) -> bool {
+    if !well_formed(writer, entry, state) {
+        return false;
+    }
+    permitted(writer, entry, state)
+}
+
+/// The structural half of [`validate_write`]: whether `entry` is well
+/// formed against `state`, whoever wrote it. A writer checks this before
+/// writing, so an entry every reader drops is refused as malformed (400),
+/// not reported as a missing permission (403).
+#[must_use]
+pub fn well_formed(
     writer: &PseudonymKey,
     entry: &GovernanceEntry,
     state: &GovernanceState,
@@ -45,16 +60,25 @@ pub fn validate_write(
     // that let the creator violate them would diverge from what other
     // peers compute.
     match entry {
+        // An overwrite names its target by the one canonical key readers
+        // look up (`OverwriteTarget`); any other spelling applies to no
+        // one, so it is malformed, the creator's included.
+        GovernanceEntry::PermissionOverwrite {
+            target_type,
+            target_id,
+            ..
+        } if crate::overwrite::OverwriteTarget::parse(target_type, target_id).is_none() => {
+            return false;
+        }
         // Self-authored only. If the creator could forge a request in
         // someone else's name, "pending members" would stop meaning
         // "people who asked".
-        GovernanceEntry::JoinRequested { requester, .. } if requester != writer => {
-            return false;
-        }
-        // Settable once. The creator is the only one who may set it at
-        // all, but not repeatedly — otherwise the mode is mutable after
-        // the fact and the immutability guarantee is empty.
-        GovernanceEntry::AdmissionPolicy { .. } if state.admission_mode.is_some() => {
+        // Only a seated creator joins without an invite proof: one who
+        // left gave the seat up, so its re-join needs an invite (decision
+        // (53)).
+        GovernanceEntry::MemberJoined {
+            invite_proof: None, ..
+        } if !holds_creator_seat(writer, state) => {
             return false;
         }
         // Invite caps are ceilings on the protocol, not a permission the
@@ -78,12 +102,114 @@ pub fn validate_write(
         {
             return false;
         }
+        // A device body malformed on its own: a short signature, an
+        // element list out of canonical order or not hashing to
+        // `extendsSet`, an incarnation not above it (ADR 0022 rules 2 and
+        // 10, plan E3.2 S7d-keys.1), whoever wrote it.
+        GovernanceEntry::DeviceKey(e) if !crate::device::endorsement_well_formed(e) => {
+            return false;
+        }
+        GovernanceEntry::MemberJoined {
+            first_device: Some(e),
+            ..
+        } if !crate::device::endorsement_well_formed(e) => return false,
+        GovernanceEntry::DeviceRetired(r) if !r.well_formed() => return false,
+        GovernanceEntry::DeviceReadmit(r) if !r.well_formed() => return false,
+        // A successor body in none of its four shapes (S7s.3e).
+        GovernanceEntry::CommunitySuccessor(s) if s.shape().is_none() => return false,
+        GovernanceEntry::SuccessorLinkRequest(r) if !r.well_formed() => return false,
+        GovernanceEntry::SuccessorLink(l) if !l.well_formed() => return false,
+        // Value bounds (plan E3.0): an out-of-range slowmode, timeout or
+        // description is malformed whoever wrote it, the creator included.
+        _ if !bounds::entry_within_bounds(entry) => return false,
+        // A rule's trigger must parse, its regexes compile within the
+        // budget and the community's quotas hold, the creator's rules
+        // included: a rule our own gate cannot compile would drop posts
+        // that every other member admits.
+        GovernanceEntry::AutoModRule {
+            rule_id,
+            enabled,
+            trigger_json,
+            ..
+        } if !validate_automod_rule(rule_id, *enabled, trigger_json, state) => {
+            return false;
+        }
+        _ => {}
+    }
+    true
+}
+
+/// The member a removal, ban, timeout or role unassignment acts on: the
+/// entries no seated creator writes against another (decision (53)).
+fn moderation_target(entry: &GovernanceEntry) -> Option<&PseudonymKey> {
+    match entry {
+        GovernanceEntry::MemberRemoved { target, .. }
+        | GovernanceEntry::BanEntry { target, .. }
+        | GovernanceEntry::TimeoutEntry { target, .. }
+        | GovernanceEntry::RoleUnassignment { target, .. } => Some(target),
+        _ => None,
+    }
+}
+
+/// The permission half of [`validate_write`], for a well-formed entry.
+fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceState) -> bool {
+    // A checkpoint is endorsed by an eligible member only: counted and not
+    // departed, the creator included (plan E3.2 S7c.3). Its deps and cut
+    // are checked on ingest (`checkpoint::check_shape`) and causally in
+    // `merge` (`gates`).
+    if matches!(entry, GovernanceEntry::Checkpoint(_)) {
+        return state.members.contains_key(writer) && !state.is_departed(writer);
+    }
+
+    // A successor, an offer and a withdrawal are creator-only acts: a
+    // `MANAGE_COMMUNITY` holder is refused (ADR 0011, MSC4289:145-151). An
+    // acceptance is a counted member's; whether it is the `transferTo` of
+    // an applied, unsuperseded offer in its deps is causal
+    // (`merge::gates::successor_gate`, plan E3.2 S7s.3e).
+    if let GovernanceEntry::CommunitySuccessor(s) = entry {
+        let acceptance = s.shape() == Some(SuccessorShape::Acceptance);
+        return holds_creator_seat(writer, state)
+            || (acceptance
+                && state.members.contains_key(writer)
+                && !state.is_departed(writer)
+                && !state.bans.contains(writer));
+    }
+
+    // The link round (lead decision (46)): a request is a counted
+    // member's (whether it is the cited offer's `transferTo` is causal,
+    // `merge::gates::successor_gate`); a link is a creator's own, signed
+    // by its pseudonym here (whether a request in its deps asks it is
+    // causal, `merge::gates::link_gate`).
+    match entry {
+        GovernanceEntry::SuccessorLinkRequest(_) => {
+            return state.members.contains_key(writer)
+                && !state.is_departed(writer)
+                && !state.bans.contains(writer);
+        }
+        GovernanceEntry::SuccessorLink(l) => {
+            return holds_creator_seat(writer, state) && l.link.old == *writer;
+        }
         _ => {}
     }
 
-    // Creator always passes validation
-    if state.creator.as_ref() == Some(writer) {
+    // A device key's endorsement and retirement name the author's own key
+    // (`p` signs them, ADR 0022 rule 1) and are valid from any carrier, a
+    // banned, departed or forked member's included (rule 2, plan E3.2
+    // S7d-keys.1), so standing never refuses them; their signatures and
+    // effectiveness are judged at the op's deps (S7d-keys.2).
+    if matches!(
+        entry,
+        GovernanceEntry::DeviceKey(_) | GovernanceEntry::DeviceRetired(_)
+    ) {
         return true;
+    }
+
+    // A seated creator passes validation (decision (53)), except against
+    // another seated creator: equal rank never removes, bans, times out
+    // or demotes equal rank (Matrix power levels: strictly higher only).
+    if holds_creator_seat(writer, state) {
+        return moderation_target(entry)
+            .is_none_or(|target| target::creator_may_target(writer, target, state));
     }
 
     // Banned members can't write valid governance entries
@@ -101,7 +227,34 @@ pub fn validate_write(
         // every moderator's queue.
         //
         // Asking is not a permission — anyone reachable may ask.
-        GovernanceEntry::JoinRequested { requester, .. } => requester == writer,
+        // Self-authored by construction: the op's author is the member.
+        // Whether the invite proof names a live invite under its cap is a
+        // causal check in `merge` (`gates::invite_gate`).
+        GovernanceEntry::MemberJoined { .. }
+        | GovernanceEntry::MemberRecordMoved { .. }
+        | GovernanceEntry::MemberLeft { .. } => true,
+
+        // Decided above, before the creator bypass.
+        GovernanceEntry::Checkpoint(_)
+        | GovernanceEntry::CommunitySuccessor(_)
+        | GovernanceEntry::DeviceKey(_)
+        | GovernanceEntry::DeviceRetired(_)
+        | GovernanceEntry::SuccessorLinkRequest(_)
+        | GovernanceEntry::SuccessorLink(_) => true,
+
+        // A re-admission is the member's own (rule 7: by one of its pre-fork
+        // device keys, checked at the op's deps in S7d-keys.2) or a kick's:
+        // `KICK_MEMBERS` and outranking the member's highest role (rule 8).
+        GovernanceEntry::DeviceReadmit(r) => {
+            r.member == *writer
+                || target::acts_on_lower(perms, KICK_MEMBERS, writer, &r.member, state)
+        }
+
+        // The durable kick: the same authority and hierarchy as a ban,
+        // and the creator cannot be removed (MSC4289).
+        GovernanceEntry::MemberRemoved { target, .. } => {
+            target::acts_on_lower(perms, KICK_MEMBERS, writer, target, state)
+        }
 
         // Admitting and removing a member are the same authority, so
         // this reuses KICK_MEMBERS rather than minting a permission bit
@@ -109,12 +262,6 @@ pub fn validate_write(
         GovernanceEntry::MemberApproved { .. } | GovernanceEntry::MemberRejected { .. } => {
             has(perms, KICK_MEMBERS)
         }
-
-        // Only the creator sets the mode, and the settable-once half is
-        // enforced above (before the creator bypass). Reaching here means
-        // a non-creator tried, which never succeeds — so a
-        // MANAGE_COMMUNITY holder cannot open a private community.
-        GovernanceEntry::AdmissionPolicy { .. } => false,
 
         GovernanceEntry::ChannelCreated { .. }
         | GovernanceEntry::ChannelArchived { .. }
@@ -151,7 +298,7 @@ pub fn validate_write(
             // unassigned by the creator themselves. Defense-in-depth on
             // top of the rank check; even if an attacker somehow climbs
             // above the creator's rank, this still blocks them.
-            if state.creator.as_ref() == Some(target) && writer != target {
+            if holds_creator_seat(target, state) && writer != target {
                 return false;
             }
             // Self-unassign always allowed (you can step down).
@@ -173,16 +320,10 @@ pub fn validate_write(
             state.member_max_position(target) < state.member_max_position(writer)
         }
 
+        // M10.2 — the creator cannot be banned by anyone; architecture
+        // §9.3 — rank-strict gating.
         GovernanceEntry::BanEntry { target, .. } => {
-            if !has(perms, BAN_MEMBERS) {
-                return false;
-            }
-            // M10.2 — creator cannot be banned by anyone.
-            if state.creator.as_ref() == Some(target) {
-                return false;
-            }
-            // Architecture §9.3 — rank-strict gating.
-            state.member_max_position(target) < state.member_max_position(writer)
+            target::acts_on_lower(perms, BAN_MEMBERS, writer, target, state)
         }
 
         // Unbans don't carry a hierarchy concern: banned members hold no
@@ -190,16 +331,10 @@ pub fn validate_write(
         // with BAN_MEMBERS can lift a ban.
         GovernanceEntry::UnbanEntry { .. } => has(perms, BAN_MEMBERS),
 
+        // M10.2 — the creator cannot be timed out by anyone; architecture
+        // §9.3 — rank-strict gating.
         GovernanceEntry::TimeoutEntry { target, .. } => {
-            if !has(perms, TIMEOUT_MEMBERS) {
-                return false;
-            }
-            // M10.2 — creator cannot be timed out by anyone.
-            if state.creator.as_ref() == Some(target) {
-                return false;
-            }
-            // Architecture §9.3 — rank-strict gating.
-            state.member_max_position(target) < state.member_max_position(writer)
+            target::acts_on_lower(perms, TIMEOUT_MEMBERS, writer, target, state)
         }
 
         GovernanceEntry::RemoveTimeoutEntry { .. } => has(perms, TIMEOUT_MEMBERS),
@@ -244,6 +379,16 @@ pub fn validate_write(
 
         GovernanceEntry::ThreadArchived { .. } => has(perms, MANAGE_THREADS),
 
+        // Reopening mirrors archiving, and the thread's creator may reopen
+        // its own thread.
+        GovernanceEntry::ThreadUnarchived { thread_id, .. } => {
+            has(perms, MANAGE_THREADS)
+                || state
+                    .threads
+                    .get(thread_id)
+                    .is_some_and(|thread| &thread.creator == writer)
+        }
+
         GovernanceEntry::EventCreated { .. } => has(perms, CREATE_EVENTS),
 
         GovernanceEntry::EventArchived { .. } => has(perms, MANAGE_EVENTS),
@@ -254,6 +399,11 @@ pub fn validate_write(
         // point in the merge: compaction keeps only an event's latest
         // create, and readers show RSVPs of live events only.
         GovernanceEntry::EventRsvp { .. } => true,
+
+        // Reporting is not a permission: any member who is not banned
+        // (checked above) may report a message or a member to the
+        // moderators. The reason is bounded (`bounds::out_of_bounds_field`).
+        GovernanceEntry::ModReport { .. } => true,
 
         GovernanceEntry::ExpressionAdded {
             kind,
@@ -268,27 +418,28 @@ pub fn validate_write(
 
         GovernanceEntry::ExpressionRemoved { .. } => has(perms, MANAGE_EXPRESSIONS),
 
-        GovernanceEntry::OnboardingConfig {
-            mode,
-            questions,
-            welcome_message,
-            guide_steps,
-            ..
-        } => {
-            has(perms, MANAGE_COMMUNITY)
-                && onboarding_within_limits(
-                    mode,
-                    questions,
-                    welcome_message.as_deref(),
-                    guide_steps,
-                )
+        // The counts and texts are bounds (`bounds::out_of_bounds_field`),
+        // refused before the creator bypass.
+        GovernanceEntry::OnboardingConfig { mode, .. } => {
+            has(perms, MANAGE_COMMUNITY) && onboarding_mode_valid(mode)
         }
 
-        GovernanceEntry::WelcomeScreen { channels, .. } => {
-            has(perms, MANAGE_COMMUNITY) && channels.len() <= MAX_WELCOME_SCREEN_CHANNELS
-        }
+        GovernanceEntry::WelcomeScreen { .. } => has(perms, MANAGE_COMMUNITY),
 
-        GovernanceEntry::AdminDelete { .. } => has(perms, MANAGE_MESSAGES),
+        // A moderator deletes in a channel they can read, with the channel's
+        // overwrites applied (Discord's MANAGE_MESSAGES is channel-scoped):
+        // an overwrite that hides the channel or denies MANAGE_MESSAGES
+        // there refuses the delete. M1 (plan E3.3): the post's author ranks
+        // no higher than the deleter, at this op's causal position.
+        GovernanceEntry::AdminDelete {
+            channel_id, author, ..
+        } => target::acts_on_post_of(
+            compute_permissions(writer, Some(channel_id), state, 0),
+            MANAGE_MESSAGES,
+            writer,
+            author,
+            state,
+        ),
 
         // Lost Cargo: pinning a file requires MANAGE_COMMUNITY (admin-only)
         // per architecture §28.9 line 3283.
@@ -301,26 +452,7 @@ pub fn validate_write(
         // Segment expansion requires admin-level access
         GovernanceEntry::SegmentAdded { .. } => has(perms, MANAGE_COMMUNITY),
 
-        // Plate Gate lazy channel records (architecture §15.4): any member
-        // with SEND_MESSAGES can announce a new channel-segment record —
-        // they're the one creating the SMPL record and writing the first
-        // message into it. Reader-validates: peers reject ChannelSegmentLinked
-        // entries from members without channel write access, and reject
-        // entries that name a channel that doesn't exist in governance state.
-        GovernanceEntry::ChannelSegmentLinked { channel_id, .. } => {
-            has(perms, SEND_MESSAGES) && state.channels.contains_key(channel_id)
-        }
-
-        GovernanceEntry::AutoModRule {
-            rule_id,
-            enabled,
-            trigger_json,
-            action,
-            ..
-        } => {
-            has(perms, MANAGE_COMMUNITY)
-                && validate_automod_rule(rule_id, *enabled, trigger_json, action, state)
-        }
+        GovernanceEntry::AutoModRule { .. } => has(perms, MANAGE_COMMUNITY),
 
         GovernanceEntry::RoleArchived { .. } => has(perms, MANAGE_ROLES),
 
@@ -341,7 +473,17 @@ pub fn validate_write(
                 && crate::invite_quota::check_active_invites_cap(state, writer)
         }
 
-        GovernanceEntry::InviteRevoked { .. } => has(perms, MANAGE_COMMUNITY),
+        // FX1 SEC-3 (register 2026-10-23): an invite's creator may revoke
+        // its own invite (Matrix: a user may redact their own events), so
+        // the expiry timer works for a CREATE_INVITES-only inviter;
+        // MANAGE_COMMUNITY holders may revoke any invite.
+        GovernanceEntry::InviteRevoked { invite_id } => {
+            has(perms, MANAGE_COMMUNITY)
+                || state
+                    .invites
+                    .get(invite_id)
+                    .is_some_and(|invite| invite.creator_pseudonym == *writer)
+        }
     }
 }
 

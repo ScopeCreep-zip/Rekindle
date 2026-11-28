@@ -1,17 +1,16 @@
-pub mod memory_stores;
+pub mod dr;
 pub mod pqxdh;
+pub mod prekey_material;
+pub mod prekey_record;
 pub mod prekeys;
-pub mod ratchet;
-pub mod session;
-pub mod session_cache;
-pub mod store;
+pub mod record;
 #[cfg(test)]
-mod test_stores;
+mod test_support;
 
-pub use memory_stores::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};
+pub use dr::{Header, RatchetMessage};
+pub use pqxdh::agreement::{PqPrekeyId, ResponderKeys};
 pub use prekeys::PreKeyBundle;
-pub use session::{
-    SessionInitInfo, SignalSessionManager, MAX_UNCLAIMED_ONE_TIME, PQ_LR_ID, SPK_ID,
+pub use record::{
+    Outgoing, PreKeyInit, SessionRecord, MAX_DIRECTION_CHANGES, MAX_INACTIVE_SESSIONS,
+    PREKEY_WRAP_MAX_AGE_MS,
 };
-pub use session_cache::{SessionBytes, SessionCache, SessionPersistence};
-pub use store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};

@@ -11,7 +11,7 @@
 //! mode where signing is ~3-5× slower than release, so we run a
 //! smaller batch (300 envelopes) and amortise.
 
-use rekindle_codec::dedup::extract_dedup_key;
+use rekindle_codec::dedup::message_dedup_key;
 use rekindle_codec::envelope::build_signed_envelope;
 use rekindle_gossip::dedup::DedupCache;
 use rekindle_types::governance::GovernanceEntry;
@@ -23,14 +23,6 @@ const TARGET_PER_SEC: f64 = 100.0;
 fn gossip_pipeline_meets_100_per_second_target() {
     let community_id = "perf_community";
     let secret = [0x42_u8; 32];
-    let payload = GovernanceEntry::CommunityMeta {
-        name: Some("perf".into()),
-        description: None,
-        icon_hash: None,
-        banner_hash: None,
-        lamport: 1,
-    };
-
     // Pre-build the dedup cache with realistic capacity so insertion
     // exercises the eviction path on long runs.
     let mut cache = DedupCache::new(1024);
@@ -42,14 +34,16 @@ fn gossip_pipeline_meets_100_per_second_target() {
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: u64::try_from(i).unwrap() + 1,
         };
-        let signed = build_signed_envelope(&secret, community_id, &bumped).unwrap();
-        let dedup_key = extract_dedup_key(&signed);
+        let signed = build_signed_envelope(
+            &secret,
+            community_id,
+            rekindle_utils::random::id_bytes_16(),
+            &bumped,
+        )
+        .unwrap();
+        let dedup_key = message_dedup_key(&signed);
         cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key);
-        // Suppress the unused payload reference; it's fine that we
-        // build a bumped variant per-iteration.
-        let _ = &payload;
     }
     let elapsed = started.elapsed();
     // u32 -> f64 round-trip is exact; ENVELOPE_COUNT is a small const

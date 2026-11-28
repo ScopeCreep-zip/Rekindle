@@ -27,21 +27,14 @@ export type NotificationEvent =
         soundRef: string | null;
       };
     }
-  | { systemAlert: { title: string; body: string } }
-  | { updateAvailable: { version: string } }
   | {
-      /**
-       * P3.3 — peer requested a Signal session reset. The frontend MUST
-       * show a confirmation modal displaying `safetyNumber` for
-       * out-of-band verification before invoking
-       * `commands.acceptSessionReset`.
-       */
-      sessionResetRequested: {
-        peerPublicKey: string;
-        peerDisplayName: string;
-        safetyNumber: string;
+      systemAlert: {
+        title: string;
+        body: string;
+        subject: { displayName: string; unnamedBody: string } | null;
       };
     }
+  | { updateAvailable: { version: string } }
   | {
       /**
        * Wave 12 W12.3 — sibling to `chat-event::incomingCall`, used as
@@ -66,27 +59,63 @@ export type NotificationSubscriptionEvent = { notification: NotificationEvent };
  *
  * Was a standalone `NetworkStatusEvent`; it is now the
  * `attachmentChanged` variant of Tier 1's `NetworkEvent`, which gained
- * `attachmentState` and `hasRoute` to carry what this already had, and
- * `mediaRoute` for the media-class route voice needs (plan C7.9c).
+ * `attachmentState` and the general route's availability (`generalRoute`,
+ * plan F9-A) to carry what this already had, and `mediaRoute` for the
+ * media-class route voice needs (plan C7.9c).
  */
-export type NetworkEvent =
+type NetworkEvent =
   | {
       attachmentChanged: {
         attachmentState: string;
         isAttached: boolean;
         publicInternetReady: boolean;
-        hasRoute: boolean;
+        /** Our inbound (General) route's availability (plan F9-A). */
+        generalRoute: RouteAvailability;
         mediaRoute: RouteAvailability;
+        /** The Host accepts writes now (its lifecycle's `can_write`). */
+        canWrite: boolean;
       };
     }
+  | { strength: { bars: number } }
+  | { ownRecordsChanged: { phase: OwnRecordsPhase; error: string | null } }
   | { localRoutesDied: { count: number } }
+  /** Our new-route budget is spent (or unreadable), so the inbound route stays down (plan RV1c). */
+  | { routePaused: { cause: RoutePauseCause } }
+  /** The pause is over: a refill brought the route back (plan RV1c). */
+  | { routeResumed: Record<string, never> }
+  /** Our own `class` route is down and the Host is retrying (plan F9-A): since
+   *  `sinceMs` (epoch ms), with Veilid's `reason`. */
+  | { ownRouteDown: { class: OwnRouteClass; sinceMs: number; reason: string } }
+  /** Our own `class` route is up again (plan F9-A). */
+  | { ownRouteUp: { class: OwnRouteClass } }
+  /** Own-route deaths of `class` in `windowSecs` rose above `baseline`: a warning only (plan RV1). */
+  | {
+      routeDeathsAboveBaseline: {
+        class: OwnRouteClass;
+        deaths: number;
+        /** Of `deaths`, routes that died under 60 s old. */
+        young: number;
+        windowSecs: number;
+        baseline: number;
+      };
+    }
   | { remoteRoutesDied: { peerKeys: string[] } }
-  | { watchRenewed: { recordKey: string } }
-  | { watchReestablished: { recordKey: string } }
-  | { watchFailed: { recordKey: string; error: string } }
   | { valueChanged: { recordKey: string; changedSubkeys: number[] } };
 
 export type NetworkSubscriptionEvent = { network: NetworkEvent };
+
+/** Why the inbound route is paused (Rust `RoutePauseCause`, plan RV1c): the budget is
+ *  spent, or it could not be read. */
+export type RoutePauseCause = "exhausted" | "unreadable";
+
+/** One of our own route classes, as a route event names it (Rust `OwnRouteClass`). */
+export type OwnRouteClass = "general" | "media";
+
+/**
+ * Where our own-records stage is (Rust `OwnRecordsPhase`, plan E2.5 FC3):
+ * an invite, a friend request or a first message waits for `held`.
+ */
+export type OwnRecordsPhase = "pending" | "held" | "failed";
 
 /**
  * What one of our route classes is doing (Rust `RouteAvailability`).
@@ -100,6 +129,8 @@ export interface NetworkStatusEvent {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
-  hasRoute: boolean;
+  /** Our inbound (General) route's availability (plan F9-A). */
+  generalRoute: RouteAvailability;
   mediaRoute: RouteAvailability;
+  canWrite: boolean;
 }

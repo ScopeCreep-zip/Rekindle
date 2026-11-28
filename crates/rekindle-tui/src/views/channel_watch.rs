@@ -51,7 +51,7 @@ const PEER_LIST_WIDTH: u16 = 18;
 
 /// Channel watch view state.
 pub struct ChannelWatchView {
-    /// The community governance key this view is watching.
+    /// The community anchor key this view is watching.
     community: String,
     /// The channel ID this view is watching.
     channel: String,
@@ -79,6 +79,8 @@ pub struct ChannelWatchView {
     /// Panel rects from the last draw — used for click-to-focus.
     /// Order: [sidebar, messages, input, peers]. None if panel not rendered.
     click_rects: std::collections::HashMap<FocusId, Rect>,
+    /// Our pseudonym in this community: a live message from it is ours.
+    our_pseudonym: String,
 }
 
 impl ChannelWatchView {
@@ -104,10 +106,11 @@ impl ChannelWatchView {
             typing_indicators: std::collections::HashMap::new(),
             pending_mek_requests: std::collections::HashSet::new(),
             click_rects: std::collections::HashMap::new(),
+            our_pseudonym: String::new(),
         }
     }
 
-    /// Community governance key.
+    /// Community anchor key.
     pub fn community(&self) -> &str {
         &self.community
     }
@@ -129,6 +132,31 @@ impl ChannelWatchView {
             slots.push(FocusId::PeerList);
         }
         self.focus.set_slots(slots);
+    }
+
+    /// The request for deleting the selected message: ours is deleted for
+    /// members, another member's is a moderator's removal; the Host judges
+    /// either (E3, M1–M4) and asks for a review if its gate does.
+    fn delete_selected(&self) -> Option<Action> {
+        let idx = self.message_list.selected_index()?;
+        let msg = self.message_list.message_at(idx)?;
+        if msg.removed_by.is_some() {
+            return None;
+        }
+        let message_id = msg.message_id.clone();
+        let channel = self.channel.clone();
+        Some(if msg.is_own {
+            Action::DeleteChannelMessage {
+                channel,
+                message_id,
+            }
+        } else {
+            Action::RemoveChannelMessage {
+                community: self.community.clone(),
+                channel,
+                message_id,
+            }
+        })
     }
 
     /// Expire old typing indicators (older than 5 seconds).
@@ -270,30 +298,51 @@ impl View for ChannelWatchView {
                 }
             }
             Action::EditSelected => {
-                if let Some(idx) = self.message_list.selected_index() {
-                    if let Some(msg) = self.message_list.message_at(idx) {
+                // Only its author edits a message (plan E3.3 E1); a removed
+                // one has no body left to edit.
+                let selected = self.message_list.selected_index();
+                if let Some(msg) = selected.and_then(|idx| self.message_list.message_at(idx)) {
+                    if msg.is_own && msg.removed_by.is_none() && !msg.is_encrypted {
                         use crate::components::input_box::InputMode;
-                        self.input_box.set_mode(InputMode::Edit {
-                            message_id: msg.message_id.clone(),
-                        });
+                        let (message_id, body) = (msg.message_id.clone(), msg.body.clone());
+                        self.input_box.set_content(&body);
+                        self.input_box.set_mode(InputMode::Edit { message_id });
                         self.focus.set(FocusId::InputBox);
                     }
                 }
             }
+            Action::DeleteSelected => return Ok(self.delete_selected()),
             Action::InputSubmit => {
                 let text = self.input_box.content();
                 if !text.trim().is_empty() && !self.input_box.is_over_limit() {
-                    let reply_to = match self.input_box.mode() {
-                        crate::components::input_box::InputMode::Reply { message_id, .. } => {
-                            Some(message_id.clone())
-                        }
-                        _ => None,
-                    };
-                    let action = Action::SendChannelMessage {
-                        community: self.community.clone(),
-                        channel: self.channel.clone(),
-                        text,
-                        reply_to,
+                    use crate::components::input_box::InputMode;
+                    let forum_post = text
+                        .strip_prefix("/post ")
+                        .and_then(|rest| rest.split_once(" | "))
+                        .map(|(title, body)| (title.trim().to_owned(), body.to_owned()));
+                    let action = match (self.input_box.mode(), forum_post) {
+                        (InputMode::Edit { message_id }, _) => Action::EditChannelMessage {
+                            channel: self.channel.clone(),
+                            message_id: message_id.clone(),
+                            text,
+                        },
+                        // `/post <title> | <body>`: a forum post (FT1).
+                        (_, Some((title, body))) => Action::CreateForumPost {
+                            community: self.community.clone(),
+                            channel: self.channel.clone(),
+                            title,
+                            tag: None,
+                            body,
+                        },
+                        (mode, None) => Action::SendChannelMessage {
+                            community: self.community.clone(),
+                            channel: self.channel.clone(),
+                            text,
+                            reply_to: match mode {
+                                InputMode::Reply { message_id, .. } => Some(message_id.clone()),
+                                _ => None,
+                            },
+                        },
                     };
                     self.input_box.clear();
                     return Ok(Some(action));
@@ -378,7 +427,8 @@ impl View for ChannelWatchView {
                 tracing::debug!(msg = message_id, "message sent confirmation");
             }
             CommandResult::CommunityInfoLoaded { detail } => {
-                if detail.governance_key == self.community {
+                if detail.anchor == self.community {
+                    self.our_pseudonym.clone_from(&detail.our_pseudonym);
                     use crate::components::channel_tree::ChannelEntry;
                     let channels: Vec<ChannelEntry> = detail
                         .channels
@@ -393,23 +443,23 @@ impl View for ChannelWatchView {
                         })
                         .collect();
                     self.channel_tree.set_communities(
-                        &[(detail.governance_key.clone(), detail.name.clone(), channels)],
+                        &[(detail.anchor.clone(), detail.name.clone(), channels)],
                         &[],
                     );
                 }
             }
-            CommandResult::PeerListLoaded { peers } => {
-                use crate::components::peer_list::PeerEntry;
-                let members: Vec<PeerEntry> = peers
-                    .iter()
-                    .map(|p| PeerEntry {
-                        key: p.key.clone(),
-                        display_name: p.key_short.clone(),
-                        status: if p.has_route { "online" } else { "offline" }.into(),
-                        role: None,
-                    })
-                    .collect();
-                self.peer_list.set_members(members);
+            CommandResult::CommunityMembersLoaded { community, members } => {
+                if community == self.community {
+                    use crate::components::peer_list::PeerEntry;
+                    self.message_list.set_names(
+                        members
+                            .iter()
+                            .map(|m| (m.pseudonym_key.clone(), m.display_name.clone()))
+                            .collect(),
+                    );
+                    self.peer_list
+                        .set_members(members.into_iter().map(PeerEntry::from).collect());
+                }
             }
             _ => {}
         }
@@ -426,31 +476,61 @@ impl View for ChannelWatchView {
                 sequence,
                 timestamp,
                 body,
-                reply_to_sequence,
+                reply_to_message_id,
+                forwarded_from_author: _,
+                forwarded_from_name: _,
+                automod_blurred,
+                undecryptable,
             }) if *community == self.community && *channel == self.channel => {
+                // A post stored unreadable reads the Host's reason; only a
+                // post still owed its key waits for one.
+                let waits = body.is_none() && undecryptable.is_none();
                 self.message_list.push(DecryptedMessageDisplay {
                     message_id: message_id.clone(),
                     sequence: *sequence,
                     author_pseudonym: sender_pseudonym.clone(),
                     author_display_name: helpers::abbreviate_key(sender_pseudonym),
-                    body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
+                    body: match (body, undecryptable) {
+                        (Some(body), _) => body.clone(),
+                        (None, Some(why)) => why.reason_text.clone(),
+                        (None, None) => "(decrypting...)".into(),
+                    },
                     timestamp: *timestamp,
-                    reply_to_sequence: *reply_to_sequence,
+                    reply_to_message_id: reply_to_message_id.clone(),
                     mek_generation: 0,
                     is_encrypted: body.is_none(),
-                    needs_mek: if body.is_none() { Some(0) } else { None },
+                    needs_mek: waits.then_some(0),
+                    automod_blurred: *automod_blurred,
+                    is_own: *sender_pseudonym == self.our_pseudonym,
+                    edited: false,
+                    removed_by: None,
                 });
             }
+            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
+                community,
+                channel,
+                message_id,
+                body,
+                ..
+            }) if *community == self.community && *channel == self.channel => {
+                self.message_list.apply_edit(message_id, body.as_deref());
+            }
+            // Its author's delete takes the message out; a moderator's
+            // leaves "Removed by <name>" in its place (plan E3.3 M4), as
+            // the GUI's list does.
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
                 community,
                 channel,
                 message_id,
-            }) if *community == self.community && *channel == self.channel => {
-                self.message_list.remove_by_id(message_id);
-            }
+                removed_by,
+            }) if *community == self.community && *channel == self.channel => match removed_by {
+                Some(by) => self.message_list.mark_removed(message_id, by),
+                None => self.message_list.remove_by_id(message_id),
+            },
             SubscriptionEvent::Typing(TypingEvent::Started {
                 context: TypingContext::Channel { community, channel },
                 who,
+                ..
             }) if *community == self.community && *channel == self.channel => {
                 self.typing_indicators
                     .insert(who.clone(), std::time::Instant::now());
@@ -480,3 +560,7 @@ impl View for ChannelWatchView {
         &mut self.focus
     }
 }
+
+#[cfg(test)]
+#[path = "channel_watch_tests.rs"]
+mod tests;

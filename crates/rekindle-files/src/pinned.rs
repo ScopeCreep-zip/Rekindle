@@ -37,6 +37,11 @@ impl PinnedSet {
         self.ids.is_empty()
     }
 
+    /// The pinned ids (the cache names them before an eviction sweep).
+    pub fn iter(&self) -> impl Iterator<Item = &Uuid> {
+        self.ids.iter()
+    }
+
     /// Replace contents with the supplied snapshot — used after every
     /// governance merge so the cache reads from the canonical state.
     pub fn replace<I: IntoIterator<Item = Uuid>>(&mut self, ids: I) {
@@ -57,7 +62,11 @@ pub async fn set_attachment_pinned<D: crate::deps::FilesDeps + ?Sized>(
     attachment_id_hex: &str,
     pinned: bool,
 ) -> Result<(), crate::error::FilesError> {
-    deps.require_permission(community_id, rekindle_types::permissions::MANAGE_COMMUNITY)?;
+    deps.require_permission(
+        community_id,
+        None,
+        rekindle_types::permissions::MANAGE_COMMUNITY,
+    )?;
     let attachment_id: [u8; 16] = hex::decode(attachment_id_hex)
         .ok()
         .and_then(|b| b.try_into().ok())
@@ -66,8 +75,7 @@ pub async fn set_attachment_pinned<D: crate::deps::FilesDeps + ?Sized>(
                 "invalid attachment id hex: {attachment_id_hex}"
             ))
         })?;
-    let lamport = deps.next_governance_lamport(community_id)?;
-    deps.write_attachment_pinned(community_id, attachment_id, pinned, lamport)
+    deps.write_attachment_pinned(community_id, attachment_id, pinned)
         .await
 }
 
@@ -82,30 +90,5 @@ pub fn sync_pinned_from_governance<D: crate::deps::FilesDeps + ?Sized>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn insert_remove_contains() {
-        let mut set = PinnedSet::new();
-        let id = Uuid::new_v4();
-        assert!(!set.contains(&id));
-        set.insert(id);
-        assert!(set.contains(&id));
-        assert_eq!(set.len(), 1);
-        set.remove(&id);
-        assert!(!set.contains(&id));
-        assert!(set.is_empty());
-    }
-
-    #[test]
-    fn replace_overwrites() {
-        let mut set = PinnedSet::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        set.insert(a);
-        set.replace([b]);
-        assert!(!set.contains(&a));
-        assert!(set.contains(&b));
-    }
-}
+#[path = "pinned_tests.rs"]
+mod tests;

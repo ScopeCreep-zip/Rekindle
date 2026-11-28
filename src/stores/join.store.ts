@@ -11,12 +11,12 @@ import { createStore } from "solid-js/store";
  */
 export type JoinStageStatus = "started" | "done" | "failed" | "timedOut";
 
-export interface JoinStage {
+interface JoinStage {
   label: string;
   status: JoinStageStatus;
 }
 
-export interface JoinProgressState {
+interface JoinProgressState {
   /** True from submit until the join promise settles. */
   active: boolean;
   /** Phases in arrival order; each label appears once and is updated in place. */
@@ -56,4 +56,4 @@ export function applyJoinProgress(label: string, status: JoinStageStatus): void 
   });
 }
 
-export { joinProgress, setJoinProgress };
+export { joinProgress };

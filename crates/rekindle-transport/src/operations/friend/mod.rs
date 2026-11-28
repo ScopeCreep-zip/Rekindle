@@ -1,0 +1,58 @@
+//! Friends on both hosts (plan E2.1): adding by key or invite, answering
+//! requests, removing and blocking, our labels for them, invites, session
+//! resets, safety numbers and verification, and the receive side of the
+//! handshake. Everything the Host owns
+//! comes through [`FriendHost`].
+
+mod add;
+mod answer;
+pub mod bio;
+mod blocked;
+pub mod code;
+pub mod code_inbox;
+pub mod creator_round;
+mod edit;
+mod error;
+pub mod game_invite;
+pub mod game_totals;
+mod host;
+pub mod identity_rotation;
+pub(crate) mod inbound;
+pub mod inbox;
+mod invites;
+pub(crate) use invites::published_identity;
+mod list;
+mod list_record;
+pub(crate) mod presence_key;
+mod qr;
+mod remove;
+pub(crate) mod request;
+mod rotate;
+pub mod session_reset;
+pub use session_reset::expire_resets;
+pub(crate) mod state;
+/// The unlocked identity's key, which the per-identity rows are owned by.
+pub use state::owner as session_owner;
+pub mod verification;
+pub mod watch_retry;
+
+#[cfg(test)]
+mod handshake_size_tests;
+
+pub use add::{add, from_invite};
+pub use answer::{accept, cancel, expire_stale_requests, reject};
+pub use blocked::{block, is_blocked, list as blocked, unblock};
+pub use edit::{create_group, delete_group, move_to_group, rename_group, set_nickname};
+pub use error::FriendError;
+pub use host::{
+    BackendHold, CreatorAnswer, FriendHost, FriendStores, OwnRecordsStage, OwnRecordsWatch,
+};
+pub use invites::{
+    cancel as cancel_invite, create as create_invite, expire_stale as expire_stale_invites,
+    list as invites, open as open_invite,
+};
+pub use list::{friends, pending};
+pub use list_record::write as write_friend_list;
+pub use remove::{forget_removed, remove};
+pub use rotate::{notify_profile_key_rotated, rotate_profile_key};
+pub use state::{label, relationship_name, short_key};

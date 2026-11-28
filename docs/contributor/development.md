@@ -29,7 +29,6 @@ The `frontend` shell provides:
 | GTK / WebKitGTK | Tauri 2 Linux dependencies |
 | OpenSSL | TLS support |
 | Cap'n Proto compiler | Build-time schema generation |
-| Playwright | E2E testing with bundled browsers |
 | 13 linters | Code quality (hermetic configs) |
 | 8 formatters | Code formatting (hermetic configs) |
 
@@ -39,18 +38,21 @@ GTK/WebKitGTK dependencies. macOS and Windows users should use manual setup.
 ### Manual Setup (macOS / Non-Nix)
 
 **Rust:**
+
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup default stable
 ```
 
 **Node.js:**
+
 ```bash
 # Install Node.js 22+ via nvm, fnm, or system package manager
 npm install -g pnpm
 ```
 
 **Cap'n Proto compiler** (`capnp`):
+
 ```bash
 # macOS
 brew install capnp
@@ -64,6 +66,7 @@ sudo apt install capnproto
 **Tauri 2 System Dependencies:**
 
 Linux (Debian/Ubuntu):
+
 ```bash
 sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
@@ -71,6 +74,7 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 ```
 
 macOS:
+
 ```bash
 xcode-select --install
 ```
@@ -78,6 +82,7 @@ xcode-select --install
 ### Windows Setup
 
 **Prerequisites:**
+
 - [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) (or 2022)
   with the **"Desktop development with C++"** workload
 - [CMake](https://cmake.org/download/) (`winget install Kitware.CMake`)
@@ -127,7 +132,7 @@ accept it; a previously-declined prompt needs
 The full bundled build also works when you want the production shape:
 
 ```bash
-pnpm tauri build --debug --bundles app
+pnpm bundle --debug --bundles app
 open target/debug/bundle/macos/Rekindle.app
 ```
 
@@ -178,6 +183,44 @@ plus `rekindle_video=debug,rekindle_voice=debug` — the media-plane
 dropped-frame paths log at debug. Auto-rebuild is untouched: `tauri
 dev` itself runs unwrapped.
 
+### Debugging a Running App: Attach Is Refused (Deliberate)
+
+Both processes that hold secrets, the GUI and `rekindled`, harden
+themselves first thing in `main` (plan E7.1,
+`crates/rekindle-node/src/host/hardening.rs` `forbid_core_dumps`):
+`RLIMIT_CORE` is set to 0 (soft and hard) on macOS and Linux, and on
+Linux `prctl(PR_SET_DUMPABLE, 0)` marks the process not dumpable. Two
+consequences for development, both intended:
+
+- **No core files.** A crash leaves no core dump to load afterwards
+  (the hard limit is 0, so `ulimit -c unlimited` in the launching shell
+  does not bring it back). Reproduce the crash under the debugger.
+- **No attaching on Linux.** With `PR_SET_DUMPABLE` 0, the kernel's
+  ptrace access check refuses `PTRACE_ATTACH` from any process without
+  `CAP_SYS_PTRACE`, including your own debugger running as the same user
+  (ptrace(2), "Ptrace access mode checking"). `gdb -p` / `lldb -p` on a
+  running Rekindle fails with "Operation not permitted". This is the
+  protection itself: it is what keeps other same-user processes (malware
+  in the session) from reading the keys out of the app's memory, as the
+  threat model's I7 row describes. Do not add a switch to turn it
+  off.
+
+To diagnose a crash or hang, **launch the app under the debugger from
+the start**, so the debugger is the tracer before the hardening runs (an
+existing tracer stays attached):
+
+```bash
+# GUI (debug build), Linux or macOS
+cargo build -p rekindle-desktop
+gdb --args target/debug/rekindle-desktop     # or: lldb -- target/debug/rekindle-desktop
+
+# Daemon
+cargo build -p rekindle-node --bin rekindled
+gdb --args target/debug/rekindled
+```
+
+Use a throwaway identity: a debugger reads every secret in the process.
+
 ## Build Commands
 
 ```bash
@@ -188,7 +231,7 @@ pnpm install
 pnpm tauri dev
 
 # Production build
-pnpm tauri build
+pnpm bundle
 ```
 
 ## Testing
@@ -224,22 +267,23 @@ do not delete that file.
 Rust backend commands extract `_core` functions (e.g., `create_identity_core`,
 `login_core`) that can be tested without a Tauri `AppHandle`.
 
-### E2E Testing
+### Real-App Testing
 
-Rekindle supports two E2E testing strategies:
+The UI is tested in the real desktop app, never in a browser with mocked
+IPC (see [`testing.md`](testing.md)):
 
-**Real E2E (`pnpm test:e2e`):**
-- The `rekindle-e2e-server` crate exposes Tauri commands over HTTP at
-  `http://127.0.0.1:3001/invoke`
-- Playwright drives the real SolidJS UI in a browser
-- Uses real SQLite + Vault (`rekindle-vault`) + Ed25519 — no mocking
-- Frontend code path: `VITE_E2E=true` → `invoke()` sends HTTP POST
-- `channels.ts` uses `safeListen()` which is a no-op in this mode
-
-**Mock IPC (`pnpm test:mock`):**
-- `VITE_PLAYWRIGHT=true` → `mockIPC` from `@tauri-apps/api/mocks`
-- Tests frontend behavior with stubbed responses
-- Faster, no Rust compilation required
+- `pnpm test:app` builds a debug app with the cargo feature
+  `webdriver-test` and drives it with WebdriverIO through the app's
+  embedded, token-guarded WebDriver server
+  (`crates/vendor/tauri-plugin-wdio-webdriver`). It runs the one-user
+  specs (`e2e/app/wdio.conf.ts`, `e2e/app/specs/solo/`), then the
+  two-user alice/bob specs (`e2e/app/wdio.peers.conf.ts`,
+  `e2e/app/specs/peers/`). Each app gets its own temp data root, port
+  and token (`e2e/app/launcher.ts`).
+- `pnpm test:app:devices` runs the camera/microphone specs
+  (`e2e/app/specs/devices/`); on macOS run it from your own terminal.
+- `pnpm walk` runs the older real-app row walk (`e2e/walk/`).
+- The suite needs a desktop session, so CI does not run it.
 
 ### Linting
 
@@ -260,11 +304,13 @@ All Rust IPC structs must use `#[serde(rename_all = "camelCase")]` to match
 JavaScript naming conventions.
 
 Channel event enums use adjacently tagged serialization:
+
 ```rust
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 ```
 
 The `UserStatus` enum uses lowercase serialization:
+
 ```rust
 #[serde(rename_all = "lowercase")]  // → "online", "away", "busy", "offline", "invisible"
 ```
@@ -325,7 +371,7 @@ synchronised. The files live under the shared data root; see
   from `NodeHandle` before async DHT or routing calls
 - The database is `state.db.current()` (`rekindle_db::DbHandle` → `Db`, an
   async wrapper around `rusqlite` on a dedicated background thread). Use the
-  `db_helpers` module (`db_call`, `db_call_or_default`, `db_fire`)
+  `db_helpers` module (`db_call`, `db_fire`)
 - `cpal::Stream` is `!Send` on macOS — audio streams live on dedicated OS
   threads, communicating via `mpsc` channels
 
@@ -364,15 +410,16 @@ and [`../architecture/services-pattern.md`](../architecture/services-pattern.md)
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `VITE_E2E` | Enable E2E HTTP bridge mode | unset |
-| `VITE_PLAYWRIGHT` | Enable mock IPC mode | unset |
-| `RUST_LOG` | Tracing filter (default: `info,veilid_api=warn,veilid_core=warn`) | unset |
+| `REKINDLE_APP_NO_BUILD` | `1` makes `pnpm test:app` reuse the last debug build | unset |
+| `CARGO_TARGET_DIR` | Where cargo builds; the real-app suite looks for the app there | `target/` |
+| `RUST_LOG` | Tracing filter (default: `rekindle=info,warn`; Veilid logs under facility targets such as `rtab`, `stor`, `net`, `rpc`, never `veilid_core`) | unset |
 
 ## IDE Setup
 
 ### VS Code
 
 Recommended extensions:
+
 - `tauri-apps.tauri-vscode` — Tauri integration
 - `rust-lang.rust-analyzer` — Rust language server
 - `bradlc.vscode-tailwindcss` — Tailwind CSS IntelliSense

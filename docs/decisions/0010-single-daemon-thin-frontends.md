@@ -4,6 +4,8 @@
   C2 of the standards-remediation plan lands, the condition ADR-0005 set)
 - **Date:** 2026-10-04
 - **Supersedes:** the "Future direction" section of [0005](0005-daemon-cli-track.md)
+- **Amended by:** [0023](0023-mobile-in-process-host.md), 2026-10-24: migration step 4 applies to the desktop GUI;
+  mobile keeps the Host in-process permanently
 
 ## Context and problem statement
 
@@ -74,6 +76,7 @@ lock:
 The embedded-core precedents (Matrix SDK clients, librespot, Transmission) work only because each
 frontend is a separate device or keeps separate state, which contradicts the requirement.
 Distribution follows the same split:
+
 - Debian ships one package per frontend that depends on a core or daemon package, plus a
   metapackage (transmission, weechat, docker);
 - Homebrew uses a formula for the daemon and CLI plus a cask for the app.

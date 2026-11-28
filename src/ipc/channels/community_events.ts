@@ -55,7 +55,17 @@ export type CommunityEvent =
       type: "rolesChanged";
       data: {
         communityId: string;
-        roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
+        roles: {
+          id: string;
+          name: string;
+          color: number;
+          tagColours: { dark: number; light: number };
+          permissions: string;
+          position: number;
+          hoist: boolean;
+          mentionable: boolean;
+          selfAssignable?: boolean;
+        }[];
       };
     }
   | {
@@ -293,7 +303,14 @@ export type CommunityEvent =
       type: "channelsUpdated";
       data: {
         communityId: string;
-        channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; slowmodeSeconds?: number }[];
+        channels: {
+          id: string;
+          name: string;
+          channelType: string;
+          categoryId?: string;
+          topic?: string;
+          slowmodeSeconds?: number;
+        }[];
         categories: { id: string; name: string; sortOrder: number }[];
       };
     }
@@ -303,7 +320,7 @@ export type CommunityEvent =
         communityId: string;
         codeHash: string;
         createdBy: string;
-        maxUses: number | null;
+        maxUses: number;
         uses: number;
         expiresAt: number | null;
         createdAt: number;
@@ -316,28 +333,6 @@ export type CommunityEvent =
   | {
       type: "inviteUsed";
       data: { communityId: string; codeHash: string; newUseCount: number };
-    }
-  | {
-      type: "systemMessage";
-      data: {
-        communityId: string;
-        body: string;
-        timestamp: number;
-      };
-    }
-  | {
-      type: "raidAlert";
-      data: {
-        communityId: string;
-        active: boolean;
-      };
-    }
-  | {
-      type: "channelLockdown";
-      data: {
-        communityId: string;
-        locked: boolean;
-      };
     }
   | {
       type: "syncComplete";

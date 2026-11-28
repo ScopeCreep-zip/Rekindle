@@ -23,7 +23,7 @@ use std::sync::Arc;
 use rekindle_secrets::sync_key::{generate_pairing_code, random_pairing_salt, PairingKey};
 use rekindle_types::cross_device_sync::{DeviceListEntry, PairingAccept, PairingPayload};
 
-use crate::db_helpers::{db_call, db_call_or_default};
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -108,7 +108,7 @@ pub async fn handle_pairing_app_call(
     let now = rekindle_utils::timestamp_ms_i64();
     let owner_owned = owner_key.clone();
     let salt = payload.pairing_salt.clone();
-    let row: Option<String> = db_call_or_default(pool, move |conn| {
+    let row: Option<String> = db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT pairing_code FROM pending_pairings \
               WHERE owner_key = ?1 AND pairing_salt = ?2 AND expires_at > ?3",
@@ -119,16 +119,19 @@ pub async fn handle_pairing_app_call(
         }
         Ok(None)
     })
-    .await;
+    .await?;
     let pairing_code = row.ok_or("no matching pending pairing — code expired or wrong salt")?;
 
     let pairing_key = PairingKey::derive(&pairing_code, &payload.pairing_salt);
     let master_secret =
         pairing_key.unwrap_master_secret(&payload.wrapped_master_secret, &payload.nonce)?;
     // Verify it matches our identity — the new device claimed to be us.
-    let our_secret = *state.identity_secret.lock().as_ref().ok_or("no identity")?;
+    let our_secret = crate::state_helpers::identity_secret(state).ok_or("no identity")?;
     if master_secret.len() != our_secret.len()
-        || master_secret.iter().zip(&our_secret).any(|(a, b)| a != b)
+        || master_secret
+            .iter()
+            .zip(our_secret.iter())
+            .any(|(a, b)| a != b)
     {
         return Err("pairing payload master secret does not match this identity".to_string());
     }
@@ -176,9 +179,9 @@ pub fn build_pairing_payload(
     pairing_salt: &[u8],
     display_name: &str,
 ) -> Result<PairingPayload, String> {
-    let secret = *state.identity_secret.lock().as_ref().ok_or("no identity")?;
+    let secret = crate::state_helpers::identity_secret(state).ok_or("no identity")?;
     let pairing_key = PairingKey::derive(pairing_code, pairing_salt);
-    let (wrapped, nonce) = pairing_key.wrap_master_secret(&secret)?;
+    let (wrapped, nonce) = pairing_key.wrap_master_secret(&secret[..])?;
     Ok(PairingPayload {
         wrapped_master_secret: wrapped,
         nonce: nonce.to_vec(),

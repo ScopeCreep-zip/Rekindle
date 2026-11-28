@@ -4,25 +4,13 @@ use serde::{Deserialize, Serialize};
 
 /// System-level events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SystemEvent {
-    /// A system message (community-wide announcement from operator).
-    /// Triggered by: gossip `ControlPayload::SystemMessage`.
-    Announcement {
-        community: Option<String>,
-        body: String,
-        timestamp: u64,
-    },
-    /// A raid alert was activated or deactivated.
-    /// Triggered by: gossip `ControlPayload::RaidAlert`.
-    RaidAlert { community: String, active: bool },
-
     /// **This peer** observed the join rate crossing the community's
     /// policy threshold.
     ///
     /// Architecture §20.6: every peer runs the detector, so this is a
-    /// local observation rather than a broadcast — distinct from
-    /// [`Self::RaidAlert`], which is a moderator's decision gossiped to
-    /// everyone. The counts are carried so a client can say *how* far
+    /// local observation rather than a broadcast. The counts are carried so a client can say *how* far
     /// over the threshold it is rather than just that it happened.
     RaidDetected {
         community: String,
@@ -41,12 +29,6 @@ pub enum SystemEvent {
         message_id: String,
         rule_name: String,
     },
-    /// A channel was locked or unlocked (lockdown mode).
-    /// Triggered by: gossip `ControlPayload::ChannelLockdown`.
-    ChannelLockdown { community: String, locked: bool },
-    /// We were kicked from a community.
-    /// Triggered by: gossip `ControlPayload::KickedNotification`.
-    Kicked { community: String },
     /// A bootstrap request was received (operator processing a new joiner).
     /// Triggered by: gossip `ControlPayload::BootstrapRequest`.
     BootstrapRequested {
@@ -54,22 +36,8 @@ pub enum SystemEvent {
         joiner_pseudonym: String,
     },
     /// A bootstrap response was received (new joiner receiving initial state).
-    /// Triggered by: gossip `ControlPayload::BootstrapResponse`.
+    /// Triggered by: the inviter's `ControlPayload::BootstrapResponseV2`.
     BootstrapReceived { community: String },
-    /// A sync request was received for a channel.
-    /// Triggered by: gossip `ControlPayload::SyncRequest`.
-    SyncRequested {
-        community: String,
-        channel: String,
-        since_timestamp: u64,
-    },
-    /// A sync response was received with historical messages.
-    /// Triggered by: gossip `ControlPayload::SyncResponse`.
-    SyncReceived {
-        community: String,
-        channel: String,
-        message_count: usize,
-    },
     /// Phase 4 — local audit chain failed integrity check. The on-disk
     /// `audit_entries` table was tampered with, truncated, or corrupted
     /// at or after the given cursor. Triggered by: `audit_verify` Tauri
@@ -77,4 +45,89 @@ pub enum SystemEvent {
     /// `notification-event` toast so the user knows their device's
     /// integrity guarantees were violated.
     AuditChainBroken { cursor: u64 },
+    /// The skin this device shows changed (plan E7.7.2): the identity
+    /// chose one, or set the device login skin. Every window, the login
+    /// window included, swaps its stylesheet and `data-skin-base`.
+    /// Triggered by: `SkinSelect`, `SkinSetLogin`.
+    SkinChanged {
+        skin: crate::dto::skin_library::SkinApplied,
+    },
+    /// A library skin went on trial (`Some`: the window that shows the
+    /// Settings renders "Keep this skin?" with its countdown), or its
+    /// trial ended (`None`: kept, reverted, replaced or the identity
+    /// locked). Triggered by: `SkinSelect` of a `pkg:` id, `SkinKeep`, the
+    /// Host's revert after `SKIN_TRIAL_MS`.
+    SkinTrialChanged {
+        trial: Option<crate::dto::skin_library::SkinTrial>,
+    },
+    /// The window labelled `window` could not apply `skin` (`cause`) and
+    /// kept the skin it shows. `reverted`: `skin` was on trial and the
+    /// Host put the stored choice back. Triggered by: `SkinApplyFailed`.
+    SkinApplyFailed {
+        window: String,
+        skin: String,
+        cause: crate::dto::skin_library::SkinApplyFailure,
+        reverted: bool,
+    },
+    /// The quick wipe was armed (`armed`, with its panic shortcut or none)
+    /// or disarmed (plan E7.1). The GUI registers or releases the panic
+    /// shortcut's OS grab (or portal binding) on it, the path its unlock
+    /// takes; the TUI and CLI, which have no global grab, show the state.
+    /// Triggered by: the committed `QuickWipeArm`, `QuickWipeDisarm`.
+    QuickWipeChanged {
+        armed: bool,
+        shortcut: Option<String>,
+    },
+    /// New entries in the local activity feed (plan E7.15), newest first,
+    /// names resolved by the Host: the Infoview's Activity section adds
+    /// them without asking again. Triggered by: a friend's presence, game,
+    /// name, status message or bio change, a new friendship, while
+    /// `keep_activity_log` is on.
+    ActivityAppended {
+        entries: Vec<crate::activity::ActivityListItem>,
+    },
+    /// We added a favourite game server (plan E7.2): a window listing
+    /// them reads them again (`FavouriteServersGet`).
+    /// Triggered by: `FavouriteServerAdd`, once stored.
+    FavouriteServerAdded {
+        game_id: u32,
+        server: String,
+        label: String,
+    },
+    /// The Servers view composed again (plan E7.2 G3, SK2-G §3): every
+    /// window showing it replaces its rows. At most one per 250 ms.
+    /// Triggered by: the Host's servers worker, folding a favourite or
+    /// recent change, a friend's presence, friendship or game invite, a
+    /// membership or a community's server list.
+    ServersViewChanged {
+        view: crate::dto::servers::ServersView,
+    },
+    /// A window's Infoview composed again (plan E7.15, IV4; design §2.2),
+    /// delivered to that window only (ADR 0013).
+    /// Triggered by: the Host's Infoview worker, folding the journal events
+    /// its subject shows (a friend's presence, name, bio or friendship, a
+    /// feed entry, an unread or membership change), coalesced per window.
+    Infoview(crate::dto::infoview::InfoviewEvent),
+    /// A skin window's state signals changed (plan SK2-A4 step 3): its
+    /// focus, the selection's capabilities, typing, ringing or talking,
+    /// the network, a new notification. Only that window applies it.
+    /// Triggered by: any of those inputs changing (the Host's
+    /// `skin::signals` worker); kept as the session state
+    /// `skin-signals:<label>`, so a window that opens is handed it.
+    /// `window` is the window's label (lead decision 48): signals are
+    /// per window, not per window kind.
+    SkinSignals {
+        window: String,
+        set: crate::dto::skin_signals::SkinSignalSet,
+    },
+    /// A shell operation for the skin window labelled `window`, pressed in
+    /// another (plan SK2-N4): a view switch (`ShowView`, `GroupPage`)
+    /// pressed in a popup is its launcher's, since only the launcher holds
+    /// the views. Triggered by: the Host admitting that `RunSkinAction`
+    /// from a popup it saw open (`Host::skin_window_opened`). Only that
+    /// window runs it, as it runs its own press's answer.
+    SkinShell {
+        window: String,
+        op: crate::dto::skin_run::ShellOp,
+    },
 }

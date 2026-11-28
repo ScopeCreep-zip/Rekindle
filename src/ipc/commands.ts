@@ -2,26 +2,34 @@
 // invoke-wrapper object were split into the `commands/` subfolder (one
 // module per domain) to keep every file under the module size cap;
 // call sites continue to use `import { commands, type Foo } from "../ipc/commands"`.
+
+export type { IdentitySummary } from "./commands/dto";
 export * from "./commands/types";
 export * from "./commands/types_sync";
 
 import { accountCommands } from "./commands/account";
 import { communityCommands } from "./commands/community";
+import { communityAdminCommands } from "./commands/community_admin";
+import { communityContentCommands } from "./commands/community_content";
+import { lobbyCommands } from "./commands/dto_lobby";
 import { governanceCommands } from "./commands/governance";
-import { voiceCommands } from "./commands/voice";
-import { systemCommands } from "./commands/system";
+import { groupDmCommands } from "./commands/group_dm";
 import { syncCommands } from "./commands/sync";
+import { systemCommands } from "./commands/system";
+import { voiceCommands } from "./commands/voice";
+
+export type { LobbyRefusal, LobbyVerdict, LobbyView } from "./commands/dto_lobby";
+export type { GroupDmView } from "./commands/group_dm";
 
 export const commands = {
   ...accountCommands,
   ...communityCommands,
+  ...communityContentCommands,
+  ...communityAdminCommands,
   ...governanceCommands,
   ...voiceCommands,
   ...systemCommands,
   ...syncCommands,
+  ...groupDmCommands,
+  ...lobbyCommands,
 };
-
-export function avatarDataUrl(base64: string | null | undefined): string | undefined {
-  if (!base64) return undefined;
-  return `data:image/webp;base64,${base64}`;
-}

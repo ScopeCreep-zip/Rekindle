@@ -343,10 +343,17 @@ segment is its own join-semilattice; the community state is the
 product CRDT under coordinate-wise join. See
 [`architecture/communities.md` §7](architecture/communities.md).
 
-**PreKey bundle.** Signal Protocol public-key material published in
-advance to the user's DHT profile so peers can initiate sessions
-asynchronously. Includes identity key, signed prekey, and one-time
-prekeys.
+**PreKey bundle.** The Signal Protocol public-key material a session
+initiator runs PQXDH against: the identity key, the signed prekey, the
+ML-KEM last-resort key and, when one is left, a one-time X25519 and
+ML-KEM key. Rekindle assembles it in memory from a peer's **prekey
+record** after checking every signature; no bundle travels on the wire.
+
+**Prekey record.** A DFLT(101) DHT record per device, named from
+profile subkey 5 (plan E2.4): subkey 0 holds the signed prekey and the
+last-resort key, subkeys 1..=100 one one-time slot each. The owner's
+prekey maintenance refills and rotates it automatically; see
+[`security/overview.md`](security/overview.md#serverless-prekey-distribution).
 
 **Presence.** A member's published status: online / away / busy /
 offline plus optional custom message, voice channel, route blob,
@@ -474,10 +481,6 @@ the lifecycle is in a `can_write` state. Lives in
 `rekindle-mek-rotation` — lowest `blake3(departed || self)` hash
 rotates; cascade fallback if the elected peer is offline.
 
-**InboxScanCoordinator.** Three-tier scan coordinator
-(`rekindle-friendship`): Veilid watch + 30 s backstop poll +
-user-triggered direct trigger, debounced into one stream.
-
 **Presence orchestrator.** Pure-logic decision and timing layer
 (`rekindle-presence`) covering friend, community, idle, and game
 presence. See [`architecture/presence.md`](architecture/presence.md).
@@ -527,7 +530,7 @@ terminal frontend: a separate binary and crate (plan C3), a client of
 (`SO_PEERCRED` on Linux; `getpeereid` and `LOCAL_PEEREPID` on macOS):
 the peer's UID, and its PID where the OS gives one. The bus refuses a
 peer whose UID is not the daemon's, and binds both UIDs and the socket
-path into the Noise IK prologue (`REKINDLE-IPC-v2`); PIDs are logged,
+path into the Noise IK prologue (`REKINDLE-IPC-v3`); PIDs are logged,
 not bound.
 
 **VICE (Veilid Internet Connectivity Establishment).** Veilid's
@@ -543,6 +546,8 @@ the daemon-track IPC bus DH within Noise IK.
 **X3DH.** Extended Triple Diffie-Hellman, the Signal Protocol
 session-establishment scheme. Combines identity key, signed
 prekey, and one-time prekey to derive the initial root key.
+Rekindle uses its post-quantum successor, PQXDH (rev. 3), which adds an
+ML-KEM-768 encapsulation; see `rekindle-crypto::signal::pqxdh`.
 
 **Xfire skin / Symbiosis.** The original Xfire skin (extracted to
 `legacy/unpacked/skins/Symbiosis/`) used as visual reference for

@@ -31,23 +31,67 @@ macro_rules! labels {
 }
 
 labels! {
-    // ── Identity, DHT records, safety numbers ────────────────────────
+    // ── Identity and DHT records ────────────────────────────────
     /// HKDF info: account-record encryption key from the identity secret.
     ACCOUNT_KEY = "rekindle-account-v1";
-    /// HKDF info prefix: per-pair conversation-record key.
-    CONVERSATION_KEY = "rekindle-conversation-v1";
-    /// BLAKE3 suffix: safety-number fingerprint of two identity keys.
-    SAFETY_NUMBER = "rekindle-safety-v1";
-    /// HKDF info: PQXDH shared secret → initial root key.
-    PQXDH_ROOT = "rekindle-pqxdh-root-v1";
+    /// HKDF info: the PQXDH key material (X25519, SHA-256, ML-KEM-768, with
+    /// EncodeEC/EncodeKEM of the bound keys) → `SKec ‖ SKscka` (plan E2.2).
+    PQXDH_SK = "rekindle-pqxdh-sk-v1";
 
-    // ── Signed 1:1 envelopes ─────────────────────────────────────────
-    /// Ed25519 signature prefix: desktop `MessageEnvelope`, bound to the
-    /// recipient's identity key.
-    MSG_ENVELOPE_V2 = "rekindle-msg-envelope-v2";
-    /// Ed25519 signature prefix: daemon framed `SignedPayload`, bound to
-    /// the recipient's identity key and the frame `TypeId`.
-    DM_FRAME_SIG_V2 = "rekindle-dm-frame-sig-v2";
+    // ── 1:1 frames (plan E2.3) ───────────────────────────────────────
+    /// Ed25519 signature prefix: a pre-session frame, over
+    /// `recipient ‖ typeId ‖ enc ‖ ct`.
+    DM_PRESESSION_SIG = "rekindle-dm-presession-sig-v1";
+    /// HPKE info: a sealed `FriendRequest` (0x0002).
+    DM_FRIEND_REQUEST_HPKE = "rekindle-dm-friend-request-hpke-v1";
+    /// HPKE info: a sealed `PreKeyRejected` (0x0005).
+    DM_PREKEY_REJECTED_HPKE = "rekindle-dm-prekey-rejected-hpke-v1";
+    /// BLAKE3 derive-key context: the initiator base key a `PreKeyRejected`
+    /// names.
+    PREKEY_REJECTED_BASE_KEY = "rekindle-prekey-rejected-base-key-v1";
+    /// HPKE info: a sealed `SessionResetRequest` (0x0007).
+    DM_SESSION_RESET_REQUEST_HPKE = "rekindle-dm-session-reset-request-hpke-v1";
+    /// HPKE info: a sealed `SessionResetDecline` (0x0009).
+    DM_SESSION_RESET_DECLINE_HPKE = "rekindle-dm-session-reset-decline-hpke-v1";
+    /// HPKE info: a sealed `RegisterPushRelay` (0x0310).
+    DM_PUSH_REGISTER_HPKE = "rekindle-dm-push-register-hpke-v1";
+    /// HPKE info: a sealed `UnregisterPushRelay` (0x0311).
+    DM_PUSH_UNREGISTER_HPKE = "rekindle-dm-push-unregister-hpke-v1";
+    /// HPKE info: a sealed `WakeNotify` (0x0312).
+    DM_PUSH_WAKE_HPKE = "rekindle-dm-push-wake-hpke-v1";
+    /// BLAKE3 derive-key context: the replay id of a pre-session frame,
+    /// over `sender ‖ nonce` (`rekindle_crypto::replay`).
+    DM_REPLAY_ID = "rekindle-dm-replay-id-v1";
+    /// BLAKE3 derive-key context: the id of a ratchet message, over its
+    /// header `dh ‖ n` (`rekindle_crypto::replay::ratchet_message_id`): the
+    /// send log's key and a `RetryRequest`'s `msg_id` (plan E2.5, D24).
+    DM_RATCHET_MESSAGE_ID = "rekindle-dm-ratchet-message-id-v1";
+    /// Ed25519 signature prefix: an identity rotation, signed by the old and
+    /// the new identity over `old ‖ new ‖ recipient` (0x0108).
+    IDENTITY_ROTATED = "rekindle-identity-rotated-v1";
+
+    // ── Prekey record and invites (plan E2.4; audit 2026-10-20 C-2) ──
+    /// Ed25519 signature prefix: the signed prekey, by the identity, over
+    /// `u32be(spk_id) ‖ i64be(issued_at) ‖ EncodeEC(spk)`.
+    PREKEY_SPK_SIG = "rekindle-prekey-spk-sig-v1";
+    /// Ed25519 signature prefix: the ML-KEM last-resort prekey, by the
+    /// identity, over `u32be(id) ‖ i64be(issued_at) ‖ EncodeKEM(pqpk)`.
+    PREKEY_PQ_LR_SIG = "rekindle-prekey-pq-lr-sig-v1";
+    /// Ed25519 signature prefix: a one-time ML-KEM prekey, by the identity,
+    /// over `u32be(id) ‖ EncodeKEM(pqpk)`.
+    PREKEY_PQ_OT_SIG = "rekindle-prekey-pq-ot-sig-v1";
+    /// Ed25519 signature prefix: a one-time curve prekey, by the identity,
+    /// over `u32be(opk_id) ‖ EncodeEC(opk)`.
+    PREKEY_OPK_SIG = "rekindle-prekey-opk-sig-v1";
+    /// Ed25519 signature prefix: a friend invite blob, by the identity,
+    /// over the JSON of every field but the signature.
+    FRIEND_INVITE_SIG = "rekindle-friend-invite-sig-v1";
+
+    // ── Friend presence (plan E2.5) ──────────────────────────────────
+    /// AEAD associated-data prefix: profile subkeys 2 (STATUS) and 4
+    /// (GAME_INFO) sealed under our friends key, then `u32be(epoch) ‖
+    /// u32be(subkey) ‖ owner`.
+    FRIEND_PRESENCE = "rekindle-friend-presence-v1";
 
     // ── Communities ──────────────────────────────────────────────────
     /// HKDF salt: per-community pseudonym from the identity secret.
@@ -56,20 +100,193 @@ labels! {
     GOV_OVERFLOW = "rekindle-gov-overflow-v1";
     /// Signature prefix: governance SMPL subkey payload.
     GOV_SUBKEY = "rekindle-gov-subkey-v1";
-    /// Signature prefix: channel message-record subkey payload.
-    CHANNEL_SUBKEY = "rekindle-channel-subkey-v1";
     /// Signature prefix: member-registry presence row.
     PRESENCE_ROW = "rekindle-presence-v1";
+    /// Ed25519 signature prefix: a member card (`M`/0, plan E3.2), by the
+    /// pseudonym, over `community ‖ memberRecord ‖ body`.
+    MEMBER_CARD = "rekindle-member-card-v1";
+    /// Ed25519 signature prefix: the pseudonym's cross-signature over the
+    /// card's HPKE key, `community ‖ hpkeKey` (plan E3.2).
+    CARD_HPKE = "rekindle-card-hpke-v1";
+    /// Ed25519 signature prefix: a presence beat (`M`/1, plan E3.2), by
+    /// the pseudonym.
+    PRESENCE_BEAT = "rekindle-presence-beat-v2";
+    /// Ed25519 signature prefix: a ring watcher's `HeadAdvanced` hint
+    /// (plan E3.2 S7), by the relaying member's pseudonym, over
+    /// `community ‖ author ‖ memberRecord ‖ subkey ‖ seq`.
+    HEAD_ADVANCED = "rekindle-head-advanced-v1";
+    /// Ed25519 signature prefix: a channel outbox entry (`M`/4, plan
+    /// E3.3), by the author's pseudonym, over `anchor ‖ chain seq ‖ entry
+    /// bytes without sig`.
+    OUTBOX_ENTRY = "rekindle-outbox-entry-v1";
+    /// HKDF info prefix: a channel's tag, `HKDF(text key of the entry's
+    /// generation, domain ‖ channelId)[..16]` (plan E3.3); a thread's uses
+    /// its thread id.
+    CHANNEL_TAG = "rekindle-channel-tag-v1";
+    /// AEAD AAD prefix: a channel body, `domain ‖ anchor ‖ channel_id ‖
+    /// author ‖ stream_seq_le64` (plan E3.3).
+    CHANNEL_BODY_AAD = "rekindle-channel-body-aad-v1";
+    /// BLAKE3 derive-key context: a channel poll's id, over `creator
+    /// pseudonym ‖ nonce` (plan E3.3, rule E1): a poll is bound to its
+    /// creator, so no other member's create can name it.
+    CHANNEL_POLL_ID = "rekindle-channel-poll-id-v1";
+    /// BLAKE3 domain of the watch ring order (plan E3.2 S7, §4.5):
+    /// `r(p) = blake3(domain ‖ communityId ‖ p)`.
+    WATCH_RING = "rekindle-watch-ring-v1";
+    /// Ed25519 signature prefix: a history ad (`M`/5, plan E3.2), by the
+    /// pseudonym, over `community ‖ memberRecord ‖ mekGeneration ‖ sealed`.
+    HISTORY_AD = "rekindle-history-ad-v1";
+    /// Ed25519 signature prefix: a member's routes (`M`/6, plan E3.2
+    /// S7c.8), by the pseudonym, over `community ‖ memberRecord ‖ issuedAt
+    /// ‖ general`.
+    MEMBER_ROUTES = "rekindle-member-routes-v1";
     /// HKDF info: invite-secrets record key.
     INVITE_SECRETS = "rekindle-invite-secrets-v1";
+    /// BLAKE3 derive-key context: the Ed25519 seed of a community invite's
+    /// join key, from the invite code (plan E3.2 S10). Its public half is the
+    /// invite's `code_hash` (lookup id and proof key,
+    /// `rekindle_secrets::invite::hash_invite_code`); only a holder of the
+    /// code signs a join proof (`sign_invite_join`).
+    INVITE_JOIN = "rekindle-invite-join-v1";
+    /// BLAKE3 derive-key context: the key a joiner's pre-join checkpoint
+    /// hint and snapshot requests are tagged under, from the invite code
+    /// (plan E3.2 S7c.8 (2); `rekindle_secrets::invite::pre_join_read_tag`).
+    /// The op log holds only the code's lookup id, so only a holder of the
+    /// code can tag a request.
+    INVITE_READ_TAG = "rekindle-invite-read-tag-v1";
+    /// Ed25519 context: a governance op, signed by its author pseudonym over
+    /// this label ‖ community anchor ‖ the canonical unsigned op bytes (plan E3.2).
+    GOV_OP = "rekindle-gov-op-v1";
+    /// BLAKE3 `derive_key` context: a governance op's hash over its signed bytes.
+    GOV_OP_HASH = "rekindle-gov-op-hash-v1";
+    /// BLAKE3 `derive_key` context: the hash of the checkpoint directory's
+    /// one RFC 9162 §2.1.1 Merkle tree, with CT's `0x00` leaf and `0x01`
+    /// node prefixes inside it (plan E3.2 S7c.2). A hash domain, not a
+    /// signature: a directory page is proven by its path to the endorsed
+    /// `dirRoot`, so nothing on it is signed.
+    GOV_DIRECTORY = "rekindle-gov-directory-v1";
+    /// BLAKE3 `derive_key` context: a governance checkpoint's digest over
+    /// every field of its body but `pages` and `round` (plan E3.2 S7c.3).
+    GOV_CHECKPOINT = "rekindle-gov-checkpoint-v1";
+    /// BLAKE3 `derive_key` context: a checkpoint's `stateRoot` over
+    /// `canonical_state ‖ canonical_cut` at its cut (plan E3.2 S7c.3).
+    GOV_CHECKPOINT_STATE = "rekindle-gov-checkpoint-state-v1";
+    /// BLAKE3 `derive_key` context: a checkpoint's `frontierHash` over its
+    /// cut's head hashes, sorted (plan E3.2 S7c.3).
+    GOV_CHECKPOINT_FRONTIER = "rekindle-gov-checkpoint-frontier-v1";
+    /// BLAKE3 `derive_key` context: a checkpoint's `eligibleSetHash` over
+    /// the electorate's pseudonyms, sorted (plan E3.2 S7c.3, ADR 0018).
+    GOV_CHECKPOINT_ELIGIBLE = "rekindle-gov-checkpoint-eligible-v1";
+    /// Ed25519 signature prefix: a member's checkpoint state snapshot
+    /// request (plan E3.2 S7c.3), by the asking member's pseudonym, over
+    /// `community ‖ height ‖ digest ‖ offset ‖ requester ‖ invite` (the
+    /// invite code hash a joiner holds, S7c.5).
+    CHECKPOINT_STATE_REQUEST = "rekindle-checkpoint-state-request-v1";
+    /// Ed25519 signature prefix: a request for a checkpoint hint and its
+    /// endorsements (plan E3.2 S7c.5), by the asking member's or joiner's
+    /// pseudonym, over `community ‖ height ‖ digest ‖ requester ‖ invite`.
+    CHECKPOINT_HINT_REQUEST = "rekindle-checkpoint-hint-request-v1";
+    /// Ed25519 signature prefix: a member's frontier request to a ring
+    /// peer (plan E3.2 S7d-keys.8, the unlock barrier), by the asking
+    /// member's pseudonym, over `community ‖ requester`.
+    FRONTIER_REQUEST = "rekindle-frontier-request-v1";
+    /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
+    /// canonical encoding of the merged roster and role tables (D15).
+    GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";
+    /// BLAKE3 `derive_key` context: a departure's slot head digest over
+    /// record key ‖ subkey ‖ seq ‖ the decrypted page of the departed
+    /// member's slot value (plan E3.2 S9,
+    /// `rekindle_secrets::slot_head::slot_head_digest`). Not `rekindle-slot-…`:
+    /// that is `SLOT_KEY_PREFIX`'s namespace.
+    SLOT_HEAD = "rekindle-departed-slot-head-v1";
+    /// Ed25519 context: a joiner's invite proof, by the invite's join key
+    /// (`INVITE_JOIN`), over this label ‖ anchor ‖ joiner pseudonym ‖
+    /// member record key ‖ invite `code_hash`, each length-prefixed (plan
+    /// E3.2 S10; `rekindle_governance::op::invite_proof_bytes`).
+    INVITE_PROOF = "rekindle-invite-proof-v2";
+    /// Ed25519 context: a member record owner `K_M`'s proof, in a
+    /// `MemberJoined` or `MemberRecordMoved`, that it binds its record to
+    /// the op's author: this label ‖ anchor ‖ author pseudonym ‖ member
+    /// record key (ADR 0011 "Binding", review S7m part 4).
+    MEMBER_RECORD_BINDING = "rekindle-member-record-binding-v1";
+    /// Ed25519 context: the community's `GenesisCert`, signed by the anchor
+    /// owner `K_A` and by the creator pseudonym over this label ‖ anchor ‖
+    /// the canonical unsigned cert bytes (plan E3.2).
+    GOV_GENESIS = "rekindle-gov-genesis-v1";
+    /// Ed25519 context: a co-creator's acceptance (plan E3.2 S7s.3,
+    /// decision (16)), signed by its pseudonym for the new anchor over this
+    /// label ‖ anchor ‖ pseudonym, so the creator lists only a pseudonym
+    /// whose holder accepted.
+    GOV_CREATOR_ACCEPT = "rekindle-gov-creator-accept-v1";
+    /// BLAKE3 `derive_key` context: a transfer offer's `creatorSetHash` over
+    /// the old pseudonyms of the new creator set, sorted (plan E3.2 S7s.3e,
+    /// lead decision (24)).
+    GOV_SUCCESSOR_SET = "rekindle-gov-successor-set-v1";
+    /// Signature domain: a transfer acceptance's `CreatorLink`, signed by
+    /// the creator's old pseudonym over label ‖ old anchor ‖ new anchor ‖
+    /// new pseudonym, each anchor length-prefixed (plan E3.2 S7s.3e, lead
+    /// decision (24)).
+    GOV_SUCCESSOR_LINK = "rekindle-gov-successor-link-v1";
+    /// Ed25519 context: a pseudonym's endorsement of a device key (ADR 0022
+    /// rule 10): label ‖ community ‖ member record ‖ device key ‖
+    /// incarnation ‖ extended set ‖ device record ‖ its owner ‖ fork
+    /// evidence (plan E3.2 S7d-keys.1).
+    GOV_DEVICE_KEY = "rekindle-gov-device-key-v1";
+    /// Ed25519 context: a pseudonym's retirement of a device key (ADR 0022
+    /// rule 10): label ‖ community ‖ member record ‖ device key ‖
+    /// incarnation ‖ last seq.
+    GOV_DEVICE_RETIRED = "rekindle-gov-device-retired-v1";
+    /// Body label of a `DeviceReadmit` (ADR 0022 rule 10): label ‖ community
+    /// ‖ member record ‖ new key ‖ incarnation ‖ fork evidence.
+    GOV_DEVICE_READMIT = "rekindle-gov-device-readmit-v1";
+    /// BLAKE3 `derive_key` context: an endorsement's `extendsSet` over the
+    /// sorted element ids `(kind, device key, incarnation)` (ADR 0022 rule 10).
+    GOV_DEVICE_SET = "rekindle-gov-device-set-v1";
+    /// BLAKE3 `derive_key` context: fork evidence over community ‖ device
+    /// key ‖ seq ‖ the two op hashes in byte order (ADR 0022 rule 5).
+    GOV_FORK_EVIDENCE = "rekindle-gov-fork-evidence-v1";
+    /// BLAKE3 `derive_key` context: the "retired by restore" marker over
+    /// community ‖ device key ‖ incarnation ‖ last seq ‖ the `GovHead` op
+    /// hash the barrier read (ADR 0022 rule 8).
+    GOV_RESTORE_EVIDENCE = "rekindle-gov-restore-evidence-v1";
+    /// BLAKE3 `derive_key` context: a `DeviceRetired`'s evidence, the fork
+    /// event a post-fork endorsement and its `DeviceReadmit` may name, over
+    /// community ‖ member record ‖ device key ‖ incarnation ‖ last seq (ADR
+    /// 0022 rules 7 and 10, amended 2026-11-23).
+    GOV_RETIREMENT_EVIDENCE = "rekindle-gov-retirement-evidence-v1";
+    /// Ed25519 context: a creator pseudonym's own successor (ADR 0022 rule
+    /// 10): label ‖ community ‖ cut ‖ new anchor ‖ fork evidence (S7d-keys K8).
+    GOV_SUCCESSOR = "rekindle-gov-successor-v1";
+    /// HPKE info: a successor's invite sealed to a continuing member's card
+    /// `hpkeKey` (plan E3.2 SS3c, lead decision (34)); the AAD is
+    /// `old anchor ‖ 0x00 ‖ new anchor ‖ member`.
+    SUCCESSOR_INVITE = "rekindle-successor-invite-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
+    /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation
+    /// tag, keyed by the confirmed MEK, over community ‖ scope ‖ generation
+    /// ‖ transfer id ‖ inviter ‖ joiner (RFC 9420 §12.4.3 `confirmation_tag`;
+    /// review S7m part 1, research batch 11 (2)).
+    MEK_ACK = "rekindle-mek-ack-v1";
+    /// Ed25519 signature prefix: the daemon's framed community RPC
+    /// (`SignedPayload`), bound to the recipient's identity key and the
+    /// frame `TypeId`. v3 dropped `seq` and the correlation id with the
+    /// 1:1 frames (plan E2.3); v2 (`rekindle-dm-frame-sig-v2`) is retired.
+    FRAME_SIG_V3 = "rekindle-frame-sig-v3";
 
     // ── 1:1 and group DMs ────────────────────────────────────────────
-    /// HKDF info: group-DM MEK from the pairwise shared secret.
-    DM_MEK = "rekindle-dm-mek-v1";
-    /// HKDF info: group-DM MEK forward ratchet step.
-    DM_MEK_RATCHET = "rekindle-dm-ratchet-v1";
+    /// AEAD associated-data label: a group-DM `GroupContent`, sealed under
+    /// its sender's group sending key (plan E2.6).
+    GROUP_DM_CONTENT = "rekindle-group-dm-content-v1";
+    /// Ed25519 signature prefix: a `GroupDmInvite`, signed by the group's
+    /// creator over its canonical bytes (plan E2.6).
+    GROUP_DM_INVITE = "rekindle-group-dm-invite-v1";
+    /// HKDF info: the spec Double Ratchet's `KDF_RK` (DR rev. 4 §7.2).
+    DR_ROOT = "rekindle-dr-root-v1";
+    /// HKDF info: a Double Ratchet message key → the 80 bytes of DR rev. 4
+    /// §7.2's `ENCRYPT`: AES-256-CBC key, HMAC-SHA256 key and IV. v1 (an
+    /// AES-256-GCM key and nonce) is retired.
+    DR_MSG = "rekindle-dr-msg-v2";
 
     // ── Calls and voice ──────────────────────────────────────────────
     /// HKDF info: 1:1 call media key. Distinct from the friend/DM
@@ -83,9 +300,18 @@ labels! {
     /// sender keys) from the scope secret, the sender's key and the
     /// sender's session tag.
     VOICE_SENDER_KEY = "rekindle-voice-sender-key-v1";
-    /// HPKE info: a call-media sender key sealed to one participant
-    /// (RFC 9605 §5.1 sender keys, sent pairwise; plan C7.20).
-    MEDIA_KEY_SEAL = "rekindle-media-key-seal-v1";
+    /// HPKE info: a call-media sender key sealed to one participant's
+    /// per-session key (RFC 9605 §5.1 sender keys, sent pairwise; plans
+    /// C7.20, C7.29). v2: HPKE Base to the session key, not Auth between
+    /// pseudonyms.
+    MEDIA_KEY_SEAL = "rekindle-media-key-seal-v2";
+    /// Signature prefix: a participant's per-session media key, signed by
+    /// its community pseudonym so a roster can relay it (plan C7.29).
+    MEDIA_SESSION_KEY = "rekindle-media-session-key-v1";
+    /// Signature prefix: a sealed call-media key, signed by its sender's
+    /// pseudonym over channel, recipient, index and the sealed bytes
+    /// (plan C7.29).
+    MEDIA_KEY_SIG = "rekindle-media-key-sig-v1";
     /// HKDF info prefix: a video sender's frame key from its media sender
     /// key and its own key, so the secret never keys two constructions.
     VIDEO_SENDER_KEY = "rekindle-video-sender-key-v1";
@@ -108,11 +334,30 @@ labels! {
     SYNC_SALT = "rekindle-sync-v1";
     /// HKDF info: device-pairing key.
     PAIRING = "rekindle-pairing-v1";
-    /// BLAKE3 input: daemon session-file integrity key.
-    SESSION_INTEGRITY = "rekindle-session-integrity-v1";
-    /// BLAKE3 keyed-hash input: daemon keyring disk-fallback key.
-    DISK_FALLBACK_KEY = "rekindle-disk-fallback-v1";
 
+    /// BLAKE3 `derive_key` context: the vault's SQLCipher key (plan D1).
+    VAULT_SQLCIPHER_KEY = "rekindle-vault-sqlcipher-v1";
+    /// BLAKE3 `derive_key` context: the vault's per-entry AEAD key.
+    VAULT_ENTRY_KEY = "rekindle-vault-entry-v1";
+    /// BLAKE3 `derive_key` context: the identity database's SQLCipher key,
+    /// derived from the vault passphrase (plan D1).
+    VAULT_APP_DB_KEY = "rekindle-vault-app-db-v1";
+    /// HKDF info (salt none): the key that names an identity's file-cache
+    /// directories (keyed BLAKE3 of each scope and attachment), from the
+    /// identity secret (plan E3.0a).
+    FILE_CACHE_NAMES = "rekindle-file-cache-names-v1";
+    /// Keyed-BLAKE3 input prefix, then `:` and the id: a community's
+    /// attachment cache directory name.
+    FILE_CACHE_COMMUNITY = "rekindle-file-cache-community-v1";
+    /// Keyed-BLAKE3 input prefix, then `:` and the id: a conversation's
+    /// attachment cache directory name.
+    FILE_CACHE_DM = "rekindle-file-cache-dm-v1";
+    /// Keyed-BLAKE3 input prefix, then `:` and the id: a community's avatar
+    /// and banner cache directory name.
+    FILE_CACHE_AVATARS = "rekindle-file-cache-avatars-v1";
+    /// Keyed-BLAKE3 input prefix, then `:`, the scope's directory name, `:`
+    /// and the attachment id: an attachment's directory name.
+    FILE_CACHE_ATTACHMENT = "rekindle-file-cache-attachment-v1";
     // ── PRE_FORMAT: predate the naming rule; bytes kept until removal ──
     /// HKDF info prefix + decimal slot index: SMPL member-slot keypair.
     /// Renamed to the `-v<N>` form in step 22 (governance op DAG).
@@ -121,40 +366,32 @@ labels! {
     /// Replaced in step 33 (per-device sync key).
     PERSONAL_SYNC_RECORD_INFO = "personal-sync-record";
     /// HPKE info: MEK transfer — Rekindle-owned, never Veilid's
-    /// `veilid-hpke/1`. Deleted with the MEK in step 30 (MLS).
+    /// `veilid-hpke/1`. Renamed by E3.5's signed v2 wrap.
     HPKE_MEK_INFO = "rekindle-mek/1";
-    /// BLAKE3 `derive_key` context: vault SQLCipher key. Replaced by the
-    /// vault header rework in step 15/16.
-    VAULT_SQLCIPHER_KEY = "rekindle v1 vault-sqlcipher";
-    /// BLAKE3 `derive_key` context: vault entry AEAD key (step 15/16).
-    VAULT_ENTRY_KEY = "rekindle v1 vault-entry-gcm";
-    /// 1:1 ratchet KDF labels, shared by the desktop and daemon tracks —
-    /// deleted with the non-spec ratchet in step 27.
-    RATCHET_PQXDH_EXPAND = "ReKindlePQXDH";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_ROOT = "ReKindleRootKey";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_CHAIN_RATCHET = "ReKindleChainRatchet";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_MSG_KEY = "ReKindleMsgKey";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_CHAIN_KEY = "ReKindleChainKey";
+    /// BLAKE3 `derive_key` context: the device vault's SQLCipher key, from
+    /// its random 32-byte key (plan E3.2 S7d-keys.7, ADR 0022 rule 4).
+    DEVICE_VAULT_SQLCIPHER_KEY = "rekindle-device-vault-sqlcipher-v1";
+    /// BLAKE3 `derive_key` context: the device vault's per-entry AEAD key.
+    DEVICE_VAULT_ENTRY_KEY = "rekindle-device-vault-entry-v1";
 }
+
+/// Every prefix an identity key (Ed25519) signs under. One key signs all
+/// of them, so none may be a prefix of another: a signature for one
+/// purpose then never verifies for another.
+pub const IDENTITY_KEY_SIGNATURES: &[&str] = &[
+    DM_PRESESSION_SIG,
+    IDENTITY_ROTATED,
+    FRAME_SIG_V3,
+    PREKEY_SPK_SIG,
+    PREKEY_PQ_LR_SIG,
+    PREKEY_PQ_OT_SIG,
+    PREKEY_OPK_SIG,
+    FRIEND_INVITE_SIG,
+];
 
 /// Labels exempt from the `rekindle-<purpose>-v<N>` rule, each scheduled
 /// for removal or renaming (see the constant's doc).
-pub const PRE_FORMAT: &[&str] = &[
-    SLOT_KEY_PREFIX,
-    PERSONAL_SYNC_RECORD_INFO,
-    HPKE_MEK_INFO,
-    VAULT_SQLCIPHER_KEY,
-    VAULT_ENTRY_KEY,
-    RATCHET_PQXDH_EXPAND,
-    RATCHET_ROOT,
-    RATCHET_CHAIN_RATCHET,
-    RATCHET_MSG_KEY,
-    RATCHET_CHAIN_KEY,
-];
+pub const PRE_FORMAT: &[&str] = &[SLOT_KEY_PREFIX, PERSONAL_SYNC_RECORD_INFO, HPKE_MEK_INFO];
 
 /// `rekindle-<purpose>-v<N>`: lowercase ASCII words joined by `-`, ending
 /// in a version.
@@ -177,58 +414,5 @@ pub fn is_well_formed(label: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{is_well_formed, ALL, PRE_FORMAT};
-
-    #[test]
-    fn every_label_is_unique() {
-        for (i, (name_a, a)) in ALL.iter().enumerate() {
-            for (name_b, b) in &ALL[i + 1..] {
-                assert_ne!(a, b, "{name_a} and {name_b} share the label `{a}`");
-            }
-        }
-    }
-
-    /// Labels are often concatenated with the data they scope; if one
-    /// label were a prefix of another, `A ‖ x` and `B ‖ y` could collide.
-    #[test]
-    fn no_label_is_a_prefix_of_another() {
-        for (name_a, a) in ALL {
-            for (name_b, b) in ALL {
-                if name_a != name_b {
-                    assert!(
-                        !b.starts_with(a),
-                        "{name_a} (`{a}`) is a prefix of {name_b} (`{b}`)"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn labels_follow_the_naming_rule_or_are_scheduled_for_removal() {
-        for (name, label) in ALL {
-            assert!(
-                is_well_formed(label) || PRE_FORMAT.contains(label),
-                "{name} = `{label}` must be `rekindle-<purpose>-v<N>`"
-            );
-            if PRE_FORMAT.contains(label) {
-                assert!(
-                    !is_well_formed(label),
-                    "{name} is well-formed; drop it from PRE_FORMAT"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn naming_rule() {
-        assert!(is_well_formed("rekindle-gov-op-v1"));
-        assert!(is_well_formed("rekindle-voice-packet-v12"));
-        assert!(!is_well_formed("rekindle-gov-op"));
-        assert!(!is_well_formed("rekindle--v1"));
-        assert!(!is_well_formed("Rekindle-x-v1"));
-        assert!(!is_well_formed("rekindle-x-v"));
-        assert!(!is_well_formed("rekindle v1 vault-entry-gcm"));
-    }
-}
+#[path = "domains_tests.rs"]
+mod tests;

@@ -5,21 +5,44 @@
 
 import type { PanelCtx, Ref } from "./panel_ctx";
 
-export function createPipToggle(ctx: PanelCtx): () => Promise<void> {
+/** The PiP toggle and the release that drops the bridge it built. */
+export interface PipController {
+  toggle: () => Promise<void>;
+  /** Stop the bridge's canvas capture tracks, detach its `srcObject`
+   *  and remove the hidden `<video>` (plan CL2): the panel's teardown
+   *  calls it so nothing outlives the call. */
+  release: () => void;
+}
+
+export function createPipToggle(ctx: PanelCtx): PipController {
   const pipBridgeVideo: Ref<HTMLVideoElement | null> = { value: null };
-  return async function togglePictureInPicture(): Promise<void> {
+  /** Stop the bridge's current capture stream and detach it. */
+  function dropBridgeStream(): void {
+    const v = pipBridgeVideo.value;
+    if (!v) return;
+    if (v.srcObject instanceof MediaStream) {
+      v.srcObject.getTracks().forEach((track) => {
+        track.stop();
+      });
+    }
+    v.srcObject = null;
+  }
+  function release(): void {
+    dropBridgeStream();
+    pipBridgeVideo.value?.remove();
+    pipBridgeVideo.value = null;
+  }
+  async function toggle(): Promise<void> {
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
+        dropBridgeStream();
         return;
       }
       // PiP shows a remote peer (every entry in remotes() is a peer now
       // — the self-view is a direct getUserMedia preview, not a stream).
       const remote = ctx.remotes()[0];
-      if (
-        remote &&
-        typeof (remote.canvas as HTMLCanvasElement).captureStream === "function"
-      ) {
+      if (remote && typeof (remote.canvas as HTMLCanvasElement).captureStream === "function") {
         const stream = (remote.canvas as HTMLCanvasElement).captureStream(30);
         if (!pipBridgeVideo.value) {
           const v = document.createElement("video");
@@ -34,6 +57,7 @@ export function createPipToggle(ctx: PanelCtx): () => Promise<void> {
           document.body.appendChild(v);
           pipBridgeVideo.value = v;
         }
+        dropBridgeStream();
         pipBridgeVideo.value.srcObject = stream;
         await pipBridgeVideo.value.play().catch(() => {});
         await pipBridgeVideo.value.requestPictureInPicture();
@@ -46,5 +70,6 @@ export function createPipToggle(ctx: PanelCtx): () => Promise<void> {
     } catch (e) {
       console.warn("Picture-in-Picture failed:", e);
     }
-  };
+  }
+  return { toggle, release };
 }

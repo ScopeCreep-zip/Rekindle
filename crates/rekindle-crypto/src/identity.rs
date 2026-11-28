@@ -1,9 +1,7 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
-use rekindle_types::domains;
 
 /// A user's cryptographic identity.
 ///
@@ -18,8 +16,16 @@ pub struct Identity {
 impl Identity {
     /// Generate a new random identity.
     pub fn generate() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
-        Self { signing_key }
+        Self::generate_with(&rekindle_utils::random::OsRandom)
+    }
+
+    /// A new random identity whose 32-byte secret is drawn from `rng`, the
+    /// host's injected generator (plan C9.2).
+    #[must_use]
+    pub fn generate_with(rng: &dyn rekindle_utils::RandomSource) -> Self {
+        let mut secret = zeroize::Zeroizing::new([0u8; 32]);
+        rng.fill(secret.as_mut());
+        Self::from_secret_bytes(&secret)
     }
 
     /// Restore an identity from a 32-byte secret key.
@@ -108,99 +114,45 @@ impl std::fmt::Debug for Identity {
     }
 }
 
-/// P3.3 — short safety number for out-of-band session verification.
-///
-/// `BLAKE3(sort([key_a, key_b]) || "rekindle-safety-v1")` → first 8 hex
-/// chars (32 bits — small enough to read aloud, large enough to detect
-/// substitution attacks at a cost a casual user would tolerate). Sorting
-/// the two identity keys makes the value order-independent, so both peers
-/// derive the same number regardless of who computes it.
-pub fn safety_number(key_a: &[u8], key_b: &[u8]) -> String {
-    let mut keys = [key_a, key_b];
-    keys.sort_unstable();
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(keys[0]);
-    hasher.update(keys[1]);
-    hasher.update(domains::SAFETY_NUMBER.as_bytes());
-    let hash = hasher.finalize();
-    hex::encode(&hash.as_bytes()[..4])
+/// A public key as a person compares it out of band: its hex in groups
+/// of four (plan U1.4: the subject of an admitting intent leads with our
+/// nickname and this, never a peer-chosen name alone).
+#[must_use]
+pub fn key_fingerprint(public_key: &[u8]) -> String {
+    hex::encode(public_key)
+        .as_bytes()
+        .chunks(4)
+        .map(|c| String::from_utf8_lossy(c).into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A key's short fingerprint: the first eight hex digits of
+/// [`key_fingerprint`], in its two groups of four (`"a1b2 c3d4"`). What a
+/// community renders for a member whose card names nobody (plan E3.4 S6):
+/// the identity's name is never written to a community.
+#[must_use]
+pub fn short_key_fingerprint(public_key: &[u8]) -> String {
+    let full = key_fingerprint(public_key);
+    full.get(..9).unwrap_or(&full).to_owned()
+}
+
+/// A DHT record key as a person compares it: [`key_fingerprint`] over the
+/// record's opaque key bytes, from the key's text form
+/// `KIND:base64url(opaque key)[:base64url(encryption key)]` (Veilid
+/// `crypto/types/record_key.rs`). The encryption key, a secret, is never
+/// part of it. `None` when the text is not a record key.
+#[must_use]
+pub fn record_key_fingerprint(record_key: &str) -> Option<String> {
+    use base64::Engine;
+    let (_kind, rest) = record_key.split_once(':')?;
+    let opaque = rest.split(':').next()?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(opaque)
+        .ok()?;
+    (bytes.len() == 32).then(|| key_fingerprint(&bytes))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generate_and_sign() {
-        let identity = Identity::generate();
-        let message = b"hello rekindle";
-
-        let signature = identity.sign(message);
-        assert!(Identity::verify(&identity.public_key(), message, &signature).is_ok());
-    }
-
-    #[test]
-    fn roundtrip_secret_bytes() {
-        let identity = Identity::generate();
-        let bytes = *identity.secret_key_bytes();
-        let restored = Identity::from_secret_bytes(&bytes);
-        assert_eq!(identity.public_key_bytes(), restored.public_key_bytes());
-    }
-
-    #[test]
-    fn x25519_derivation() {
-        let alice = Identity::generate();
-        let bob = Identity::generate();
-
-        let alice_secret = alice.to_x25519_secret();
-        let bob_public = bob.to_x25519_public();
-        let bob_secret = bob.to_x25519_secret();
-        let alice_public = alice.to_x25519_public();
-
-        let shared_a = alice_secret.diffie_hellman(&bob_public);
-        let shared_b = bob_secret.diffie_hellman(&alice_public);
-
-        assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
-    }
-
-    #[test]
-    fn peer_ed25519_to_x25519_matches_own_derivation() {
-        // Verify that peer_ed25519_to_x25519 (from public key bytes) produces
-        // the same X25519 public key as to_x25519_public (from secret key).
-        let identity = Identity::generate();
-        let from_secret = identity.to_x25519_public();
-        let from_public = Identity::peer_ed25519_to_x25519(&identity.public_key_bytes()).unwrap();
-        assert_eq!(from_secret.as_bytes(), from_public.as_bytes());
-    }
-
-    #[test]
-    fn peer_x25519_dh_agreement() {
-        // Alice uses her secret + peer_ed25519_to_x25519(bob's public key)
-        // Bob uses his secret + peer_ed25519_to_x25519(alice's public key)
-        // Both should derive the same shared secret.
-        let alice = Identity::generate();
-        let bob = Identity::generate();
-
-        let alice_secret = alice.to_x25519_secret();
-        let bob_x25519_pub = Identity::peer_ed25519_to_x25519(&bob.public_key_bytes()).unwrap();
-
-        let bob_secret = bob.to_x25519_secret();
-        let alice_x25519_pub = Identity::peer_ed25519_to_x25519(&alice.public_key_bytes()).unwrap();
-
-        let shared_a = alice_secret.diffie_hellman(&bob_x25519_pub);
-        let shared_b = bob_secret.diffie_hellman(&alice_x25519_pub);
-
-        assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
-    }
-
-    #[test]
-    fn safety_number_is_order_independent_and_short() {
-        let a = [0x11u8; 32];
-        let b = [0x22u8; 32];
-        let forward = safety_number(&a, &b);
-        let reverse = safety_number(&b, &a);
-        assert_eq!(forward, reverse, "both peers must derive the same number");
-        assert_eq!(forward.len(), 8, "32 bits = 8 hex chars");
-        assert_ne!(forward, safety_number(&a, &[0x33u8; 32]));
-    }
-}
+#[path = "identity_tests.rs"]
+mod tests;

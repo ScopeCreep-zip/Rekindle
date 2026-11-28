@@ -8,7 +8,7 @@ provides peer-to-peer transport and distributed storage.
 
 ## Layer Stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                     SolidJS Frontend                    │
 │  8 windows, components, stores, handlers, styles        │
@@ -26,12 +26,12 @@ provides peer-to-peer transport and distributed storage.
 │  Tier 3   codec, records, events, idempotency,          │
 │           mek-rotation, analytics                       │
 │  Tier 4   route, lifecycle                              │
-│  Tier 5   gossip, presence, friendship                  │
+│  Tier 5   gossip, presence                              │
 │  Tier 6   governance + governance-runtime               │
 │  Tier 7   channel, dm, calls, files, video, link-       │
 │           preview                                       │
 │  Plus     protocol, transport, crypto, voice, sync,     │
-│           game-detect, utils, e2e-server, node, cli     │
+│           game-detect, utils, node, cli                 │
 │  (crates/)                                              │
 ├─────────────────────────────────────────────────────────┤
 │                    Veilid Network                       │
@@ -74,12 +74,12 @@ inventory is [`crates.md`](crates.md); per-crate detail is
 |------|----------|------|
 | 1 | `rekindle-types` | Shared IDs, enums, error taxonomy. Zero deps on other rekindle crates. |
 | 2 | `rekindle-secrets`, `rekindle-vault`, `rekindle-audit` | All key material (`secrets`), SQLCipher persistent store (`vault`), tamper-evident BLAKE3 keyed hash chain (`audit`). The sole crypto / persistence boundary. |
-| 3 | `rekindle-codec`, `rekindle-records`, `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics` | Signed envelope build / verify, DHT record lifecycle, event dedup + journal, command idempotency, MEK cascade rotation, local-only analytics. |
+| 3 | `rekindle-codec`, `rekindle-records`, `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics`, `rekindle-image` | Signed envelope build / verify, DHT record lifecycle, event dedup + journal, command idempotency, MEK cascade rotation, local-only analytics, the one limited image decoder. |
 | 4 | `rekindle-route`, `rekindle-lifecycle` | Private route allocation + cache; 9-state app FSM + `TransportGuard`. |
-| 5 | `rekindle-gossip`, `rekindle-presence`, `rekindle-friendship` | Transport-agnostic gossip primitives; presence orchestrators; inbox-scan coordinator. |
+| 5 | `rekindle-gossip`, `rekindle-presence` | Transport-agnostic gossip primitives; presence orchestrators (a friend's presence arrives by watch, plan E2.5). |
 | 6 | `rekindle-governance`, `rekindle-governance-runtime` | Pure CRDT merge (no I/O, no async); async lifecycle layer for community origin / bootstrap / join / segments. |
 | 7 | `rekindle-channel`, `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features built on lower tiers. |
-| — | `rekindle-protocol`, `rekindle-transport`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Cross-cutting integration. `protocol` is the **desktop** Veilid boundary; `transport` is the **daemon** Veilid boundary. |
+| — | `rekindle-protocol`, `rekindle-transport`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils` | Cross-cutting integration. `protocol` is the **desktop** Veilid boundary; `transport` is the **daemon** Veilid boundary. |
 | — | `rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui` | Daemon process + the frontends' shared client, the CLI (`rekindle`) and the TUI (`rekindle-tui`). Communicate over the Noise-IK IPC bus. |
 
 Eleven of these crates are recent harvest extractions; see
@@ -87,14 +87,13 @@ Eleven of these crates are recent harvest extractions; see
 
 ## Directory Tree
 
-```
+```text
 src/
 ├── main.tsx                          Entry point, path-based routing
-├── windows/                          One component per Tauri window (8)
+├── windows/                          One component per Tauri window (7)
 │   ├── LoginWindow.tsx
 │   ├── BuddyListWindow.tsx
-│   ├── ChatWindow.tsx
-│   ├── DmWindow.tsx
+│   ├── ChatWindow.tsx                1:1 and group mode (chat_window/)
 │   ├── CommunityWindow.tsx
 │   ├── SettingsWindow.tsx
 │   ├── ProfileWindow.tsx
@@ -166,20 +165,16 @@ src-tauri/
 │   │                                 governance_persist, identity, node,
 │   │                                 routes)
 │   ├── db.rs                         Lenient row helpers (DB: AppState.db)
-│   ├── db_helpers.rs                 db_call / db_call_or_default / db_fire
+│   ├── db_helpers.rs                 db_call / db_fire
 │   ├── event_dispatch.rs             Phase 23.A — single-source emit router
 │   ├── keystore/                     The per-identity VaultStore handle;
 │   │                                 typed helpers are rekindle_vault::typed
-│   ├── audit_repo/                   Audit chain append / verify / restore
 │   ├── audit_view.rs                 Audit log query / export
 │   ├── channel_materialize.rs        Channel state materialisation
-│   ├── channel_repo.rs               Community channel CRUD
 │   ├── community_loader/             Community state restore on startup
-│   ├── envelope_store_sqlite.rs      Durable pending-envelope queue
 │   ├── friend_repo.rs                Fire-and-forget friend-row writes
 │   ├── message_repo.rs               Message persistence
 │   ├── message_view.rs               Message read views
-│   ├── signal_stores.rs              Signal store DB-level access
 │   ├── invite_helpers.rs             Outgoing invite tracking
 │   ├── serde_helpers.rs              Custom serde adapters
 │   ├── deep_links.rs                 rekindle:// URI handler
@@ -206,10 +201,9 @@ crates/                               (workspace members — see crates.md;
 schemas/                              Cap'n Proto schema definitions
 ├── account.capnp                     AccountHeader, ContactEntry, ChatEntry
 ├── community.capnp                   Community, Channel, Role, PermissionOverwrite
-├── conversation.capnp                ConversationHeader
 ├── friend.capnp                      FriendRequest, FriendList, FriendEntry
-├── identity.capnp                    UserProfile, PreKeyBundle
-├── message.capnp                     MessageEnvelope, ChatMessage, Attachment
+├── identity.capnp                    PrekeyRecordHead, OpkSlot, PrekeyRecordList
+├── direct.capnp                      DmFrame, DmContent, SealedContent, 1:1 kind bodies
 ├── presence.capnp                    PresenceUpdate, GameStatus
 └── voice.capnp                       VoiceSignaling
 ```
@@ -219,19 +213,21 @@ schemas/                              Cap'n Proto schema definitions
 | Pattern | Direction | Mechanism | Use Cases |
 |---------|-----------|-----------|-----------|
 | Commands | Frontend → Rust | `invoke()` / `#[tauri::command]` | Login, send message, add friend, change status |
-| Events | Rust → Frontend | `app.emit()` via `event_dispatch.rs` → `listen()` | Incoming messages, presence updates, typing indicators |
+| Events | Rust → Frontend | typed `WebviewEvent` via `event_dispatch.rs` → `event_router` → each window's `tauri::ipc::Channel` | Incoming messages, presence updates, typing indicators |
 
 Commands are synchronous request-response calls. Events are push-based
-notifications produced by background services. **All `app.emit()` calls
-flow through `src-tauri/src/event_dispatch.rs`** (Phase 23.A single-
-source router) so that cross-cutting concerns — rate limiting,
-journalling, replay-on-reconnect — live in one place. See
+notifications produced by background services. **Every event flows through
+`src-tauri/src/event_dispatch.rs`**: it works out the event's audience and
+`event_router::WebviewRouter` sends it on each audience window's
+`tauri::ipc::Channel` (ADR 0013). Nothing uses Tauri's `Emitter`
+(`cargo xtask check-no-emitter`). The frontend demultiplexes a window's stream
+in `src/ipc/channels/subscriptions.ts`. See
 [`event-dispatch.md`](event-dispatch.md).
 
 ## Window Architecture
 
-Only the `login` window is declared statically in `tauri.conf.json`.
-All other windows are created at runtime by helpers in
+No window is declared in `tauri.conf.json` (`app.windows` is empty, and a
+test enforces it). Every window, login included, is created at runtime by helpers in
 `src-tauri/src/windows.rs`. Each window has its own URL path. The
 SolidJS `Switch` component in `main.tsx` reads
 `window.location.pathname` and renders the corresponding window
@@ -241,8 +237,7 @@ component.
 |--------|-------|------|-------|
 | Login | `login` | `/login` | 380 × 480, declared in `tauri.conf.json` |
 | Buddy List | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
-| Chat | `chat-{pubkey prefix}` | `/chat?peer={key}` | One per 1:1 conversation |
-| DM | `dm-{record-key prefix}` | `/dm?record={key}` | One per DM / group DM |
+| Chat | `chat-{pubkey prefix}`, `chat-{record-key prefix}` | `/chat?peer={key}`, `/chat?group={key}` | One per 1:1 conversation or group DM |
 | Community | `community-{id}` | `/community?id={id}` | One per joined community |
 | Settings | `settings` | `/settings` | Single instance |
 | Profile | `profile-{key prefix}` | `/profile?key={key}` | One per peer |
@@ -255,17 +250,17 @@ to the system tray on close.
 
 ## Data Flow: Sending a 1:1 Message
 
-```
-┌──────────┐    invoke()     ┌──────────┐   Signal encrypt   ┌────────────────┐
+```text
+┌──────────┐    invoke()     ┌──────────┐  ratchet / seal    ┌────────────────┐
 │ Frontend │ ──────────────→ │  Tauri   │ ────────────────→  │ rekindle-crypto│
-│ MessageInput│ send_message │ commands │                    │   (encrypt)    │
+│ MessageInput│ send_message │ commands │                    │ + rekindle-db  │
 └──────────┘                 └────┬─────┘                    └──────┬─────────┘
                                   │                                  │
                                   │ ciphertext                       │
                                   ▼                                  ▼
-                            ┌──────────────┐  build & sign    ┌─────────────┐
+                            ┌──────────────┐  encode          ┌─────────────┐
                             │ message_     │ ───────────────→ │ rekindle-   │
-                            │ service      │  MessageEnvelope │ codec       │
+                            │ service      │  'D' ‖ DmFrame   │ codec       │
                             └──────┬───────┘                  └──────┬──────┘
                                    │ app_message(route_id, bytes)    │
                                    ▼                                  │
@@ -277,7 +272,7 @@ to the system tray on close.
 
 ## Data Flow: Receiving a 1:1 Message
 
-```
+```text
 ┌──────────────┐  VeilidUpdate::AppMessage  ┌──────────────┐
 │   Veilid     │ ────────────────────────→  │ veilid::     │
 │   Network    │                            │ dispatch     │
@@ -316,7 +311,7 @@ CRDT governance, MEK rotation, plate-gate scaling — lives in
 [`communities-channels.md`](communities-channels.md), and
 [`communities-governance.md`](communities-governance.md).
 
-```
+```text
             ┌──────────────────────────────────────────────────┐
             │                  Sender                          │
             │  send_channel_message → MEK encrypt → envelope   │

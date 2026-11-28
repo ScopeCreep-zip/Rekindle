@@ -1,8 +1,10 @@
-import { Component, For } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
+import { type Component, For } from "solid-js";
 import { commands } from "../../ipc/commands";
-import { setAuthState } from "../../stores/auth.store";
 import type { UserStatus } from "../../stores/auth.store";
+import { setAuthState } from "../../stores/auth.store";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 import StatusDot from "./StatusDot";
 
 interface StatusOption {
@@ -10,24 +12,28 @@ interface StatusOption {
   label: string;
 }
 
-const statusOptions: StatusOption[] = [
+export const statusOptions: StatusOption[] = [
   { value: "online", label: "Online" },
   { value: "away", label: "Away" },
   { value: "busy", label: "Busy" },
-  { value: "offline", label: "Appear Offline" },
+  // Invisible: peers see offline; only logging out sets offline.
+  { value: "invisible", label: "Appear Offline" },
 ];
 
 interface StatusPickerProps {
   currentStatus: UserStatus;
 }
 
-const StatusPicker: Component<StatusPickerProps> = (props) => {
-  function handleSelect(value: string): void {
-    const status = value as UserStatus;
-    commands.setStatus(status);
-    setAuthState("status", status);
-  }
+/** Choose our status. The Host owns it: show what it answers, and its
+ *  refusal (the label keeps the status it still holds). */
+export function handleSelectStatus(value: string): void {
+  void commands
+    .setStatus(value as Exclude<UserStatus, "offline">)
+    .then((view) => setAuthState("status", view.status))
+    .catch((e: unknown) => addToast(`Status not changed: ${errorMessage(e)}`, "error"));
+}
 
+const StatusPicker: Component<StatusPickerProps> = (props) => {
   return (
     <DropdownMenu placement="top-start">
       <DropdownMenu.Trigger class="buddy-item status-picker">
@@ -35,13 +41,22 @@ const StatusPicker: Component<StatusPickerProps> = (props) => {
         <span class="buddy-name">
           {statusOptions.find((o) => o.value === props.currentStatus)?.label}
         </span>
+        {/* Plan E7.7.7: a skin's status arrow (slot `statusbar.arrow`); 0 × 0 without one. */}
+        <span class="status-picker-arrow" aria-hidden="true" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="context-menu status-picker-dropdown">
-          <DropdownMenu.RadioGroup value={props.currentStatus} onChange={handleSelect}>
+          <DropdownMenu.RadioGroup value={props.currentStatus} onChange={handleSelectStatus}>
             <For each={statusOptions}>
               {(option) => (
-                <DropdownMenu.RadioItem class="context-menu-item" value={option.value}>
+                // A radio item keeps its menu open by default (Kobalte
+                // `MenuRadioItem`, closeOnSelect false): choosing a status
+                // closes the picker, as Xfire's did.
+                <DropdownMenu.RadioItem
+                  class="context-menu-item"
+                  value={option.value}
+                  closeOnSelect
+                >
                   <StatusDot status={option.value} />
                   <span class="status-picker-label">{option.label}</span>
                 </DropdownMenu.RadioItem>

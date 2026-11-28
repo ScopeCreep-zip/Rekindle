@@ -21,16 +21,24 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let memberships = match ctx.require_session(|session| {
+    match overviews(ctx) {
+        Ok(overviews) => IpcResponse::ok(&overviews),
+        Err(e) => e,
+    }
+}
+
+/// The joined communities as `CommunityList` answers them (also the
+/// Infoview's, plan E7.15 IV4).
+pub(crate) fn overviews(
+    ctx: &DaemonContext,
+) -> Result<Vec<rekindle_types::display::CommunityOverview>, IpcResponse> {
+    let memberships = ctx.require_session(|session| {
         session
             .communities
             .values()
             .cloned()
             .collect::<Vec<rekindle_transport::CommunityMembership>>()
-    }) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
+    })?;
 
     // From the roster the presence poll materialised, not from a DHT
     // read: every row behind these counts was W26-verified and
@@ -39,9 +47,8 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         .iter()
         .map(|m| {
             (
-                m.governance_key.clone(),
-                u32::try_from(ctx.community_runtime.member_count(&m.governance_key))
-                    .unwrap_or(u32::MAX),
+                m.anchor.clone(),
+                u32::try_from(ctx.communities.member_count(&m.anchor)).unwrap_or(u32::MAX),
             )
         })
         .collect();
@@ -53,66 +60,76 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         .iter()
         .map(|m| {
             let n = ctx
-                .community_runtime
-                .governance_state(&m.governance_key)
+                .communities
+                .governance_state(&m.anchor)
                 .map_or(0, |gov| {
                     u32::try_from(gov.channels.len()).unwrap_or(u32::MAX)
                 });
-            (m.governance_key.clone(), n)
+            (m.anchor.clone(), n)
         })
         .collect();
 
     let metadata: HashMap<String, rekindle_transport::CommunityMetaSummary> = memberships
         .iter()
         .filter_map(|m| {
-            let gov = ctx.community_runtime.governance_state(&m.governance_key)?;
+            let gov = ctx.communities.governance_state(&m.anchor)?;
             let meta = gov.metadata.as_ref()?;
             Some((
-                m.governance_key.clone(),
+                m.anchor.clone(),
                 rekindle_transport::CommunityMetaSummary {
                     name: meta.name.clone(),
                     description: meta.description.clone().unwrap_or_default(),
-                    creator_pseudonym: gov
-                        .creator
-                        .as_ref()
-                        .map(|c| hex::encode(c.0))
-                        .unwrap_or_default(),
+                    creator_pseudonyms: gov.creators.iter().map(|c| hex::encode(c.0)).collect(),
                     created_at: 0,
                 },
             ))
         })
         .collect();
 
-    IpcResponse::ok(&rekindle_transport::list_communities(
+    let mut overviews = rekindle_transport::list_communities(
         &memberships,
         &member_counts,
         &channel_counts,
         &metadata,
-    ))
+    );
+    for overview in &mut overviews {
+        overview.removed =
+            crate::host::adapters::governance::removal_display(&ctx.communities, &overview.anchor);
+    }
+    Ok(overviews)
 }
 
-pub(crate) fn handle_info(
+pub(crate) async fn handle_info(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
 ) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let membership = match ctx.resolve_community(governance_key) {
+    let membership = match ctx.resolve_community(anchor) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    let member_count = u32::try_from(
-        ctx.community_runtime
-            .member_count(&membership.governance_key),
-    )
-    .unwrap_or(u32::MAX);
-    let channels = super::super::channel::channel_overviews(ctx, &membership.governance_key);
-    let roles = super::super::governance::role_displays(ctx, &membership.governance_key);
-    let gov = ctx
-        .community_runtime
-        .governance_state(&membership.governance_key);
+    let mut detail = held_detail(ctx, &membership);
+    // The window view's own source: the CLI and TUI read exactly the state
+    // the window reads.
+    detail.op_publications =
+        crate::host::adapters::governance::op_publications(ctx, &membership.anchor).await;
+    IpcResponse::ok(&detail)
+}
+
+/// `membership`'s detail from the merged state and the unlock barrier the
+/// Host holds.
+fn held_detail(
+    ctx: &DaemonContext,
+    membership: &rekindle_transport::CommunityMembership,
+) -> rekindle_types::display::CommunityDetail {
+    let member_count =
+        u32::try_from(ctx.communities.member_count(&membership.anchor)).unwrap_or(u32::MAX);
+    let channels = super::super::channel::channel_overviews(ctx, &membership.anchor);
+    let roles = super::super::governance::role_displays(ctx, &membership.anchor);
+    let gov = ctx.communities.governance_state(&membership.anchor);
     let meta = gov
         .as_ref()
         .map(|gov| rekindle_transport::CommunityMetaSummary {
@@ -125,20 +142,72 @@ pub(crate) fn handle_info(
                 .as_ref()
                 .and_then(|m| m.description.clone())
                 .unwrap_or_default(),
-            creator_pseudonym: gov
-                .creator
-                .as_ref()
-                .map(|c| hex::encode(c.0))
-                .unwrap_or_default(),
+            creator_pseudonyms: gov.creators.iter().map(|c| hex::encode(c.0)).collect(),
             created_at: 0,
         })
         .unwrap_or_default();
 
-    IpcResponse::ok(&rekindle_transport::community_detail(
-        &membership,
+    let mut detail = rekindle_transport::community_detail(
+        membership,
         member_count,
         channels,
         roles,
+        &ctx.communities.my_role_ids(&membership.anchor),
         meta,
-    ))
+    );
+    detail.removed =
+        crate::host::adapters::governance::removal_display(&ctx.communities, &membership.anchor);
+    detail.catch_up = ctx.communities.unlock_barriers().view(&membership.anchor);
+    detail.mek_generation =
+        (ctx.communities.mek_generation(&membership.anchor)).unwrap_or_default();
+    detail
+}
+
+/// Every joined community as its window renders it (plan E3.1 D1b).
+pub(crate) async fn handle_views(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    IpcResponse::ok(
+        &crate::daemon::dispatch::adapter(ctx)
+            .community_views()
+            .await,
+    )
+}
+
+/// The held co-creator invites and our pending creations (plan E3.2
+/// S7s.3g, lead decision (33)).
+pub(crate) async fn handle_co_creation(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    match crate::daemon::dispatch::adapter(ctx)
+        .co_creation_snapshot()
+        .await
+    {
+        Ok(snapshot) => IpcResponse::ok(&snapshot),
+        Err(e) => IpcResponse::error(500, e),
+    }
+}
+
+/// A community's member list (plan E3.1 D1b).
+pub(crate) async fn handle_members(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    anchor: &str,
+) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let membership = match ctx.resolve_community(anchor) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match crate::daemon::dispatch::adapter(ctx)
+        .community_members(&membership.anchor)
+        .await
+    {
+        Ok(members) => IpcResponse::ok(&members),
+        Err(e) => IpcResponse::error(500, e),
+    }
 }

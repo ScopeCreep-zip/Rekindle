@@ -14,27 +14,33 @@
 
 use std::collections::HashSet;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{
+    CallClosed, DirectBody, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft,
+};
 use x25519_dalek::StaticSecret;
 
+use rekindle_types::group_dm::GroupCallRoster;
+
+use crate::error::CallError;
 use crate::group::unwrap_call_key;
 use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
+use crate::signaling::trace;
 use crate::state::CallKind;
 
-/// Dispatcher for group-call MessagePayload variants. After W13.13,
+/// Dispatcher for the group-call kinds (§6 0x0210–0x0214). After W13.13,
 /// ALL group call signaling travels via app_message (was app_call in
-/// W12.9). Non-group payloads log + return (callers shouldn't dispatch
+/// W12.9). Non-group bodies log + return (callers shouldn't dispatch
 /// them here, but we no longer `unreachable!()` since this is a public
 /// trait-using function and panicking on bad input is hostile).
 pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
-    payload: MessagePayload,
+    body: DirectBody,
 ) {
-    match payload {
-        MessagePayload::GroupCallOffer {
+    match body {
+        DirectBody::GroupCallOffer(GroupCallOffer {
             call_id,
             offer_kind,
             initiator_pubkey,
@@ -42,7 +48,23 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             participants,
             wrapped_call_key,
             expires_at_ms,
-        } => {
+            group_id,
+        }) => {
+            // A group id is a claim: only a member of that group, inviting
+            // only its members, rings here as that group's call.
+            if let Some(group) = group_id.as_deref() {
+                let claimed = std::iter::once(sender_hex)
+                    .chain(std::iter::once(initiator_pubkey.as_str()))
+                    .chain(participants.iter().map(String::as_str));
+                if let Err(e) = check_group_scope(deps, group, claimed).await {
+                    tracing::warn!(call_id = %call_id, sender = %sender_hex,
+                        claimed_group = %group, error = %e,
+                        "GroupCallOffer group id refused; offer dropped");
+                    trace::incoming("offer", &call_id, sender_hex, "refused: not the group's");
+                    return;
+                }
+            }
+            trace::incoming("offer", &call_id, sender_hex, "received");
             handle_incoming_group_invite(
                 deps,
                 GroupInvite {
@@ -54,27 +76,57 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                     participants,
                     wrapped_call_key: &wrapped_call_key,
                     expires_at_ms,
+                    group_id,
                 },
             );
         }
-        MessagePayload::GroupCallAccept {
-            call_id,
-            acceptor_pubkey,
-        } => {
-            handle_group_accept_received(deps, sender_hex, &call_id, &acceptor_pubkey);
+        DirectBody::GroupCallAccept(GroupCallMember { call_id, pubkey }) => {
+            let known = deps.group_registry().contains(&call_id);
+            trace::incoming(
+                "accept",
+                &call_id,
+                sender_hex,
+                if known {
+                    "applied"
+                } else {
+                    "ignored: unknown call"
+                },
+            );
+            handle_group_accept_received(deps, sender_hex, &call_id, &pubkey);
         }
-        MessagePayload::GroupCallDecline { call_id, reason } => {
+        DirectBody::GroupCallDecline(CallClosed { call_id, reason }) => {
+            let known = deps.group_registry().contains(&call_id);
+            trace::incoming(
+                "decline",
+                &call_id,
+                sender_hex,
+                if known {
+                    "applied"
+                } else {
+                    "ignored: unknown call"
+                },
+            );
             handle_group_decline_received(deps, sender_hex, &call_id, reason);
         }
-        MessagePayload::GroupCallParticipantJoined {
+        DirectBody::GroupCallParticipantJoined(GroupCallMember {
             call_id,
-            participant_pubkey,
-        } => {
+            pubkey: participant_pubkey,
+        }) => {
             // Defend against a malicious peer announcing arbitrary joins:
             // only forward if the announced participant is in the call's
             // known invite list.
             let snapshot = deps.group_registry().snapshot(&call_id);
             let known = snapshot.is_some_and(|s| s.participants.contains(&participant_pubkey));
+            trace::incoming(
+                "participant joined",
+                &call_id,
+                sender_hex,
+                if known {
+                    "applied"
+                } else {
+                    "ignored: not in the call"
+                },
+            );
             if known {
                 deps.emit_event(CallSignalEvent::GroupCallParticipantJoined {
                     call_id,
@@ -82,23 +134,15 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                 });
             }
         }
-        MessagePayload::GroupCallParticipantLeft {
+        DirectBody::GroupCallParticipantLeft(GroupCallParticipantLeft {
             call_id,
             participant_pubkey,
             reason,
-        } => {
-            let snapshot = deps.group_registry().snapshot(&call_id);
-            let known = snapshot.is_some_and(|s| s.participants.contains(&participant_pubkey));
-            if known {
-                deps.emit_event(CallSignalEvent::GroupCallParticipantLeft {
-                    call_id,
-                    peer_public_key: participant_pubkey,
-                    reason,
-                });
-            }
+        }) => {
+            handle_participant_left(deps, sender_hex, &call_id, &participant_pubkey, reason);
         }
         other => {
-            tracing::warn!(payload = ?other, "handle_group_call_payload: non-group payload ignored");
+            tracing::warn!(kind = ?other.type_id(), "handle_group_call_payload: non-group body ignored");
         }
     }
 }
@@ -125,6 +169,43 @@ pub struct GroupInvite<'a> {
     pub wrapped_call_key: &'a [u8],
     /// Offer expiry, ms since epoch.
     pub expires_at_ms: u64,
+    /// The group DM the call belongs to, already checked against its
+    /// roster by [`check_group_scope`].
+    pub group_id: Option<String>,
+}
+
+/// Refuse a group-scoped call unless every key in `members` is in the
+/// roster of our group DM `group_id`.
+///
+/// # Errors
+/// [`CallError::NotInGroup`] for an unknown group or a non-member.
+pub async fn check_group_scope<'a, D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    group_id: &str,
+    members: impl IntoIterator<Item = &'a str>,
+) -> Result<(), CallError> {
+    let GroupCallRoster::Held(roster) = deps.group_roster(group_id).await? else {
+        return Err(CallError::NotInGroup(format!("no group {group_id}")));
+    };
+    check_members(&roster, group_id, members)
+}
+
+/// Refuse unless every key in `members` is in `roster`, the roster of
+/// our group DM `group_id`.
+///
+/// # Errors
+/// [`CallError::NotInGroup`] naming the first non-member.
+pub fn check_members<'a>(
+    roster: &[String],
+    group_id: &str,
+    members: impl IntoIterator<Item = &'a str>,
+) -> Result<(), CallError> {
+    match members.into_iter().find(|m| !roster.iter().any(|r| r == m)) {
+        Some(outsider) => Err(CallError::NotInGroup(format!(
+            "{outsider} is not in group {group_id}"
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// Receiver-side entry into a group call. Mirrors the 1:1
@@ -143,6 +224,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         participants,
         wrapped_call_key,
         expires_at_ms,
+        group_id,
     } = invite;
     // `offer_kind` is the wire-format u8 (0=audio, 1=video). The
     // GroupCallState + emitted IncomingGroupCall event both carry the
@@ -212,6 +294,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         our_x25519_secret: Some(reconstruct_x25519_secret(&our_x25519_secret)),
         call_key: Some(call_key),
         status: GroupCallStatus::Incoming,
+        group_id: group_id.clone(),
     });
 
     deps.emit_event(CallSignalEvent::IncomingGroupCall {
@@ -221,6 +304,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         participants,
         kind: offer_kind,
         expires_at_ms,
+        group_id,
     });
     deps.surface_window_for_call(call_id);
 }
@@ -259,12 +343,56 @@ pub fn handle_group_accept_received<D: CallSignalingDeps + ?Sized>(
         registry.set_status(call_id, GroupCallStatus::Active);
         deps.emit_event(CallSignalEvent::GroupCallConnected {
             call_id: call_id.to_string(),
+            group_id: snapshot.group_id.clone(),
         });
     }
     deps.emit_event(CallSignalEvent::GroupCallParticipantJoined {
         call_id: call_id.to_string(),
         peer_public_key: acceptor_pubkey.to_string(),
     });
+}
+
+/// A member left a group call (`GroupCallParticipantLeft`, finding GV3).
+/// Only the member itself can say so (`sender_hex` must be the leaver).
+/// When the initiator leaves a call that still rings here (we never
+/// joined), the ring is over: the entry goes and `GroupCallEnded` clears
+/// the window, the same as a 1:1 caller's cancel (`CallEnd`). Otherwise
+/// the call goes on and the grid learns who left.
+pub fn handle_participant_left<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    sender_hex: &str,
+    call_id: &str,
+    participant_pubkey: &str,
+    reason: String,
+) {
+    let registry = deps.group_registry();
+    let outcome = match registry.snapshot(call_id) {
+        None => "ignored: unknown call",
+        Some(_) if sender_hex != participant_pubkey => "ignored: not the leaver's own",
+        Some(s) if !s.participants.iter().any(|p| p == participant_pubkey) => {
+            "ignored: not in the call"
+        }
+        Some(s)
+            if s.status == GroupCallStatus::Incoming
+                && s.initiator_pubkey == participant_pubkey =>
+        {
+            registry.remove(call_id);
+            deps.emit_event(CallSignalEvent::GroupCallEnded {
+                call_id: call_id.to_string(),
+                reason,
+            });
+            "ring cancelled"
+        }
+        Some(_) => {
+            deps.emit_event(CallSignalEvent::GroupCallParticipantLeft {
+                call_id: call_id.to_string(),
+                peer_public_key: participant_pubkey.to_string(),
+                reason,
+            });
+            "participant left"
+        }
+    };
+    trace::incoming("participant left", call_id, sender_hex, outcome);
 }
 
 /// Initiator side: a participant declined.

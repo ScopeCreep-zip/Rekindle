@@ -71,7 +71,13 @@ impl VoiceReceiveLoop {
                 sig: Vec::new(),
             };
             feedback.sign(&signing_key);
-            let encoded = feedback.encode();
+            let encoded = match feedback.encode() {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    tracing::warn!(%error, "could not encode voice receiver feedback");
+                    continue;
+                }
+            };
             let mut wire = Vec::with_capacity(1 + encoded.len());
             wire.push(FEEDBACK_TAG);
             wire.extend_from_slice(&encoded);
@@ -83,16 +89,5 @@ impl VoiceReceiveLoop {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn interval_follows_five_percent_of_the_estimate() {
-        assert_eq!(feedback_interval(None, 1_800), DEFAULT_INTERVAL);
-        // 1800 B every 250 ms is 57.6 kbps: 5 % of 1.152 Mbps.
-        assert_eq!(feedback_interval(Some(1_000_000), 1_800), MAX_INTERVAL);
-        let at_4m = feedback_interval(Some(4_000_000), 1_800);
-        assert_eq!(at_4m, Duration::from_secs_f64(14_400.0 / 200_000.0));
-        assert_eq!(feedback_interval(Some(100_000_000), 1_800), MIN_INTERVAL);
-    }
-}
+#[path = "feedback_tests.rs"]
+mod tests;

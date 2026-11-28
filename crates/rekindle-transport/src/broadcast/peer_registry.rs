@@ -5,14 +5,12 @@
 //! routes with repeated timeout failures.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use tokio::time::Instant;
 
-/// Opaque handle for a remote peer's route. Wraps a Veilid `RouteId`
-/// without exposing it as a Veilid type through the public API.
-#[derive(Debug, Clone)]
-pub struct PeerTarget {
-    pub(crate) route_id: veilid_core::RouteId,
-}
+use tokio::sync::broadcast;
+
+/// How many route changes a slow subscriber may fall behind by.
+const UPDATES_CAPACITY: usize = 64;
 
 /// Cached route blob with import timestamp for staleness detection.
 #[derive(Debug, Clone)]
@@ -40,6 +38,9 @@ pub struct PeerRegistry {
     circuit_threshold: u32,
     /// Cooldown period in seconds after the circuit trips.
     circuit_cooldown_secs: u64,
+    /// The peer whose cached route changed, for whoever follows routes
+    /// (a live call's roster heal).
+    updates: broadcast::Sender<String>,
 }
 
 impl PeerRegistry {
@@ -50,14 +51,20 @@ impl PeerRegistry {
             route_ttl_secs,
             circuit_threshold,
             circuit_cooldown_secs,
+            updates: broadcast::channel(UPDATES_CAPACITY).0,
         }
     }
 
-    /// Cache a peer's route blob.
+    /// Cache a peer's route blob; a new blob is announced on
+    /// [`updates`](Self::updates).
     pub fn cache_route(&mut self, peer_key: &str, blob: Vec<u8>) {
         if blob.is_empty() {
             return;
         }
+        let changed = self
+            .routes
+            .get(peer_key)
+            .is_none_or(|cached| cached.blob != blob);
         self.routes.insert(
             peer_key.to_string(),
             CachedRoute {
@@ -65,6 +72,15 @@ impl PeerRegistry {
                 imported_at: Instant::now(),
             },
         );
+        if changed {
+            // No subscriber is fine: nobody follows routes right now.
+            let _ = self.updates.send(peer_key.to_string());
+        }
+    }
+
+    /// The peers whose cached route changes from now on.
+    pub fn updates(&self) -> broadcast::Receiver<String> {
+        self.updates.subscribe()
     }
 
     /// Get a cached route blob if it's not stale.
@@ -79,6 +95,19 @@ impl PeerRegistry {
     /// Remove a peer's cached route.
     pub fn invalidate_route(&mut self, peer_key: &str) {
         self.routes.remove(peer_key);
+    }
+
+    /// Remove a peer's cached route only while it is still `blob`, the one
+    /// that failed: a route cached since (a refresh, their profile watch)
+    /// is not the one in question and stays (live finding CR2).
+    pub fn invalidate_route_blob(&mut self, peer_key: &str, blob: &[u8]) {
+        if self
+            .routes
+            .get(peer_key)
+            .is_some_and(|cached| cached.blob == blob)
+        {
+            self.routes.remove(peer_key);
+        }
     }
 
     /// Forget the peers whose cached blob is one of `dead` (routes Veilid
@@ -237,8 +266,73 @@ impl PeerRegistry {
     }
 }
 
+/// Strand Relay sender state beside the route cache (plan E2.1): the
+/// status-probe cooldown per target (§13.5). The relay routes' circuit
+/// breakers (Wave 7 P7.3, `rekindle_route::relay`) join it at E5.5 with
+/// the relay send.
+#[derive(Default)]
+pub struct RelayState {
+    probe_cooldown: parking_lot::Mutex<HashMap<String, u64>>,
+    /// The probes awaiting an answer: `(friend asked, target)` and when
+    /// (plan audit G8).
+    pending_probes: parking_lot::Mutex<HashMap<(String, String), u64>>,
+}
+
+impl RelayState {
+    /// Whether a probe for `target` may go now (none in the last
+    /// `cooldown_secs`); taking the slot when it may. Entries older than
+    /// four cooldowns are dropped so the map stays small.
+    pub fn take_probe_slot(&self, target: &str, now_secs: u64, cooldown_secs: u64) -> bool {
+        let mut cooldown = self.probe_cooldown.lock();
+        if let Some(&last) = cooldown.get(target) {
+            if now_secs.saturating_sub(last) < cooldown_secs {
+                return false;
+            }
+        }
+        cooldown.insert(target.to_string(), now_secs);
+        let horizon = cooldown_secs.saturating_mul(4);
+        cooldown.retain(|_, &mut t| now_secs.saturating_sub(t) <= horizon);
+        true
+    }
+
+    /// Remember that `friend` was asked about `target` at `now_secs`.
+    /// Probes older than `ttl_secs` are dropped so the map stays small.
+    pub fn record_probe(&self, friend: &str, target: &str, now_secs: u64, ttl_secs: u64) {
+        let mut pending = self.pending_probes.lock();
+        pending.retain(|_, &mut t| now_secs.saturating_sub(t) <= ttl_secs);
+        pending.insert((friend.to_string(), target.to_string()), now_secs);
+    }
+
+    /// Whether `friend` answering about `target` at `now_secs` answers a
+    /// probe of ours sent within `ttl_secs`; the probe is used up, so one
+    /// probe takes one answer.
+    pub fn take_probe_answer(
+        &self,
+        friend: &str,
+        target: &str,
+        now_secs: u64,
+        ttl_secs: u64,
+    ) -> bool {
+        self.pending_probes
+            .lock()
+            .remove(&(friend.to_string(), target.to_string()))
+            .is_some_and(|asked| now_secs.saturating_sub(asked) <= ttl_secs)
+    }
+
+    /// Forget the probe cooldowns and pending probes (lock): the next
+    /// identity's probes are its own.
+    pub fn clear_probes(&self) {
+        self.probe_cooldown.lock().clear();
+        self.pending_probes.lock().clear();
+    }
+}
+
 /// Re-exported from `rekindle_types::display` — the SSOT definitions.
 pub use rekindle_types::display::{CircuitSummary, PeerSnapshot};
 
 /// Public re-export for external use in circuit breaker checks.
 pub type CircuitBreaker = PeerRegistry;
+
+#[cfg(test)]
+#[path = "peer_registry_tests.rs"]
+mod tests;

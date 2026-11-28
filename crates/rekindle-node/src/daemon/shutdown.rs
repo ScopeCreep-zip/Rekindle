@@ -37,14 +37,24 @@ pub enum ExitReason {
     /// The daemon's own bus subscriber could not connect, so nothing
     /// would ever be answered.
     SubscriberFailed,
-    /// The identity was destroyed; the daemon restarts with none.
-    IdentityDestroyed,
-    /// Everything was wiped; the host deletes the Veilid storage once the
-    /// transport has stopped, and the daemon restarts empty.
+    /// Everything was wiped; the host removes what the node held
+    /// (`host::wipe::finish`) once the transport has stopped, and the
+    /// daemon restarts empty.
     DataWiped,
 }
 
 impl ExitReason {
+    /// What the stop frame tells every subscriber (plan E7.1).
+    #[must_use]
+    pub fn stop_reason(self) -> rekindle_types::subscription_events::StopReason {
+        use rekindle_types::subscription_events::StopReason;
+        match self {
+            Self::Requested => StopReason::Requested,
+            Self::DataWiped => StopReason::DataWiped,
+            Self::HandlerPanic | Self::SubscriberFailed => StopReason::Fault,
+        }
+    }
+
     /// The process exit status for this reason.
     #[must_use]
     pub fn exit_code(self) -> u8 {
@@ -58,9 +68,22 @@ impl ExitReason {
             // sysexits(3) EX_TEMPFAIL. The unit lists it in
             // `RestartForceExitStatus=`: systemd's `on-failure` would not
             // restart a clean exit (`systemd.service(5)`, Restart= table).
-            Self::IdentityDestroyed | Self::DataWiped => 75,
+            Self::DataWiped => 75,
         }
     }
+}
+
+/// Tell every subscriber the host is stopping (`StreamFrame::HostStopping`,
+/// plan E7.1); the journal sends it once, so a second call is a no-op.
+pub fn announce(ctx: &crate::daemon::dispatch::DaemonContext) {
+    ctx.journal.close(ctx.shutdown.reason().stop_reason());
+}
+
+/// [`announce`] as soon as a stop is requested, by whichever handler asked
+/// (the shell's GUI included), not only when `Host::shutdown` runs.
+pub async fn announce_when_requested(ctx: std::sync::Arc<crate::daemon::dispatch::DaemonContext>) {
+    ctx.shutdown.requested().await;
+    announce(&ctx);
 }
 
 /// The daemon-wide shutdown signal.
@@ -68,6 +91,10 @@ impl ExitReason {
 pub struct Shutdown {
     token: CancellationToken,
     reason: OnceLock<ExitReason>,
+    /// Cancelled by `Host::shutdown` once the exit's teardown ran: the
+    /// workers the teardown's own sends go through (the quit's
+    /// `HeadAdvanced` hint, plan E3.4) stop here, not at the request.
+    workers: CancellationToken,
 }
 
 impl Shutdown {
@@ -94,8 +121,30 @@ impl Shutdown {
     /// Run `work` until it finishes or shutdown is requested, whichever is
     /// first; `None` means shutdown won and `work` was dropped.
     pub async fn run_until<T>(&self, work: impl std::future::Future<Output = T>) -> Option<T> {
+        // Biased, shutdown first: work that is ready at the instant shutdown
+        // is requested is dropped, as the doc says, never a coin toss.
         tokio::select! {
+            biased;
             () = self.requested() => None,
+            value = work => Some(value),
+        }
+    }
+
+    /// Tell the workers that outlive the request to stop: the exit's
+    /// teardown is done.
+    pub fn stop_workers(&self) {
+        self.workers.cancel();
+    }
+
+    /// Run `work` until it finishes or the workers are told to stop
+    /// ([`Self::stop_workers`]); `None` means the stop won.
+    pub async fn run_until_workers_stop<T>(
+        &self,
+        work: impl std::future::Future<Output = T>,
+    ) -> Option<T> {
+        tokio::select! {
+            biased;
+            () = self.workers.cancelled() => None,
             value = work => Some(value),
         }
     }
@@ -122,30 +171,5 @@ impl Shutdown {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn the_first_reason_decides_the_exit() {
-        let shutdown = Shutdown::new();
-        assert!(!shutdown.is_requested());
-        shutdown.request(ExitReason::HandlerPanic);
-        shutdown.request(ExitReason::Requested);
-        shutdown.requested().await;
-        assert_eq!(shutdown.reason(), ExitReason::HandlerPanic);
-        assert_eq!(shutdown.reason().exit_code(), 70);
-    }
-
-    #[tokio::test]
-    async fn run_until_drops_work_at_shutdown() {
-        let shutdown = Shutdown::new();
-        assert_eq!(shutdown.run_until(async { 7 }).await, Some(7));
-        shutdown.request(ExitReason::Requested);
-        assert_eq!(shutdown.run_until(std::future::pending::<()>()).await, None);
-    }
-
-    #[test]
-    fn no_request_exits_cleanly() {
-        assert_eq!(Shutdown::new().reason().exit_code(), 0);
-    }
-}
+#[path = "shutdown_tests.rs"]
+mod tests;

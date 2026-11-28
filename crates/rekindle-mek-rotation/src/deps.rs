@@ -93,6 +93,9 @@ pub trait MekDistributeDeps: Send + Sync {
     /// and the per-recipient sends stop once it is closed (plan C4.L1).
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope>;
 
+    /// The host's generator for the MEKs this node mints (plan C9.2).
+    fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource>;
+
     /// In-memory MEK cache (typically a parking_lot-backed HashMap on
     /// AppState).
     fn cache(&self) -> Arc<dyn ChannelMekCache>;
@@ -109,9 +112,11 @@ pub trait MekDistributeDeps: Send + Sync {
     /// rule readers apply to the resulting `MEKGenerationBump`.
     fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool;
 
-    /// Snapshot of online recipients in the community. `exclude_pseudonym`
-    /// is the departed/triggering peer the rotation should skip.
-    fn online_recipients(
+    /// The recipients of a key in the community: every roster member with
+    /// a route, the adapter reading each route not yet known once before
+    /// answering (plan E3.4 S4). `exclude_pseudonym` is the
+    /// departed/triggering peer the rotation should skip.
+    async fn online_recipients(
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,
@@ -131,12 +136,6 @@ pub trait MekDistributeDeps: Send + Sync {
 
     /// Emit a UI-facing rotation event.
     fn emit_event(&self, event: MekRotationEvent);
-
-    /// Next governance-clock value, for the `MEKGenerationBump` entry.
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     /// Identity secret bytes (for deriving the rotator's own
     /// pseudonym signing key in distribute.rs).
@@ -161,9 +160,9 @@ pub trait MekDistributeDeps: Send + Sync {
     /// rotator-initiated lifecycle states like `RotationStarted`).
     fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64);
 
-    /// Write a governance entry to the merged CRDT state. Used by
-    /// `rotate_text_mek_for_departure` to stamp the
-    /// `MEKGenerationBump` entry on the rotator side.
+    /// Append a governance entry as our next signed op (the op-append API,
+    /// lamport `1 + max(deps)`). Both rotations stamp their
+    /// `MEKGenerationBump` through it.
     async fn write_governance_entry(
         &self,
         community_id: &str,

@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-protocol"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Veilid networking layer and message serialization for Rekindle"
 
 [lints]
@@ -10,8 +12,6 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"
-blake2 = "0.10"
-capnp = { workspace = true }
 ed25519-dalek = { version = "2", features = [ "rand_core" ] }
 futures = { workspace = true }
 hex = "0.4"
@@ -21,7 +21,9 @@ rand = "0.8"
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-record-pool = { path = "../rekindle-record-pool" }
 rekindle-records = { path = "../rekindle-records" }
+rekindle-route = { path = "../rekindle-route" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }
@@ -32,11 +34,20 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = "0.7"
 tracing = { workspace = true }
-veilid-core = { version = "0.5", default-features = true }
+# `app-lifecycle` (plan VU decision 5): while attached, Veilid holds an App
+# Nap / power-throttling guard so a hidden tray app's ticks do not stall
+# (veilid-core `attachment_manager/mod.rs:603-620`). Features unify, so the
+# desktop and `rekindled` both get it.
+veilid-core = { version = "0.5", default-features = true, features = [ "app-lifecycle" ] }
 
+
+zeroize = "1"
 
 [dev-dependencies]
+proptest = "1"
 # `tests/log_scrub_veilid.rs` checks the log scrubber against the real
 # Display/Debug output of veilid-core key types (this crate is one of the
 # two allowed to depend on veilid-core).
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
+# Channel posts and the profile driven through a real pool (plan VU1).
+rekindle-record-pool = { path = "../rekindle-record-pool", features = [ "test-support" ] }

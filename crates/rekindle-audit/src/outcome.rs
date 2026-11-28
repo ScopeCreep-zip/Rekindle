@@ -1,0 +1,80 @@
+//! Restoring and verifying a chain, as functions over values with typed
+//! outcomes (plan D1). The I/O around them — the database rows and the
+//! vault's key and tail anchor — is the host's (`rekindle_node::host::audit`).
+
+use zeroize::Zeroizing;
+
+use crate::{AuditChain, AuditEntry, Tail, TailCheck, VerifyError};
+
+/// What restoring a chain found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Restored {
+    /// The stored tail is the one the vault anchored (or no anchor exists
+    /// yet, or the anchor is merely behind after a lost vault write).
+    Intact,
+    /// Rows were removed or the last one rewritten after the anchored
+    /// entry: the chain continues from `anchor_cursor`, the last entry
+    /// known good.
+    Truncated { anchor_cursor: u64 },
+}
+
+/// Open the chain that continues from the stored tail, or from the vault's
+/// anchor when the stored tail cannot be trusted.
+#[must_use]
+pub fn restore(
+    key: Zeroizing<[u8; 32]>,
+    anchor: Option<Tail>,
+    stored: Tail,
+) -> (AuditChain, Restored) {
+    let check = TailCheck::of(anchor, stored);
+    let (cursor, last_mac) = check.resume_from(stored);
+    let restored = match check {
+        TailCheck::Tampered { anchor } => Restored::Truncated {
+            anchor_cursor: anchor.0,
+        },
+        TailCheck::Unanchored | TailCheck::Clean | TailCheck::CatchUp => Restored::Intact,
+    };
+    (AuditChain::open(key, last_mac, cursor), restored)
+}
+
+/// What verifying a chain found.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum Verified {
+    Intact {
+        length: u64,
+    },
+    Broken {
+        length: u64,
+        /// The first entry that fails, when one does (a serialization
+        /// failure names none).
+        at: Option<u64>,
+        detail: String,
+    },
+}
+
+/// Verify `entries` against `chain` end to end.
+#[must_use]
+pub fn verify(chain: &AuditChain, entries: &[AuditEntry]) -> Verified {
+    let length = entries.len() as u64;
+    match chain.verify(entries) {
+        Ok(()) => Verified::Intact { length },
+        Err(e) => {
+            let at = match &e {
+                VerifyError::PrevMacMismatch { cursor, .. }
+                | VerifyError::MacMismatch { cursor, .. }
+                | VerifyError::NonMonotonicCursor { cursor, .. } => Some(*cursor),
+                VerifyError::Serialize(_) => None,
+            };
+            Verified::Broken {
+                length,
+                at,
+                detail: e.to_string(),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "outcome_tests.rs"]
+mod tests;

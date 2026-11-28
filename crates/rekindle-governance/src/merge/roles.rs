@@ -1,8 +1,10 @@
 //! `merge` roles CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{GovernanceEntry, GovernanceState, RoleState};
 
-pub(super) fn apply_roles(entry: &GovernanceEntry, state: &mut GovernanceState) {
+pub(super) fn apply_roles(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
     match entry {
         GovernanceEntry::RoleDefinition {
             role_id,
@@ -14,10 +16,9 @@ pub(super) fn apply_roles(entry: &GovernanceEntry, state: &mut GovernanceState) 
             mentionable,
             self_assignable,
             exclusion_group,
-            lamport,
         } => {
-            let existing_lamport = state.roles.get(role_id).map_or(0, |r| r.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.roles.get(role_id).map_or(OpStamp::MIN, |r| r.stamp);
+            if stamp > existing_stamp {
                 state.roles.insert(
                     *role_id,
                     RoleState {
@@ -29,7 +30,7 @@ pub(super) fn apply_roles(entry: &GovernanceEntry, state: &mut GovernanceState) 
                         mentionable: *mentionable,
                         self_assignable: *self_assignable,
                         exclusion_group: exclusion_group.clone(),
-                        lamport: *lamport,
+                        stamp,
                     },
                 );
             }
@@ -78,10 +79,10 @@ pub(super) fn apply_roles(entry: &GovernanceEntry, state: &mut GovernanceState) 
         }
 
         // ── Bans: LWW-Flag per target pseudonym ──
-        GovernanceEntry::RoleArchived { role_id, lamport } => {
+        GovernanceEntry::RoleArchived { role_id } => {
             // Only archive if lamport > definition lamport
             if let Some(role) = state.roles.get(role_id) {
-                if *lamport > role.lamport {
+                if stamp > role.stamp {
                     state.roles.remove(role_id);
                     // Also remove all assignments for this role
                     for assignments in state.role_assignments.values_mut() {

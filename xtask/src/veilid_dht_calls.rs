@@ -2,9 +2,11 @@
 //! one owner (plan C7.11).
 //!
 //! - DHT record calls (`open_dht_record`, `get_dht_value`, …) run only in
-//!   the record pool, `rekindle-protocol/src/dht/pool/`: it holds each
-//!   record's lease, writer and watch, serializes per subkey, and never
-//!   aborts a call mid-commit (plans C7.3–C7.6).
+//!   the record pool's Veilid backend, `rekindle-protocol/src/dht/backend.rs`
+//!   (plan E2.B): the pool calls it through `rekindle_records::port::
+//!   DhtBackend`, and holds each record's lease, writer and watch,
+//!   serializes per subkey, and never aborts a call mid-commit (plans
+//!   C7.3–C7.6).
 //! - `import_remote_private_route` runs only in the process's one importer,
 //!   `dht/route_imports.rs` (plan C7.2): a second importer's release drops
 //!   the shared import for every sender.
@@ -13,6 +15,11 @@
 //!   feature's dedicated routes (`services/relay/offer.rs`, plan C7.9f). A
 //!   remote route is never released: Veilid releases a dead one itself
 //!   (`ping_validator.rs:610-628`, plan C7.9e).
+//!
+//! - `rekindle-transport` and `rekindle-records` name no `veilid_core` at
+//!   all, in code, comments or manifest (plan C9.1): the transport runs on
+//!   the Veilid-free ports of `rekindle_records::port`, which only
+//!   `rekindle-protocol` implements over Veilid.
 //!
 //! Only crates that depend on `veilid-core` can make these calls, so only
 //! they are scanned: a deps trait in a Veilid-free crate may reuse a method
@@ -48,8 +55,8 @@ const RULES: &[Rule] = &[
             "cancel_dht_watch",
             "transact_dht_records",
         ],
-        owners: &["crates/rekindle-protocol/src/dht/pool/"],
-        why: "DHT calls go through the record pool (rekindle_protocol::dht::pool)",
+        owners: &["crates/rekindle-protocol/src/dht/backend.rs"],
+        why: "DHT calls go through the record pool's backend (rekindle_protocol::dht::backend)",
     },
     Rule {
         methods: &["import_remote_private_route"],
@@ -66,7 +73,8 @@ const RULES: &[Rule] = &[
             "crates/rekindle-protocol/src/own_routes.rs",
             "src-tauri/src/services/relay/offer.rs",
         ],
-        why: "own routes are allocated and released only by OwnRoutes or the relay offer",
+        why:
+            "own routes are allocated and released only by VeilidRouteAllocator or the relay offer",
     },
 ];
 
@@ -151,8 +159,62 @@ fn veilid_linked_sources(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(dirs)
 }
 
-pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
+/// The crates that run on the ports and must name no Veilid type (plan
+/// C9.1).
+const VEILID_FREE: &[&str] = &[
+    "rekindle-transport",
+    "rekindle-records",
+    "rekindle-record-pool",
+    "rekindle-netsim",
+];
+
+/// Every mention of `veilid_core` (or a `veilid-core` dependency) in a
+/// [`VEILID_FREE`] crate.
+fn veilid_free_hits(root: &Path) -> Result<Vec<String>> {
     let mut hits = Vec::new();
+    for name in VEILID_FREE {
+        let dir = root.join("crates").join(name);
+        let manifest = dir.join("Cargo.toml");
+        if let Ok(text) = std::fs::read_to_string(&manifest) {
+            let doc: toml_edit::DocumentMut = text.parse()?;
+            for table in ["dependencies", "dev-dependencies"] {
+                if doc.get(table).and_then(|t| t.get("veilid-core")).is_some() {
+                    hits.push(format!(
+                        "crates/{name}/Cargo.toml  [{table}] veilid-core — {name} runs on the ports (plan C9.1)"
+                    ));
+                }
+            }
+        }
+        for path in walk_source_files(&dir.join("src"), &["rs"])? {
+            let Ok(src) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            hits.extend(names_veilid_core(&rel, &src));
+        }
+    }
+    Ok(hits)
+}
+
+fn names_veilid_core(rel: &str, src: &str) -> Vec<String> {
+    src.lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("veilid_core"))
+        .map(|(i, _)| {
+            format!(
+                "{rel}:{}  veilid_core — this crate runs on the ports (plan C9.1)",
+                i + 1
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
+    let mut hits = veilid_free_hits(root)?;
     for dir in veilid_linked_sources(root)? {
         for path in walk_source_files(&dir, &["rs"])? {
             let rel = path
@@ -173,47 +235,11 @@ pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
         println!("  ✗ {h}");
     }
     Err(anyhow!(
-        "{} Veilid DHT/route call(s) outside their owner (plan C7.11).",
+        "{} Veilid DHT/route call(s) outside their owner, or Veilid in a port crate (plans C7.11, C9.1).",
         hits.len()
     ))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::scan;
-
-    #[test]
-    fn flags_calls_outside_their_owner() {
-        let src = r"
-            async fn f(rc: veilid_core::RoutingContext, api: veilid_core::VeilidAPI) {
-                let _ = rc.get_dht_value(k, 0, false).await;
-                let _ = api.import_remote_private_route(blob);
-                let _ = api.new_private_route().await;
-            }
-        ";
-        let hits = scan("src-tauri/src/services/x.rs", src);
-        assert_eq!(hits.len(), 3, "{hits:?}");
-        assert!(hits[0].starts_with("src-tauri/src/services/x.rs:3"));
-    }
-
-    #[test]
-    fn allows_each_owner_its_own_calls() {
-        let pool = "fn f() { rc.set_dht_value(k, 0, v, None); }";
-        assert!(scan("crates/rekindle-protocol/src/dht/pool/io.rs", pool).is_empty());
-        let imports = "fn f() { api.import_remote_private_route(b); }";
-        assert!(scan("crates/rekindle-protocol/src/dht/route_imports.rs", imports).is_empty());
-        let own = "fn f() { api.release_private_route(id); }";
-        assert!(scan("crates/rekindle-protocol/src/own_routes.rs", own).is_empty());
-        assert!(scan("src-tauri/src/services/relay/offer.rs", own).is_empty());
-    }
-
-    #[test]
-    fn an_owner_of_one_rule_is_not_an_owner_of_another() {
-        let src = "fn f() { api.release_private_route(id); }";
-        assert_eq!(
-            scan("crates/rekindle-protocol/src/dht/route_imports.rs", src).len(),
-            1,
-            "the importer never releases"
-        );
-    }
-}
+#[path = "veilid_dht_calls_tests.rs"]
+mod tests;

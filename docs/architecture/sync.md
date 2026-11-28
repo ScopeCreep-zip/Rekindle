@@ -15,7 +15,7 @@ session store; the record itself is the rendezvous.
 A single DFLT (single-owner, multi-subkey) record per identity, with
 **4 well-known subkeys** mapped to specific concerns:
 
-```
+```text
 DFLT { o_cnt: 4 }
 ├── Subkey 0: Sync manifest
 │       Encrypted directory of communities, friends, DM threads, paired
@@ -52,7 +52,7 @@ Pairing is a short-lived `app_call` handshake gated by a one-time code.
 The existing device displays the code (plus a QR encoding the full
 triple); the new device transcribes or scans it and dials back.
 
-```
+```text
         Existing device                         New device
         ─────────────────                       ──────────
                                                 
@@ -162,13 +162,70 @@ The merge engine lives at `services/cross_device_sync/merge.rs` and is
 exercised by the property tests in
 `services/cross_device_sync/tests.rs`.
 
+## A new friend's DM chain start (decision 67 item 2)
+
+Each direction of a 1:1 conversation is its sender's chain on a dm participant record
+(`operations::dm::stream`). A new friendship names both chains in the handshake itself, so neither
+side's first DM waits on a `StreamRecord` `app_call` (finding F3, the Linux first-DM loss):
+
+- **Request.** Once the requester's friend row exists, `friend::request::named_chain` makes its
+  participant record locally (like the reply inbox) and puts its key in `FriendRequest.chainRecordKey`. Each attempt of the request's row,
+  by `app_call` or into an invite's inbox, first writes the record's empty `HEAD`
+  (`dm::first_contact_durable::chain_published`); a failed write defers the attempt. The accepter
+  stores the key with the pending request (`pending_friend_requests.chain_record_key`) and adopts it
+  only when it accepts (`friend::answer::accept`, or the crossing auto-accept), before its accept can
+  reach the requester: the requester's chain is never watched before consent.
+  A request that ends unanswered (cancelled, expired, or a declined one, which expires silently)
+  or a removed friend releases the record as a removed friend's records are (`unwatch_friend`): the
+  requester's vault forgets its writer (netsim `request_chain`).
+- **Accept.** `dm::send_friend_accept` makes the accepter's record and names it, with the accepter's
+  presence key, in the `FriendAccept` sealed inside the PreKeyInit; its `HEAD` is written before each
+  attempt the same way. The requester applies both when the accept lands, by call or from its reply
+  inbox (RV2).
+- Neither side sends a `StreamRecord` for these records: they are held from the handshake on, so the
+  first append finds them. Whichever side writes first, the other reads it from the chain it already
+  watches (netsim `new_friend_chain`).
+- Only an authenticated answer settles a handshake row (F2); the `HEAD` write never does.
+
+## Group first-contact rendezvous
+
+A group member's first contact to a member who is not its friend (the
+PreKeyInit whose first payload is its `GroupDmAccept`, plan decision 67
+item 3) has a durable path beside its `app_call`. The creator mints one
+**group rendezvous record** per group (`SMPL(o_cnt 1, 8 one-time writers,
+m_cnt 8)`, 65 subkeys; `dht_layout::group_rendezvous`): subkey
+`1 + 8i + j` holds member `i`'s first contact to member `j`, writable only
+by row `i`'s writer (Veilid's SMPL member range). Each member stores its
+slot and its row's writer in `group_dm_rendezvous` at create or accept.
+
+- **Write:** the first-contact row (`friend_handshake:<peer>`, named
+  `PreKeyInit:`; `Framed::GroupFirstContact`) is attempted as the call and
+  a write of the same datagram to `subkey(own slot, their slot)` through
+  the record pool's republishing set (`write_own_once`). A frame over
+  `MAX_SUBKEY_VALUE_LEN` (16,131 B) is refused when it is framed. Every
+  retry calls and writes again; a B6 resend is a new init written over the
+  row (`transport/operations/dm/group_first_contact.rs`).
+- **Settle:** only an authenticated answer settles the row: the call's
+  receipt, or the member's first frame opened under the session
+  (`handshake::settle_first_contact`). The write's own outcome never does.
+- **Read:** each member watches exactly its own column from accept to
+  leave, re-held at unlock, and reads the column once whenever it holds
+  it (a watch reports only later changes), so an entry written while it
+  was locked or still invited lands (`rendezvous_watch.rs`). An entry is
+  opened through `direct::receive_from_member` with the admission and the
+  roster gate unchanged, and only from the member the creator's signed
+  slot plan gives its row. A copy heard by both paths is dropped as a
+  duplicate by the replay store or the ratchet, and a member's key already
+  held is a `KeyUpdate::Duplicate`.
+
 ## Gap detection and history catch-up
 
 Cross-device sync uses the same primitives as community catch-up:
 
-- **`rekindle_sync::gap::GapDetector::detect(local, network)`** — given
-  per-subkey local sequence numbers and the freshly inspected network
-  values, return the list of subkeys where `network > local`.
+- **The D23 stream engine (`rekindle_sync::stream`)** — a per-writer
+  cursor; an entry past `cursor + 1` is a gap held for the diff, and a
+  diff that cannot reach the writer's named head stores a gap marker
+  (plan E3.3; the per-subkey `GapDetector` is deleted).
 - **`rekindle_sync::history::HistoryAd`** — a lightweight advert of
   which Lamport ranges a peer holds. Pickup logic in
   `select_best_peer` finds the peer with the widest range that covers a
@@ -211,7 +268,7 @@ pairing flow again.
 
 | Concern | File |
 |---------|------|
-| Crate-level sync primitives | `crates/rekindle-sync/src/{fetch,gap,history,inspect,verify,warming,watch}.rs` |
+| Crate-level sync primitives | `crates/rekindle-sync/src/{fetch,history,inspect,stream,verify,warming,watch}.rs` |
 | Personal record lifecycle | `src-tauri/src/services/cross_device_sync/record.rs` |
 | Pairing handshake (both directions) | `src-tauri/src/services/cross_device_sync/pairing.rs` |
 | Subkey encrypt/decrypt + read/write | `src-tauri/src/services/cross_device_sync/subkey_io.rs` |

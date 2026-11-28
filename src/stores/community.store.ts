@@ -1,11 +1,39 @@
-import { createStore } from "solid-js/store";
+import { batch } from "solid-js";
+import { createStore, produce, reconcile } from "solid-js/store";
+import type {
+  OpPublicationState,
+  OpQuarantineReason,
+} from "../ipc/channels/community_governance_events";
+import type {
+  GameInfo,
+  InviteDto,
+  MemberGroup,
+  OnboardingConfig,
+  WelcomeScreen,
+} from "../ipc/commands/dto";
+import type {
+  ChannelDeniedCapabilities,
+  DeniedCapabilities,
+  MemberModeration,
+} from "../ipc/commands/dto_capabilities";
 import type { Message } from "./chat.store";
-import type { GameInfo, InviteDto, OnboardingConfig, WelcomeScreen } from "../ipc/commands/dto";
 
 export interface Channel {
   id: string;
   name: string;
-  type: "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
+  /** The channel controls we lack here, each with the Host's reason
+   *  (`CommunityChannelView::denied`, judged with the channel's overwrites). */
+  denied?: ChannelDeniedCapabilities;
+  type:
+    | "text"
+    | "voice"
+    | "announcement"
+    | "forum"
+    | "stage"
+    | "directory"
+    | "media"
+    | "events"
+    | "dm";
   unreadCount: number;
   categoryId?: string;
   topic?: string;
@@ -24,6 +52,10 @@ export interface Channel {
    * itself falls back to the app-global `notification_sound` toggle.
    */
   notificationSoundRef?: string | null;
+  /** A restricted channel whose roster we are not on (FX3): listed, closed. */
+  locked?: boolean;
+  /** The Host's words for why it is locked. */
+  lockedReason?: string;
   /**
    * Architecture §10.8 — text-in-voice. When set, this channel is the
    * text companion of the named voice channel; UI hides it from the
@@ -41,8 +73,13 @@ export interface Category {
 
 export interface Member {
   pseudonymKey: string;
+  /** The Host's name, never empty: the per-community card name, else the short fingerprint (plan E3.4 S6). */
   displayName: string;
-  roleIds: number[];
+  /** The member's short pseudonym fingerprint ("a1b2 c3d4"), as the Host gives it. */
+  fingerprint: string;
+  /** The card's custom status, or null. */
+  customStatus: string | null;
+  roleIds: string[];
   displayRole: string;
   status: string;
   timeoutUntil: number | null;
@@ -62,6 +99,13 @@ export interface Member {
   /** Member's last-active unix seconds, already coarsened by their sharing
    * policy (0 / undefined = not shared). Drives the "last seen" label. */
   lastActive?: number;
+  /** The Host's member-list group; the list renders it as given. */
+  group: MemberGroup;
+  /** Which moderation actions we may take against this member: the
+   *  governance validator's verdicts, computed by the Host (plan E3.2 S9). */
+  moderation: MemberModeration;
+  /** Whether we outrank this member (the validator's rank rule). */
+  outranks: boolean;
 }
 
 /** A member's focused channel, decoded from their shared session. */
@@ -70,10 +114,21 @@ export interface MemberLocation {
   channelId: string;
 }
 
+/** `@everyone`: the all-zero 16-byte role id every member holds. */
+export const EVERYONE_ROLE_ID = "0".repeat(32);
+
+/** A role tag's text colour per skin base, `0xRRGGBB` (the Host's `RoleTagColours`). */
+export interface RoleTagColours {
+  dark: number;
+  light: number;
+}
+
 export interface Role {
-  id: number;
+  /** The full 16-byte role id, 32 hex characters (plan E3.2 S9). */
+  id: string;
   name: string;
   color: number;
+  tagColours: RoleTagColours;
   /** Serialized as a string from Rust to avoid JavaScript Number precision loss on u64. */
   permissions: string;
   position: number;
@@ -88,9 +143,9 @@ export interface Role {
   exclusionGroup?: string;
 }
 
+import type { DeviceStatus } from "../ipc/commands/community";
 // Declared once in the IPC layer, which mirrors the Rust contract.
 import type { SoundboardMeta } from "../ipc/commands/types";
-export type { SoundboardMeta };
 
 export interface Expression {
   id: string;
@@ -117,7 +172,7 @@ export interface AutoModRule {
   enabled: boolean;
   keywords: string[];
   regexPatterns: string[];
-  action: "block_locally" | "blur_content" | "alert_moderators";
+  action: "blockLocally" | "blurContent" | "alertModerators";
   lamport: number;
 }
 
@@ -131,22 +186,11 @@ export interface EventRsvp {
 // the same way once `ipc/channels/community_subscription_events.ts`
 // needed them too and src/ipc/ (the dependency-cruiser leaf) couldn't
 // import them back out of this store.
-import type {
-  DayOfWeek,
-  EventLocation,
-  GameServer,
-  RecurrenceFrequency,
-  RecurrenceRule,
-  Thread,
-} from "../ipc/commands/types";
-export type {
-  DayOfWeek,
-  EventLocation,
-  GameServer,
-  RecurrenceFrequency,
-  RecurrenceRule,
-  Thread,
-};
+import type { EventLocation, GameServer, RecurrenceRule, Thread } from "../ipc/commands/types";
+
+export type { GameServer, Thread };
+
+import type { KeyStatus } from "../ipc/channels/community_governance_events";
 
 /**
  * A scheduled community event (architecture §21) — the calendar entry
@@ -193,19 +237,58 @@ export interface Community {
   channels: Channel[];
   categories: Category[];
   members: Member[];
+  /** Whether `members` holds the Host's member list: `loading` until its
+   *  first `get_community_members` answer, `known` from then on, or the
+   *  reason the first read failed. Until it is known the panel claims no
+   *  count: an empty list before the first answer is "not known", not "no
+   *  members". */
+  membersState: MembersState;
   roles: Role[];
-  myRoleIds: number[];
+  myRoleIds: string[];
+  /** Our base permission bits (decimal u64 string), from the backend's
+   *  merged governance (plan E3.2 S9); the window computes no policy. */
+  myPermissions: string;
+  /** Our effective permissions per channel id: base plus overwrites. */
+  myChannelPermissions: Record<string, string>;
   myPseudonymKey: string | null;
+  /** Whether we hold the community's current key (FX3). */
+  keyStatus?: KeyStatus | null;
+  /** What we may not do here and why, as the Host says (never-hide): a
+   *  control is disabled with the reason, never hidden. */
+  denied?: DeniedCapabilities;
+  /** Bumped on each `BansChanged` (plan E3.2 S9): a shown ban list re-reads on it. */
+  bansRevision?: number;
+  /** Set when we were removed (plan E3.2 S9 own removal): the community
+   *  stays as read-only history. */
+  /** Set when the inviter refused our join after it returned (plan JW):
+   *  the Host's words, shown in place in this community's window. */
+  withdrawn?: { reasonText: string } | null;
+  removed?: {
+    banned: boolean;
+    by: string | null;
+    byName: string | null;
+    reason?: string | null;
+  } | null;
   mekGeneration: number;
   events: ScheduledEvent[];
   memberRegistryKey?: string;
-  governanceKey: string | null;
+  anchor: string | null;
   onboardingConfig?: OnboardingConfig;
   welcomeScreen?: WelcomeScreen;
   onboardingComplete?: boolean;
+  /** We hold a creator seat, as the Host states it (`CommunityView::we_are_creator`). */
+  weAreCreator: boolean;
+  /** Whether this device may write here, as the Host states it (`CommunityView::device_status`). */
+  deviceStatus: DeviceStatus;
+  /** Our name in this community, never empty, as the Host states it (plan E3.4 S6); never our identity name. */
+  myDisplayName: string;
+  /** Our per-community name as set, or null (the set-name form's prefill). */
+  myCardName: string | null;
+  /** Our card's custom status, or null. */
+  myCustomStatus: string | null;
   expressions: Expression[];
   automodRules: AutoModRule[];
-  /** Our per-community profile bio (≤190 chars). Local-only; resets to undefined on restart. */
+  /** Our per-community profile bio (≤190 chars), as the Host persists it (plan E3.4 S6b). */
   myBio?: string | null;
   myPronouns?: string | null;
   myThemeColor?: number | null;
@@ -225,17 +308,12 @@ export interface Community {
   /** Which segment hosts our slot. 0 for the primary; 1..=MAX_SEGMENTS
    *  for expansion segments. */
   mySegmentIndex?: number;
-  /** Architecture §17.4 — raid alert flag toggled by the
-   *  `raidAlert` community-event. The CommunityWindow renders a
-   *  banner overlay while this is `true`; cleared by the matching
-   *  `raidAlert { active: false }` event from the backend. */
-  raidAlertActive?: boolean;
 }
 
-export interface SegmentInfo {
+interface SegmentInfo {
   segmentIndex: number;
   registryKey: string;
-  governanceKey: string;
+  anchor: string;
   slotRangeStart: number;
   slotRangeEnd: number;
 }
@@ -250,7 +328,7 @@ export interface VoiceChannelState {
   pendingRequests?: string[];
 }
 
-export interface CommunityState {
+interface CommunityState {
   communities: Record<string, Community>;
   activeCommunity: string | null;
   activeChannel: string | null;
@@ -261,6 +339,22 @@ export interface CommunityState {
   gameServers: Record<string, GameServer[]>;
   communityInvites: Record<string, InviteDto[]>;
   voiceChannels: Record<string, VoiceChannelState>;
+  /** Our governance ops not yet landed, per community then op hash, as the
+   *  backend announces them (pending, or failed with its reason). */
+  opPublications: Record<string, Record<string, OpPublicationState>>;
+  /** Governance ops the backend set aside, per community then op hash
+   *  (`governanceOpQuarantined` events): shown, never applied. */
+  quarantinedOps: Record<string, Record<string, QuarantinedOp>>;
+  /** Communities whose inviter's snapshot did not match the full history
+   *  (`checkpointSnapshotMismatch` events): the window keeps the notice. */
+  snapshotMismatch: Record<string, true>;
+}
+
+/** One quarantined governance op, as the backend announced it. */
+interface QuarantinedOp {
+  author: string;
+  reason: OpQuarantineReason;
+  cause: string | null;
 }
 
 const [communityState, setCommunityState] = createStore<CommunityState>({
@@ -274,6 +368,60 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   gameServers: {},
   communityInvites: {},
   voiceChannels: {},
+  opPublications: {},
+  quarantinedOps: {},
+  snapshotMismatch: {},
 });
 
 export { communityState, setCommunityState };
+
+/**
+ * Write a re-read of `community`'s member list from the Host (MM1). The
+ * rows are reconciled by pseudonym key, so a member already listed keeps
+ * its store object and its row: a re-read updates the row in place instead
+ * of replacing it, and a context menu or profile open on that row stays
+ * open across the re-reads a join, a rejoin or a role change sets off.
+ */
+export function setCommunityMembers(community: string, members: Member[]): void {
+  batch(() => {
+    setCommunityState(
+      "communities",
+      community,
+      "members",
+      reconcile(members, { key: "pseudonymKey" })
+    );
+    setCommunityState("communities", community, "membersState", "known");
+  });
+}
+
+/** Whether a community's member list is the Host's yet (see `Community.membersState`). */
+export type MembersState = "loading" | "known" | { failed: string };
+
+/**
+ * A member read for `community` failed with `reason`: shown only while no
+ * list is known yet. A later refresh that fails keeps the list the panel
+ * already shows.
+ */
+export function markMembersFailed(community: string, reason: string): void {
+  const c = communityState.communities[community];
+  if (!c || c.membersState === "known") return;
+  setCommunityState("communities", community, "membersState", { failed: reason });
+}
+
+/**
+ * Drop community `id` from this window's list, and the selection when it
+ * was the shown one. The key is deleted in place (`produce`): a setter given
+ * a copy without the key merges it into the store, so the row stayed.
+ */
+export function dropCommunity(id: string): void {
+  setCommunityState(
+    "communities",
+    produce((communities) => {
+      delete communities[id];
+    })
+  );
+  if (communityState.activeCommunity === id) {
+    setCommunityState("activeCommunity", null);
+    setCommunityState("activeChannel", null);
+  }
+}

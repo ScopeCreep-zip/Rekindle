@@ -14,7 +14,8 @@ use rekindle_calls::signaling::{
 };
 use rekindle_calls::state::CallKind;
 use rekindle_calls::CallError;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_types::group_dm::GroupCallRoster;
 
 use super::CallsAdapter;
 use crate::state_helpers;
@@ -26,7 +27,7 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], CallError> {
-        state_helpers::identity_secret(&self.state).ok_or(CallError::IdentityNotLoaded)
+        state_helpers::identity_secret_bytes(&self.state).ok_or(CallError::IdentityNotLoaded)
     }
 
     fn registry(&self) -> Arc<dyn CallRegistry> {
@@ -35,6 +36,16 @@ impl CallSignalingDeps for CallsAdapter {
 
     fn group_registry(&self) -> Arc<dyn GroupCallRegistry> {
         Arc::clone(&self.group_registry)
+    }
+
+    async fn group_roster(&self, group_id: &str) -> Result<GroupCallRoster, CallError> {
+        let owner = self.owner_key()?;
+        let id = group_id.to_string();
+        let now_ms = rekindle_utils::timestamp_ms_i64();
+        self.pool
+            .call(move |conn| rekindle_db::repo::group_dms::call_roster(conn, &owner, &id, now_ms))
+            .await
+            .map_err(|e| CallError::InvalidState(format!("the group cannot be read: {e}")))
     }
 
     fn is_peer_temp_muted(&self, peer_pubkey_hex: &str) -> bool {
@@ -51,12 +62,7 @@ impl CallSignalingDeps for CallsAdapter {
         // fallback using `initiator_pubkey` (which may differ from
         // `peer_pubkey_hex` in edge cases). Doing the fallback inside
         // the adapter would short-circuit that logic.
-        self.state
-            .friends
-            .read()
-            .get(peer_pubkey_hex)
-            .map(|f| f.display_name.clone())
-            .unwrap_or_default()
+        crate::state_helpers::friend_display_name(&self.state, peer_pubkey_hex).unwrap_or_default()
     }
 
     fn local_video_decode_codecs(&self) -> Vec<String> {
@@ -72,49 +78,103 @@ impl CallSignalingDeps for CallsAdapter {
             .collect()
     }
 
-    async fn send_to_peer(
+    async fn send_to_peer(&self, peer_pubkey_hex: &str, body: DirectBody) -> Result<(), CallError> {
+        let host = crate::state_helpers::friend_host(&self.state).map_err(CallError::Transport)?;
+        rekindle_transport::operations::dm::send_to_peer(host.as_ref(), peer_pubkey_hex, &body)
+            .await
+            .map_err(|e| CallError::Transport(e.to_string()))
+    }
+
+    async fn commit_call_end(
         &self,
         peer_pubkey_hex: &str,
-        payload: MessagePayload,
+        body: DirectBody,
+        deadline_ms: u64,
     ) -> Result<(), CallError> {
-        crate::services::message_service::send_to_peer(
-            &self.state,
-            &self.pool,
+        let host = crate::state_helpers::friend_host(&self.state).map_err(CallError::Transport)?;
+        let deadline = i64::try_from(deadline_ms).unwrap_or(i64::MAX);
+        rekindle_transport::operations::dm::handshake::enqueue_until(
+            host.as_ref(),
             peer_pubkey_hex,
-            &payload,
+            &body,
+            deadline,
         )
         .await
-        .map_err(CallError::Transport)
+        .map(drop)
+        .map_err(|e| CallError::Transport(e.to_string()))
+    }
+
+    async fn commit_call_invite(
+        &self,
+        peer_pubkey_hex: &str,
+        call_id: &str,
+        body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError> {
+        let host = crate::state_helpers::friend_host(&self.state).map_err(CallError::Transport)?;
+        let deadline = i64::try_from(deadline_ms).unwrap_or(i64::MAX);
+        rekindle_transport::operations::dm::call_invite::commit(
+            host.as_ref(),
+            peer_pubkey_hex,
+            call_id,
+            &body,
+            deadline,
+        )
+        .await
+        .map_err(|e| CallError::Transport(e.to_string()))
+    }
+
+    async fn settle_call_invite(&self, call_id: &str, answered: bool) {
+        super::call_media::settle_invite(&self.state, call_id, answered).await;
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.state.clock.now_ms()
+    }
+
+    fn last_inbound_media_ms(&self, call_id: &str) -> Option<u64> {
+        if !self.state.call_media.is(call_id) {
+            return None;
+        }
+        let engine = self.state.voice_engine.lock();
+        engine.as_ref().and_then(|h| h.media_liveness.latest())
+    }
+
+    fn spawn_consent_watch(&self, call_id: String, since_ms: u64) {
+        // Plan CE1 (b): RFC 7675 consent, checked against the clock port
+        // each time the 30 s window from the last proof of life runs out.
+        let watcher = super::CallsAdapter::new(
+            Arc::clone(&self.state),
+            self.app_handle.clone(),
+            self.pool.clone(),
+        );
+        state_helpers::spawn_in_login_with_token(&self.state, "call consent", |stop| async move {
+            loop {
+                let check =
+                    rekindle_calls::signaling::check_consent(watcher.as_ref(), &call_id, since_ms)
+                        .await;
+                let rekindle_calls::signaling::ConsentCheck::Live { recheck_in_ms } = check else {
+                    return;
+                };
+                let wait = tokio::time::sleep(std::time::Duration::from_millis(recheck_in_ms));
+                if stop.run_until_cancelled(wait).await.is_none() {
+                    return;
+                }
+            }
+        });
     }
 
     async fn start_voice_session(
         &self,
-        _call_id: &str,
+        call_id: &str,
         peer_pubkey_hex: &str,
         _kind: CallKind,
     ) -> Result<(), CallError> {
-        // The crate handler stores the call's media secret in the
-        // registry BEFORE invoking this method; the voice session reads
-        // it (with the call's sender state) through `MediaKeySource`.
-        // 1:1 calls pass `peer_pubkey_hex` as the channel-id argument
-        // (the function dual-purposes that parameter — `community_id`
-        // is `None` for 1:1).
-        crate::services::voice_adapter::start_session(
-            peer_pubkey_hex,
-            None,
-            &self.app_handle,
-            &self.state,
-        )
-        .await
-        .map_err(|e| CallError::Session(format!("voice session start: {e}")))
+        super::call_media::start(&self.state, &self.app_handle, call_id, peer_pubkey_hex).await
     }
 
-    async fn shutdown_voice_session(&self) {
-        crate::services::voice_adapter::shutdown_voice(
-            &self.state,
-            &rekindle_voice::VoiceShutdownOpts::FULL,
-        )
-        .await;
+    async fn shutdown_voice_session(&self, call_id: &str) {
+        super::call_media::shutdown(&self.state, call_id).await;
     }
 
     fn voice_active(&self) -> bool {
@@ -305,219 +365,6 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn emit_event(&self, event: CallSignalEvent) {
-        let kind_str = |k: CallKind| match k {
-            CallKind::Audio => "audio".to_string(),
-            CallKind::Video => "video".to_string(),
-        };
-        let kind_u8_str = |k: u8| match k {
-            0 => "audio".to_string(),
-            _ => "video".to_string(),
-        };
-
-        match event {
-            CallSignalEvent::IncomingCall {
-                call_id,
-                from_public_key,
-                from_display_name,
-                kind,
-                expires_at_ms,
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Incoming {
-                        call_id: call_id.clone(),
-                        from: from_public_key.clone(),
-                        display_name: from_display_name.clone(),
-                        kind: kind_str(kind),
-                        // A 1:1 call lists nobody: the caller is
-                        // already `from`, and the callee is us.
-                        participants: Vec::new(),
-                        is_group: false,
-                        expires_at_ms,
-                    },
-                );
-                crate::event_dispatch::emit_notification(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::NotificationEvent::CallIncoming {
-                        call_id,
-                        from: from_public_key,
-                        display_name: from_display_name,
-                        kind: kind_str(kind),
-                        expires_at_ms,
-                        is_group: false,
-                    },
-                );
-            }
-            CallSignalEvent::CallRinging { call_id, .. } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Ringing { call_id },
-                );
-            }
-            CallSignalEvent::CallConnected {
-                call_id,
-                peer_public_key,
-                kind,
-            } => {
-                let display_name = self.display_name_with_fallback(&peer_public_key);
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Connected {
-                        call_id,
-                        direct: Some(rekindle_types::subscription_events::DirectCallInfo {
-                            kind: kind_str(kind),
-                            peer_key: peer_public_key,
-                            peer_display_name: display_name,
-                            expected_local_camera: matches!(kind, CallKind::Video),
-                        }),
-                    },
-                );
-            }
-            CallSignalEvent::CallDeclined {
-                call_id, reason, ..
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Declined { call_id, reason },
-                );
-            }
-            // One arm for both: a call ending is the same fact
-            // whether it had two participants or ten, and the desktop's
-            // two variants had identical fields.
-            CallSignalEvent::CallEnded {
-                call_id, reason, ..
-            }
-            | CallSignalEvent::GroupCallEnded { call_id, reason } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Ended { call_id, reason },
-                );
-            }
-            CallSignalEvent::CallTimedOut { call_id, .. } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
-                );
-            }
-            CallSignalEvent::CallMissed {
-                call_id,
-                peer_public_key,
-                ..
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Missed {
-                        call_id,
-                        from: peer_public_key,
-                    },
-                );
-            }
-            CallSignalEvent::ConversationFocusRequested {
-                peer_public_key,
-                peer_display_name,
-                reason,
-            } => {
-                // Not a call event: focusing a conversation is a
-                // channel-scoped UI hint, and it fires for accepted
-                // friend requests too, not only for calls.
-                crate::event_dispatch::emit_subscription(
-                    &self.app_handle,
-                    &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
-                        rekindle_types::subscription_events::ChannelMessageEvent::ConversationFocusRequested {
-                            peer_key: peer_public_key,
-                            display_name: peer_display_name,
-                            reason,
-                        },
-                    ),
-                );
-            }
-            CallSignalEvent::CallStarted {
-                call_id,
-                peer_public_key,
-                peer_display_name,
-                kind,
-                expires_at_ms,
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Started {
-                        call_id,
-                        kind: kind_str(kind),
-                        peer_key: peer_public_key,
-                        peer_display_name,
-                        expires_at_ms,
-                    },
-                );
-            }
-            CallSignalEvent::IncomingGroupCall {
-                call_id,
-                initiator_public_key,
-                initiator_display_name,
-                participants,
-                kind,
-                expires_at_ms,
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::Incoming {
-                        call_id: call_id.clone(),
-                        from: initiator_public_key.clone(),
-                        display_name: initiator_display_name.clone(),
-                        kind: kind_u8_str(kind),
-                        participants,
-                        is_group: true,
-                        expires_at_ms,
-                    },
-                );
-                crate::event_dispatch::emit_notification(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::NotificationEvent::CallIncoming {
-                        call_id,
-                        from: initiator_public_key,
-                        display_name: initiator_display_name,
-                        kind: kind_u8_str(kind),
-                        expires_at_ms,
-                        is_group: true,
-                    },
-                );
-            }
-            CallSignalEvent::GroupCallConnected { call_id } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    // No peer: a group call has no single other end,
-                    // and the signal carries only the id.
-                    rekindle_types::subscription_events::CallEvent::Connected {
-                        call_id,
-                        direct: None,
-                    },
-                );
-            }
-            CallSignalEvent::GroupCallParticipantJoined {
-                call_id,
-                peer_public_key,
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::ParticipantJoined {
-                        call_id,
-                        participant_pubkey: peer_public_key,
-                    },
-                );
-            }
-            CallSignalEvent::GroupCallParticipantLeft {
-                call_id,
-                peer_public_key,
-                reason,
-            } => {
-                crate::event_dispatch::emit_call(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::CallEvent::ParticipantLeft {
-                        call_id,
-                        participant_pubkey: peer_public_key,
-                        reason,
-                    },
-                );
-            }
-        }
+        self.emit_signal_event(event);
     }
 }

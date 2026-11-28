@@ -10,28 +10,34 @@ use clap::Subcommand;
 /// Friend management subcommands.
 #[derive(Subcommand)]
 pub enum FriendCmd {
-    /// Send friend request.
+    /// Send a friend request to the identity a friend code names.
     Add {
-        /// Public key hex, invite link, or display name search.
-        #[arg(long, short = 't')]
-        target: String,
+        /// Their friend code (`rekindle://add/...`, from `friend code`).
+        code: String,
         /// Attach a message to the request.
         #[arg(long, short = 'm')]
         message: Option<String>,
     },
 
-    /// Accept pending friend request.
+    /// Accept a pending friend request.
     Accept {
-        /// Request ID (from `rekindle friend requests`).
+        /// The requester's public key (from `rekindle friend requests`).
         #[arg(long, short = 'r')]
         request_id: String,
     },
 
-    /// Reject pending friend request.
+    /// Reject a pending friend request.
     Reject {
-        /// Request ID.
+        /// The requester's public key.
         #[arg(long, short = 'r')]
         request_id: String,
+    },
+
+    /// Cancel a friend request we sent.
+    Cancel {
+        /// Their public key.
+        #[arg(long, short = 'f')]
+        friend: String,
     },
 
     /// List friends with presence.
@@ -39,36 +45,149 @@ pub enum FriendCmd {
         /// Filter by status: online, away, busy, offline, all.
         #[arg(long)]
         status: Option<String>,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
-    /// Remove a friend (with confirmation).
+    /// Remove a friend (the host asks to confirm).
     Remove {
-        /// Friend identifier (display name or public key).
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
-    /// List pending inbound/outbound requests.
+    /// List the requests waiting for our answer.
     Requests,
 
-    /// Block a peer (unfriend + suppress).
+    /// Block anyone by public key (our profile moves to a new key).
     Block {
-        /// Peer identifier.
+        /// Their public key.
         #[arg(long, short = 'f')]
         friend: String,
     },
 
     /// Remove a block.
     Unblock {
-        /// Peer identifier.
+        /// Their public key.
         #[arg(long, short = 'f')]
         friend: String,
+    },
+
+    /// List everyone we blocked.
+    Blocked,
+
+    /// Set (or clear, with no `--name`) our nickname for a friend.
+    Nickname {
+        /// The friend's display name, nickname or public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+        /// The nickname; omit to clear it.
+        #[arg(long, short = 'n')]
+        name: Option<String>,
+    },
+
+    /// Our friend code and its QR; `rotate` mints a new one, and codes
+    /// already shared stop working.
+    Code {
+        #[command(subcommand)]
+        action: Option<FriendCodeCmd>,
+    },
+
+    /// Friend invite links.
+    #[command(subcommand)]
+    Invite(FriendInviteCmd),
+
+    /// Friend groups.
+    #[command(subcommand)]
+    Group(GroupCmd),
+
+    /// Reset our secure session with a friend (compare safety numbers
+    /// out of band before resuming).
+    ResetSession {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+
+    /// Show our safety number with a friend, its QR code, and whether
+    /// their key is verified.
+    SafetyNumber {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+
+    /// Mark a friend's key verified, after comparing the safety number
+    /// with them out of band (the host asks to confirm).
+    Verify {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+
+    /// Withdraw a friend's verification (the host asks to confirm).
+    Unverify {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+}
+
+/// Friend code subcommands.
+#[derive(Subcommand)]
+pub enum FriendCodeCmd {
+    /// Mint a new request token: codes already shared stop working,
+    /// friends are untouched.
+    Rotate,
+}
+
+/// Friend invite link subcommands.
+#[derive(Subcommand)]
+pub enum FriendInviteCmd {
+    /// Make a tracked invite link.
+    Create,
+    /// List our open invites.
+    List,
+    /// Cancel an open invite.
+    Cancel {
+        /// The invite's id (from `rekindle friend invite list`).
+        #[arg(long, short = 'i')]
+        invite_id: String,
+    },
+    /// Add the friend an invite link names (reviewed with their key's
+    /// fingerprint).
+    Redeem {
+        /// The invite link.
+        #[arg(long, short = 'l')]
+        link: String,
+    },
+}
+
+/// Friend group subcommands.
+#[derive(Subcommand)]
+pub enum GroupCmd {
+    /// Create a group.
+    Create {
+        #[arg(long, short = 'n')]
+        name: String,
+    },
+    /// Rename a group.
+    Rename {
+        #[arg(long, short = 'g')]
+        group_id: i64,
+        #[arg(long, short = 'n')]
+        name: String,
+    },
+    /// Delete a group; its friends fall back to no group.
+    Delete {
+        #[arg(long, short = 'g')]
+        group_id: i64,
+    },
+    /// Move a friend into a group, or out of any with no `--group-id`.
+    Move {
+        /// The friend's display name, nickname or public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+        #[arg(long, short = 'g')]
+        group_id: Option<i64>,
     },
 }
 
@@ -77,7 +196,7 @@ pub enum FriendCmd {
 pub enum DmCmd {
     /// Send a DM.
     Send {
-        /// Friend identifier (display name or public key).
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
         /// Message body.
@@ -99,30 +218,56 @@ pub enum DmCmd {
         /// Messages since timestamp (ISO 8601 or epoch ms).
         #[arg(long)]
         since: Option<String>,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Live-stream incoming DMs.
     Watch {
-        /// Filter to one friend.
+        /// Filter to one friend: display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: Option<String>,
     },
 
-    /// Read a full conversation.
-    Read {
-        /// Conversation ID (peer public key).
-        #[arg(long, short = 'i')]
-        conversation_id: String,
+    /// Read a conversation's history, newest last.
+    History {
+        /// The friend's display name, nickname or public key.
+        #[arg(long, short = 'f')]
+        friend: String,
         /// Max messages.
         #[arg(long, default_value = "50")]
-        limit: usize,
-        /// Load messages before this message ID.
+        limit: u32,
+        /// Only messages sent before this time (epoch ms).
         #[arg(long)]
-        before: Option<String>,
+        before: Option<i64>,
     },
+
+    /// Mark everything from a friend read.
+    Read {
+        /// The friend's display name, nickname or public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+
+    /// Retry a failed send by its client id (the outbox row keeps its id).
+    Retry {
+        /// The send's client id, as `dm history` or a send status shows it.
+        client_id: String,
+    },
+
+    /// Discard a failed send by its client id.
+    Discard {
+        /// The send's client id.
+        client_id: String,
+    },
+}
+
+/// A status the user may pick (offline is locking or logging out;
+/// invisible appears offline to peers).
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum PresenceStatus {
+    Online,
+    Away,
+    Busy,
+    Invisible,
 }
 
 /// Presence management subcommands.
@@ -131,15 +276,18 @@ pub enum PresenceCmd {
     /// Set status: online, away, busy, invisible.
     Set {
         /// Status value.
-        #[arg(long, short = 's')]
-        status: String,
-        /// Status message.
-        #[arg(long, short = 'm')]
-        message: Option<String>,
-        /// Game activity name.
-        #[arg(long)]
-        game: Option<String>,
+        #[arg(long, short = 's', value_enum)]
+        status: PresenceStatus,
     },
+
+    /// Set the status message; an empty one clears it.
+    Message {
+        /// The message.
+        text: String,
+    },
+
+    /// Show our own status, message, game and idle state.
+    Show,
 
     /// Watch friend/community presence updates.
     Watch {

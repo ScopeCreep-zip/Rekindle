@@ -11,6 +11,8 @@
 //! `build.rs` uses, so a command added there without a grant fails this
 //! test instead of failing in the running app.
 
+#[path = "capability_policy/frontend_reach.rs"]
+mod frontend_reach;
 #[path = "../build_support/invoke_commands.rs"]
 mod invoke_commands;
 #[path = "../src/window_labels.rs"]
@@ -19,6 +21,9 @@ mod window_labels;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use frontend_reach::{
+    command_wrappers, frontend_files, owned_frontend_code, repo_root, Reach, PROP_VARIANTS,
+};
 use invoke_commands::InvokeCommand;
 use window_labels::WindowKind;
 
@@ -155,9 +160,17 @@ fn login_window_is_pre_auth_only() {
         "create_identity",
         "delete_identity",
         "get_avatar",
+        // The device login skin it shows (plan E7.7.2).
+        "get_skin",
+        // The review of the delete it issues (its passphrase proof).
+        "intent_cancel",
+        "intent_commit",
         "lifecycle_current",
         "list_identities",
         "login",
+        // A device login skin that fails to apply reports itself (SK2-T1);
+        // before unlock nothing is reverted, the Host only logs it.
+        "report_skin_apply_failed",
         "show_buddy_list",
         // The login window's event stream; its audience is lifecycle
         // transitions only (`event_dispatch::WebviewEvent::audience`).
@@ -272,8 +285,105 @@ fn only_media_windows_capture() {
     for kind in WindowKind::ALL {
         let expected = !matches!(
             kind,
-            WindowKind::Login | WindowKind::Profile | WindowKind::BuddyList
+            WindowKind::Login
+                | WindowKind::Profile
+                | WindowKind::BuddyList
+                | WindowKind::SkinEditor
+                | WindowKind::SkinPopup
         );
         assert_eq!(kind.captures_media(), expected, "{kind:?}");
+    }
+}
+
+/// Every command a window's code reaches (`Reach`) is granted to that
+/// window. A call it is not granted fails at runtime with "not allowed by
+/// ACL", and a `.catch` can hide that: the Settings camera list read the
+/// denial of `native_video_capture_available` as "no native capture" (plan
+/// C7.28), and the community window's network store read the denial of
+/// `get_network_status` as "Disconnected" (walk 20 M3).
+#[test]
+fn windows_are_granted_the_commands_their_code_reaches() {
+    let wrappers = command_wrappers();
+    assert!(
+        wrappers.len() > 100,
+        "found only {} command wrappers",
+        wrappers.len()
+    );
+    let caps = shipped();
+    let mut missing = Vec::new();
+    for kind in WindowKind::ALL {
+        let (entry, dir) = owned_frontend_code(kind);
+        let entry = repo_root().join(entry);
+        let dir = dir.map(|d| repo_root().join(d));
+        let owned = |p: &Path| p == entry || dir.as_ref().is_some_and(|d| p.starts_with(d));
+        let mut reach = Reach::new();
+        reach.file(&entry, &owned, &wrappers);
+        if let Some(dir) = &dir {
+            let mut files = Vec::new();
+            frontend_files(dir, &mut files);
+            for file in files {
+                reach.file(&file, &owned, &wrappers);
+            }
+        }
+        let granted: BTreeSet<String> = caps
+            .iter()
+            .filter(|c| c.windows.iter().any(|w| w == kind.pattern()))
+            .flat_map(|c| c.permissions.iter().cloned())
+            .collect();
+        for (cmd, at) in &reach.commands {
+            if !granted.contains(&allow_permission(cmd)) {
+                missing.push(format!(
+                    "`{}` reaches `{cmd}` ({})",
+                    kind.pattern(),
+                    at.display()
+                ));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "commands no capability grants:\n{}",
+        missing.join("\n")
+    );
+}
+
+/// Each [`PROP_VARIANTS`] entry still calls commands of its own: an entry
+/// that calls none exempts nothing and is removed.
+#[test]
+fn prop_variants_still_call_commands() {
+    let wrappers = command_wrappers();
+    for dir in PROP_VARIANTS {
+        let mut files = Vec::new();
+        frontend_files(&repo_root().join(dir), &mut files);
+        let mut reach = Reach::new();
+        for file in &files {
+            let src = reach.source(file);
+            reach.scan_calls(file, &src, &wrappers);
+        }
+        assert!(!reach.commands.is_empty(), "{dir} calls no command");
+    }
+}
+
+/// The skin editor's draft commands (plan E7.7.5) are granted to its own
+/// window alone, so the ACL refuses them from every other window (the
+/// Settings window that opens it included).
+#[test]
+fn only_the_skin_editor_holds_the_draft_commands() {
+    let editor = BTreeSet::from([WindowKind::SkinEditor.pattern().to_owned()]);
+    for cmd in [
+        "validate_skin_draft",
+        "skin_draft_start",
+        "export_skin_draft",
+        "import_skin_region",
+        "export_skin_schema",
+    ] {
+        let perm = allow_permission(cmd);
+        let windows: BTreeSet<String> = shipped()
+            .iter()
+            .chain(dev().iter())
+            .filter(|c| c.permissions.contains(&perm))
+            .flat_map(|c| c.windows.iter().cloned())
+            .collect();
+        assert_eq!(windows, editor, "`{cmd}` is granted beyond the editor");
     }
 }

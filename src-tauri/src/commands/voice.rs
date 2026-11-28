@@ -51,6 +51,7 @@ pub async fn set_mute(
 ) -> Result<(), String> {
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::set_local_mute(&deps, muted);
+    crate::event_dispatch::emit_self_muted(state.inner(), muted);
     Ok(())
 }
 
@@ -86,7 +87,12 @@ pub async fn set_audio_devices(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    persist_audio_device_prefs(&app, input_device.as_deref(), output_device.as_deref())?;
+    persist_audio_device_prefs(
+        state.inner(),
+        input_device.as_deref(),
+        output_device.as_deref(),
+    )
+    .await?;
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::change_audio_devices(&deps, input_device, output_device)
         .await
@@ -103,8 +109,9 @@ pub async fn set_input_channels(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    crate::services::voice_runtime::persist_input_channels(&app, &device, channels)?;
-    let prefs = crate::commands::settings::load_preferences(&app);
+    crate::services::voice_runtime::persist_input_channels(state.inner(), &device, channels)
+        .await?;
+    let prefs = crate::services::preferences::current(state.inner());
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::change_audio_devices(&deps, prefs.input_device, prefs.output_device)
         .await
@@ -133,7 +140,7 @@ pub async fn set_voice_mode(
 #[tauri::command]
 pub async fn server_mute_member(
     community_id: String,
-    channel_id: String,
+    channel_id: Option<String>,
     target_pseudonym: String,
     muted: bool,
     app: tauri::AppHandle,
@@ -141,7 +148,7 @@ pub async fn server_mute_member(
 ) -> Result<(), String> {
     server_mute_member_inner(
         &community_id,
-        &channel_id,
+        channel_id,
         &target_pseudonym,
         muted,
         &app,
@@ -152,12 +159,16 @@ pub async fn server_mute_member(
 #[tauri::command]
 pub async fn server_deafen_member(
     community_id: String,
-    channel_id: String,
+    channel_id: Option<String>,
     target_pseudonym: String,
     deafened: bool,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let channel_id = crate::services::voice_runtime::voice_channel_or(
+        channel_id,
+        crate::services::voice_runtime::DEAFEN_NEEDS_VOICE,
+    )?;
     crate::commands::community::require_permission(
         state.inner(),
         &community_id,

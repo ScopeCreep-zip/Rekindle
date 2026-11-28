@@ -1,15 +1,17 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import type { CommunityAuditEntry, CommunityBanView } from "../../ipc/commands/dto";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 
 export async function handleRemoveCommunityMember(
   communityId: string,
-  pseudonymKey: string,
+  pseudonymKey: string
 ): Promise<void> {
   try {
     await commands.removeCommunityMember(communityId, pseudonymKey);
     setCommunityState("communities", communityId, "members", (members) =>
-      members.filter((m) => m.pseudonymKey !== pseudonymKey),
+      members.filter((m) => m.pseudonymKey !== pseudonymKey)
     );
   } catch (e) {
     console.error("Failed to remove community member:", e);
@@ -20,7 +22,7 @@ export async function handleRemoveCommunityMember(
 export async function handleUpdateCommunityInfo(
   communityId: string,
   name: string | null,
-  description: string | null,
+  description: string | null
 ): Promise<void> {
   try {
     await commands.updateCommunityInfo(communityId, name, description);
@@ -36,14 +38,11 @@ export async function handleUpdateCommunityInfo(
   }
 }
 
-export async function handleBanMember(
-  communityId: string,
-  pseudonymKey: string,
-): Promise<void> {
+export async function handleBanMember(communityId: string, pseudonymKey: string): Promise<void> {
   try {
     await commands.banMember(communityId, pseudonymKey);
     setCommunityState("communities", communityId, "members", (members) =>
-      members.filter((m) => m.pseudonymKey !== pseudonymKey),
+      members.filter((m) => m.pseudonymKey !== pseudonymKey)
     );
   } catch (e) {
     console.error("Failed to ban member:", e);
@@ -51,10 +50,7 @@ export async function handleBanMember(
   }
 }
 
-export async function handleUnbanMember(
-  communityId: string,
-  pseudonymKey: string,
-): Promise<void> {
+export async function handleUnbanMember(communityId: string, pseudonymKey: string): Promise<void> {
   try {
     await commands.unbanMember(communityId, pseudonymKey);
   } catch (e) {
@@ -71,42 +67,38 @@ export async function handleUnbanMember(
 // `voiceChannels[channelId].participants`).
 export async function handleServerMuteMember(
   communityId: string,
-  channelId: string,
+  /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
+  channelId: string | null,
   targetPseudonym: string,
-  muted: boolean,
+  muted: boolean
 ): Promise<void> {
   try {
     await commands.serverMuteMember(communityId, channelId, targetPseudonym, muted);
     addToast(muted ? "Member server-muted" : "Member un-muted", "success");
   } catch (e) {
     console.error("Failed to server-mute member:", e);
-    addToast("Failed to update server-mute", "error");
+    // The Host's refusal in its words (not in a voice channel, rank).
+    addToast(`Server mute not changed: ${errorMessage(e)}`, "error");
   }
 }
 
 export async function handleServerDeafenMember(
   communityId: string,
-  channelId: string,
+  /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
+  channelId: string | null,
   targetPseudonym: string,
-  deafened: boolean,
+  deafened: boolean
 ): Promise<void> {
   try {
-    await commands.serverDeafenMember(
-      communityId,
-      channelId,
-      targetPseudonym,
-      deafened,
-    );
+    await commands.serverDeafenMember(communityId, channelId, targetPseudonym, deafened);
     addToast(deafened ? "Member server-deafened" : "Member un-deafened", "success");
   } catch (e) {
     console.error("Failed to server-deafen member:", e);
-    addToast("Failed to update server-deafen", "error");
+    addToast(`Server deafen not changed: ${errorMessage(e)}`, "error");
   }
 }
 
-export async function handleGetBanList(
-  communityId: string,
-): Promise<{ pseudonymKey: string; displayName: string; bannedAt: number }[]> {
+export async function handleGetBanList(communityId: string): Promise<CommunityBanView[]> {
   try {
     return await commands.getBanList(communityId);
   } catch (e) {
@@ -116,9 +108,7 @@ export async function handleGetBanList(
   }
 }
 
-export async function handleRotateMek(
-  communityId: string,
-): Promise<void> {
+export async function handleRotateMek(communityId: string): Promise<void> {
   try {
     await commands.rotateMek(communityId);
   } catch (e) {
@@ -130,8 +120,8 @@ export async function handleRotateMek(
 export async function handleGetAuditLog(
   communityId: string,
   beforeTimestamp?: number,
-  limit: number = 50,
-): Promise<{ action: string; actorPseudonym: string; target: string | null; details: string | null; timestamp: number }[]> {
+  limit: number = 50
+): Promise<CommunityAuditEntry[]> {
   try {
     return await commands.getAuditLog(communityId, beforeTimestamp, limit);
   } catch (e) {
@@ -144,7 +134,7 @@ export async function handleTimeoutMember(
   communityId: string,
   pseudonymKey: string,
   durationSeconds: number,
-  reason: string | null,
+  reason: string | null
 ): Promise<void> {
   try {
     await commands.timeoutMember(communityId, pseudonymKey, durationSeconds, reason);
@@ -165,7 +155,7 @@ export async function handleTimeoutMember(
 
 export async function handleRemoveTimeout(
   communityId: string,
-  pseudonymKey: string,
+  pseudonymKey: string
 ): Promise<void> {
   try {
     await commands.removeTimeout(communityId, pseudonymKey);
@@ -180,5 +170,34 @@ export async function handleRemoveTimeout(
   } catch (e) {
     console.error("Failed to remove timeout:", e);
     addToast("Failed to remove timeout", "error");
+  }
+}
+
+/** The pseudonyms we block in a community (D26: the ingest gate drops their posts). */
+export async function loadCommunityBlocks(communityId: string): Promise<Set<string>> {
+  try {
+    return new Set(await commands.listCommunityBlocks(communityId));
+  } catch (e) {
+    console.error("Failed to load community blocks:", e);
+    return new Set();
+  }
+}
+
+/** Block or unblock a member by pseudonym; whether the change landed. */
+export async function handleSetCommunityBlock(
+  communityId: string,
+  pseudonymKey: string,
+  blocked: boolean
+): Promise<boolean> {
+  try {
+    if (blocked) {
+      await commands.blockCommunityMember(communityId, pseudonymKey);
+    } else {
+      await commands.unblockCommunityMember(communityId, pseudonymKey);
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to change community block:", e);
+    return false;
   }
 }

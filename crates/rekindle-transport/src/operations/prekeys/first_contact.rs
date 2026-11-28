@@ -1,0 +1,265 @@
+//! A first contact (plan E2.4, B2/B6/B7): the bundle a friend's prekey
+//! record gives, the session it opens carrying our accept (or our reset
+//! accept), the visible failure when it cannot, and the user's Retry.
+//! Every path that opens a session with a friend from their record comes
+//! here: an accept, a crossing request, a reset accept, B6's resend, a
+//! send with no session, and a friend's re-sent request.
+
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
+use rekindle_crypto::signal::PreKeyBundle;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
+
+use super::FirstContact;
+use crate::operations::dm;
+use crate::operations::friend::{state, FriendError, FriendHost};
+
+/// The bundle a session with `peer` (an accepted friend) opens from: a
+/// slot of the prekey record their profile names.
+///
+/// # Errors
+/// Their profile is not known, or no bundle can be picked from it.
+pub(crate) async fn bundle_for_friend(
+    host: &dyn FriendHost,
+    peer: &str,
+) -> Result<PreKeyBundle, FriendError> {
+    let profile = state::friend(host, peer)
+        .and_then(|f| f.dht_record_key)
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| {
+            FriendError::Conflict(format!(
+                "A secure session with {peer} cannot be opened: their profile is not known"
+            ))
+        })?;
+    super::pick_bundle(host, peer, &profile).await
+}
+
+/// Open a session with `peer` from their record, carrying `kind`
+/// (`FriendAccept` or `SessionResetAccept`) as its first payload, and send
+/// it.
+///
+/// # Errors
+/// `kind` is no first contact, no bundle could be picked, or the session
+/// could not be opened or sent.
+pub(crate) async fn open_first_contact(
+    host: &dyn FriendHost,
+    peer: &str,
+    kind: DmTypeId,
+) -> Result<(), FriendError> {
+    let first = match kind {
+        DmTypeId::FriendAccept => None,
+        DmTypeId::SessionResetAccept => Some(DirectBody::SessionResetAccept),
+        other => {
+            return Err(FriendError::Invalid(format!(
+                "{other:?} is no first contact"
+            )))
+        }
+    };
+    let bundle = bundle_for_friend(host, peer).await?;
+    match first {
+        None => dm::send_friend_accept(host, peer, bundle).await,
+        Some(body) => {
+            let frame = dm::frame::initiate_frame(
+                host,
+                peer,
+                bundle,
+                &body,
+                dm::frame::Position::default(),
+            )
+            .await?;
+            dm::handshake::enqueue_frame(host, peer, &frame)
+                .await
+                .map(drop)
+        }
+    }
+}
+
+/// [`open_first_contact`], its failure shown on the friend's row with
+/// Retry ([`failed`]); whether it went out.
+pub(crate) async fn open_or_fail(host: &dyn FriendHost, peer: &str, kind: DmTypeId) -> bool {
+    match open_first_contact(host, peer, kind).await {
+        Ok(()) => true,
+        Err(FriendError::NotReady(why)) => wait_for_prekeys(host, peer, kind, &why).await,
+        Err(e) => {
+            tracing::warn!(peer = %peer, ?kind, error = %e, "first contact not sent");
+            failed(host, peer, kind, e.to_string());
+            false
+        }
+    }
+}
+
+/// B7: the first contact carrying `kind` cannot be completed. The friend's
+/// row says why and offers Retry ([`retry`]), which re-sends `kind`. There
+/// is no session-reset prompt for a first contact.
+/// A failure keeps whether B6's one resend was spent, so a later
+/// `PreKeyRejected` resends only if it was not.
+/// A first contact whose bundle is not readable yet (their record not
+/// named, not written or not reachable; live finding L-FR3) waits as a
+/// `friend_handshake` row, attempted with the outbox's backoff and brought
+/// forward when their profile names a new device list; the row opens the
+/// session once the bundle reads. Their row shows it retrying, never failed.
+async fn wait_for_prekeys(host: &dyn FriendHost, peer: &str, kind: DmTypeId, why: &str) -> bool {
+    tracing::info!(peer = %peer, ?kind, reason = %why, "first contact waits for their prekey record");
+    match dm::handshake::enqueue_first_contact(host, peer, kind).await {
+        Ok(_) => {
+            state::update(host, peer, |f| {
+                f.handshake_retrying = true;
+                f.handshake_error = None;
+            });
+            host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeRetrying {
+                peer_key: peer.to_string(),
+            }));
+            true
+        }
+        Err(e) => {
+            failed(host, peer, kind, e.to_string());
+            false
+        }
+    }
+}
+
+pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: String) {
+    {
+        let mut contacts = host.stores().first_contacts.lock();
+        let retried = contacts.get(peer).is_some_and(|c| c.retried);
+        contacts.insert(
+            peer.to_string(),
+            FirstContact {
+                kind,
+                retried,
+                failed: true,
+            },
+        );
+    }
+    show_failed(host, peer, reason);
+}
+
+/// The friend's row shows `reason`, not retrying, and the failure is
+/// published.
+fn show_failed(host: &dyn FriendHost, peer: &str, reason: String) {
+    state::update(host, peer, |f| {
+        f.handshake_retrying = false;
+        f.handshake_error = Some(reason.clone());
+    });
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeFailed {
+        peer_key: peer.to_string(),
+        reason,
+    }));
+}
+
+/// What a friend request answered with a bare NAK shows: generic, since a
+/// NAK on a request is never a block (LV23 review M1; a block is the
+/// silent receipt) and never "did not accept".
+pub(crate) const REQUEST_UNDELIVERED: &str = "couldn't deliver, will retry";
+
+/// LV23 review M1: `peer` answered our `FriendRequest` with a bare NAK
+/// (our open rate, their replay quota, a frame they could not decode). The
+/// row is attempted again with the stream's backoff, and the friend shows
+/// [`REQUEST_UNDELIVERED`], retrying, until a receipt clears it
+/// ([`request_delivered`]).
+pub(crate) fn request_undelivered(host: &dyn FriendHost, peer: &str) {
+    state::update(host, peer, |f| {
+        f.handshake_retrying = true;
+        f.handshake_error = Some(REQUEST_UNDELIVERED.to_string());
+    });
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeRetrying {
+        peer_key: peer.to_string(),
+    }));
+}
+
+/// Our request to `peer` was receipted: a [`REQUEST_UNDELIVERED`] shown on
+/// it goes.
+pub(crate) fn request_delivered(host: &dyn FriendHost, peer: &str) {
+    state::update(host, peer, |f| {
+        if f.handshake_error.as_deref() == Some(REQUEST_UNDELIVERED) {
+            f.handshake_error = None;
+            f.handshake_retrying = false;
+        }
+    });
+}
+
+/// Finding 46: the peer refused our first contact `kind` with a bare NAK
+/// (an established session, admission): not a refused prekey, which they
+/// answer with their `PreKeyRejected` as the call's reply
+/// (`direct::on_first_contact_reply`, the one resend). It shows as failed
+/// with Retry, never a silent split.
+pub(crate) fn refused(host: &dyn FriendHost, peer: &str, kind: DmTypeId) {
+    failed(
+        host,
+        peer,
+        kind,
+        "they refused our secure session".to_string(),
+    );
+}
+
+/// The user's Retry on a friend whose secure session did not open: the
+/// pending first contact (our accept, or our reset accept when that was
+/// the one that failed) again, from a fresh slot of their record, with
+/// B6's one resend available again.
+///
+/// # Errors
+/// They are no accepted friend, or the first contact failed again (the row
+/// shows it).
+pub async fn retry(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
+    if !state::is_accepted(host, peer) {
+        return Err(FriendError::Conflict(
+            "Retry is only for a friend whose secure session did not open".to_string(),
+        ));
+    }
+    let kind = host
+        .stores()
+        .first_contacts
+        .lock()
+        .get(peer)
+        .map_or(DmTypeId::FriendAccept, |c| c.kind);
+    host.stores().first_contacts.lock().insert(
+        peer.to_string(),
+        FirstContact {
+            kind,
+            retried: false,
+            failed: false,
+        },
+    );
+    state::update(host, peer, |f| {
+        f.handshake_error = None;
+        f.handshake_retrying = true;
+    });
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeRetrying {
+        peer_key: peer.to_string(),
+    }));
+    tracing::info!(peer = %peer, ?kind, "first contact retried by the user");
+    match open_first_contact(host, peer, kind).await {
+        Ok(()) => {}
+        Err(FriendError::NotReady(why)) => {
+            wait_for_prekeys(host, peer, kind, &why).await;
+            return Ok(());
+        }
+        Err(e) => {
+            failed(host, peer, kind, e.to_string());
+            return Err(e);
+        }
+    }
+    if kind == DmTypeId::SessionResetAccept {
+        // The reset the user accepted is answered now.
+        host.stores().incoming_resets.lock().remove(peer);
+    }
+    Ok(())
+}
+
+/// Plan E2.5h: a message from `peer` tripped the session archive's breaker
+/// (the two sides kept switching between sessions), so no session with them
+/// is active. It is shown on the friend's row, never ended silently: the
+/// next message the user sends opens a new session from their record.
+pub(crate) fn session_ended(host: &dyn FriendHost, peer: &str) {
+    let reason = "the secure session kept switching between keys and was ended; \
+                  your next message opens a new one"
+        .to_string();
+    tracing::warn!(peer = %peer, "session archive breaker: the active session was archived");
+    state::update(host, peer, |f| {
+        f.handshake_retrying = false;
+        f.handshake_error = Some(reason.clone());
+    });
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeFailed {
+        peer_key: peer.to_string(),
+        reason,
+    }));
+}

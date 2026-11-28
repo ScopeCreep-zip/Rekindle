@@ -9,17 +9,25 @@ use super::IpcRequest;
 /// Daemon → Frontend response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResponse {
-    /// Success with a JSON value payload.
-    Ok(serde_json::Value),
+    /// Success with a JSON value payload, and for an intent that ran, how it
+    /// can be taken back (plan D3.3: the undo toast and the CLI/TUI render
+    /// it).
+    Ok {
+        data: serde_json::Value,
+        reversibility: Option<rekindle_types::intent::Reversibility>,
+        /// How to take this action back while the offer lasts (plan E1.1):
+        /// `IpcRequest::Undo { id }` runs the inverse the host stored.
+        undo: Option<rekindle_types::intent::UndoOffer>,
+    },
+    /// The request is held by the host's intent gate (plan D3.3, ADR 0019):
+    /// render this review and commit it with the proof it asks for.
+    IntentRequired(rekindle_types::intent::IntentReview),
     /// Error with code, message, and optional remediation advice.
     Error {
         code: u32,
         message: String,
         remediation: Option<String>,
     },
-    /// Unsolicited push: a subscription event from the three-tier event pipeline.
-    /// Delivered to all connected clients via the event push task.
-    Event(rekindle_types::subscription_events::SubscriptionEvent),
 }
 
 impl IpcResponse {
@@ -28,7 +36,11 @@ impl IpcResponse {
         // [RC-2] serde_json::to_value can fail on recursive structures,
         // but our types are flat. If it fails, return an internal error.
         match serde_json::to_value(value) {
-            std::result::Result::Ok(v) => Self::Ok(v),
+            std::result::Result::Ok(data) => Self::Ok {
+                data,
+                reversibility: None,
+                undo: None,
+            },
             Err(e) => Self::Error {
                 code: 500,
                 message: format!("response serialization failed: {e}"),
@@ -76,7 +88,7 @@ impl IpcResponse {
 /// stamps `verified_sender_name`. It never inspects the inner variant.
 ///
 /// Participants wrap their payloads:
-/// - CLI/TUI clients: `BusPayload::Request(IpcRequest)`
+/// - CLI/TUI clients: `BusPayload::Request(Box<IpcRequest>)`
 /// - Daemon subscriber: `BusPayload::Response(IpcResponse)`
 /// - Subscription delivery: `BusPayload::Event(SubscriptionEvent)`
 /// - Media fan-out: `BusPayload::Media(MediaFrame)` (daemon → client only)
@@ -88,8 +100,10 @@ impl IpcResponse {
 /// existing indices stable. `Media` is the last variant for that reason.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BusPayload {
-    /// Frontend → Daemon request.
-    Request(IpcRequest),
+    /// Frontend → Daemon request, boxed: `IpcRequest` dwarfs every other
+    /// variant. Serde and postcard write a `Box` as its content, so the wire
+    /// is unchanged.
+    Request(Box<IpcRequest>),
     /// Daemon → Frontend response, serialized as JSON bytes.
     ///
     /// `IpcResponse` contains `serde_json::Value` which postcard cannot
@@ -99,8 +113,10 @@ pub enum BusPayload {
     /// JSON by the client. This is the only type that crosses the postcard/JSON
     /// boundary — all other variants are fully postcard-compatible.
     Response(Vec<u8>),
-    /// Daemon → Frontend push event, routed via EventRouter to subscribed connections.
-    Event(rekindle_types::subscription_events::SubscriptionEvent),
+    /// Host → frontend stream frame (plan D3.2): a journaled event with its
+    /// cursor, `Resumed` after a replay, or `InvalidSession`. Each
+    /// subscribed connection has its own ordered stream from the journal.
+    Event(rekindle_types::subscription_events::StreamFrame),
     /// Daemon → Frontend compressed video frame.
     ///
     /// A sibling of `Event`, deliberately **not** an event: media bypasses the

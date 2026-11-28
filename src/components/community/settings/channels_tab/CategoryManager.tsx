@@ -1,25 +1,15 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import type { Community } from "../../../../stores/community.store";
-import type { ConfirmOptions } from "../types";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
-  handleReorderCategories,
   handleCreateCategory,
   handleDeleteCategory,
   handleRenameCategory,
+  handleReorderCategories,
 } from "../../../../actions/community.actions";
-import {
-  ICON_SAVE,
-  ICON_PENCIL,
-  ICON_DELETE,
-  ICON_PLUS_BOX,
-  ICON_ARROW_UP,
-  ICON_ARROW_DOWN,
-  ICON_FOLDER,
-} from "../../../../icons";
+import type { Community } from "../../../../stores/community.store";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 interface CategoryManagerProps {
   community: Community;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const CategoryManager: Component<CategoryManagerProps> = (props) => {
@@ -44,13 +34,8 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
     setRenamingCategoryId(null);
   }
 
-  function confirmDeleteCategory(cat: { id: string; name: string }): void {
-    props.requestConfirm({
-      title: "Delete Category",
-      message: `Delete category "${cat.name}"? Channels will become uncategorized.`,
-      confirmLabel: "Delete",
-      action: () => handleDeleteCategory(props.community.id, cat.id),
-    });
+  function deleteCategory(cat: { id: string; name: string }): void {
+    void handleDeleteCategory(props.community.id, cat.id);
   }
 
   async function handleCreateCat(): Promise<void> {
@@ -83,10 +68,11 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
       <For each={sortedCategories()}>
         {(cat, index) => (
           <div class="channel-manage-row">
-            <span class="nf-icon channel-manage-icon">{ICON_FOLDER}</span>
-            <Show when={renamingCategoryId() === cat.id} fallback={
-              <span class="channel-manage-name">{cat.name}</span>
-            }>
+            <SkinGlyph name="folder" class="channel-manage-icon" />
+            <Show
+              when={renamingCategoryId() === cat.id}
+              fallback={<span class="channel-manage-name">{cat.name}</span>}
+            >
               <input
                 class="form-input channel-rename-input"
                 type="text"
@@ -100,56 +86,61 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             </Show>
             <Show when={renamingCategoryId() !== cat.id}>
               <button
+                type="button"
                 class="form-btn-secondary channel-manage-btn"
                 onClick={() => startCategoryRename(cat)}
                 title="Rename"
               >
-                <span class="nf-icon">{ICON_PENCIL}</span>
+                <SkinGlyph name="pencil" />
               </button>
             </Show>
             <Show when={renamingCategoryId() === cat.id}>
               <button
+                type="button"
                 class="form-btn-primary channel-manage-btn"
                 onClick={() => submitCategoryRename(cat.id)}
                 title="Save"
               >
-                <span class="nf-icon">{ICON_SAVE}</span>
+                <SkinGlyph name="save" />
               </button>
             </Show>
             <button
+              type="button"
               class="form-btn-danger channel-manage-btn"
-              onClick={() => confirmDeleteCategory(cat)}
+              onClick={() => deleteCategory(cat)}
               title="Delete"
             >
-              <span class="nf-icon">{ICON_DELETE}</span>
+              <SkinGlyph name="delete" />
             </button>
             <button
+              type="button"
               class="form-btn-secondary channel-manage-btn"
               onClick={() => moveCategoryUp(index())}
               disabled={index() === 0}
               title="Move Up"
             >
-              <span class="nf-icon">{ICON_ARROW_UP}</span>
+              <SkinGlyph name="arrow-up" />
             </button>
             <button
+              type="button"
               class="form-btn-secondary channel-manage-btn"
               onClick={() => moveCategoryDown(index())}
               disabled={index() === sortedCategories().length - 1}
               title="Move Down"
             >
-              <span class="nf-icon">{ICON_ARROW_DOWN}</span>
+              <SkinGlyph name="arrow-down" />
             </button>
           </div>
         )}
       </For>
-      <Show when={showNewCategory()} fallback={
-        <button
-          class="form-btn-secondary"
-          onClick={() => setShowNewCategory(true)}
-        >
-          <span class="nf-icon">{ICON_PLUS_BOX}</span> Create Category
-        </button>
-      }>
+      <Show
+        when={showNewCategory()}
+        fallback={
+          <button type="button" class="form-btn-secondary" onClick={() => setShowNewCategory(true)}>
+            <SkinGlyph name="plus-box" /> Create Category
+          </button>
+        }
+      >
         <div class="channel-create-inline">
           <input
             class="form-input"
@@ -163,6 +154,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             }}
           />
           <button
+            type="button"
             class="form-btn-primary"
             onClick={handleCreateCat}
             disabled={!newCategoryName().trim()}
@@ -170,6 +162,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             Create
           </button>
           <button
+            type="button"
             class="form-btn-secondary"
             onClick={() => setShowNewCategory(false)}
           >

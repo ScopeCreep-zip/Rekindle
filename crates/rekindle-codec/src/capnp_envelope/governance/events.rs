@@ -19,52 +19,49 @@ use rekindle_types::id::{EventId, ThreadId};
 pub(super) fn write_thread_created(
     mut p: schema_pkg::thread_created_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::ThreadCreated {
         thread_id,
         parent_channel_id,
         name,
         thread_type,
-        record_key,
         invited,
         forum_tag,
         auto_archive_seconds,
-        lamport,
     } = e
     else {
         unreachable!("write_thread_created: variant mismatch")
     };
-    let record_key = record_key.as_deref();
     let forum_tag = forum_tag.as_deref();
     let auto_archive_seconds = *auto_archive_seconds;
-    let lamport = *lamport;
     uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
     uuid16_to_capnp(p.reborrow().init_parent_channel_id(), &parent_channel_id.0);
     p.set_name(name);
     p.set_thread_type(thread_type);
-    p.set_has_record_key(record_key.is_some());
-    if let Some(k) = record_key {
-        p.set_record_key(k);
-    }
-    let mut inv_list = p.reborrow().init_invited(len_u32(invited.len()));
-    for (i, k) in invited.iter().enumerate() {
-        pseudonym_key_to_capnp(inv_list.reborrow().get(len_u32(i)), k);
+    let mut inv_list = p.reborrow().init_invited(len_u32(invited.len())?);
+    for (i, k) in (0u32..).zip(invited.iter()) {
+        pseudonym_key_to_capnp(inv_list.reborrow().get(i), k);
     }
     p.set_has_forum_tag(forum_tag.is_some());
     if let Some(t) = forum_tag {
         p.set_forum_tag(t);
     }
     p.set_auto_archive_seconds(auto_archive_seconds);
-    p.set_lamport(lamport);
+    Ok(())
 }
 
 pub(super) fn write_thread_archived(
     mut p: schema_pkg::thread_archived_entry::Builder<'_>,
     thread_id: ThreadId,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
-    p.set_lamport(lamport);
+}
+
+pub(super) fn write_thread_unarchived(
+    mut p: schema_pkg::thread_unarchived_entry::Builder<'_>,
+    thread_id: ThreadId,
+) {
+    uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
 }
 
 // `write_event_created` and `write_expression_added` re-extract their
@@ -74,7 +71,7 @@ pub(super) fn write_thread_archived(
 pub(super) fn write_event_created(
     mut p: schema_pkg::event_created_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::EventCreated {
         event_id,
         name,
@@ -87,7 +84,6 @@ pub(super) fn write_event_created(
         recurrence,
         location,
         status,
-        lamport,
     } = e
     else {
         unreachable!("write_event_created: variant mismatch")
@@ -117,7 +113,7 @@ pub(super) fn write_event_created(
     }
     p.set_has_recurrence(recurrence.is_some());
     if let Some(r) = recurrence {
-        write_recurrence_rule_via_event_capnp(p.reborrow().init_recurrence(), r);
+        write_recurrence_rule_via_event_capnp(p.reborrow().init_recurrence(), r)?;
     }
     p.set_has_location(location.is_some());
     if let Some(loc) = location {
@@ -127,27 +123,23 @@ pub(super) fn write_event_created(
     if let Some(s) = status {
         p.set_status(event_status_to_capnp(*s));
     }
-    p.set_lamport(*lamport);
+    Ok(())
 }
 
 pub(super) fn write_event_archived(
     mut p: schema_pkg::event_archived_entry::Builder<'_>,
     event_id: EventId,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_event_id(), &event_id.0);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_event_rsvp(
     mut p: schema_pkg::event_rsvp_entry::Builder<'_>,
     event_id: EventId,
     status: rekindle_types::event::RsvpStatus,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_event_id(), &event_id.0);
     p.set_status(rsvp_status_to_capnp(status));
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_event_rsvp(
@@ -156,7 +148,6 @@ pub(super) fn read_event_rsvp(
     Ok(GovernanceEntry::EventRsvp {
         event_id: event_id_from_capnp(p.get_event_id().map_err(|e| capnp_err(&e))?)?,
         status: rsvp_status_from_capnp(p.get_status().map_err(not_in_schema)?),
-        lamport: p.get_lamport(),
     })
 }
 
@@ -176,13 +167,6 @@ pub(super) fn read_thread_created(
         )?,
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         thread_type: text_to_string(p.get_thread_type().map_err(|e| capnp_err(&e))?)?,
-        record_key: if p.get_has_record_key() {
-            Some(text_to_string(
-                p.get_record_key().map_err(|e| capnp_err(&e))?,
-            )?)
-        } else {
-            None
-        },
         invited: invited?,
         forum_tag: if p.get_has_forum_tag() {
             Some(text_to_string(
@@ -192,7 +176,6 @@ pub(super) fn read_thread_created(
             None
         },
         auto_archive_seconds: p.get_auto_archive_seconds(),
-        lamport: p.get_lamport(),
     })
 }
 
@@ -201,7 +184,14 @@ pub(super) fn read_thread_archived(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::ThreadArchived {
         thread_id: thread_id_from_capnp(p.get_thread_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
+    })
+}
+
+pub(super) fn read_thread_unarchived(
+    p: schema_pkg::thread_unarchived_entry::Reader<'_>,
+) -> Result<GovernanceEntry, CodecError> {
+    Ok(GovernanceEntry::ThreadUnarchived {
+        thread_id: thread_id_from_capnp(p.get_thread_id().map_err(|e| capnp_err(&e))?)?,
     })
 }
 
@@ -266,7 +256,6 @@ pub(super) fn read_event_created(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -275,6 +264,5 @@ pub(super) fn read_event_archived(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::EventArchived {
         event_id: event_id_from_capnp(p.get_event_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }

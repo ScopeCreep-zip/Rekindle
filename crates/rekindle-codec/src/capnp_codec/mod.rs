@@ -87,18 +87,62 @@ pub(crate) fn ed25519_verify(
         .map_err(|e| CodecError::Verification(format!("{what} signature: {e}")))
 }
 
-pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
+/// Serialize a Cap'n Proto builder into packed bytes with capnp's own
+/// packed writer.
+///
+/// # Errors
+/// `Serialization` when capnp's writer fails (into a `Vec` its only
+/// error source, `write_all`, does not; the `Result` is still capnp's to
+/// give, so it is propagated rather than assumed away).
+pub(crate) fn pack(
+    builder: &capnp::message::Builder<capnp::message::HeapAllocator>,
+) -> Result<Vec<u8>, CodecError> {
     let mut output = Vec::new();
-    capnp::serialize_packed::write_message(&mut output, builder).expect("write to Vec never fails");
-    output
+    capnp::serialize_packed::write_message(&mut output, builder)
+        .map_err(|e| CodecError::Serialization(format!("capnp packed write: {e}")))?;
+    Ok(output)
 }
 
-/// Deserialize packed bytes into a Cap'n Proto message reader.
-pub(crate) fn unpack(
+/// A list or field length as Cap'n Proto's `u32` (lists index by `u32`).
+///
+/// # Errors
+/// `TooLargeToEncode` for a length past `u32::MAX`: such a value is over
+/// 4 GiB, which no carrier takes, and is refused rather than written with a
+/// wrong length.
+pub(crate) fn wire_len(n: usize) -> Result<u32, CodecError> {
+    u32::try_from(n).map_err(|_| CodecError::TooLargeToEncode(n))
+}
+
+/// The deepest pointer nesting a decoder follows (security roadmap 2.11;
+/// capnp's default is 64). No Rekindle schema nests deeper than a handful
+/// of levels; `at_cap_tests` decodes every type at its carrier's cap.
+pub(crate) const NESTING_LIMIT: i32 = 16;
+
+/// Deserialize packed bytes into a Cap'n Proto message reader within
+/// `bound`: input longer than `bound.max_bytes` is refused before it is
+/// scanned, and a message of more than `bound.max_words` words while it is
+/// read. Packing collapses a run of zero words into two bytes, so a small
+/// datagram could otherwise unpack into megabytes (the traversal limit
+/// also bounds the segment sizes the header may claim). Every decoder reads
+/// through here with its type's bound from [`bounds`]; there is no
+/// unbounded reader (`cargo xtask check-capnp-bounds`). Pointers nest at
+/// most [`NESTING_LIMIT`] deep (roadmap 2.11), so a peer cannot make the
+/// reader recurse through a chain of nested structs or lists.
+pub(crate) fn unpack_bounded(
     data: &[u8],
+    bound: bounds::Bound,
 ) -> Result<capnp::message::Reader<capnp::serialize::OwnedSegments>, CodecError> {
-    capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-        .map_err(|e| capnp_err(&e))
+    if data.len() > bound.max_bytes {
+        return Err(CodecError::Deserialization(format!(
+            "capnp: {} bytes, the bound is {}",
+            data.len(),
+            bound.max_bytes
+        )));
+    }
+    let mut options = capnp::message::ReaderOptions::new();
+    options.traversal_limit_in_words(Some(bound.max_words));
+    options.nesting_limit(NESTING_LIMIT);
+    capnp::serialize_packed::read_message(data, options).map_err(|e| capnp_err(&e))
 }
 
 /// Read an optional text field, returning `None` when absent or empty.
@@ -132,32 +176,10 @@ fn bytes_or_empty(has: bool, get: Result<&[u8], capnp::Error>) -> Result<Vec<u8>
     Ok(get.map_err(|e| capnp_err(&e))?.to_vec())
 }
 
-/// Convert a status byte to the capnp `UserProfile::Status` enum.
-fn status_to_capnp(status: u8) -> crate::identity_capnp::user_profile::Status {
-    match status {
-        0 => crate::identity_capnp::user_profile::Status::Online,
-        1 => crate::identity_capnp::user_profile::Status::Away,
-        2 => crate::identity_capnp::user_profile::Status::Busy,
-        _ => crate::identity_capnp::user_profile::Status::Offline,
-    }
-}
-
-/// Convert a capnp `UserProfile::Status` enum to a status byte.
-fn status_from_capnp(
-    status: Result<crate::identity_capnp::user_profile::Status, capnp::NotInSchema>,
-) -> Result<u8, CodecError> {
-    match status.map_err(not_in_schema)? {
-        crate::identity_capnp::user_profile::Status::Online => Ok(0),
-        crate::identity_capnp::user_profile::Status::Away => Ok(1),
-        crate::identity_capnp::user_profile::Status::Busy => Ok(2),
-        crate::identity_capnp::user_profile::Status::Offline => Ok(3),
-    }
-}
-
 /// Write a `GameInfo` into a capnp `GameStatus` builder.
 fn write_game_status(
     mut gs: crate::presence_capnp::game_status::Builder<'_>,
-    game: &crate::message::envelope::GameInfo,
+    game: &presence::GameInfo,
 ) {
     gs.set_game_id(game.game_id);
     gs.set_game_name(&game.game_name);
@@ -173,8 +195,8 @@ fn write_game_status(
 /// Read a capnp `GameStatus` reader into a `GameInfo`.
 fn read_game_status(
     gs: crate::presence_capnp::game_status::Reader<'_>,
-) -> Result<crate::message::envelope::GameInfo, CodecError> {
-    Ok(crate::message::envelope::GameInfo {
+) -> Result<presence::GameInfo, CodecError> {
+    Ok(presence::GameInfo {
         game_id: gs.get_game_id(),
         game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
         server_info: text_or_none(gs.has_server_info(), gs.get_server_info())?,
@@ -183,52 +205,12 @@ fn read_game_status(
     })
 }
 
-/// Write a `UserProfile` into a capnp `user_profile` builder.
-fn write_profile(
-    mut b: crate::identity_capnp::user_profile::Builder<'_>,
-    profile: &identity::UserProfile,
-) {
-    b.set_display_name(&profile.display_name);
-    b.set_status_message(&profile.status_message);
-    b.set_status(status_to_capnp(profile.status));
-    if !profile.avatar_hash.is_empty() {
-        b.set_avatar_hash(&profile.avatar_hash);
-    }
-    if let Some(ref g) = profile.game_status {
-        write_game_status(b.init_game_status(), g);
-    }
-}
-
-/// Read a capnp `user_profile` reader into a `UserProfile`.
-fn read_profile(
-    r: crate::identity_capnp::user_profile::Reader<'_>,
-) -> Result<identity::UserProfile, CodecError> {
-    let status = status_from_capnp(r.get_status())?;
-    let game_status = if r.has_game_status() {
-        Some(read_game_status(
-            r.get_game_status().map_err(|e| capnp_err(&e))?,
-        )?)
-    } else {
-        None
-    };
-    Ok(identity::UserProfile {
-        display_name: text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?,
-        status_message: text_or_default(r.has_status_message(), r.get_status_message())?,
-        status,
-        avatar_hash: bytes_or_empty(r.has_avatar_hash(), r.get_avatar_hash())?,
-        game_status,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// message.capnp — MessageEnvelope, ChatMessage, Attachment
-// ---------------------------------------------------------------------------
-
 pub mod account;
-pub mod conversation;
+pub mod bounds;
+pub mod chain;
+pub mod direct;
 pub mod friend;
 pub mod identity;
-pub mod message;
 pub mod presence;
 pub mod transport_feedback;
 pub mod voice;

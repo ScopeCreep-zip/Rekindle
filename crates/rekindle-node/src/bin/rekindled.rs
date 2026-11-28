@@ -12,19 +12,60 @@ use clap::Parser;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Before anything holds a secret (plan E7.1, roadmap 5.1).
+    if let Err(e) = rekindle_node::host::hardening::forbid_core_dumps() {
+        return fail(&anyhow::anyhow!("cannot forbid core dumps: {e}"));
+    }
     rekindle_utils::log_scrub::install_panic_hook();
     let args = rekindle_node::host::HostArgs::parse();
-    let _log = match rekindle_node::host::init_tracing() {
+    let log = match rekindle_node::host::init_tracing() {
         Ok(guard) => guard,
         Err(e) => return fail(&e),
     };
-    match rekindle_node::host::run(args).await {
+    tracing::debug!(?args, "rekindled starting");
+    match run().await {
+        Ok(reason) if reason == rekindle_node::daemon::shutdown::ExitReason::DataWiped => {
+            // The host finished the wipe; the appender wrote its last lines
+            // since. Drop it, then take the log directory once more, so
+            // nothing writes it after it is gone (plan E7.1).
+            drop(log);
+            match rekindle_db::paths::DataRoot::resolve()
+                .map_err(anyhow::Error::from)
+                .and_then(|root| Ok(rekindle_node::host::wipe::finish(&root)?))
+            {
+                Ok(()) => ExitCode::from(reason.exit_code()),
+                Err(e) => fail(&e),
+            }
+        }
         Ok(reason) => ExitCode::from(reason.exit_code()),
         Err(e) => {
             tracing::error!(error = %format!("{e:#}"), "rekindled failed");
             fail(&e)
         }
     }
+}
+
+/// Claim the data root, start the host over its own node, serve until asked
+/// to stop, then stop gracefully (plan D3.1).
+async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
+    use rekindle_node::host::{self, Host, HostConfig, HostStores, TransportSource};
+    let root = host::claim(rekindle_db::paths::DataRoot::resolve()?)?;
+    let identities = host::identity::list(root.root()).map_err(|e| anyhow::anyhow!("{e}"))?;
+    tracing::info!(count = identities.len(), "identity registry read");
+    let host = Host::start(HostConfig {
+        root,
+        stores: HostStores::default(),
+        transport: TransportSource::Start(host::user_transport_config()?),
+        serve_bus: true,
+        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
+        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        idle: std::sync::Arc::new(rekindle_idle::OsIdle),
+        server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        shell: None,
+    })
+    .await?;
+    host.run_until_stopped().await?;
+    host.shutdown().await
 }
 
 /// Report a fatal error on stderr — the one channel a supervisor or the

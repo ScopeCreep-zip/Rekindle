@@ -1,15 +1,12 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribePresenceEvents } from "../ipc/channels";
-import type {
-  PresenceEvent,
-  PresenceSnapshot,
-} from "../ipc/channels/presence_events";
+import { subscribePresenceEvents, type UnlistenFn } from "../ipc/channels";
+import type { PresenceEvent, PresenceSnapshot } from "../ipc/channels/presence_events";
 import { gameName } from "../ipc/channels/presence_events";
-import { friendsState, setFriendsState } from "../stores/friends.store";
-import { communityState, setCommunityState } from "../stores/community.store";
-import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
+import { authState, setAuthState } from "../stores/auth.store";
+import { communityState, setCommunityState } from "../stores/community.store";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { transformGameInfo } from "../utils/transformers";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./community/members_refresh";
 
 /**
  * Who the event is about, and what was observed about them.
@@ -23,7 +20,9 @@ function subject(event: PresenceEvent): {
   key: string;
   snapshot: PresenceSnapshot;
   isSelf: boolean;
-} {
+} | null {
+  // Our profile (name, avatar) is not a presence observation.
+  if ("selfProfileChanged" in event) return null;
   if ("friendChanged" in event) {
     return {
       key: event.friendChanged.peerKey,
@@ -79,41 +78,71 @@ function applyToFriend(publicKey: string, snapshot: PresenceSnapshot): void {
           gameId: playing?.gameId ?? null,
           elapsedSeconds: playing?.elapsedSeconds ?? null,
           serverAddress: playing?.serverAddress ?? null,
-        }),
+          iconKey: playing?.iconKey ?? null,
+          joinable: playing?.joinable ?? false,
+          joinableReason: playing?.joinableReason ?? null,
+        })
       );
     }
   }
 }
 
+/** Apply our own observed presence to the auth store. */
+function applyToSelf(snapshot: PresenceSnapshot): void {
+  if (snapshot.status !== null) {
+    setAuthState("status", snapshot.status as UserStatus);
+  }
+  if (snapshot.statusMessage !== null) {
+    setAuthState("statusMessage", snapshot.statusMessage || null);
+  }
+  if (snapshot.game !== null) {
+    const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
+    setAuthState(
+      "gameInfo",
+      playing === null
+        ? null
+        : {
+            gameId: playing.gameId ?? 0,
+            gameName: playing.gameName,
+            elapsedSeconds: playing.elapsedSeconds ?? 0,
+            serverAddress: playing.serverAddress,
+            iconKey: playing.iconKey,
+          }
+    );
+  }
+}
+
 export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    const { key, snapshot, isSelf } = subject(event);
+    const observed = subject(event);
+    if (observed === null) return;
+    const { key, snapshot, isSelf } = observed;
 
-    // Sync own status when auto-away changes it from the backend.
-    if ((isSelf || key === authState.publicKey) && snapshot.status !== null) {
-      setAuthState("status", snapshot.status as UserStatus);
+    // Our own presence, as the Host publishes it (a pick, auto-away, the
+    // tray, the detected game).
+    if (isSelf || key === authState.publicKey) {
+      applyToSelf(snapshot);
     }
     if (!isSelf) applyToFriend(key, snapshot);
   });
 }
 
-export function subscribeChatPresenceEvents(
-  peerId: string,
-  setPeerStatus: (s: UserStatus) => void,
-): Promise<UnlistenFn> {
-  return subscribePresenceEvents((event) => {
-    const { key, snapshot, isSelf } = subject(event);
-    if (isSelf || key !== peerId || snapshot.status === null) return;
-    setPeerStatus(snapshot.status as UserStatus);
-  });
-}
-
 export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    const { key, snapshot, isSelf } = subject(event);
-    if (isSelf) return;
+    const observed = subject(event);
+    if (observed === null) return;
+    const { key, snapshot, isSelf } = observed;
     // Nothing observed that this view renders.
     if (snapshot.status === null && snapshot.game === null) return;
+    if (isSelf) {
+      // Our own presence changed (AA1): each community's member list is read
+      // again, and the Host builds our row there from its one own-presence
+      // source (views.rs), status and group alike; nothing is written here.
+      if (snapshot.status === null) return;
+      for (const communityId of Object.keys(communityState.communities))
+        refreshCommunityMembers(communityId);
+      return;
+    }
 
     // A community member event names its own community, so only that
     // one needs scanning. A friend event carries no community, so every
@@ -128,20 +157,31 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
       const community = communityState.communities[communityId];
       if (!community) continue;
       const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
-      if (memberIdx < 0) continue;
+      if (memberIdx < 0) {
+        // A member the list does not hold yet: the event names its
+        // community, so re-read that list. A friend event names none, and
+        // a friend need not be a member of any community scanned.
+        if ("communityMemberChanged" in event) refreshForUnlistedMember(communityId, key);
+        continue;
+      }
 
       if (snapshot.status !== null) {
         setCommunityState(
-          "communities", communityId, "members", memberIdx, "status", snapshot.status,
+          "communities",
+          communityId,
+          "members",
+          memberIdx,
+          "status",
+          snapshot.status
         );
         // A member that just went offline is no longer "in" any channel —
         // clear their location so the channel presence badge stops counting
         // them without waiting for the next full members re-fetch.
         if (snapshot.status === "offline") {
-          setCommunityState(
-            "communities", communityId, "members", memberIdx, "location", null,
-          );
+          setCommunityState("communities", communityId, "members", memberIdx, "location", null);
         }
+        // Presence moves a member between the Host's groups.
+        refreshCommunityMembers(communityId);
       }
 
       // Only when a game was actually observed: a status-only ping
@@ -150,7 +190,11 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
         const name = gameName(snapshot);
         const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
         setCommunityState(
-          "communities", communityId, "members", memberIdx, "gameInfo",
+          "communities",
+          communityId,
+          "members",
+          memberIdx,
+          "gameInfo",
           name === null
             ? null
             : {
@@ -158,18 +202,21 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
                 gameId: playing?.gameId ?? null,
                 startedAt: playing?.elapsedSeconds ?? null,
                 serverAddress: playing?.serverAddress ?? null,
-              },
+                iconKey: playing?.iconKey ?? null,
+                joinable: playing?.joinable ?? false,
+                joinableReason: playing?.joinableReason ?? null,
+              }
         );
       }
     }
   });
 }
 
-export function subscribeProfilePresenceEvents(
-  publicKey: string,
-): Promise<UnlistenFn> {
+export function subscribeProfilePresenceEvents(publicKey: string): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    const { key, snapshot, isSelf } = subject(event);
+    const observed = subject(event);
+    if (observed === null) return;
+    const { key, snapshot, isSelf } = observed;
     if (isSelf || key !== publicKey) return;
     applyToFriend(publicKey, snapshot);
   });

@@ -13,16 +13,27 @@
 // before this).
 #![forbid(unsafe_code)]
 
+pub mod bearer_token;
 pub mod channel_body;
 pub mod derive;
+pub mod forked_random;
+pub mod friend_presence;
+pub mod friend_token;
+pub mod group_dm;
+pub mod hpke;
 pub mod invite;
 pub mod keys;
+pub mod locked;
 pub mod media_sender_key;
 pub mod mek;
+pub mod mek_ack;
+pub mod member_record;
 pub mod pq_keys;
+pub mod record_writer;
 pub mod rotator;
 pub mod sframe;
 pub mod sign;
+pub mod slot_head;
 pub mod sync_key;
 
 // Re-export ed25519_dalek for callers that need SigningKey/VerifyingKey types

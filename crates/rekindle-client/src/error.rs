@@ -11,6 +11,16 @@ pub enum ClientError {
     /// The bus was found but the connection failed.
     #[error("cannot connect to the daemon: {0}")]
     Connect(String),
+    /// This frontend and the host were built from different protocol
+    /// sources (plan D3.2); terminal, shown as is.
+    #[error(
+        "this build ({client}) does not match the running Rekindle ({host}); run matching builds"
+    )]
+    BuildMismatch { client: String, host: String },
+    /// The host's intent gate holds the request (plan D3.3): render the
+    /// review and commit it with the proof it asks for.
+    #[error("{:?} needs confirmation", .0.kind)]
+    IntentRequired(Box<rekindle_types::intent::IntentReview>),
     /// The daemon did not answer in time.
     #[error("no response from the daemon within {secs}s")]
     Timeout { secs: u64 },

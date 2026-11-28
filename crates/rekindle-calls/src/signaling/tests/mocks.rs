@@ -1,11 +1,12 @@
 //! Shared mock deps/registries for the signaling regression suites.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_types::group_dm::GroupCallRoster;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CallError;
@@ -37,6 +38,21 @@ pub(super) struct MockState {
     call_log: Vec<MockEvent>,
     emitted: Vec<CallSignalEvent>,
     start_voice_session_result: Result<(), CallError>,
+    /// Every body handed to `send_to_peer`, with its peer.
+    pub(super) sent: Vec<(String, DirectBody)>,
+    /// Every `CallEnd` committed to the outbox: (peer, body, deadline).
+    pub(super) committed: Vec<(String, DirectBody, u64)>,
+    /// Every `CallInvite` committed: (peer, call id, deadline).
+    pub(super) invites: Vec<(String, String, u64)>,
+    /// Every `settle_call_invite`: (call id, answered).
+    pub(super) settled: Vec<(String, bool)>,
+    /// When set, `commit_call_end` never completes (a send that hangs).
+    pub(super) commit_hangs: bool,
+    pub(super) shutdowns: usize,
+    pub(super) now_ms: u64,
+    pub(super) last_inbound_ms: Option<u64>,
+    /// `spawn_consent_watch` calls: (call id, since).
+    pub(super) consent_watches: Vec<(String, u64)>,
 }
 
 impl Default for MockState {
@@ -45,12 +61,22 @@ impl Default for MockState {
             call_log: Vec::new(),
             emitted: Vec::new(),
             start_voice_session_result: Ok(()),
+            sent: Vec::new(),
+            committed: Vec::new(),
+            commit_hangs: false,
+            invites: Vec::new(),
+            settled: Vec::new(),
+            shutdowns: 0,
+            now_ms: 1_000_000,
+            last_inbound_ms: None,
+            consent_watches: Vec::new(),
         }
     }
 }
 
 pub(super) struct MockRegistry {
     inner: Mutex<HashMap<String, CallState>>,
+    ended: Mutex<std::collections::HashSet<String>>,
 }
 impl CallRegistry for MockRegistry {
     fn insert(&self, call: CallState) {
@@ -60,10 +86,17 @@ impl CallRegistry for MockRegistry {
         self.inner.lock().get(call_id).cloned()
     }
     fn remove(&self, call_id: &str) -> Option<CallState> {
-        self.inner.lock().remove(call_id)
+        let removed = self.inner.lock().remove(call_id);
+        if removed.is_some() {
+            self.ended.lock().insert(call_id.to_string());
+        }
+        removed
     }
     fn contains(&self, call_id: &str) -> bool {
         self.inner.lock().contains_key(call_id)
+    }
+    fn ended_recently(&self, call_id: &str) -> bool {
+        self.ended.lock().contains(call_id)
     }
     fn outgoing_to_peer(&self, peer: &str) -> Option<CallState> {
         self.inner
@@ -104,11 +137,16 @@ impl GroupCallRegistry for MockGroupRegistry {
             call.status = status;
         }
     }
+    fn list_ids(&self) -> Vec<String> {
+        self.inner.lock().keys().cloned().collect()
+    }
+
     fn snapshot(&self, call_id: &str) -> Option<GroupCallSnapshot> {
         let g = self.inner.lock();
         let c = g.get(call_id)?;
         Some(GroupCallSnapshot {
             call_id: c.call_id.clone(),
+            group_id: c.group_id.clone(),
             initiator_pubkey: c.initiator_pubkey.clone(),
             kind: c.kind,
             participants: c.participants.clone(),
@@ -122,8 +160,14 @@ pub(super) struct MockDeps {
     state: Mutex<MockState>,
     pub(super) registry: Arc<MockRegistry>,
     pub(super) group_registry: Arc<MockGroupRegistry>,
+    /// Which call's media runs (plan CE2), as the desktop adapter keeps it.
+    pub(super) media: crate::signaling::CallMediaOwner,
     owner_key: String,
     identity_secret: [u8; 32],
+    /// Our group DMs' rosters, by group id (`group_roster`).
+    pub(super) group_rosters: Mutex<HashMap<String, Vec<String>>>,
+    /// Groups we hold only an unanswered invite to.
+    pub(super) invited_groups: Mutex<HashSet<String>>,
 }
 
 impl MockDeps {
@@ -135,13 +179,26 @@ impl MockDeps {
             }),
             registry: Arc::new(MockRegistry {
                 inner: Mutex::new(HashMap::new()),
+                ended: Mutex::new(std::collections::HashSet::new()),
             }),
             group_registry: Arc::new(MockGroupRegistry {
                 inner: Mutex::new(HashMap::new()),
             }),
+            media: crate::signaling::CallMediaOwner::default(),
             owner_key: "aa".repeat(32),
+            group_rosters: Mutex::new(HashMap::new()),
+            invited_groups: Mutex::new(HashSet::new()),
             identity_secret: [0xCC; 32],
         })
+    }
+
+    /// A mock whose owner key and identity secret are a real pair, so
+    /// group call keys it wraps unwrap at another such mock.
+    pub(super) fn with_identity(secret: [u8; 32]) -> Arc<Self> {
+        let mut deps = Arc::into_inner(Self::new()).expect("fresh mock");
+        deps.owner_key = rekindle_crypto::Identity::from_secret_bytes(&secret).public_key_hex();
+        deps.identity_secret = secret;
+        Arc::new(deps)
     }
 
     pub(super) fn call_log(&self) -> Vec<MockEvent> {
@@ -149,6 +206,10 @@ impl MockDeps {
     }
     pub(super) fn emitted_events(&self) -> Vec<CallSignalEvent> {
         self.state.lock().emitted.clone()
+    }
+    /// The mock's whole state, to set inputs and read what it recorded.
+    pub(super) fn with<R>(&self, f: impl FnOnce(&mut MockState) -> R) -> R {
+        f(&mut self.state.lock())
     }
 }
 
@@ -166,6 +227,15 @@ impl CallSignalingDeps for MockDeps {
     fn group_registry(&self) -> Arc<dyn GroupCallRegistry> {
         Arc::clone(&self.group_registry) as Arc<dyn GroupCallRegistry>
     }
+    async fn group_roster(&self, group_id: &str) -> Result<GroupCallRoster, CallError> {
+        if let Some(keys) = self.group_rosters.lock().get(group_id) {
+            return Ok(GroupCallRoster::Held(keys.clone()));
+        }
+        if self.invited_groups.lock().contains(group_id) {
+            return Ok(GroupCallRoster::Invited);
+        }
+        Ok(GroupCallRoster::Unknown)
+    }
     fn is_peer_temp_muted(&self, _peer: &str) -> bool {
         false
     }
@@ -175,8 +245,53 @@ impl CallSignalingDeps for MockDeps {
     fn local_video_decode_codecs(&self) -> Vec<String> {
         vec!["vp9".to_string()]
     }
-    async fn send_to_peer(&self, _peer: &str, _payload: MessagePayload) -> Result<(), CallError> {
+    async fn send_to_peer(&self, peer: &str, body: DirectBody) -> Result<(), CallError> {
+        self.state.lock().sent.push((peer.to_string(), body));
         Ok(())
+    }
+    async fn commit_call_end(
+        &self,
+        peer: &str,
+        body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError> {
+        let hangs = {
+            let mut s = self.state.lock();
+            s.committed.push((peer.to_string(), body, deadline_ms));
+            s.commit_hangs
+        };
+        if hangs {
+            std::future::pending::<()>().await;
+        }
+        Ok(())
+    }
+    async fn commit_call_invite(
+        &self,
+        peer: &str,
+        call_id: &str,
+        _body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError> {
+        self.state
+            .lock()
+            .invites
+            .push((peer.to_string(), call_id.to_string(), deadline_ms));
+        Ok(())
+    }
+    async fn settle_call_invite(&self, call_id: &str, answered: bool) {
+        self.state
+            .lock()
+            .settled
+            .push((call_id.to_string(), answered));
+    }
+    fn now_ms(&self) -> u64 {
+        self.state.lock().now_ms
+    }
+    fn last_inbound_media_ms(&self, _call_id: &str) -> Option<u64> {
+        self.state.lock().last_inbound_ms
+    }
+    fn spawn_consent_watch(&self, call_id: String, since_ms: u64) {
+        self.state.lock().consent_watches.push((call_id, since_ms));
     }
     async fn start_voice_session(
         &self,
@@ -189,9 +304,19 @@ impl CallSignalingDeps for MockDeps {
             call_id: call_id.to_string(),
             kind,
         });
-        std::mem::replace(&mut s.start_voice_session_result, Ok(()))
+        let result = std::mem::replace(&mut s.start_voice_session_result, Ok(()));
+        if result.is_ok() {
+            // As the desktop adapter: another call's media is torn down
+            // first, then this call owns the one session.
+            self.media.claim(call_id);
+        }
+        result
     }
-    async fn shutdown_voice_session(&self) {}
+    async fn shutdown_voice_session(&self, call_id: &str) {
+        self.state.lock().shutdowns += 1;
+        // As the desktop adapter: only the owning call's end stops it.
+        self.media.release(call_id);
+    }
     fn voice_active(&self) -> bool {
         false
     }
@@ -214,6 +339,7 @@ impl CallSignalingDeps for MockDeps {
             CallSignalEvent::ConversationFocusRequested { .. } => "ConversationFocusRequested",
             CallSignalEvent::CallStarted { .. } => "CallStarted",
             CallSignalEvent::IncomingGroupCall { .. } => "IncomingGroupCall",
+            CallSignalEvent::GroupCallStarted { .. } => "GroupCallStarted",
             CallSignalEvent::GroupCallConnected { .. } => "GroupCallConnected",
             CallSignalEvent::GroupCallParticipantJoined { .. } => "GroupCallParticipantJoined",
             CallSignalEvent::GroupCallParticipantLeft { .. } => "GroupCallParticipantLeft",
@@ -252,6 +378,14 @@ impl CallSignalingDeps for MockDeps {
         // Mock no-op; existing regression tests don't exercise the
         // outbound (caller-side) flow yet.
     }
+}
+
+/// Set up a CallState in `status` with `peer_hex`.
+pub(super) fn seed_call(deps: &MockDeps, call_id: &str, peer_hex: &str, status: CallStatus) {
+    seed_outgoing_call(deps, call_id, peer_hex, CallKind::Audio);
+    let mut call = deps.registry.get(call_id).expect("seeded");
+    call.status = status;
+    deps.registry.insert(call);
 }
 
 /// Set up an Outgoing CallState in the registry — what `start_dm_call`

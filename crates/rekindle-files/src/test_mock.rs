@@ -15,16 +15,13 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
-};
-use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::cache::{CacheConfig, ChunkCache};
-use crate::deps::{FilesDeps, FilesEvent};
+use crate::deps::{FileCacheDeps, FilesDeps, FilesEvent};
 use crate::error::FilesError;
 use crate::pinned::PinnedSet;
 use rekindle_types::attachment::AttachmentOffer;
@@ -32,14 +29,13 @@ use rekindle_types::attachment::AttachmentOffer;
 /// Records of mutations + emissions for test assertions.
 #[derive(Default)]
 pub struct MockCalls {
-    pub channel_messages_written: Vec<ChannelMessage>,
-    pub attachment_cacheds_written: Vec<ChannelAttachmentCached>,
     pub channel_messages_persisted: Vec<String>, // message_id
     pub slowmode_persists: Vec<(String, String, i64)>, // community, channel, now_ms
     pub local_path_persists: Vec<(String, String, String)>, // owner, channel, attachment_id_hex
-    pub attachment_pinneds: Vec<([u8; 16], bool, u64)>, // attachment_id, pinned, lamport
+    pub attachment_pinneds: Vec<([u8; 16], bool)>, // attachment_id, pinned
     pub events: Vec<FilesEvent>,
     pub app_calls: Vec<Vec<u8>>, // routed payloads
+    pub posts_queued: Vec<crate::deps::ChannelPost>,
 }
 
 /// Programmable app_call reply queue — pop FIFO.
@@ -51,9 +47,6 @@ pub struct MockReplies {
 pub struct MockDeps {
     pub owner_key: String,
     pub my_pseudonym: String,
-    pub channel_log_key: String,
-    pub slot_keypair: String,
-    pub my_subkey_index: u32,
     pub forum_channel: bool,
     pub permission_pass: bool,
     pub slowmode_pass: bool,
@@ -66,7 +59,7 @@ pub struct MockDeps {
     /// Online member route blobs (pseudonym -> blob).
     pub peers: HashMap<String, Vec<u8>>,
 
-    /// Pre-loaded entries the scan_channel_subkeys call returns.
+    /// Pre-loaded entries the channel_entries call returns.
     pub channel_entries: Mutex<Vec<ChannelRecordEntry>>,
 
     /// Governance: pinned attachments + expressions.
@@ -96,14 +89,12 @@ impl MockDeps {
         let cache = ChunkCache::open(CacheConfig {
             root_dir: temp.path().to_path_buf(),
             byte_budget: 4 * 1024 * 1024,
+            name_key: Zeroizing::new([3u8; 32]),
         })
         .unwrap();
         Self {
             owner_key: "owner-pub-key".to_string(),
             my_pseudonym: "me-pseudonym".to_string(),
-            channel_log_key: "channel-log-key-hex".to_string(),
-            slot_keypair: "stub-slot-keypair".to_string(),
-            my_subkey_index: 5,
             forum_channel: false,
             permission_pass: true,
             slowmode_pass: true,
@@ -140,77 +131,12 @@ impl MockDeps {
     }
 }
 
-#[async_trait]
-impl FilesDeps for MockDeps {
-    fn owner_key(&self) -> Result<String, FilesError> {
-        Ok(self.owner_key.clone())
-    }
-
-    fn my_pseudonym(&self, _community_id: &str) -> Result<String, FilesError> {
-        Ok(self.my_pseudonym.clone())
-    }
-
-    fn channel_log_key(&self, _c: &str, _ch: &str) -> Result<String, FilesError> {
-        Ok(self.channel_log_key.clone())
-    }
-
-    fn slot_keypair(&self, _c: &str) -> Result<String, FilesError> {
-        Ok(self.slot_keypair.clone())
-    }
-
-    fn my_subkey_index(&self, _c: &str) -> Result<u32, FilesError> {
-        Ok(self.my_subkey_index)
-    }
-
-    fn channel_is_forum(&self, _c: &str, _ch: &str) -> bool {
-        self.forum_channel
-    }
-
+impl FileCacheDeps for MockDeps {
     fn keys(&self) -> std::sync::Arc<dyn ChannelKeyProvider> {
         std::sync::Arc::new(MockKeys {
             current: self.channel_mek.clone(),
             history: self.historical_meks.clone(),
         })
-    }
-
-    fn require_permission(&self, _c: &str, _p: u64) -> Result<(), FilesError> {
-        if self.permission_pass {
-            Ok(())
-        } else {
-            Err(FilesError::PermissionDenied("mock denied".into()))
-        }
-    }
-
-    fn enforce_slowmode(&self, _c: &str, _ch: &str, _now_ms: i64) -> Result<(), FilesError> {
-        if self.slowmode_pass {
-            Ok(())
-        } else {
-            Err(FilesError::Slowmode("mock slowmode".into()))
-        }
-    }
-
-    fn resolve_outbound_mentions(
-        &self,
-        _c: &str,
-        _sender: &str,
-        _body: &str,
-    ) -> (Vec<String>, Vec<String>, u32) {
-        (Vec::new(), Vec::new(), 0)
-    }
-
-    fn increment_lamport(&self, _c: &str) -> Result<u64, rekindle_types::lamport::LamportError> {
-        Ok(1)
-    }
-
-    fn next_governance_lamport(
-        &self,
-        _c: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        Ok(1)
-    }
-
-    fn next_channel_sequence(&self, _c: &str, _ch: &str) -> u64 {
-        1
     }
 
     fn ensure_cache_open(&self, _c: &str) -> Result<(), FilesError> {
@@ -244,6 +170,45 @@ impl FilesDeps for MockDeps {
         let cache = self.cache.lock();
         f(&cache)
     }
+}
+
+#[async_trait]
+impl FilesDeps for MockDeps {
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        std::sync::Arc::new(rekindle_utils::SystemClock)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::new(rekindle_utils::OsRandom)
+    }
+
+    fn owner_key(&self) -> Result<String, FilesError> {
+        Ok(self.owner_key.clone())
+    }
+
+    fn my_pseudonym(&self, _community_id: &str) -> Result<String, FilesError> {
+        Ok(self.my_pseudonym.clone())
+    }
+
+    fn channel_is_forum(&self, _c: &str, _ch: &str) -> bool {
+        self.forum_channel
+    }
+
+    fn require_permission(&self, _c: &str, _ch: Option<&str>, _p: u64) -> Result<(), FilesError> {
+        if self.permission_pass {
+            Ok(())
+        } else {
+            Err(FilesError::PermissionDenied("mock denied".into()))
+        }
+    }
+
+    fn enforce_slowmode(&self, _c: &str, _ch: &str, _now_ms: i64) -> Result<(), FilesError> {
+        if self.slowmode_pass {
+            Ok(())
+        } else {
+            Err(FilesError::Slowmode("mock slowmode".into()))
+        }
+    }
 
     fn peer_route_blob(&self, _c: &str, target: &str) -> Option<Vec<u8>> {
         self.peers.get(target).cloned()
@@ -264,39 +229,15 @@ impl FilesDeps for MockDeps {
         self.expressions.clone()
     }
 
-    async fn write_channel_message_to_smpl(
-        &self,
-        _c: &str,
-        _key: &str,
-        _idx: u32,
-        _keypair: &str,
-        message: &ChannelMessage,
-    ) -> Result<(), FilesError> {
-        self.calls
-            .lock()
-            .channel_messages_written
-            .push(message.clone());
+    async fn queue_post(&self, post: &crate::deps::ChannelPost) -> Result<(), FilesError> {
+        self.calls.lock().posts_queued.push(post.clone());
         Ok(())
     }
 
-    async fn write_attachment_cached_to_smpl(
+    async fn channel_entries(
         &self,
         _c: &str,
-        _key: &str,
-        _idx: u32,
-        _keypair: &str,
-        cached: &ChannelAttachmentCached,
-    ) -> Result<(), FilesError> {
-        self.calls
-            .lock()
-            .attachment_cacheds_written
-            .push(cached.clone());
-        Ok(())
-    }
-
-    async fn scan_channel_subkeys(
-        &self,
-        _key: &str,
+        _channel: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError> {
         Ok(self.channel_entries.lock().clone())
     }
@@ -348,21 +289,16 @@ impl FilesDeps for MockDeps {
         Ok(())
     }
 
-    fn send_to_mesh(&self, _c: &str, _envelope: &CommunityEnvelope) -> Result<(), FilesError> {
-        Ok(())
-    }
-
     async fn write_attachment_pinned(
         &self,
         _c: &str,
         attachment_id: [u8; 16],
         pinned: bool,
-        lamport: u64,
     ) -> Result<(), FilesError> {
         self.calls
             .lock()
             .attachment_pinneds
-            .push((attachment_id, pinned, lamport));
+            .push((attachment_id, pinned));
         Ok(())
     }
 

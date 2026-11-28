@@ -1,12 +1,166 @@
-//! SMPL record sizing constant.
+//! The schemas of every record Rekindle creates, as Veilid-free
+//! [`RecordSchema`]s (plan C9.1c). The port's Veilid implementation
+//! converts and validates them (`rekindle_protocol::dht::pool::dht_schema`);
+//! a schema Veilid refuses (no subkeys, or more than 1024) is a
+//! `PortError::Dht` from `create`.
 //!
-//! The `DHTSchema` builders that this module used to host (`community_smpl_schema`,
-//! `bootstrap_dflt_schema`, `personal_sync_dflt_schema`) construct `veilid-core`
-//! types, so they live in `rekindle-protocol::dht::schema` (a `veilid-core`
-//! boundary crate) — keeping `rekindle-records` free of `veilid-core` (Invariant 2).
-//! Only the pure, veilid-free sizing constant remains here.
+//! Community records (governance, registry, channels) share the universal
+//! SMPL shape, the Q-pid equation (architecture doc §4.2): `o_cnt: 0`, so
+//! the creation keypair writes nothing, and one subkey per member slot.
 
-/// Maximum members per SMPL record segment.
-/// Veilid allows up to 1024 total subkeys. With m_cnt=1 per member,
-/// 255 members = 255 subkeys, well within limits.
-pub const MAX_MEMBERS_PER_SEGMENT: usize = 255;
+use rekindle_types::dht_layout as layout;
+
+use crate::port::{RecordSchema, SchemaMember};
+
+/// The universal community SMPL schema: no owner subkeys, one subkey per
+/// member, each member key a raw 32-byte Ed25519 public key (for VLD0 the
+/// member id is the key itself).
+#[must_use]
+pub fn community_smpl(member_public_keys: &[[u8; 32]]) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: 0,
+        members: member_public_keys
+            .iter()
+            .map(|key| SchemaMember {
+                key: *key,
+                subkeys: 1,
+            })
+            .collect(),
+    }
+}
+
+/// A single invite's encrypted `InviteSecrets` record: one owner subkey,
+/// so the several-KB payload fits the single-owner budget (architecture §6).
+#[must_use]
+pub fn invite_secrets() -> RecordSchema {
+    RecordSchema::Dflt { owner_subkeys: 1 }
+}
+
+/// The personal cross-device sync record (architecture §28.4): 4 active
+/// subkeys (manifest, read state, preferences, device list), 12 reserved.
+#[must_use]
+pub fn personal_sync() -> RecordSchema {
+    RecordSchema::Dflt { owner_subkeys: 16 }
+}
+
+/// Our profile record.
+#[must_use]
+pub fn profile() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::profile::SUBKEY_COUNT,
+    }
+}
+
+/// Our mailbox record (owned by the identity keypair).
+#[must_use]
+pub fn mailbox() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::mailbox::SUBKEY_COUNT,
+    }
+}
+
+/// A device's prekey record (plan E2.4): the head and the one-time slots,
+/// owned by a keypair of its own.
+#[must_use]
+pub fn prekeys() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::prekeys::SUBKEY_COUNT,
+    }
+}
+
+/// A DM participant record (plan E2.5): the chain head, which carries the
+/// retire mark, owned by a keypair only the participant holds.
+#[must_use]
+pub fn dm_participant() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::dm_participant::SUBKEY_COUNT,
+    }
+}
+
+/// A friend invite's request inbox (plan E2.5, D17): one owner subkey and
+/// one subkey for the invite's one-time writer, whose raw Ed25519 public
+/// key is its member id (VLD0).
+#[must_use]
+pub fn request_inbox(one_time_writer: &[u8; 32]) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: layout::request_inbox::OWNER_SUBKEY_COUNT,
+        members: vec![SchemaMember {
+            key: *one_time_writer,
+            subkeys: layout::request_inbox::WRITER_SUBKEY_COUNT,
+        }],
+    }
+}
+
+/// A group DM's rendezvous record (plan decision 67, item 3): one owner
+/// subkey, then a row of [`ROW_LEN`](layout::group_rendezvous::ROW_LEN)
+/// subkeys for each of the eight one-time writers, in slot order (writer
+/// `i` is member `i`'s; its raw Ed25519 public key is its member id, VLD0).
+#[must_use]
+pub fn group_rendezvous(
+    writers: &[[u8; 32]; layout::group_rendezvous::WRITERS as usize],
+) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: layout::group_rendezvous::OWNER_SUBKEY_COUNT,
+        members: writers
+            .iter()
+            .map(|key| SchemaMember {
+                key: *key,
+                subkeys: layout::group_rendezvous::ROW_LEN,
+            })
+            .collect(),
+    }
+}
+
+/// A single-subkey record: our friend list, the account header.
+#[must_use]
+pub fn single() -> RecordSchema {
+    RecordSchema::Dflt { owner_subkeys: 1 }
+}
+
+/// A community's anchor `A` (plan E3.2, ADR 0011): DFLT(1), its one subkey
+/// the `GenesisCert`; the community id is its record key.
+#[must_use]
+pub fn community_anchor() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::community_anchor::SUBKEY_COUNT,
+    }
+}
+
+/// A member's `MemberRecord` `M(p)` (plan E3.2, D15): DFLT(8), owned by a
+/// keypair only the member holds.
+#[must_use]
+pub fn member_record() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::member_record::SUBKEY_COUNT,
+    }
+}
+
+/// A community's sealed page (op-log, spill or directory; plan E3.2):
+/// DFLT(1), written once, its owner keypair discarded.
+#[must_use]
+pub fn sealed_page() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::sealed_page::SUBKEY_COUNT,
+    }
+}
+
+/// A community channel record: the channel layout's owner subkeys, then a
+/// member page of the layout's size per slot key, in slot order (the slot
+/// keys derive from the community's slot seed).
+#[must_use]
+pub fn channel(slot_public_keys: &[[u8; 32]]) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: layout::channel::OWNER_SUBKEY_COUNT,
+        members: slot_public_keys
+            .iter()
+            .map(|key| SchemaMember {
+                key: *key,
+                subkeys: layout::channel::MEMBER_SUBKEY_COUNT,
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+#[path = "schema_tests.rs"]
+mod tests;

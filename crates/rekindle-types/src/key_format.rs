@@ -93,6 +93,11 @@ validated!(
     CallId
 );
 validated!(
+    /// A friend-request token: 16 random bytes as 26 characters of
+    /// unpadded lowercase RFC 4648 base32 (plan E2.5, D17).
+    FriendRequestToken
+);
+validated!(
     /// A 16-byte random id as 32 lowercase hex: channel ids, attachment ids,
     /// invite codes.
     Hex16Id
@@ -151,10 +156,11 @@ pub const MAX_NOTE_LEN: usize = 512;
 /// Longest status message: Slack's custom status text (`status_text`, up
 /// to 100 characters).
 pub const MAX_STATUS_LEN: usize = 100;
-/// Longest game-server address: a DNS name (RFC 1035 §2.3.4, at most 255
-/// octets on the wire, so 253 characters as text) plus `:` and a
-/// five-digit port.
-pub const MAX_SERVER_ADDRESS_LEN: usize = 259;
+/// Longest friend-invite id: a hyphenated UUID is 36.
+pub const MAX_INVITE_ID_LEN: usize = 64;
+/// Longest reaction: one emoji, which a ZWJ sequence with skin tones and
+/// variation selectors spells in up to a dozen code points.
+pub const MAX_REACTION_LEN: usize = 32;
 
 fn is_b64url(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
@@ -212,6 +218,38 @@ pub fn record_key(s: &str) -> Result<RecordKeyStr, KeyFormatError> {
     Ok(RecordKeyStr(s.to_owned()))
 }
 
+/// The 32 bytes of a `VLD0:` key text's first segment: a public key's
+/// (`VLD0:<key>`) or a record key's opaque key (`VLD0:<opaque>[:<enc>]`).
+/// `None` for any other shape.
+#[must_use]
+pub fn vld0_key_bytes(s: &str) -> Option<[u8; 32]> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let rest = s.strip_prefix(RECORD_KIND_PREFIX)?;
+    let mut segments = rest.split(':');
+    let first = segments.next()?;
+    check_b64url_segment(first, RECORD_KIND_PREFIX.len()).ok()?;
+    if let Some(enc) = segments.next() {
+        check_b64url_segment(enc, 0).ok()?;
+    }
+    if segments.next().is_some() {
+        return None;
+    }
+    URL_SAFE_NO_PAD.decode(first).ok()?.try_into().ok()
+}
+
+/// The opaque key and the encryption key of a `VLD0:<opaque>:<enc>` record
+/// key text, 32 bytes each. `None` for any other shape, a key with no
+/// encryption key among them.
+#[must_use]
+pub fn vld0_record_key_parts(s: &str) -> Option<([u8; 32], [u8; 32])> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let opaque = vld0_key_bytes(s)?;
+    let enc = s.strip_prefix(RECORD_KIND_PREFIX)?.split(':').nth(1)?;
+    Some((opaque, URL_SAFE_NO_PAD.decode(enc).ok()?.try_into().ok()?))
+}
+
 /// Validate an identity public key (64 lowercase hex).
 pub fn public_key_hex(s: &str) -> Result<PublicKeyHex, KeyFormatError> {
     check_lower_hex(s, 64)?;
@@ -236,8 +274,49 @@ pub fn hex16_id(s: &str) -> Result<Hex16Id, KeyFormatError> {
     Ok(Hex16Id(s.to_owned()))
 }
 
-/// Validate a human-entered name: trimmed, 1..=`max` chars, no control
-/// characters. Returns the trimmed text.
+/// Unpadded base32 length of 16 bytes.
+pub const FRIEND_REQUEST_TOKEN_LEN: usize = 26;
+
+/// Validate a friend-request token (26 of `a-z`, `2-7`). The last
+/// character carries 2 padding bits, which must be zero, so every token
+/// has exactly one spelling.
+pub fn friend_request_token(s: &str) -> Result<FriendRequestToken, KeyFormatError> {
+    if s.is_empty() {
+        return Err(KeyFormatError::Empty);
+    }
+    if s.len() != FRIEND_REQUEST_TOKEN_LEN {
+        return Err(KeyFormatError::BadLength {
+            expected: FRIEND_REQUEST_TOKEN_LEN,
+            got: s.len(),
+        });
+    }
+    let value = |b: u8| match b {
+        b'a'..=b'z' => Some(b - b'a'),
+        b'2'..=b'7' => Some(b - b'2' + 26),
+        _ => None,
+    };
+    for (index, b) in s.bytes().enumerate() {
+        let Some(v) = value(b) else {
+            return Err(KeyFormatError::BadChar { index });
+        };
+        if index == FRIEND_REQUEST_TOKEN_LEN - 1 && v & 0b11 != 0 {
+            return Err(KeyFormatError::BadChar { index });
+        }
+    }
+    Ok(FriendRequestToken(s.to_owned()))
+}
+
+/// Whether text may not carry `c`: a control character (`Cc`) or a hidden
+/// format character (`Cf` but the joiners: bidi controls, zero-width
+/// spaces, tags; [`crate::format_chars`]). The same rule holds for what a
+/// user types (the IPC validation) and for what a peer sends (the 1:1
+/// decoder, plan audit G6).
+fn forbidden(c: char) -> bool {
+    c.is_control() || crate::format_chars::is_hidden_format(c)
+}
+
+/// Validate a human-entered name: trimmed, 1..=`max` chars, no control or
+/// hidden format characters. Returns the trimmed text.
 pub fn name(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -247,7 +326,7 @@ pub fn name(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     if got > max {
         return Err(KeyFormatError::TooLong { max, got });
     }
-    match trimmed.chars().position(char::is_control) {
+    match trimmed.chars().position(forbidden) {
         Some(index) => Err(KeyFormatError::BadChar { index }),
         None => Ok(trimmed),
     }
@@ -255,7 +334,8 @@ pub fn name(s: &str, max: usize) -> Result<&str, KeyFormatError> {
 
 /// Validate free text a user typed — a topic, description, reason or
 /// note: at most `max` chars, no control characters except newline and
-/// tab. Empty text is allowed; callers that need content check for it.
+/// tab, and no hidden format characters. Empty text is allowed; callers
+/// that need content check for it.
 pub fn text(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     let got = s.chars().count();
     if got > max {
@@ -263,11 +343,20 @@ pub fn text(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     }
     match s
         .chars()
-        .position(|c| c.is_control() && c != '\n' && c != '\t')
+        .position(|c| forbidden(c) && c != '\n' && c != '\t')
     {
         Some(index) => Err(KeyFormatError::BadChar { index }),
         None => Ok(s),
     }
+}
+
+/// Validate a message body: [`text`] within [`MAX_MESSAGE_LEN`], and not
+/// blank.
+pub fn message_body(s: &str) -> Result<&str, KeyFormatError> {
+    if s.trim().is_empty() {
+        return Err(KeyFormatError::Empty);
+    }
+    text(s, MAX_MESSAGE_LEN)
 }
 
 /// A channel named by its 32-hex id or by its name.
@@ -303,105 +392,5 @@ pub fn community_ref(s: &str) -> Result<CommunityRef, KeyFormatError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
-    const HEX64: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
-
-    #[test]
-    fn hex_keys_decode_to_bytes() {
-        let bytes = public_key_hex(HEX64).unwrap().to_bytes();
-        assert_eq!(bytes[..3], [0x3f, 0x1a, 0x9c]);
-        assert_eq!(bytes[31], 0x1a);
-        assert_eq!(pseudonym_hex(HEX64).unwrap().to_bytes(), bytes);
-    }
-
-    #[test]
-    fn record_keys() {
-        assert!(record_key(&format!("VLD0:{B64}")).is_ok());
-        assert!(record_key(&format!("VLD0:{B64}:{B64}")).is_ok());
-        assert_eq!(record_key(""), Err(KeyFormatError::Empty));
-        assert_eq!(
-            record_key(&format!("XXX0:{B64}")),
-            Err(KeyFormatError::BadPrefix)
-        );
-        assert_eq!(
-            record_key(&format!("VLD0:{B64}:{B64}:{B64}")),
-            Err(KeyFormatError::TooManySegments)
-        );
-        assert!(matches!(
-            record_key(&format!("VLD0:{}", &B64[..42])),
-            Err(KeyFormatError::BadLength {
-                expected: 43,
-                got: 42
-            })
-        ));
-        assert!(matches!(
-            record_key(&format!("VLD0:{B64}x")),
-            Err(KeyFormatError::BadLength { got: 44, .. })
-        ));
-        let bad = format!("VLD0:{}/", &B64[..42]);
-        assert!(matches!(
-            record_key(&bad),
-            Err(KeyFormatError::BadChar { index: 47 })
-        ));
-        assert!(record_key(&format!("VLD0:{}\0", &B64[..42])).is_err());
-    }
-
-    #[test]
-    fn hex_ids() {
-        assert!(public_key_hex(HEX64).is_ok());
-        assert!(pseudonym_hex(HEX64).is_ok());
-        assert!(public_key_hex(&HEX64.to_uppercase()).is_err());
-        assert!(public_key_hex(&HEX64[..63]).is_err());
-        assert!(call_id(&HEX64[..32]).is_ok());
-        assert!(hex16_id(&HEX64[..32]).is_ok());
-        assert!(call_id(&"é".repeat(16)).is_err());
-        assert_eq!(call_id(""), Err(KeyFormatError::Empty));
-        assert!(call_id("6f9619ff-8b86-d011-b42d-00cf4fc964ff").is_err());
-    }
-
-    #[test]
-    fn names_and_community_refs() {
-        assert_eq!(name("  Gamers  ", 100), Ok("Gamers"));
-        assert_eq!(name("   ", 100), Err(KeyFormatError::Empty));
-        assert!(matches!(
-            name(&"a".repeat(101), 100),
-            Err(KeyFormatError::TooLong { .. })
-        ));
-        assert!(name("bad\u{7}name", 100).is_err());
-        assert_eq!(
-            community_ref(&format!("VLD0:{B64}")),
-            Ok(CommunityRef::Key(RecordKeyStr(format!("VLD0:{B64}"))))
-        );
-        assert_eq!(
-            community_ref("Gamers"),
-            Ok(CommunityRef::Name("Gamers".into()))
-        );
-        assert!(community_ref("VLD0:short").is_err());
-    }
-
-    #[test]
-    fn text_counts_chars_and_allows_newlines() {
-        assert_eq!(text("", 4), Ok(""));
-        assert_eq!(text("a\nb\tc", 5), Ok("a\nb\tc"));
-        assert!(text(&"é".repeat(4), 4).is_ok());
-        assert_eq!(
-            text(&"é".repeat(5), 4),
-            Err(KeyFormatError::TooLong { max: 4, got: 5 })
-        );
-        assert_eq!(text("ab\x1b", 8), Err(KeyFormatError::BadChar { index: 2 }));
-    }
-
-    #[test]
-    fn channel_refs() {
-        let id = "0123456789abcdef0123456789abcdef";
-        assert!(matches!(channel_ref(id), Ok(ChannelRef::Id(_))));
-        assert_eq!(
-            channel_ref(" general "),
-            Ok(ChannelRef::Name("general".into()))
-        );
-        assert!(channel_ref("").is_err());
-    }
-}
+#[path = "key_format_tests.rs"]
+mod tests;

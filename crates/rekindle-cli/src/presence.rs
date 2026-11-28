@@ -1,32 +1,185 @@
-//! Presence commands: set status, game presence.
+//! Our own presence, profile, game, settings and audit log: one request each to the
+//! host, which owns them (plan E1.1).
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{IpcRequest, ServersRequest};
+use rekindle_types::image_kind::ImageKind;
+use rekindle_types::presence::SessionStatus;
 
-use crate::cli::PresenceCmd;
+use crate::cli::{AuditCmd, GameCmd, PresenceCmd, PresenceStatus, ProfileCmd, SettingsCmd, Switch};
+use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
+
+/// The largest avatar file read: the bus's frame.
+const MAX_AVATAR_FILE: u64 = rekindle_ipc::framing::MAX_APP_FRAME as u64;
 
 pub async fn dispatch(
     cmd: &PresenceCmd,
     client: &DaemonClient,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
+    let request = match cmd {
+        PresenceCmd::Set { status } => IpcRequest::PresenceSet {
+            status: match status {
+                PresenceStatus::Online => SessionStatus::Online,
+                PresenceStatus::Away => SessionStatus::Away,
+                PresenceStatus::Busy => SessionStatus::Busy,
+                PresenceStatus::Invisible => SessionStatus::Invisible,
+            },
+        },
+        PresenceCmd::Message { text } => IpcRequest::PresenceSetMessage {
+            message: text.clone(),
+        },
+        PresenceCmd::Show => IpcRequest::PresenceGet,
+        PresenceCmd::Watch { .. } => IpcRequest::Status,
+    };
+    let value = helpers::send(client, request).await?;
+    format::print_structured(&value, mode)
+}
+
+pub async fn dispatch_profile(
+    cmd: &ProfileCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        ProfileCmd::Nickname { name } => IpcRequest::ProfileSetNickname {
+            display_name: name.clone(),
+        },
+        ProfileCmd::Avatar { file } => {
+            let size = std::fs::metadata(file)?.len();
+            if size > MAX_AVATAR_FILE {
+                anyhow::bail!(
+                    "{} is {size} bytes; at most {MAX_AVATAR_FILE}",
+                    file.display()
+                );
+            }
+            // The extension declares the kind; the host decodes it as
+            // that kind only.
+            let kind = file
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(ImageKind::from_extension)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("{} is not a .png, .jpg, .jpeg or .gif file", file.display())
+                })?;
+            IpcRequest::ProfileSetAvatar {
+                image: std::fs::read(file)?,
+                kind,
+            }
+        }
+    };
+    let value = helpers::send(client, request).await?;
+    format::print_structured(&value, mode)
+}
+
+pub async fn dispatch_settings(
+    cmd: &SettingsCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        SettingsCmd::ReadReceipts { state } => IpcRequest::SetReadReceiptsEnabled {
+            enabled: matches!(state, Switch::On),
+        },
+        SettingsCmd::GameTotals { state } => IpcRequest::SetShareGameTotals {
+            enabled: matches!(state, Switch::On),
+        },
+        SettingsCmd::GameDetection { state } => IpcRequest::SetGameDetection {
+            enabled: matches!(state, Switch::On),
+        },
+        SettingsCmd::AutoAway { minutes } => IpcRequest::SetAutoAway { minutes: *minutes },
+        SettingsCmd::ShareGame { state } => IpcRequest::SetShareCurrentGame {
+            enabled: matches!(state, Switch::On),
+        },
+        SettingsCmd::ActivityLog { state } => IpcRequest::SetKeepActivityLog {
+            enabled: matches!(state, Switch::On),
+        },
+    };
+    let value = helpers::send(client, request).await?;
+    format::print_structured(&value, mode)
+}
+
+pub async fn dispatch_game(
+    cmd: &GameCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let value = helpers::send(client, game_request(cmd)).await?;
+    format::print_structured(&value, mode)
+}
+
+/// The host request one `game` subcommand sends.
+pub fn game_request(cmd: &GameCmd) -> IpcRequest {
     match cmd {
-        PresenceCmd::Set {
-            status, message, ..
-        } => {
-            let value = client
-                .request_ok(IpcRequest::PresenceSet {
-                    status: status.clone(),
-                    message: message.clone(),
-                })
-                .await?;
-            format::print_structured(&value, mode)
+        GameCmd::Set { name, id, server } => IpcRequest::GamePresenceSet {
+            game_name: name.clone(),
+            game_id: *id,
+            elapsed_seconds: 0,
+            server_address: server.clone(),
+        },
+        GameCmd::Clear => IpcRequest::GamePresenceClear,
+        GameCmd::Hidden => IpcRequest::HiddenGamesGet,
+        GameCmd::Hide { id } => IpcRequest::GameHide { game_id: *id },
+        GameCmd::Unhide { id } => IpcRequest::GameUnhide { game_id: *id },
+        GameCmd::Favourites => IpcRequest::Servers(ServersRequest::FavouritesGet),
+        GameCmd::Servers => IpcRequest::Servers(ServersRequest::View),
+        GameCmd::RecentRemove { id, server } => IpcRequest::Servers(ServersRequest::RecentRemove {
+            game_id: *id,
+            server: server.clone(),
+        }),
+        GameCmd::FavouriteAdd { id, server, label } => {
+            IpcRequest::Servers(ServersRequest::FavouriteAdd {
+                game_id: *id,
+                server: server.clone(),
+                label: label.clone(),
+            })
         }
-        PresenceCmd::Watch { .. } => {
-            let value = client.request_ok(IpcRequest::Status).await?;
-            format::print_structured(&value, mode)
+        GameCmd::FavouriteRemove { id, server } => {
+            IpcRequest::Servers(ServersRequest::FavouriteRemove {
+                game_id: *id,
+                server: server.clone(),
+            })
         }
+        GameCmd::Invite { friend, id, server } => IpcRequest::GameInviteSend {
+            public_key: friend.clone(),
+            game_id: *id,
+            server: server.clone(),
+        },
+        GameCmd::Installed => IpcRequest::InstalledGamesGet,
+        GameCmd::Launch { id, server, source } => IpcRequest::GameLaunch {
+            game_id: *id,
+            server: server.clone(),
+            source: (*source).into(),
+        },
     }
+}
+
+pub async fn dispatch_audit(
+    cmd: &AuditCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        AuditCmd::Verify => IpcRequest::AuditVerify,
+        AuditCmd::Export { since, path } => IpcRequest::AuditExport {
+            since: *since,
+            path: std::path::absolute(path)?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("the export path is not UTF-8"))?,
+        },
+    };
+    let value = helpers::send(client, request).await?;
+    format::print_structured(&value, mode)
+}
+
+/// `undo <id>`: the inverse the host offered.
+pub async fn undo(id: &str, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let id: rekindle_types::intent::IntentId =
+        serde_json::from_value(serde_json::Value::String(id.to_owned()))
+            .map_err(|e| anyhow::anyhow!("not an undo id: {e}"))?;
+    let value = helpers::send(client, IpcRequest::Undo { id }).await?;
+    format::print_structured(&value, mode)
 }

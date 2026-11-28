@@ -11,17 +11,14 @@ use clap::Subcommand;
 pub enum ChannelCmd {
     /// List channels in a community (grouped by category).
     List {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Create a channel.
     Create {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name.
@@ -43,20 +40,17 @@ pub enum ChannelCmd {
 
     /// Delete a channel.
     Delete {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
         #[arg(long, short = 'C')]
         channel: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
     /// Update a channel's properties.
     Update {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -77,7 +71,7 @@ pub enum ChannelCmd {
     ///
     /// Example: rekindle channel send -c "my community" -C "general" -m "hello world"
     Send {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -91,9 +85,80 @@ pub enum ChannelCmd {
         reply_to: Option<String>,
     },
 
+    /// Open a forum post: a thread in a forum channel and its starter, one
+    /// outcome (plan E3.3, FT1).
+    ///
+    /// Example: rekindle channel forum-post -c "my community" -C ideas -t "Maps" -m "post yours"
+    ForumPost {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Forum channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// The post's title.
+        #[arg(long, short = 't')]
+        title: String,
+        /// The starter message.
+        #[arg(long, short = 'm')]
+        message: String,
+        /// One of the forum's tags.
+        #[arg(long)]
+        tag: Option<String>,
+    },
+
+    /// Edit one of our messages (plan E3.3 E1: only its author edits; the
+    /// latest edit wins).
+    ///
+    /// Example: rekindle channel edit-message -c "my community" -C general -i <ID> -m "fixed"
+    EditMessage {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// Message ID.
+        #[arg(long, short = 'i')]
+        msg_id: String,
+        /// The new body.
+        #[arg(long, short = 'm')]
+        message: String,
+    },
+
+    /// Delete one of our messages for members (plan E3.3 E3, E4).
+    DeleteMessage {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// Message ID.
+        #[arg(long, short = 'i')]
+        msg_id: String,
+    },
+
+    /// Remove another member's message as a moderator (`MANAGE_MESSAGES`;
+    /// plan E3.3 M1–M4: the host refuses a post whose author outranks us).
+    RemoveMessage {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// Message ID.
+        #[arg(long, short = 'i')]
+        msg_id: String,
+        /// The reason sent with the removal.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
     /// Read channel message history.
     History {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -108,14 +173,11 @@ pub enum ChannelCmd {
         /// Messages since timestamp (ISO 8601 or epoch ms).
         #[arg(long)]
         since: Option<String>,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Live-stream channel messages (gossip + DHT watch).
     Watch {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -125,7 +187,7 @@ pub enum ChannelCmd {
 
     /// Pin a message.
     Pin {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -138,7 +200,7 @@ pub enum ChannelCmd {
 
     /// Unpin a message.
     Unpin {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -155,7 +217,7 @@ pub enum ChannelCmd {
 pub enum VoiceCmd {
     /// Join a voice channel (MEK derive, session establish).
     Join {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Voice channel name or ID.
@@ -184,4 +246,53 @@ pub enum VoiceCmd {
 
     /// Toggle self-deafen.
     Deafen,
+}
+
+/// A community's channel administration (`rekindle community channel …`).
+#[derive(Subcommand)]
+pub enum CommunityChannelCmd {
+    /// A channel's permission overwrites for @everyone, a role or a member.
+    #[command(subcommand)]
+    Overwrite(OverwriteCmd),
+}
+
+/// Channel permission overwrite subcommands (the host reviews each as a
+/// consequential governance write, `SetChannelOverwrite` /
+/// `DeleteChannelOverwrite`; `--yes` commits it without a terminal).
+#[derive(Subcommand)]
+pub enum OverwriteCmd {
+    /// Set a channel's overwrite for one target.
+    ///
+    /// Example: rekindle community channel overwrite set -c <ANCHOR> -C <CHANNEL_ID>
+    /// --target role:<ROLE_ID> --deny 0x800
+    Set {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel ID (32 hex characters).
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// `everyone`, `role:<role id>` or `member:<pseudonym>`.
+        #[arg(long)]
+        target: String,
+        /// Permissions to allow: a bitmask, decimal or 0x hex; repeatable.
+        #[arg(long)]
+        allow: Vec<String>,
+        /// Permissions to deny: a bitmask, decimal or 0x hex; repeatable.
+        #[arg(long)]
+        deny: Vec<String>,
+    },
+
+    /// Clear a channel's overwrite for one target.
+    Delete {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel ID (32 hex characters).
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// `everyone`, `role:<role id>` or `member:<pseudonym>`.
+        #[arg(long)]
+        target: String,
+    },
 }

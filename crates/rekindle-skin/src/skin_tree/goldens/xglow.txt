@@ -1,0 +1,74 @@
+Top Decor
+FileMenu MenuTitle label "Rekindle" cover [1, 0, 21, 22] glyph Rekindle target [0, -1, 24, 24] art [0, 1, 24, 22] Size
+ToolMenu MenuTitle target [0, -1, 32, 24] art [0, 1, 32, 22] Size
+HelpMenu MenuTitle target [0, -1, 27, 24] art [0, 1, 27, 22] Size
+XfireLogo Logo label "Rekindle" cover [0, 0, 48, 23] glyph RekindleWordmark
+MinimizeButton Button target [-5, -5, 24, 24] art [5, 5, 13, 13] Size
+Left Decor
+Right Decor
+Middle Decor
+TabbedControl Views
+  BuddyView View(Friends)
+  ServerView View(Servers)
+  DownloadView View(Files)
+  TabbedControl.Communities View(Communities)
+Bottom Decor
+FriendsButtons ButtonRow(Friends)
+  FriendsButtons.Add Group
+    AddFriend Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
+  FriendsButtons.Chat Group
+    ChatButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+  FriendsButtons.Join Group
+    JoinGame@Friends Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+  FriendsButtons.Info Group
+    InfoButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+ServersButtons ButtonRow(Servers)
+  ServersButtons.Add Group
+    AddServer Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
+  ServersButtons.Chat Group
+    RefreshButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+  ServersButtons.Join Group
+    JoinGame@Servers Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+  ServersButtons.Info Group
+    InfoButton2 Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+FilesButtons ButtonRow(Files)
+  FilesButtons.Add Group
+    StartDownload Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
+  FilesButtons.Chat Group
+    StopDownloadButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+  FilesButtons.Join Group
+    ExecuteDownload Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+  FilesButtons.Info Group
+    DownloadInfo Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+FriendsButtons.Communities ButtonRow(Communities)
+  FriendsButtons.Add.Communities Group
+    CommunitiesOpen Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
+  FriendsButtons.Chat.Communities Group
+    CommunitiesLeave Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+      CommunitiesLeaveText.Communities Part label "Leave"
+  FriendsButtons.Join.Communities Group
+    CommunitiesNew Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
+ButtonDivider Decor
+Friends Tab(Friends) target [0, -3, 63, 21] art [0, 3, 65, 18] Spacing
+Servers Tab(Servers) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
+Downloads Tab(Files) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
+Downloads.Communities Tab(Communities) label "Communities" cover [2, 5, 50, 7] style 10px 400 #5E90A8 Start box [2, 1, 63, 14] target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
+AdArea AdArea
+UserName NameField target [0, -8, 228, 24] art [0, 8, 228, 15] Size
+DownArrow StatusList target [-4, -1, 24, 24] art [4, 1, 17, 17] Size
+StatusMiddle Decor
+StatusRight Decor
+Status StatusText target [0, -1, 186, 24] art [0, 1, 186, 14] Size
+ViewInfo Button target [-3, -3, 24, 24] art [3, 3, 17, 17] Size
+Gripper Button target [-4, -4, 24, 24] art [4, 4, 20, 20] Short
+popup XGlowInfoSkin
+  Top Decor
+  Left Decor
+  Middle Decor
+  Right Decor
+  InfoView InfoView
+  Bottom Decor
+  Gripper Button target [-6, -4, 24, 24] art [6, 4, 18, 20] Size
+  Bump Decor
+  Voice Button target [0, -3, 51, 24] art [0, 3, 51, 18] Size
+  Join Button target [0, -3, 51, 24] art [0, 3, 51, 18] Size

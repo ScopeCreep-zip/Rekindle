@@ -11,6 +11,7 @@ document once and refer back to the gate column when you're not
 sure whether something is allowed.
 
 Cross-references:
+
 - [`ai-assisted-contributions.md`](ai-assisted-contributions.md) —
   what AI tools commonly get wrong
 - [`style-guide.md`](style-guide.md) — code conventions
@@ -29,7 +30,7 @@ Lower-numbered tiers know nothing about higher tiers. **Lower tiers
 never depend on higher tiers — including transitively.** The lowest
 tiers are pure logic: zero I/O, zero async, zero side effects.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │  Tier 7   self-contained features                                 │
 │           rekindle-dm, rekindle-calls, rekindle-files,            │
@@ -56,11 +57,12 @@ tiers are pure logic: zero I/O, zero async, zero side effects.
 
 Cross-cutting (consumed by whichever frontend needs them):
    rekindle-protocol, rekindle-crypto, rekindle-voice,
-   rekindle-game-detect, rekindle-sync, rekindle-utils,
-   rekindle-e2e-server
+   rekindle-game-detect, rekindle-sync, rekindle-utils
 
 Daemon / CLI track:
-   rekindle-transport (sole Veilid boundary on this track),
+   rekindle-transport (links veilid-core; ADR 0014 allows only
+   rekindle-protocol, rekindle-transport, rekindle-node and, until F1,
+   rekindle-desktop, checked transitively by `cargo xtask check-boundaries`),
    rekindle-node; frontends rekindle-client, rekindle-cli (bin `rekindle`),
    rekindle-tui
 ```
@@ -70,7 +72,7 @@ Daemon / CLI track:
 | # | Rule | Gate | Status |
 |---|------|------|--------|
 | B1 | Only `rekindle-secrets` may import `ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `chacha20poly1305`, `hkdf` | `cargo xtask check-boundaries` (warn) + `cargo deny [bans]` (pending — blocked by cleanup sweep) | Warn-only, see [§5 in ai-assisted-contributions.md](ai-assisted-contributions.md#5-pending-enforcement-being-rolled-out) |
-| B2 | The Veilid boundary is **transitive linkage** ([ADR 0014](../decisions/0014-veilid-boundary-is-transitive.md)): only `rekindle-protocol`, `rekindle-transport`, `rekindle-node`, `rekindle-desktop` (until F1) and `rekindle-e2e-server` (it embeds the desktop) may link `veilid-core`, directly or through another crate. Wire types come from `rekindle-codec` / `rekindle-types`, never from `rekindle-protocol`. `rekindle-transport` depends on `rekindle-protocol`, never the reverse. | `cargo xtask check-boundaries` (resolved-graph reachability from `cargo metadata`; mutation-tested) | Active (plan C8) |
+| B2 | The Veilid boundary is **transitive linkage** ([ADR 0014](../decisions/0014-veilid-boundary-is-transitive.md)): only `rekindle-protocol`, `rekindle-transport`, `rekindle-node` and `rekindle-desktop` (until F1) may link `veilid-core`, directly or through another crate. Wire types come from `rekindle-codec` / `rekindle-types`, never from `rekindle-protocol`. `rekindle-transport` depends on `rekindle-protocol`, never the reverse. | `cargo xtask check-boundaries` (resolved-graph reachability from `cargo metadata`; mutation-tested) | Active (plan C8) |
 | B3 | Pure-logic crates carry `#![forbid(unsafe_code)]` | Per-crate `lib.rs` directive | Active for `rekindle-cli`, `rekindle-node`, `rekindle-transport`, `rekindle-calls`, `rekindle-secrets`. Pending: `rekindle-types`, `rekindle-codec`, `rekindle-records`, `rekindle-gossip`, `rekindle-governance`, `rekindle-route`, `rekindle-files`, `rekindle-link-preview`, `rekindle-video`, `rekindle-dm` |
 | B4 | `rekindle-governance` has no I/O, no async, no `tokio::*`, no `std::fs`, no `std::net` | Code review + crate `Cargo.toml` excludes runtime deps | Active |
 | B5 | Every `#[allow(...)]` (and `#![allow(...)]`) includes `reason = "…"` | Semgrep `rekindle-no-bare-allow` (active on new code via PR diff) + `cargo xtask check-allow-reasons` | Active for new code; existing 35 sites tracked for retrofit (`cargo xtask retrofit-allow-reasons`) |
@@ -80,17 +82,20 @@ Daemon / CLI track:
 | B9 | `parking_lot::Mutex` / `RwLock` over `std::sync::Mutex` / `RwLock` | `clippy.toml` `disallowed-methods` | Active |
 | B10 | `rekindle-utils::time::now_*` over `std::time::SystemTime::now` | `clippy.toml` `disallowed-methods` | Active |
 | B11 | Cap'n Proto generated modules go at the consuming crate's root (`pub mod foo_capnp { include!(…); }`) | Project convention | Review |
-| B12 | New dependency must be verified on its registry page (slopsquatting defence) | `cargo audit` + `cargo deny [sources]` + Semgrep `rekindle-no-suspicious-extern-crate` | Active |
+| B12 | New dependency must be verified on its registry page (slopsquatting defence) | `cargo deny` (`[advisories]`, `[sources]`) + Semgrep `rekindle-no-suspicious-extern-crate` | Active |
 | B13 | DB schema is a single file (`crates/rekindle-db/schema/001_init.sql`); bump `SCHEMA_VERSION` in `crates/rekindle-db/src/open.rs` on change. Queries on shared tables live in `rekindle_db::repo`; SQL and SQLite driver dependencies outside `rekindle-db`, `rekindle-vault`, `rekindle-asql` (plus a shrinking list the E phase empties) fail the gate | Project convention + `cargo xtask check-sqlite` (syn walk + manifest scan) | Active |
 | B14 | No legacy compatibility shims (project is pre-release) | Project convention | Review |
 | B15 | Pure CRDT logic lives in `rekindle-governance`; async lifecycle (origin / bootstrap / join / segments / apply) lives in `rekindle-governance-runtime`. No I/O in the pure crate. | Code review + per-crate `Cargo.toml` excludes | Active |
 | B16 | All on-disk secret material goes through `rekindle-vault` and its typed helpers (`rekindle_vault::typed`). No direct file I/O on secret bytes from any other crate. | Code review + `cargo xtask check-boundaries` | Active |
 | B18 | Every domain-separation label (KDF `info`/salt, signature prefix, hash/MAC context, nonce prefix) is a constant in `rekindle-types::domains`, named `rekindle-<purpose>-v<N>`; registry tests reject duplicate labels and labels that prefix one another | `cargo xtask check-domain-literals` + `cargo test -p rekindle-types domains` | Active |
-| B19 | Every tracing subscriber writes through `rekindle_utils::log_scrub::ScrubbingMakeWriter`, and every binary installs `log_scrub::install_panic_hook` (or `install_panic_hook_with` around its own formatter); identifiers are never hand-redacted at call sites | Code review (sinks: `src-tauri/src/lib.rs`, `rekindle-client/src/log.rs`, `rekindle-node/src/host/mod.rs`) | Active |
+| B19 | Every tracing subscriber writes through `rekindle_utils::log_scrub::ScrubbingMakeWriter`, and every binary installs `log_scrub::install_panic_hook` (or `install_panic_hook_with` around its own formatter); identifiers are never hand-redacted at call sites | `cargo xtask check-log-scrub` (syn walk: every non-test subscriber-building statement names `ScrubbingMakeWriter`; every `src/main.rs` / `src/bin/*.rs` calls the panic hook, itself or in its lib's `run`) | Active |
 | B17 | `src-tauri` never uses Tauri's `Emitter` (no `use … Emitter`, no `.emit`/`.emit_to`/`.emit_filter`/`.emit_str*` method call). Every Rust → frontend event is a typed `event_dispatch::WebviewEvent` delivered per window by `event_router` (ADR 0013); every new event gets an `audience()` row. | `cargo xtask check-no-emitter` (syn walk) | Active |
 | B20 | Session work spawns through a `rekindle_lifecycle::SessionScope` (desktop `login_scope`, daemon `unlock_scope`, per-community and per-call children), never bare `tokio::spawn` / `tokio::task::spawn` / `tauri::async_runtime::spawn`, so logout, lock and exit stop it. App-lifetime spawns are listed per function, with the reason, in `xtask/src/bare_spawn.rs`; a stale entry fails the gate. | `cargo xtask check-bare-spawn` (syn walk) | Active |
 | B21 | The database is reached through `AppState.db` (`rekindle_db::DbHandle::current()`, which returns `NotLoggedIn` when no identity database is open), never as Tauri managed state (`State<'_, Db>`, `state::<Db>()`, `try_state::<Db>()`, `.manage(pool)`). | `cargo xtask check-no-managed-db` (syn walk) | Active |
 | B22 | Every Veilid DHT and private-route call has one owner. DHT record calls (`create`/`open`/`close`/`delete_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`, `transact_dht_records`) run only in the record pool (`rekindle-protocol/src/dht/pool/`). `import_remote_private_route` runs only in `RouteImports`. `new_private_route`, `new_custom_private_route` and `release_private_route` run only in `OwnRoutes` and the relay offer. A remote route is never released (Veilid releases a dead one). Only crates that depend on `veilid-core` are scanned. | `cargo xtask check-veilid-dht-calls` (syn walk over veilid-linked crates) | Active |
+| B23 | Every Tauri command registered in `src-tauri/src/invoke.rs` and every `IpcRequest` variant is classified in `rekindle_types::intent::COMMAND_TABLE` as an `IntentKind` (whose class decides the review and proof, ADR 0019) or `None` for a pure read or plumbing call; the table names nothing that does not exist. | `cargo xtask check-intent-table` (syn parse of the three sources) | Active |
+| B24 | The isolation hook's command list (`dist-isolation/commands.js`, Tauri's isolation pattern, plan E7.1) is exactly the commands `src-tauri/src/invoke.rs` registers, the plugin commands a capability file grants by name, and Tauri's channel fetch; it is generated by `cargo xtask gen-isolation-commands`, never edited. | `cargo xtask check-isolation-commands` (staleness check in `cargo xtask check`) | Active |
+| B25 | Every workspace library and binary compiles under the release profile. `#[cfg(debug_assertions)]` gates only debug tooling (the dev capabilities, the PQXDH bundle, gossip and vault diagnostics, the `REKINDLE_LOG_SCRUB_KEY` / `REKINDLE_ROUTE_BUDGET_CAPACITY` knobs), never an item a release path names; the WebDriver driver is the one member that refuses release, by design. | `cargo xtask check-release` (`cargo check --release --workspace`, minus the driver; test targets stay out because unit tests of the debug knobs name debug-only helpers; in `cargo xtask check`) | Active (REL1) |
 
 ### Backend file-size ceiling
 
@@ -99,18 +104,20 @@ Daemon / CLI track:
 | Any single Rust file | **600 lines** |
 
 The ceiling is unconditional — `cargo xtask check-file-sizes` (run in
-CI via `cargo xtask check`) fails on **any** file over 600 lines, with
+CI via `cargo xtask check`) fails on **any** Rust file over 600 lines in
+`crates/`, `src-tauri/` (its tests and build support included),
+`xtask/` and `contract/`, with
 no allowlist or escape hatch. Split along a module seam instead
 (directory split with `mod.rs` re-exports, tests to a sibling
 `tests.rs`, or newtype-payload conversion for large wire enums). A
 deliberate future exception would require editing the check in
-`xtask/src/main.rs` in a reviewed PR.
+`xtask/src/file_sizes.rs` in a reviewed PR.
 
 ---
 
 ## 2. Frontend tier hierarchy (TypeScript / SolidJS)
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │  src/windows/        composes per-window UI from components     │
 ├─────────────────────────────────────────────────────────────────┤
@@ -145,9 +152,14 @@ deliberate future exception would require editing the check in
 | F11 | All Tauri IPC via the typed wrappers in `src/ipc/commands.ts` | Semgrep `rekindle-no-raw-tauri-invoke` | Active |
 | F12 | Tailwind utilities live in `src/styles/`; components compose semantic class names | Project convention; bulk inline-class detection planned | Warn-only (1 128 existing matches tracked) |
 | F13 | No `console.log` of secret-bearing fields | Biome `noConsole` (warns) + Semgrep `rekindle-no-secret-in-log` | Active |
-| F14 | Window roots are `display: flex; flex-direction: column;` with one `flex: 1` child | Project convention; tested via Playwright visual regression | Review |
+| F14 | Window roots are `display: flex; flex-direction: column;` with one `flex: 1` child | Project convention; checked in the real windows by the real-app suite (`e2e/app/geometry-page.ts` `flexContract`, plan E7.14 S4) | Review |
 | F15 | New `innerHTML` exceptions require a `// SAFETY (XSS):` block + audit table entry in [`../security/frontend-rendering.md`](../security/frontend-rendering.md) | Code review + Semgrep | Active |
-| F16 | Peer-rendered content (markdown bodies, link previews, custom emoji names, etc.) goes through DOMPurify | Code review + Playwright XSS suite (`e2e/security/xss.spec.ts`) | Active for shipped paths; gate doc at [`../security/frontend-rendering.md`](../security/frontend-rendering.md) |
+| F16 | Peer-rendered content (markdown bodies, link previews, custom emoji names, etc.) goes through DOMPurify | Code review; the real-app XSS spec is plan E7.14 S6 (the Playwright suite was retired in S8) | Active for shipped paths; gate doc at [`../security/frontend-rendering.md`](../security/frontend-rendering.md) |
+| F17 | Every colour under `src/styles/` is a token: no hex, colour-function or CSS named-colour literal (`white`, `black`, …; `transparent`, `currentColor` and the `forced-colors` system colours are not literals) in any rule; literals live only in the custom-property declarations of `global.css`'s token blocks (`@theme`, and the `:root` rules of `@layer xfire-defaults` and `@layer sec`). The `@layer a11y` overrides read tokens. A hover or raise overlay is `--color-xfire-overlay`, a recess `--color-xfire-shade`, a fill's hover step `--color-xfire-fill-shade` | `cargo xtask check-theme-literals` | Active (plan E7.7.0) |
+| F18 | Security surfaces are unskinnable. In each listed component (`IntentDialog`, `DeepLinkConsentDialog`, `AddDeviceModal`, `SafetyNumberPanel`, `VerifiedBadge`) the security-critical elements (the commit controls; the review card with the subject, facts, escalations, undo/notify line and acknowledgement; the key fingerprint; the pairing QR and code; the safety number; the key-trust badges) carry only reserved `.sec-*` classes and use every class the gate lists for that component; the component reads no themeable token and uses no `.form-btn-*`; every rule in any layer that names a `.sec-*` class reads only `--sec-*` tokens; no other component uses a `.sec-*` class; `@layer sec` reads and declares only `--sec-*` tokens, which are declared nowhere else. The dialog chrome stays themeable | `cargo xtask check-sec-surfaces` | Active (plan E7.7.0) |
+| F19 | A destructive control in a component that renders a Destructive or Protected intent carries a non-colour cue: a visible verb label (an `aria-hidden` glyph or an `aria-label` alone does not count; D0's reserved app-owned glyph is reserved, as an `src/icons.ts` id the gate then accepts with an `aria-label`, by the first icon-only destructive control, and none exists yet), is never the default (`type="submit"`, `autofocus`), and appears at most once per view; its styling is a static class on an element marked `data-role="destructive"`. A component that commits an intent review is in the gate's list | `cargo xtask check-destructive-controls` | Active (plan E7.7.0, rule D0) |
+| F20 | Every selector that colours text with a themeable token declares its ground(s) in `src/styles/regions.toml` (`on = [...]`, a `@theme` token or `<token> N% over <ground>`); no stale entries | `cargo xtask check-declared-grounds` | Active (plan E7.7.0; E7.7.1's validator measures each pair) |
+| F21 | Every pair `src/styles/regions.toml` declares reads ≥ 4.5:1 (WCAG 1.4.3), and an entry marked `graphic = true` (the status dots, the presence glyph) ≥ 3:1 (1.4.11), on each base: on the `@theme` defaults (dark), and, for every rule whose text reads a token the light base revalues, on the light base (`:root[data-skin-base="light"]` over the defaults, every `--color-xfire-bg*` ground it leaves unset read as white until E7.7.1 gives it grounds). WCAG 2.x relative luminance, tints composited as `color-mix(in srgb, …)`, every rule that sets the selector's `color` measured. A failing pair is fixed by the minimal Oklab-lightness change to a text role or the tint, recorded in the token defaults of that base | `cargo xtask check-contrast-pairs` | Active (plan E7.7.0a; E7.7.1's validator extends it to every skin) |
 
 ### Frontend file-size ceiling
 
@@ -156,7 +168,9 @@ deliberate future exception would require editing the check in
 | Any single `.ts` or `.tsx` file | **600 lines** |
 
 Same unconditional gate as the backend: `cargo xtask check-file-sizes`
-fails on any `src/**` TypeScript file over 600 lines, no allowlist.
+fails on any TypeScript file over 600 lines under `src/**` (and CSS
+there) or under `e2e/**` (the real-app suite and walk, `.mjs` too), no
+allowlist. Test code is held to the same ceiling as the code it tests.
 Split into sibling modules (ctx-object factories for hooks, extracted
 type/constant modules) rather than growing a file past the ceiling.
 
@@ -213,7 +227,7 @@ owner. As maintainers are added, the file will expand.
 | P5 | AI attestation hint on PRs with AI tells but no `Assisted-by:` trailer | `.github/workflows/ai-attestation.yml` | Active (warn-only) |
 | P6 | Dep-review on every PR | `.github/workflows/dependency-review.yml` | Active |
 | P7 | Lint workflow (Biome / Semgrep / dep-cruiser / file-size / Stylelint / TOML / Markdown / lychee / shellcheck / Nix / typos / gitleaks / Cap'n Proto / Semgrep / actionlint / zizmor) | `.github/workflows/lint.yml` | Active |
-| P8 | Audit workflow (cargo-audit / cargo-deny / pnpm audit) | `.github/workflows/audit.yml` daily + per-PR | Active |
+| P8 | Audit workflow (cargo-deny / pnpm audit) | `.github/workflows/audit.yml` daily + per-PR | Active |
 | P9 | KEV catalog cross-reference (Cargo) | `.github/workflows/kev-check.yml` weekly | Active |
 | P10 | WebView CVE check | `.github/workflows/webview-cve-check.yml` weekly | Active |
 

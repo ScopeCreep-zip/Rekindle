@@ -36,6 +36,26 @@ impl MentionMatches {
     }
 }
 
+/// Escalation E2 for a send (plan U1.4; ADR 0019): `@everyone`, `@here`
+/// and role mentions that would notify more people than the channel's
+/// members currently online. `role_holders` is how many members the
+/// mentioned roles reach; `@here` alone never exceeds the online count.
+#[must_use]
+pub fn mass_mention_escalation(
+    matches: &MentionMatches,
+    members: u32,
+    online: u32,
+    role_holders: u32,
+) -> Option<rekindle_types::intent::Escalation> {
+    let notified = if matches.everyone {
+        members
+    } else {
+        let here = if matches.here { online } else { 0 };
+        here.saturating_add(role_holders).min(members)
+    };
+    (notified > online).then_some(rekindle_types::intent::Escalation::MassMention { notified })
+}
+
 /// Walk the body once and collect each `@token` as it appears. Tokens
 /// must be preceded by whitespace, start-of-string, or punctuation;
 /// this keeps an embedded `foo@bar.com` from triggering a mention.
@@ -235,7 +255,13 @@ pub fn resolve_to_wire<D: ChannelMessagingDeps>(
     community_id: &str,
     matches: &MentionMatches,
 ) -> (Vec<String>, Vec<String>, bool, bool) {
-    let profiles = deps.list_member_profiles(community_id);
+    // In pseudonym order, so a display name two members share resolves to
+    // the same member on every send (the map's order is not defined).
+    let mut profiles: Vec<_> = deps
+        .list_member_profiles(community_id)
+        .into_iter()
+        .collect();
+    profiles.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     let mut pseudonyms: Vec<String> = Vec::new();
     for member_name in &matches.members {
         for (pseudonym_hex, profile) in &profiles {
@@ -286,105 +312,33 @@ pub fn resolve_outbound_mentions<D: ChannelMessagingDeps>(
     (pseudonyms, roles, flag_bits)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn matches_default_is_empty_and_not_any() {
-        let m = MentionMatches::default();
-        assert!(!m.is_any());
-        assert!(!m.everyone);
-        assert!(!m.here);
-        assert!(m.roles.is_empty());
-        assert!(m.members.is_empty());
+/// Whether the received wire `message` mentions the local member — by
+/// pseudonym, by one of its roles, or by `@everyone`/`@here` — the
+/// `messages.mentions_me` the receive pipeline stores (plan E3.1, D25).
+/// Our own message never mentions us.
+pub fn message_mentions_me<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    message: &rekindle_codec::community::channel_record::ChannelMessage,
+) -> bool {
+    use rekindle_types::channel::flags::{MENTION_EVERYONE, MENTION_HERE};
+    if deps
+        .my_pseudonym_hex(community_id)
+        .is_some_and(|me| me.eq_ignore_ascii_case(&message.sender_pseudonym))
+    {
+        return false;
     }
-
-    #[test]
-    fn matches_is_any_each_branch() {
-        for m in [
-            MentionMatches {
-                everyone: true,
-                ..Default::default()
-            },
-            MentionMatches {
-                here: true,
-                ..Default::default()
-            },
-            MentionMatches {
-                roles: vec!["mod".into()],
-                ..Default::default()
-            },
-            MentionMatches {
-                members: vec!["alice".into()],
-                ..Default::default()
-            },
-        ] {
-            assert!(m.is_any());
-        }
-    }
-
-    #[test]
-    fn scan_basic_tokens() {
-        let tokens = scan_raw_tokens("hello @everyone and @alice and @here");
-        assert_eq!(tokens, vec!["everyone", "alice", "here"]);
-    }
-
-    #[test]
-    fn scan_ignores_email_address() {
-        let tokens = scan_raw_tokens("send to foo@bar.com please");
-        assert!(tokens.is_empty());
-    }
-
-    #[test]
-    fn scan_punctuation_boundary() {
-        let tokens = scan_raw_tokens("hey,@here!");
-        assert_eq!(tokens, vec!["here"]);
-    }
-
-    #[test]
-    fn scan_hyphenated_token() {
-        let tokens = scan_raw_tokens("ping @event-staff and @alice-jones");
-        assert_eq!(tokens, vec!["event-staff", "alice-jones"]);
-    }
-
-    #[test]
-    fn scan_underscore_token() {
-        let tokens = scan_raw_tokens("@my_role hi");
-        assert_eq!(tokens, vec!["my_role"]);
-    }
-
-    #[test]
-    fn scan_start_of_string_token() {
-        let tokens = scan_raw_tokens("@start mention");
-        assert_eq!(tokens, vec!["start"]);
-    }
-
-    #[test]
-    fn scan_double_at_skips() {
-        // @@ has an alphanumeric requirement after the inner @ — the
-        // first @ has no token; the second @ is preceded by punctuation
-        // ('@' is ascii_punctuation), so it does trigger.
-        let tokens = scan_raw_tokens("@@hello");
-        assert_eq!(tokens, vec!["hello"]);
-    }
-
-    #[test]
-    fn scan_empty_token_skipped() {
-        let tokens = scan_raw_tokens("@ @  @");
-        assert!(tokens.is_empty());
-    }
-
-    #[test]
-    fn has_perm_matches_bitflag_semantics() {
-        const A: u64 = 0b0001;
-        const B: u64 = 0b0010;
-        const C: u64 = 0b0100;
-        assert!(has_perm(A | B, A));
-        assert!(has_perm(A | B, B));
-        assert!(has_perm(A | B | C, A | B));
-        assert!(!has_perm(A, B));
-        assert!(!has_perm(A | C, A | B));
-        assert!(has_perm(u64::MAX, A | B | C));
-    }
+    let matches = matches_from_cleartext(
+        deps,
+        community_id,
+        &message.mentioned_pseudonyms,
+        &message.mentioned_roles,
+        message.flags & MENTION_EVERYONE == MENTION_EVERYONE,
+        message.flags & MENTION_HERE == MENTION_HERE,
+    );
+    local_member_is_mentioned(deps, community_id, &matches)
 }
+
+#[cfg(test)]
+#[path = "mentions_tests.rs"]
+mod tests;

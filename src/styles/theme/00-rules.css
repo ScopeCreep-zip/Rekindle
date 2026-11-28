@@ -1,19 +1,4 @@
 @layer components {
-  /* Architecture §32 a11y — global focus-visible. Every interactive
-   * element gets a 2px accent ring on keyboard focus; mouse focus is
-   * suppressed so the dense Xfire UI stays clean for sighted users.
-   * Per-element overrides can wrap their own ring in a corresponding
-   * `:focus-visible` rule, but the global ring is the safety net so
-   * the audit's "0 focus-visible rules" gap closes in one cascade. */
-  *:focus-visible {
-    outline: 2px solid var(--color-xfire-focus-outline);
-    outline-offset: 2px;
-    border-radius: inherit;
-  }
-  *:focus:not(:focus-visible) {
-    outline: none;
-  }
-
   /* Architecture §32 a11y — skip link rendered as the first focusable
    * child of each top-level window. Hidden via `clip-path: inset(100%)`
    * (modern 2026-canon pattern; not the deprecated `left: -9999px`
@@ -25,11 +10,11 @@
     left: 0;
     z-index: var(--z-skip-link);
     background: var(--color-xfire-accent);
-    color: var(--color-xfire-text-primary);
+    color: var(--color-xfire-accent-fg);
     padding: 8px 16px;
     text-decoration: none;
     font-weight: 600;
-    border-radius: 0 0 4px 0;
+    border-radius: 0 0 4px;
     clip-path: inset(100%);
   }
   .skip-link:focus {
@@ -52,9 +37,10 @@
     overflow: hidden;
   }
 
-  /* Architecture §32 a11y — visually-hidden helper for ARIA live regions
+  /* Architecture §32 a11y — visually-hidden helper (`.sr-only`, the standard
+   * clip/1px pattern the layout checks skip) for ARIA live regions
    * and screen-reader-only labels (D3 / D5 announcements). */
-  .live-region-sr-only {
+  .sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -83,10 +69,34 @@
   .nf-icon-md {
     font-size: 14px;
   }
+
+  /* The shell's own icon (SkinGlyph, plan SK17-7a): SVG in the element's
+   * colour, in the box the icon font's glyph had (1em square, its em box
+   * reaching the font's descent, 410/2048, below the baseline); a pack's
+   * served image (--skin-icon-<name>) fills the same box instead. */
+  .skin-glyph {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    line-height: 1;
+    vertical-align: -0.2em;
+    flex-shrink: 0;
+  }
+  .skin-glyph-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    fill: currentcolor;
+  }
+  .skin-glyph-served {
+    background: var(--skin-glyph-image) center / contain no-repeat;
+  }
   /* Window frame */
   .app-frame {
     background: var(--color-xfire-bg-dark);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    /* The edge is the palette's `border` (`ui-skin.md`), which a skin's
+     * accent tints (plan E7.7.7), not the offline status colour. */
+    border: 1px solid var(--color-xfire-border);
     border-radius: 0.25rem;
     height: 100vh;
     display: flex;
@@ -102,37 +112,47 @@
     padding: 0 8px;
     gap: 6px;
     flex-shrink: 0;
-    background: linear-gradient(to right, #0f1a3a, #1a2a5e);
+    /* A skin's titlebar strip is the ground (`rekindle-skin`
+     * `regions/css/strip.rs`): its transparent corners show no gradient. */
+    background: var(--skin-region-titlebar-ground, linear-gradient(to right, var(--color-xfire-titlebar-start), var(--color-xfire-titlebar-end)));
   }
 
 
+  /* WCAG 2.2 SC 2.5.8 (plan E7.3): 24 x 24 targets, side by side, so the
+   * spacing exception does not apply; the glyph keeps its size. */
   .xfire-titlebar-btn {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 2px;
-    color: color-mix(in srgb, var(--color-xfire-text) 60%, transparent);
+    color: color-mix(in srgb, var(--color-xfire-titlebar-text) 60%, transparent);
     font-size: 10px;
     cursor: pointer;
     border: none;
     background: transparent;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .xfire-titlebar-btn:hover {
-    color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 10%, transparent);
+    color: var(--color-xfire-titlebar-text);
+    background: color-mix(in srgb, var(--color-xfire-titlebar-text) 15%, transparent);
   }
 
   .xfire-titlebar-btn-close:hover {
-    background: color-mix(in srgb, var(--color-xfire-busy) 80%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-strong), transparent);
+    color: var(--color-xfire-danger-fg);
   }
 
   .xfire-titlebar-spacer {
     flex: 1;
+  }
+
+  /* A pack-laid strip (plan SK1-S1, `rekindle-skin` `shape/title.rs`)
+   * shows and places the logo; the app's own strip has none. */
+  .xfire-titlebar-logo {
+    display: none;
   }
 
   /* ─── Form primitives ─── */
@@ -143,7 +163,7 @@
 
 
   .form-select:disabled {
-    opacity: 0.5;
+    color: var(--color-xfire-text-disabled);
     cursor: not-allowed;
   }
 
@@ -167,7 +187,7 @@
 
   .form-error {
     font-size: 11px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     text-align: center;
   }
 
@@ -175,7 +195,7 @@
   .form-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -185,69 +205,74 @@
     width: 100%;
     padding: 8px;
     background: var(--color-xfire-accent);
-    color: white;
+    color: var(--color-xfire-selection-text);
     border: none;
     border-radius: 0.25rem;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
+  /* Hover rings in selection.text (4.5:1 on the fill): the label's ground stays. */
   .form-btn-primary:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+    box-shadow: inset 0 0 0 1px var(--color-xfire-selection-text);
   }
 
-  .form-btn-primary:disabled {
-    opacity: 0.5;
+  /* Disabled: the theme's DisabledTextCG on bg.secondary, never a fade (ST1). */
+  .form-btn-primary:disabled,
+  .form-btn-danger:disabled {
+    background: var(--color-xfire-bg-secondary);
+    color: var(--color-xfire-text-disabled);
     cursor: not-allowed;
   }
 
-  .form-btn-secondary {
+  /* `.skin-row-btn`: Settings' skin-list buttons, the secondary look outside
+   * the skin's button region (plan SB1: no pack art reaches Settings). */
+  .form-btn-secondary,
+  .skin-row-btn {
     padding: 8px 16px;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: var(--color-xfire-bg-secondary);
     color: var(--color-xfire-text);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border: 1px solid var(--color-xfire-progress-outline);
     border-radius: 0.25rem;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
-  .form-btn-secondary:hover {
-    background: color-mix(in srgb, white 12%, transparent);
+  .form-btn-secondary:hover,
+  .skin-row-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, var(--color-xfire-bg-secondary));
   }
 
-  .form-btn-secondary:disabled {
-    opacity: 0.4;
+  .form-btn-secondary:disabled,
+  .skin-row-btn:disabled {
+    color: var(--color-xfire-text-disabled);
     cursor: not-allowed;
   }
 
   .form-btn-danger {
     padding: 6px 12px;
-    background: color-mix(in srgb, var(--color-xfire-busy) 60%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill), transparent);
+    color: var(--color-xfire-danger-fg);
     border: none;
     border-radius: 0.25rem;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
     white-space: nowrap;
   }
 
   .form-btn-danger:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
-  .form-btn-danger:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
 
   .form-field {
     padding: 4px 12px;
@@ -257,7 +282,7 @@
   .form-field-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     text-transform: uppercase;
     margin-bottom: 4px;
     display: block;
@@ -266,35 +291,43 @@
 
   .form-field-row .form-input {
     flex: 1;
+    min-width: 0;
     margin: 0;
   }
 
+  /* The field takes the row; its button keeps its label's width (not
+     `.form-btn-primary`'s full width, which squeezed the field away). */
   .form-field-row .form-btn-primary {
     margin: 0;
     padding: 6px 12px;
     min-width: auto;
+    width: auto;
+    flex: 0 0 auto;
   }
 
   .form-tabs {
     display: flex;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-bottom: 1px solid var(--color-xfire-border);
     flex-shrink: 0;
     padding: 0 8px;
     gap: 2px;
-    background: var(--color-xfire-bg-dark);
-    overflow-x: auto;
+    /* The rail is the dialog's menu bar (ST1: menu ground, MenuTextCG). */
+    background: var(--color-xfire-menubar-bg);
+    /* Every tab stays in view: a narrow window wraps them to a second
+       row rather than hiding the last ones in a sideways scroller. */
+    flex-wrap: wrap;
   }
 
   .form-tabs-equal {
     display: flex;
     gap: 0;
     margin-bottom: 12px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-bottom: 1px solid var(--color-xfire-border);
   }
 
   .form-tabs-equal .form-tab {
     flex: 1;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     font-size: 12px;
   }
 
@@ -302,24 +335,31 @@
     padding: 6px 12px;
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-menubar-text);
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: color 0.15s, border-color 0.15s;
+    /* Finding V4: no transition on the selection. A transition that a
+       throttled (unfocused) window never advances left the old tab's
+       underline painted after the class had moved; selection is a state,
+       shown at once, like `.buddy-tab-active`. */
     white-space: nowrap;
     flex-shrink: 0;
   }
 
+  /* Hover marks the underline (Xfire's tab cue); the label keeps its ground. */
   .form-tab:hover:not(.form-tab-active) {
-    color: var(--color-xfire-text-primary);
+    border-bottom-color: color-mix(in srgb, var(--color-xfire-accent) 60%, transparent);
   }
 
+  /* The chosen tab is Xfire's selected row: the fill with selection.text. */
   .form-tab-active,
-  .form-tab.active {
-    color: var(--color-xfire-accent);
+  .form-tab.active,
+  .form-tab[aria-selected="true"] {
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-selection-text);
     border-bottom-color: var(--color-xfire-accent);
   }
 
@@ -333,11 +373,25 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     cursor: pointer;
+    /* One line: a long group name gives way (ellipsis), its count stays. */
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  /* A friend group's header as the window's selection (plan E7.15 IV5): the rows' selection tint. */
+  .buddy-group-header-selected {
+    background-color: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .buddy-group-count {
+    flex-shrink: 0;
   }
 
 
   .buddy-item:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
   .buddy-item-content {
@@ -351,12 +405,13 @@
 
 
   .buddy-name-offline {
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
   }
 
-  .buddy-game-info {
+  .buddy-game-info,
+  .buddy-request-state {
     font-size: 10px;
-    color: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -371,26 +426,44 @@
     font-style: italic;
   }
 
-  .buddy-last-seen {
+  /* The last-seen line, and a first contact resent from a fresh key
+     (plan E2.4, B6). */
+  .buddy-last-seen,
+  .buddy-handshake-retrying {
     font-size: 10px;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* A first contact that failed, with its Retry (plan E2.4, B7). */
+  .buddy-handshake-failed {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  /* First-contact handshake failed: the friendship stays pending (C7.25);
+     their keys are not signed by the identity we know (plan E2.4, B3). */
+  .buddy-handshake-error,
+  .buddy-identity-mismatch {
+    font-size: 10px;
+    color: var(--color-xfire-danger-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   /* Pending friend requests (Awaiting Response group) */
-  .buddy-group-pending .buddy-item {
-    opacity: 0.6;
-  }
-
   .buddy-group-pending .buddy-name {
     font-style: italic;
     color: var(--color-xfire-text-dim);
   }
 
   .buddy-group-pending .buddy-group-header {
-    color: var(--color-xfire-away);
+    color: var(--color-xfire-away-text);
   }
 
   /* Status dots — architecture §32 a11y. The host span carries the
@@ -407,10 +480,71 @@
     height: 12px;
     flex-shrink: 0;
     line-height: 0;
+    position: relative;
   }
 
   .status-dot svg {
     display: block;
+    position: relative;
+  }
+
+  /* A skin's status icon (plan E7.7.1 "Icons", E7.7.7 S4) is the fill of
+   * the app-owned shape: clipped to the disc or the ring, under the SVG
+   * whose cutouts stay on top; with an icon the shape's own paint turns
+   * transparent. Without one, --status-icon is none and the shape paints
+   * the token colour (the token look). */
+  .status-icon-online {
+    --status-icon: var(--skin-icon-status-online, none);
+    --status-paint: var(--skin-icon-status-online-paint, currentColor);
+  }
+
+  .status-icon-away {
+    --status-icon: var(--skin-icon-status-away, none);
+    --status-paint: var(--skin-icon-status-away-paint, currentColor);
+  }
+
+  .status-icon-busy {
+    --status-icon: var(--skin-icon-status-busy, none);
+    --status-paint: var(--skin-icon-status-busy-paint, currentColor);
+  }
+
+  .status-icon-ingame {
+    --status-icon: var(--skin-icon-status-ingame, none);
+    --status-paint: var(--skin-icon-status-ingame-paint, currentColor);
+  }
+
+  .status-icon-offline {
+    --status-icon: var(--skin-icon-status-offline, none);
+    --status-paint: var(--skin-icon-status-offline-paint, currentColor);
+  }
+
+  .status-icon-invisible {
+    --status-icon: var(--skin-icon-status-invisible, none);
+    --status-paint: var(--skin-icon-status-invisible-paint, currentColor);
+  }
+
+  .status-dot-fill {
+    position: absolute;
+    inset: 0;
+    background-image: var(--status-icon);
+    background-size: 12px 12px;
+    pointer-events: none;
+  }
+
+  .status-dot-fill-disc {
+    clip-path: circle(4.5px at 6px 6px);
+  }
+
+  .status-dot-fill-ring {
+    clip-path: path(evenodd, "M1.25 6a4.75 4.75 0 1 0 9.5 0a4.75 4.75 0 1 0 -9.5 0Z M2.75 6a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0Z");
+  }
+
+  .status-dot-paint {
+    fill: var(--status-paint);
+  }
+
+  .status-dot-ring {
+    stroke: var(--status-paint);
   }
 
   .status-dot-online {

@@ -1,6 +1,8 @@
-import { Component, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Dialog } from "@kobalte/core/dialog";
 import QrScanner from "qr-scanner";
+import { type Component, createSignal, onCleanup, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 interface QrScannerOverlayProps {
   onResult: (decoded: string) => void;
@@ -26,13 +28,14 @@ interface QrScannerOverlayProps {
  */
 const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
-  let videoRef: HTMLVideoElement | undefined;
   let scanner: QrScanner | null = null;
 
-  onMount(() => {
-    if (!videoRef) return;
+  // The video element mounts inside the dialog's portal; the scanner
+  // starts once it exists.
+  function startScanner(video: HTMLVideoElement): void {
+    if (scanner) return;
     scanner = new QrScanner(
-      videoRef,
+      video,
       (result) => {
         // qr-scanner returns a `ScanResult` with `.data` in 1.4+.
         const decoded = result.data;
@@ -48,7 +51,7 @@ const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
         // (laptops typically have only one — qr-scanner falls back
         // gracefully).
         preferredCamera: "environment",
-      },
+      }
     );
     // A backend-native camera session owns the device exclusively —
     // and a busy camera surfaces NO getUserMedia error: the scanner
@@ -68,7 +71,7 @@ const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
           setError(`Could not access camera: ${msg}`);
         });
       });
-  });
+  }
 
   onCleanup(() => {
     if (scanner) {
@@ -79,32 +82,27 @@ const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
   });
 
   return (
-    <div class="qr-scanner-overlay">
-      <div class="qr-scanner-overlay-card">
-        <div class="qr-scanner-overlay-header">
-          <span class="form-field-label">Scan pairing QR</span>
-          <button class="form-btn-secondary" onClick={props.onClose}>
-            Close
-          </button>
+    // Wiring guide §13c: a modal dialog (over Add Device) traps focus, Esc
+    // closes it, and focus goes back to the button that opened it.
+    <Dialog open={true} onOpenChange={(open) => !open && props.onClose()} modal={true}>
+      <Dialog.Portal>
+        <div class="qr-scanner-overlay">
+          <Dialog.Content class="qr-scanner-overlay-card" {...returnFocusToOpener()}>
+            <div class="qr-scanner-overlay-header">
+              <Dialog.Title class="form-field-label">Scan pairing QR</Dialog.Title>
+              <Dialog.CloseButton class="form-btn-secondary">Close</Dialog.CloseButton>
+            </div>
+            <Show when={!error()} fallback={<div class="search-panel-error">{error()}</div>}>
+              <video ref={startScanner} class="qr-scanner-video" autoplay playsinline muted />
+              <div class="settings-hint">
+                Hold the existing device's QR code in front of the camera. Decoding happens locally
+                — nothing is sent over the network.
+              </div>
+            </Show>
+          </Dialog.Content>
         </div>
-        <Show
-          when={!error()}
-          fallback={<div class="search-panel-error">{error()}</div>}
-        >
-          <video
-            ref={(el) => (videoRef = el)}
-            class="qr-scanner-video"
-            autoplay
-            playsinline
-            muted
-          />
-          <div class="settings-hint">
-            Hold the existing device's QR code in front of the camera.
-            Decoding happens locally — nothing is sent over the network.
-          </div>
-        </Show>
-      </div>
-    </div>
+      </Dialog.Portal>
+    </Dialog>
   );
 };
 

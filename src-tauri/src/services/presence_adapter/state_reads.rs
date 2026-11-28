@@ -9,8 +9,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use rekindle_presence::{PresenceCredentials, SegmentDescriptor};
+use rekindle_secrets::derive;
 
-use crate::services::community::join::try_derive_slot_keypair;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -91,7 +91,7 @@ pub(super) fn segment_descriptors(
 ) -> Vec<SegmentDescriptor> {
     // One `SegmentDescriptor` now, so this is the value itself. The map
     // that used to be here rebuilt the struct field by field and
-    // dropped `governance_key` on the way.
+    // dropped `anchor` on the way.
     crate::services::community::segments::segment_descriptors(state, community_id)
 }
 
@@ -101,49 +101,30 @@ pub(super) fn my_pseudonym_for_community(state: &Arc<AppState>, community_id: &s
     crate::state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default()
 }
 
-pub(super) fn channel_ids_for_community(state: &Arc<AppState>, community_id: &str) -> Vec<String> {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map(|c| c.channels.iter().map(|ch| ch.id.clone()).collect())
-        .unwrap_or_default()
-}
-
-pub(super) fn channel_log_keys_for_community(
+/// Our slot keypair in `community_id`, derived from its slot seed and
+/// cached on the community.
+fn try_derive_slot_keypair(
     state: &Arc<AppState>,
     community_id: &str,
-) -> Vec<(String, String)> {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map(|c| {
-            c.channel_log_keys
-                .iter()
-                .map(|(ch_id, rec)| (ch_id.clone(), rec.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-pub(super) fn mark_pending_sync(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    attempt: u32,
-) {
-    let now = rekindle_utils::timestamp_secs();
-    if let Some(c) = state.communities.write().get_mut(community_id) {
-        c.pending_syncs
-            .insert(channel_id.to_string(), (now, attempt));
-    }
-}
-
-pub(super) fn mark_initial_sync_done(state: &Arc<AppState>, community_id: &str) {
-    if let Some(c) = state.communities.write().get_mut(community_id) {
-        if let Some(ref mut g) = c.gossip {
-            g.needs_initial_sync = false;
+    seed_hex: &str,
+    subkey_idx: u32,
+) -> Option<String> {
+    let seed_bytes = hex::decode(seed_hex).ok()?;
+    let seed_array: [u8; 32] = seed_bytes.as_slice().try_into().ok()?;
+    match derive::derive_slot_keypair(&seed_array, subkey_idx) {
+        Ok(sk) => {
+            let kp_str = rekindle_crypto::keypair_text::keypair_text_from_signing(&sk);
+            {
+                let mut communities = state.communities.write();
+                if let Some(c) = communities.get_mut(community_id) {
+                    c.slot_keypair = Some(kp_str.clone());
+                }
+            }
+            Some(kp_str)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to derive slot keypair from seed");
+            None
         }
     }
 }

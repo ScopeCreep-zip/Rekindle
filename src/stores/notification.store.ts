@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 
-export interface Notification {
+interface Notification {
   id: string;
   /**
    * Wave 12 W12.8 — `missed_call` rows surface in the notification panel
@@ -8,12 +8,7 @@ export interface Notification {
    * a `chat-event::callMissed` (callee never answered) or
    * `chat-event::callTimedOut` (caller's offer expired) fires.
    */
-  type:
-    | "message"
-    | "friend_request"
-    | "community_invite"
-    | "system"
-    | "missed_call";
+  type: "message" | "friend_request" | "community_invite" | "system" | "missed_call";
   title: string;
   body: string;
   timestamp: number;
@@ -43,33 +38,29 @@ export interface Notification {
   callKind?: "audio" | "video";
 }
 
-export interface NotificationState {
+interface NotificationState {
   notifications: Notification[];
-  unreadCount: number;
 }
 
-const [notificationState, setNotificationState] =
-  createStore<NotificationState>({
-    notifications: [],
-    unreadCount: 0,
-  });
+const [notificationState, setNotificationState] = createStore<NotificationState>({
+  notifications: [],
+});
+
+/// The inbox rows not yet read. Message, channel and DM counts are the
+/// Host's (`UnreadChanged`, plan E3.1 D25); this store keeps no counter.
+export function unreadNotifications(): number {
+  return notificationState.notifications.filter((n) => !n.read).length;
+}
 
 export function markNotificationRead(id: string): void {
   const idx = notificationState.notifications.findIndex((n) => n.id === id);
   if (idx >= 0 && !notificationState.notifications[idx].read) {
     setNotificationState("notifications", idx, "read", true);
-    setNotificationState("unreadCount", (c) => Math.max(0, c - 1));
   }
 }
 
 export function markAllNotificationsRead(): void {
-  setNotificationState(
-    "notifications",
-    (n) => !n.read,
-    "read",
-    true,
-  );
-  setNotificationState("unreadCount", 0);
+  setNotificationState("notifications", (n) => !n.read, "read", true);
 }
 
 export { notificationState, setNotificationState };

@@ -21,7 +21,7 @@ for the chiral-network architecture.
 
 ## Layer stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                     SolidJS Frontend                    │
 │  Windows, components, stores, handlers, styles          │
@@ -58,7 +58,7 @@ speak the same Veilid protocol and SMPL governance.
 | `src-tauri/` | Tauri 2 backend — commands, services, channels, app state, SQLite, `rekindle-vault` |
 | `crates/` | 38 Rust crates implementing the protocol, crypto, voice, game detection, daemon/CLI |
 | `schemas/` | Cap'n Proto schema definitions |
-| `e2e/` | Playwright E2E tests |
+| `e2e/` | Real-app tests: the WebdriverIO suite (`e2e/app/`, `pnpm test:app`) and the row walk (`e2e/walk/`) |
 | `docs/` | All technical documentation (start at [`docs/README.md`](docs/README.md)) |
 | `legacy/` | Reverse-engineering artifacts from the original Xfire installer (reference only — do not execute) |
 | `.claude/` | Internal design memos, plans, and Claude-specific automation (gitignored) |
@@ -94,7 +94,7 @@ side effects.
 | 5 | `rekindle-gossip` | Gossip mesh primitives (D-fanout, dedup, Lamport) |
 | 6 | `rekindle-governance` | Pure CRDT merge, reader-validates permissions |
 | 7 | `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features |
-| Cross-cutting | `rekindle-protocol`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Veilid plumbing, Signal sessions, audio pipeline, scanner, sync workers |
+| Cross-cutting | `rekindle-protocol`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils` | Veilid plumbing, Signal sessions, audio pipeline, scanner, sync workers |
 | Daemon/CLI track | `rekindle-transport`, `rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui` | Sole Veilid boundary + daemon + the shared client, CLI (`rekindle`) and TUI (`rekindle-tui`) |
 
 ## Protocol at a glance
@@ -109,7 +109,7 @@ side effects.
   - Layer 4 — AES-256-GCM with per-channel MEK (communities) or Signal
     Protocol (1:1 friends).
   - Layer 5 — `rekindle-vault` at rest: SQLCipher page-level AES-256-CBC
-    + per-entry AES-256-GCM, keyed by an Argon2id-derived master secret.
+    - per-entry AES-256-GCM, keyed by an Argon2id-derived master secret.
 - **Identity:** Ed25519 keypairs. No usernames or passwords. Pseudonyms
   per community for unlinkability.
 - **Community governance:** SMPL DHT records with `o_cnt: 0` (creation
@@ -135,4 +135,5 @@ For the full set of conventions, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-Rekindle is released under the [MIT License](LICENSE).
+Rekindle is released under the MIT License or the Apache License 2.0, at your option
+([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)).

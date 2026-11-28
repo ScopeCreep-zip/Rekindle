@@ -1,0 +1,575 @@
+//! The DM stream on the outbox (plan E2.5, D22), as the transport sees it.
+//! A direct message is committed with its local echo as one row of the
+//! `dm:<peer>` stream and framed at each attempt, so the ratchet message
+//! carries the entry's stream seq that the peer's `DmAck` names. The
+//! engine and its storage are the Host's (`rekindle-outbox`, behind
+//! [`DmOutbox`]); this module only frames and delivers.
+
+use async_trait::async_trait;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
+
+use rekindle_types::message::SendState;
+
+pub(crate) use super::outbox_payload::decode_payload;
+pub use super::outbox_payload::payload;
+use super::send;
+use crate::operations::friend::{FriendError, FriendHost};
+
+/// Our message to commit with its local echo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutgoingDm {
+    /// The id every attempt carries (`messages.message_id`).
+    pub client_id: String,
+    /// [`payload`] of the message's body.
+    pub payload: Vec<u8>,
+    /// Our identity key, the echo's sender.
+    pub sender: String,
+    pub body: String,
+    pub timestamp: i64,
+    pub reply_to: Option<String>,
+    /// The timer the message carries (plan E7.1; 0 = none): our copy
+    /// expires at its stored time + this.
+    pub expire_seconds: u32,
+}
+
+/// The Host's outbox, as the 1:1 operations use it.
+#[async_trait]
+pub trait DmOutbox: Send + Sync {
+    /// Commit `dm` with its echo at the end of our stream to `to`, in one
+    /// transaction; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue(&self, to: &str, dm: OutgoingDm) -> Result<i64, FriendError>;
+    /// Commit `dm` with its echo (a `group_dm` message under the group's
+    /// id) at the end of our stream to `group_id` (plan E2.6), in one
+    /// transaction; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_group(&self, group_id: &str, dm: OutgoingDm) -> Result<i64, FriendError>;
+    /// Commit a group control entry (`payload`, [`payload`]; a
+    /// `GroupDmRename`) with no echo at the end of our stream to
+    /// `group_id`: it rides our group chain like a message; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_group_control(
+        &self,
+        group_id: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError>;
+    /// Commit a `friend_handshake` frame (`payload`, [`super::Framed`]) at
+    /// the end of our handshake stream to `to`; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    /// Commit a control frame (`payload`, [`payload`]) with no echo at
+    /// the end of our `dm` stream to `to` (a `StreamRecord`): it waits for
+    /// the peer's `DmAck` like a message; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_control(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError>;
+    async fn enqueue_handshake(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError>;
+    /// [`Self::enqueue_handshake`] for a frame worth nothing after `deadline_ms`
+    /// (epoch ms; a `CallEnd`, plan CE1 (22)): it fails then, not at the horizon.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_handshake_until(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+        deadline_ms: i64,
+    ) -> Result<i64, FriendError>;
+    /// Mark `to` removing, fail our pending messages to them and commit our
+    /// `Unfriended` frame to them and the friend list's row (`list`), in one
+    /// transaction (plan audit D-1, review RV5 items 3 and 5); the failed rows, for [`Self::echo_failed`].
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_removal(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+        list: rekindle_db::repo::outbox::ListWrite,
+    ) -> Result<Vec<rekindle_db::repo::outbox::Row>, FriendError>;
+    /// Rows a committed friend change already failed and deleted in its own
+    /// transaction (`rekindle_db::repo::outbox::fail_to_peer`): each one's
+    /// `failed` state, with `reason`, goes to the subscribers, and the
+    /// engine is woken so the streams behind them go on. Storage is not
+    /// touched.
+    fn echo_failed(&self, rows: Vec<rekindle_db::repo::outbox::Row>, reason: &str);
+    /// A row was committed outside the engine (the friend list's, with
+    /// the change that queued it): attempt the due rows now.
+    fn wake(&self);
+    /// Our backing-off `friend_handshake` and `dm` rows to `peer` are due now (L-FR2).
+    /// # Errors
+    /// The storage failed.
+    async fn bring_forward(&self, peer: &str) -> Result<usize, FriendError>;
+    /// The peer acknowledged row `client_id` by a frame naming no stream
+    /// seq (`UnfriendedAck`); `false` when no row waits.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn acknowledge_client(&self, client_id: &str) -> Result<bool, FriendError>;
+    /// The user's Discard: the row settles `failed` and leaves its stream.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn discard(&self, client_id: &str) -> Result<bool, FriendError>;
+    /// `peer`'s answer proves our handshake rows to them whose client ids
+    /// start with `client_prefix` arrived (their `FriendAccept` answers our
+    /// `FriendRequest`, whose receipts may all have been lost): each
+    /// unsettled one settles `delivered`, as its receipt would have, so
+    /// the rows behind it go (live A/B findings 56, 60); how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn receipt_handshakes_to(
+        &self,
+        peer: &str,
+        client_prefix: &str,
+    ) -> Result<usize, FriendError>;
+    /// The user's Retry under the same client id; `false` when no row waits.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn retry(&self, client_id: &str) -> Result<bool, FriendError>;
+    /// `from` holds entry `stream_seq` of our stream to them (`DmAck`).
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn acknowledge(&self, from: &str, stream_seq: i64) -> Result<bool, FriendError>;
+    /// `from` applied our chain to them through chain seq `through` (a
+    /// cumulative `DmAck`): every entry it carried is delivered, row or
+    /// none; how many changed.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn acknowledge_chain_through(
+        &self,
+        from: &str,
+        through: u64,
+    ) -> Result<usize, FriendError>;
+    /// `from` read our stream to them through `stream_seq` (`ReadUpTo`):
+    /// every entry at or below it becomes `read`; how many changed.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn read_up_to(&self, from: &str, stream_seq: i64) -> Result<usize, FriendError>;
+    /// Entry `client_id` of `from`'s stream was committed here: `true` the
+    /// first time, `false` for a resend already applied.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn receive(&self, from: &str, client_id: &str) -> Result<bool, FriendError>;
+    /// `peer` became reachable again: each landed, unacked row of our
+    /// stream to them is asked for again at now plus the first re-ask when
+    /// that is earlier than its `next_at`; how many moved.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn reask_soon(&self, peer: &str) -> Result<usize, FriendError>;
+    /// Reconcile every queued chain row with our own chain (the friend
+    /// maintenance tick; live A/B finding 73): a row whose entry landed by
+    /// any path is landed, the one landing writer
+    /// (`rekindle_outbox::Outbox::reconcile`); how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn reconcile(&self) -> Result<usize, FriendError>;
+    /// Whether the appender of our stream to `peer` has an append running
+    /// or waiting (`rekindle_outbox::Outbox::stream_busy`, review LV22 M1).
+    fn appending(&self, peer: &str) -> bool;
+}
+
+/// `peer` was heard from again: their route changed, their presence turned
+/// online, or a hint of theirs arrived (E2.5g, Briar's reset of its
+/// retransmission backoff on a contact's transport change). The one place
+/// every such signal resets our landed, unacked rows' re-ask backoff.
+pub async fn peer_heard(host: &dyn FriendHost, peer: &str) {
+    match host.outbox() {
+        Ok(outbox) => match outbox.reask_soon(peer).await {
+            Ok(0) => {}
+            Ok(moved) => tracing::debug!(peer = %peer, moved, "re-ask brought forward"),
+            Err(e) => tracing::warn!(peer = %peer, error = %e, "re-ask not brought forward"),
+        },
+        Err(e) => tracing::debug!(error = %e, "no outbox: re-ask not brought forward"),
+    }
+}
+
+/// How one attempt of a `dm` row went.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Attempt {
+    /// The frame left this device.
+    Sent,
+    /// The frame left this device, and the row waits for the peer's ack
+    /// of it (`Unfriended`).
+    Awaiting,
+    /// The peer's `app_call` reply received it (a `FriendRequest`).
+    Receipted,
+    /// It went as an `app_call` (a `StreamRecord`) and no receipt came: it
+    /// may be lost, and is sent again soon ([`record_call`]).
+    Unanswered,
+    /// A `StreamRecord` framed for this attempt (this datagram): its
+    /// `app_call` ([`call`]) is handed to the stream's appender, which runs
+    /// it beside the stream's later rows and settles the row on its answer.
+    Calling(Vec<u8>),
+    /// The hint left, and the entry (this frame) goes to the stream's
+    /// appender; the append's outcome is its landing (the DM pump).
+    Appending(Vec<u8>),
+    /// Not now: no route, no session yet, the node is not up, or the
+    /// peer's changed key waits for the user's review.
+    Deferred,
+    /// It can never be sent as it stands.
+    Wedged(String),
+    /// It is no longer worth sending (a first contact the peer refused,
+    /// whose `PreKeyRejected` sends the retry): it settles failed and
+    /// leaves its stream.
+    Superseded(String),
+}
+
+/// One `dm` row of our stream to a peer, as [`attempt`] takes it.
+#[derive(Debug, Clone, Copy)]
+pub struct RowAttempt<'a> {
+    pub stream_seq: i64,
+    /// The row's state: `sent` for a chain entry means its append landed,
+    /// and a later attempt does not append it again (live A/B finding 42);
+    /// it is hinted again, on the dm backoff, until the peer's ack (live
+    /// A/B finding 64).
+    pub state: SendState,
+    /// When the entry was written (its echo's time; now for a row with
+    /// none).
+    pub sent_at: Option<i64>,
+    pub payload: &'a [u8],
+}
+
+/// A row framed for the wire, or how its attempt already ended.
+enum Framed {
+    /// A `StreamRecord`: it names the chain and is not on it.
+    Record(Vec<u8>, DmTypeId),
+    /// A chain entry: the `hint` sent now, and the frame the `chain` gets
+    /// (sealed once: a re-hint of a sealed seq is a fresh framing, while
+    /// the chain keeps the first hint's bytes, review LV22 H1).
+    Entry {
+        hint: Vec<u8>,
+        chain: Vec<u8>,
+        type_id: DmTypeId,
+    },
+}
+
+/// Frame `rows` (the due run of our stream to `to`, in `stream_seq`
+/// order), append the frames to our chain to them at once (plan E2.5,
+/// D23: the chain is authoritative; the run fills as few pages as hold it,
+/// E2.B F2) while each is sent once as the hint that makes the peer diff.
+/// Once on the chain a row counts as sent whether or not its hint left; a
+/// row already on it ([`landed`]) is not appended again, only hinted again
+/// until its ack ([`rehint`]).
+/// Every attempt's frame carries `sent_at`, so the peer orders it by that
+/// and not by the attempt that reached them (E2.B F3). The outcomes of a
+/// prefix of `rows`, in order: the rows after the first that stays behind
+/// (`rekindle_outbox::holds_back`) are not attempted.
+pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
+    let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
+    let mut chained: Vec<(usize, Vec<u8>, Vec<u8>, DmTypeId)> = Vec::new();
+    // Route liveness (plan RH1r-c S1–S4): every row here waits for the
+    // peer's `DmAck`, so its sends count against their route, and a suspect
+    // round runs first when one is due: its re-read, which may replace the
+    // route; its probe runs beside the hints (finding R5-1, so a lost
+    // DmText's re-hint keeps the re-ask cadence). While the peer shows unreachable
+    // the hints wait for their backoff step; the chain appends never do.
+    let hint = super::route_health::before_send(host, to).await;
+    for row in rows {
+        if landed(row) {
+            if hint {
+                rehint(host, to, row).await;
+            }
+            outcomes.push(Some(Attempt::Sent));
+            continue;
+        }
+        let outcome = match frame_row(host, to, row, true).await {
+            Err(outcome) => outcome,
+            // A `StreamRecord`'s call is handed off ([`call`]): it runs
+            // beside the run's hints and the stream's later rows.
+            Ok(Framed::Record(datagram, _)) => Attempt::Calling(datagram),
+            Ok(Framed::Entry {
+                hint,
+                chain,
+                type_id,
+            }) => {
+                chained.push((outcomes.len(), hint, chain, type_id));
+                outcomes.push(None);
+                continue;
+            }
+        };
+        if push_stops(&mut outcomes, outcome) {
+            break;
+        }
+    }
+    // The run's hints go at once, in order, and its appends to the
+    // stream's appender ([`append`]), so the peer has each message without
+    // waiting on a DHT write, its own or an earlier one's (live A/B finding
+    // 42, the DM pump); an ack that beats the landing waits on the row.
+    // A `StreamRecord`'s call is the appender's ([`Attempt::Calling`]), so
+    // no hint and no later row waits for its round trip.
+    for (_, datagram, _, type_id) in chained.iter().filter(|_| hint) {
+        match send::route_send_datagram(host, to, datagram, *type_id).await {
+            Ok(true) => super::route_health::sent(host, to, *type_id),
+            Ok(false) => {}
+            Err(e) => tracing::debug!(to = %to, error = %e, "chain entry hint not sent"),
+        }
+    }
+    for (i, _, chain, _) in chained {
+        outcomes[i] = Some(Attempt::Appending(chain));
+    }
+    finish(outcomes)
+}
+
+/// Call `to` with our `StreamRecord` (`datagram`, as an attempt framed it,
+/// [`Attempt::Calling`]): the appender's call, run off the attempt so the
+/// stream's later rows go meanwhile ([`record_call`]).
+pub async fn call(host: &dyn FriendHost, to: &str, datagram: Vec<u8>) -> Attempt {
+    record_call(host, to, datagram, DmTypeId::StreamRecord).await
+}
+
+/// Send our `StreamRecord` (`datagram`) to `to` as an `app_call` (live
+/// finding L-DM1). It is the one frame that names our chain to the peer:
+/// lost, nothing else can lead them to it, and as an `app_message` (a
+/// statement, Veilid 0.5.8 `rpc_app_message.rs:24`) its loss is seen only
+/// when no `DmAck` comes by the first re-ask (`DM_FIRST_REASK`, 30 s). A
+/// call is answered or times out (`rpc_app_call.rs:36`, `:135`), and a lost
+/// question also counts against the route in Veilid's own stats
+/// (`route_stats.rs:144-147`, so the route is retested), so a lost record
+/// is sent again within a call timeout and a short backoff
+/// ([`Attempt::Unanswered`]). The peer answers once the frame is committed
+/// (`direct::receive_call`); the receipt only proves arrival: the row still
+/// waits for the peer's `DmAck` (D22: `delivered` comes from the ack), so
+/// the hardened ack and its 2–10 s delay are unchanged.
+async fn record_call(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+    type_id: DmTypeId,
+) -> Attempt {
+    match send::call_datagram_answer(host, to, datagram).await {
+        Ok(send::CallAnswer::Receipt) => {
+            super::route_health::sent(host, to, type_id);
+            Attempt::Sent
+        }
+        Ok(_) => {
+            super::route_health::sent(host, to, type_id);
+            tracing::debug!(to = %to, "stream record not receipted — sent again soon");
+            Attempt::Unanswered
+        }
+        Err(e @ (FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_))) => {
+            attempt_of(e)
+        }
+        Err(e) => {
+            super::route_health::sent(host, to, type_id);
+            tracing::debug!(to = %to, error = %e, "stream record call unanswered — sent again soon");
+            Attempt::Unanswered
+        }
+    }
+}
+
+/// Hint `row` again, a chain entry whose append landed and whose `DmAck`
+/// has not come (live A/B finding 64): the peer's acks are never queued
+/// (`dm::ack`), so a lost one is asked for again only by this resend. It is
+/// framed afresh (the landed frame again would be dropped as a duplicate
+/// before the peer applies and acks it, `frame::open`) under the same
+/// stream seq and `sent_at`, and is not appended again: the entry is on the
+/// chain. An acked row is gone from the outbox (`Outbox::acknowledge`), so
+/// it is never hinted again. It stays sent whatever the hint does.
+async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
+    // The re-send's reason (E2.5i R1-3): the row landed and is still here,
+    // so no `DmAck` named its seq and none's `through` covered its entry.
+    tracing::debug!(to = %to, stream_seq = row.stream_seq,
+        "re-hint: landed, no DmAck names or covers it yet");
+    match frame_row(host, to, row, false).await {
+        Ok(
+            Framed::Entry {
+                hint: datagram,
+                type_id,
+                ..
+            }
+            | Framed::Record(datagram, type_id),
+        ) => match send::route_send_datagram(host, to, &datagram, type_id).await {
+            Ok(true) => super::route_health::sent(host, to, type_id),
+            Ok(false) => {}
+            Err(e) => tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent"),
+        },
+        Err(outcome) => {
+            tracing::debug!(to = %to, ?outcome, "landed entry re-hint not framed");
+        }
+    }
+}
+
+/// Append `frames` (handed-off entries, each with its `stream_seq`, in
+/// order) to our chain to `to`: `Sent` for each landed, then the error that
+/// stopped the rest; the rows after it were not appended.
+pub async fn append(host: &dyn FriendHost, to: &str, frames: &[(Vec<u8>, i64)]) -> Vec<Attempt> {
+    let (landed, appended) = super::stream::append(host, to, frames).await;
+    landing(frames.len(), landed, appended)
+}
+
+/// The outcomes of a run append of `n` entries that landed `landed`.
+pub(crate) fn landing(n: usize, landed: usize, appended: Result<(), FriendError>) -> Vec<Attempt> {
+    let mut outcomes = vec![None; n];
+    let slots: Vec<usize> = (0..n).collect();
+    settle_chained(&mut outcomes, &slots, landed, appended);
+    finish(outcomes)
+}
+
+/// Whether `row` is a chain entry whose append already landed: a
+/// `StreamRecord` is not on the chain and is sent again until its ack.
+pub(crate) fn landed(row: &RowAttempt<'_>) -> bool {
+    row.state == SendState::Sent
+        && !matches!(decode_payload(row.payload), Ok(DirectBody::StreamRecord(_)))
+}
+
+/// How an attempt that failed with `e` ends: a locked, not-ready or
+/// conflicting host is tried again later, and the reason is logged.
+pub(crate) fn attempt_of(e: FriendError) -> Attempt {
+    match e {
+        FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_) => {
+            tracing::debug!(reason = %e, "outbox row deferred");
+            Attempt::Deferred
+        }
+        e => Attempt::Wedged(e.to_string()),
+    }
+}
+
+/// Push a row's `outcome`; whether it stays behind
+/// (`rekindle_outbox::holds_back`), so the rows after it are not attempted.
+pub(crate) fn push_stops(outcomes: &mut Vec<Option<Attempt>>, outcome: Attempt) -> bool {
+    let stop = matches!(outcome, Attempt::Deferred | Attempt::Wedged(_));
+    outcomes.push(Some(outcome));
+    stop
+}
+
+/// An entry no chain page holds alone can never be sent; the others of a
+/// batch are not held back by it.
+pub(crate) fn fits_page(entry: &[u8]) -> Result<(), Attempt> {
+    rekindle_records::chain::page_runs(&[entry.to_vec()])
+        .map(|_| ())
+        .map_err(|e| Attempt::Wedged(format!("chain append: {e}")))
+}
+
+/// Settle the chained rows at `slots` of `outcomes` (in order) after a run
+/// append (`dm::stream::append_noted`): the first `landed` are sent, the
+/// next one ends as the error that stopped the rest, and the rows after it
+/// were not attempted.
+pub(crate) fn settle_chained(
+    outcomes: &mut Vec<Option<Attempt>>,
+    slots: &[usize],
+    landed: usize,
+    appended: Result<(), FriendError>,
+) {
+    for i in slots.iter().take(landed) {
+        outcomes[*i] = Some(Attempt::Sent);
+    }
+    if let (Err(e), Some(i)) = (appended, slots.get(landed)) {
+        outcomes[*i] = Some(attempt_of(e));
+        outcomes.truncate(*i + 1);
+    }
+}
+
+/// The outcomes of the attempted prefix.
+pub(crate) fn finish(outcomes: Vec<Option<Attempt>>) -> Vec<Attempt> {
+    outcomes.into_iter().map_while(|o| o).collect()
+}
+
+/// Frame `row` afresh for this attempt. A chain entry's hint carries its
+/// chain seq (live A/B finding 71 refined): assigned now (`assign`), or,
+/// for a re-hint, the one recorded when it was first handed off. A
+/// handed-off entry's frame is sealed with its seq until it lands; a seq
+/// whose framing failed is released, since nothing carries it.
+async fn frame_row(
+    host: &dyn FriendHost,
+    to: &str,
+    row: &RowAttempt<'_>,
+    assign: bool,
+) -> Result<Framed, Attempt> {
+    let body = decode_payload(row.payload).map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
+    let seq = u64::try_from(row.stream_seq).unwrap_or(0);
+    let sent_at_ms = row
+        .sent_at
+        .and_then(|t| u64::try_from(t).ok())
+        .unwrap_or_else(|| host.clock().now_ms());
+    super::stream::published_first(host, to, &body)
+        .await
+        .map_err(attempt_of)?;
+    let chain_seq = match (&body, assign) {
+        (DirectBody::StreamRecord(_), _) => 0,
+        (_, true) => super::chain_seq::assign(host, to, row.stream_seq)
+            .await
+            .map_err(attempt_of)?,
+        (_, false) => super::chain_seq::assigned(host, to, row.stream_seq)
+            .await
+            .map_err(attempt_of)?
+            .unwrap_or(0),
+    };
+    let framed = frame_at(host, to, &body, (seq, chain_seq), sent_at_ms).await;
+    match framed {
+        Ok(Framed::Entry { hint, type_id, .. }) if assign => {
+            let chain = super::chain_seq::seal(host, to, chain_seq, hint.clone())
+                .await
+                .map_err(attempt_of)?;
+            Ok(Framed::Entry {
+                hint,
+                chain,
+                type_id,
+            })
+        }
+        Err(outcome) if assign && chain_seq > 0 => {
+            super::chain_seq::unseal(host, to, chain_seq).await;
+            Err(outcome)
+        }
+        other => other,
+    }
+}
+
+async fn frame_at(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    (stream_seq, chain_seq): (u64, u64),
+    sent_at_ms: u64,
+) -> Result<Framed, Attempt> {
+    let at = super::frame::Position {
+        stream_seq,
+        chain_seq,
+    };
+    let frame = send::stream_frame(host, to, body, at, sent_at_ms)
+        .await
+        .map_err(attempt_of)?;
+    let datagram = super::frame::wire(&frame).map_err(|e| Attempt::Wedged(e.to_string()))?;
+    if matches!(body, DirectBody::StreamRecord(_)) {
+        return Ok(Framed::Record(datagram, frame.type_id));
+    }
+    fits_page(&datagram)?;
+    Ok(Framed::Entry {
+        chain: datagram.clone(),
+        hint: datagram,
+        type_id: frame.type_id,
+    })
+}
+
+#[cfg(test)]
+#[path = "outbox_tests.rs"]
+mod tests;

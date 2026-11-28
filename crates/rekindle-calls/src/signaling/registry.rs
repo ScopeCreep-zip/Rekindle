@@ -27,6 +27,11 @@ pub trait CallRegistry: Send + Sync {
     fn outgoing_to_peer(&self, peer_pubkey_hex: &str) -> Option<CallState>;
     /// Snapshot of all calls (for debug + diagnostics commands).
     fn list_all(&self) -> Vec<CallState>;
+    /// Whether `call_id` was held and removed, and its invite has not yet
+    /// expired: a re-sent `CallInvite` for it (the caller's outbox retries
+    /// until an answer settles it, plan CE3) must not ring again. Every
+    /// [`Self::remove`] records it until the call's `expires_at_ms`.
+    fn ended_recently(&self, call_id: &str) -> bool;
 }
 
 /// Group call registry. Backed by `Mutex<HashMap<call_id, GroupCallState>>`
@@ -52,6 +57,9 @@ pub trait GroupCallRegistry: Send + Sync {
     /// Read-only diagnostic snapshot: returns the participant list +
     /// status + accepted count, omitting the X25519 secret and call_key.
     fn snapshot(&self, call_id: &str) -> Option<GroupCallSnapshot>;
+    /// Every group call's id, for ending them all when the session ends
+    /// (plan C7.27).
+    fn list_ids(&self) -> Vec<String>;
 }
 
 /// Diagnostic-safe snapshot of a `GroupCallState` (no key material).
@@ -63,4 +71,5 @@ pub struct GroupCallSnapshot {
     pub participants: Vec<String>,
     pub accepted_count: usize,
     pub status: GroupCallStatus,
+    pub group_id: Option<String>,
 }

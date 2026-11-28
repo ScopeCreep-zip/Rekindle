@@ -4,31 +4,34 @@
 //! one dispatch task drains the queue, works out the event's
 //! [`Audience`] and hands it to [`crate::event_router::WebviewRouter`],
 //! which sends it on each audience window's channel. Nothing in
-//! `src-tauri` uses Tauri's `Emitter` (ADR 0007, enforced by
+//! `src-tauri` uses Tauri's `Emitter` (ADR 0013, enforced by
 //! `cargo xtask check-no-emitter`).
 //!
 //! The audience is an exhaustive match: a new event variant does not
-//! compile until it says which windows it is for. For a
-//! [`SubscriptionEvent`] the audience follows its Tier 1
-//! [`EventScope`], so the desktop routes the same way the daemon and the
-//! TUI do.
+//! compile until it says which windows it is for. A [`SubscriptionEvent`]'s
+//! audience follows its Tier 1 [`EventScope`], as on the daemon and TUI.
 //!
-//! Journaled events ([`emit_journaled`]) also go into the event journal
-//! with a sequence number. A window that reloads asks for the journaled
-//! events it missed (`subscribe_events` with its last sequence number);
-//! nothing else is ever replayed.
+//! A [`SubscriptionEvent`] is journaled by the in-process host (plan
+//! D3.2), which gives it a cursor; [`spawn_host_stream`] delivers the
+//! host's stream to the windows, and a window that reloads asks the host
+//! for what followed its last cursor (`subscribe_events`). The shell-only
+//! variants (`Lifecycle`, `PairingLinkRefused`, `SettingsSwitchTab`)
+//! and the legacy `Community` shape are delivered live from
+//! the local queue and never replayed; a reloading window reads that
+//! history through `hydrateState()`.
 
+use rekindle_types::dto::infoview::InfoviewEvent;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, EventScope, SubscriptionEvent, TypingContext, TypingEvent,
+    CallEvent, ChannelMessageEvent, EventScope, FriendEvent, MembershipEvent, NetworkEvent,
+    SubscriptionEvent, SystemEvent, TypingContext, TypingEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tokio::sync::mpsc;
 
-use crate::channels::{ChatEvent, CommunityEvent};
-use crate::deep_links::DeepLinkRequest;
+use crate::channels::CommunityEvent;
 use crate::event_router::{Audience, OutboundEnvelope};
 use crate::state::{AppState, SharedState};
 use crate::window_labels::{self as labels, WindowKind};
@@ -44,21 +47,16 @@ pub enum WebviewEvent {
         state: rekindle_lifecycle::LifecycleState,
         at_ms: i64,
     },
-    /// An OS deep link is waiting for the user's consent.
-    DeepLink(DeepLinkRequest),
-    /// Our own profile (name, avatar) changed.
-    ProfileUpdated,
+    /// A pairing link arrived from the OS and was refused: pairing codes
+    /// are accepted only in Settings (plan E3.1, U1).
+    PairingLinkRefused,
     /// Switch the open settings window to a tab.
     SettingsSwitchTab(SettingsTab),
-    /// A community channel message in the desktop's legacy shape, with the
-    /// community it belongs to when the emitter knows it. Plan step E
-    /// moves these emitters onto `ChannelMessageEvent::New`.
-    ChannelChat {
-        community_id: Option<String>,
-        event: ChatEvent,
-    },
     /// A community-window event in the desktop's legacy shape.
     Community(CommunityEvent),
+    /// Show `channel` in the open community window labelled `window` (plan
+    /// E7.2 A: the skin's Show Voice on a community voice session).
+    CommunityFocusChannel { window: String, channel: String },
 }
 
 /// Lifecycle payload, as the login window reads it.
@@ -75,11 +73,10 @@ impl WebviewEvent {
         match self {
             Self::Subscription(e) => subscription_channel(e),
             Self::Lifecycle { .. } => "lifecycle-event",
-            Self::DeepLink(_) => "deep-link-action",
-            Self::ProfileUpdated => "profile-updated",
+            Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
-            Self::ChannelChat { .. } => "chat-event",
             Self::Community(_) => "community-event",
+            Self::CommunityFocusChannel { .. } => "community-focus-channel",
         }
     }
 
@@ -90,11 +87,10 @@ impl WebviewEvent {
                 state: *state,
                 at_ms: *at_ms,
             }),
-            Self::DeepLink(r) => serde_json::to_value(r),
-            Self::ProfileUpdated => Ok(serde_json::Value::Null),
+            Self::PairingLinkRefused => Ok(serde_json::Value::Null),
             Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
-            Self::ChannelChat { event, .. } => serde_json::to_value(event),
             Self::Community(e) => serde_json::to_value(e),
+            Self::CommunityFocusChannel { channel, .. } => serde_json::to_value(channel),
         }
     }
 
@@ -104,25 +100,26 @@ impl WebviewEvent {
         match self {
             Self::Subscription(e) => subscription_audience(e),
             Self::Lifecycle { .. } => Audience::kinds(&WindowKind::ALL),
-            Self::DeepLink(_) => Audience::labels([labels::BUDDY_LIST.to_owned()]),
-            Self::ProfileUpdated => Audience::post_auth(),
+            Self::PairingLinkRefused => Audience::labels([labels::BUDDY_LIST.to_owned()]),
             Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
             // Community windows switch between communities in place, so a
             // community's events go to every one of them (each filters by
-            // its selection) and to the buddy list's community list. A
-            // channel message whose community the emitter does not know
-            // can only go there too.
-            Self::ChannelChat { .. } | Self::Community(_) => communities(),
+            // its selection) and to the buddy list's community list.
+            Self::Community(_) => communities(),
+            Self::CommunityFocusChannel { window, .. } => Audience::labels([window.clone()]),
         }
     }
 
     /// The envelope a window receives, or `None` if the payload does not
     /// serialize (logged; such an event reaches no one).
     #[must_use]
-    pub fn envelope(&self, seq: Option<u64>) -> Option<OutboundEnvelope> {
+    pub fn envelope(
+        &self,
+        cursor: Option<rekindle_types::subscription_events::Cursor>,
+    ) -> Option<OutboundEnvelope> {
         match self.payload() {
             Ok(payload) => Some(OutboundEnvelope {
-                seq,
+                cursor,
                 channel: self.channel(),
                 payload,
             }),
@@ -146,16 +143,91 @@ fn buddy_list() -> Audience {
 
 fn subscription_audience(event: &SubscriptionEvent) -> Audience {
     match event {
-        // One OS notification, one inbox, one ring: the buddy list owns them.
+        // Every window shows the skin, the login window included (plan
+        // E7.7.2): each swaps its stylesheet.
+        SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => {
+            Audience::kinds(&WindowKind::ALL)
+        }
+        // "Keep this skin?" is asked where skins are chosen: Settings →
+        // Appearance renders it from the payload (plan E7.7.2). The quick
+        // wipe's state shows in Settings → Privacy, where it is armed (plan
+        // E7.1); the shell's own registration follows it in `shell_session`.
+        SubscriptionEvent::System(
+            SystemEvent::SkinTrialChanged { .. } | SystemEvent::QuickWipeChanged { .. },
+        ) => Audience::kinds(&[WindowKind::Settings]),
+        // A skin a window could not apply goes to that window, by label,
+        // and to Settings, where skins are chosen and a trial ends (plan
+        // SK2-T1).
+        SubscriptionEvent::System(SystemEvent::SkinApplyFailed { window, .. }) => {
+            Audience::labels([window.clone()]).with_kinds(&[WindowKind::Settings])
+        }
+        SubscriptionEvent::System(
+            // The Infoview shows the feed: the buddy list's and each chat
+            // window's (plan E7.15, design §2.1).
+            SystemEvent::ActivityAppended { .. }
+            // The Servers view (plan E7.2 G3): the buddy list's Servers tab
+            // (`EngineView::Servers`) and every chat window's skin tree, the
+            // windows the Infoview's feed reaches.
+            | SystemEvent::ServersViewChanged { .. },
+        ) => buddy_list().with_kinds(&[WindowKind::Chat]),
+        // Each goes to the one window it names, by label (ADR 0013):
+        // - a window's Infoview, asked with its own label (`commands::infoview`);
+        // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
+        //   another chat window's set names another friend's capabilities;
+        // - a view switch pressed in a popup, addressed by the Host to its
+        //   launcher (plan SK2-N4).
+        SubscriptionEvent::System(
+            SystemEvent::Infoview(InfoviewEvent::Updated { window, .. })
+            | SystemEvent::SkinSignals { window, .. }
+            | SystemEvent::SkinShell { window, .. },
+        ) => Audience::labels([window.clone()]),
+        // One OS notification, one inbox, one ring, one review of an action
+        // the backend began: the buddy list owns them. So does the Downloads
+        // view (`EngineView::Files`), where its skin's download capabilities
+        // fold (plan E7.2 G12).
         SubscriptionEvent::Notification(_)
+        | SubscriptionEvent::Transfer(_)
+        | SubscriptionEvent::IntentPending(_)
         | SubscriptionEvent::ChannelMessage(ChannelMessageEvent::ConversationFocusRequested {
             ..
         }) => buddy_list(),
-        // The call's own window, the buddy list, and the chat and DM
-        // windows (each shows the call with its peer).
+        // Our own mute names no call: the buddy list, every call window
+        // and every chat window show our mute control (lead decision 58).
+        SubscriptionEvent::Call(CallEvent::SelfMuteChanged { .. }) => {
+            buddy_list().with_kinds(&[WindowKind::Call, WindowKind::Chat])
+        }
+        // The call's own window, the buddy list, and the chat windows
+        // (each shows the call with its peer).
         SubscriptionEvent::Call(e) => buddy_list()
-            .with_labels(labels::call_label_for(e.call_id()))
-            .with_kinds(&[WindowKind::Chat, WindowKind::Dm]),
+            .with_labels(labels::call_label_for(e.call_id().unwrap_or_default()))
+            .with_kinds(&[WindowKind::Chat]),
+        // Whether our own records are published gates what names them: the
+        // buddy list's invite and public-key tabs and intent dialog, and
+        // every chat window's composer (plan FC3). Each post-login window
+        // keeps it in its network store; the login window has nothing to
+        // gate.
+        SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. }) => Audience::post_auth(),
+        // A join withdrawn after it returned (plan E3.1/JN1) drops the
+        // community from every window that may show it: the buddy list's
+        // communities, its own community window, and any other post-login
+        // window holding it in its store.
+        SubscriptionEvent::Membership(MembershipEvent::JoinWithdrawn { .. }) => {
+            Audience::post_auth()
+        }
+        // A route class down or back (plan RV1g): every window shows
+        // "Unreachable — retrying since …" or clears it.
+        SubscriptionEvent::Network(
+            NetworkEvent::OwnRouteDown { .. } | NetworkEvent::OwnRouteUp { .. },
+        ) => Audience::kinds(&WindowKind::ALL),
+        // A co-creation's end closes the creation's status view, in the
+        // Create Community dialog of the buddy list or a community window
+        // (plan E3.2 S7s.3g). Our leave, withdrawn join or Forget (plan
+        // E3.2): every window holding the community list drops the
+        // community, though the community's scope is already torn down.
+        SubscriptionEvent::Friend(FriendEvent::CoCreationFinished { .. })
+        | SubscriptionEvent::Membership(
+            rekindle_types::subscription_events::MembershipEvent::Forgotten { .. },
+        ) => communities(),
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
@@ -168,8 +240,8 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
                     audience
                 }
             }
-            EventScope::Conversation(record) => {
-                buddy_list().with_labels(labels::conversation_label(&record))
+            EventScope::Conversation(group) => {
+                buddy_list().with_labels(labels::conversation_label(&group))
             }
             EventScope::Call(id) => buddy_list().with_labels(labels::call_label_for(&id)),
         },
@@ -183,6 +255,16 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
 fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
     match event {
         SubscriptionEvent::Presence(_) => "presence-event",
+        // Every window applies it, not only the community dispatcher.
+        SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => "skin-event",
+        SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => "skin-trial-event",
+        SubscriptionEvent::System(SystemEvent::SkinApplyFailed { .. }) => "skin-apply-event",
+        SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
+        SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
+        SubscriptionEvent::System(SystemEvent::ServersViewChanged { .. }) => "servers-event",
+        SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",
+        SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
+        SubscriptionEvent::System(SystemEvent::SkinShell { .. }) => "skin-shell-event",
         SubscriptionEvent::Voice(_) => "voice-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the
@@ -190,7 +272,12 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::New { .. }
             | ChannelMessageEvent::Edited { .. }
-            | ChannelMessageEvent::Deleted { .. },
+            | ChannelMessageEvent::Deleted { .. }
+            | ChannelMessageEvent::ChannelSendStatus { .. }
+            | ChannelMessageEvent::ChannelHistoryGap { .. }
+            | ChannelMessageEvent::ChannelHistoryGapClosed { .. }
+            | ChannelMessageEvent::AttachmentDownloaded { .. }
+            | ChannelMessageEvent::ExpressionAssetReady { .. },
         )
         | SubscriptionEvent::Typing(
             TypingEvent::Started {
@@ -209,45 +296,62 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         // System events (announcements, raids, automod, lockdowns, sync,
         // audit) are handled by the community dispatcher.
         | SubscriptionEvent::System(_)
-        | SubscriptionEvent::UnreadChanged { .. } => "community-event",
-        SubscriptionEvent::ChannelMessage(_)
+        | SubscriptionEvent::UnreadChanged {
+            context: rekindle_types::subscription_events::UnreadContext::Channel { .. },
+            ..
+        } => "community-event",
+        // A DM's or the friend requests' unread count goes to the friend
+        // and chat handlers.
+        SubscriptionEvent::UnreadChanged { .. }
+        | SubscriptionEvent::ChannelMessage(_)
         | SubscriptionEvent::Typing(_)
         | SubscriptionEvent::Call(_)
-        | SubscriptionEvent::Friend(_) => "chat-event",
+        | SubscriptionEvent::Friend(_)
+        | SubscriptionEvent::GroupDm(_) => "chat-event",
         SubscriptionEvent::Notification(_) => "notification-event",
+        SubscriptionEvent::IntentPending(_) => "intent-event",
         SubscriptionEvent::Network(_) => "network-status",
+        SubscriptionEvent::Transfer(_) => "transfer-event",
     }
 }
 
-/// An event waiting for the dispatch task.
-struct Queued {
-    seq: Option<u64>,
-    event: WebviewEvent,
-}
+/// How many local events wait for the dispatch task.
+const QUEUE_CAPACITY: usize = 4096;
 
-/// The single dispatch queue. Emitters push; one task drains.
+/// The local dispatch queue (shell-only and legacy events). Emitters push;
+/// one task drains. It is bounded: when it is full the event is dropped and
+/// every window is told to reload (its history is in the database).
 pub struct EventDispatch {
-    tx: mpsc::UnboundedSender<Queued>,
-    rx_holder: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<Queued>>>,
+    tx: mpsc::Sender<WebviewEvent>,
+    rx_holder: parking_lot::Mutex<Option<mpsc::Receiver<WebviewEvent>>>,
+    overflowed: std::sync::atomic::AtomicBool,
 }
 
 impl EventDispatch {
     /// A queue that buffers until [`spawn_dispatch_loop`] takes it.
     #[must_use]
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(QUEUE_CAPACITY);
         Self {
             tx,
             rx_holder: parking_lot::Mutex::new(Some(rx)),
+            overflowed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
-    fn take_receiver(&self) -> Option<mpsc::UnboundedReceiver<Queued>> {
+    fn take_receiver(&self) -> Option<mpsc::Receiver<WebviewEvent>> {
         self.rx_holder.lock().take()
     }
 
-    fn enqueue(&self, seq: Option<u64>, event: WebviewEvent) {
-        let _ = self.tx.send(Queued { seq, event });
+    fn enqueue(&self, event: WebviewEvent) {
+        if let Err(mpsc::error::TrySendError::Full(event)) = self.tx.try_send(event) {
+            tracing::warn!(
+                channel = event.channel(),
+                "event queue full; windows reload"
+            );
+            self.overflowed
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -257,25 +361,104 @@ impl Default for EventDispatch {
     }
 }
 
-/// Start the dispatch task: each event goes to the windows in its
-/// audience, and an event the notification policy picks also becomes an
-/// OS notification (`os_notify`).
-pub fn spawn_dispatch_loop(app: AppHandle, state: &Arc<AppState>) {
+/// Start the local dispatch task: each event goes to the windows in its
+/// audience. A dropped event (full queue) makes every window reload.
+pub fn spawn_dispatch_loop(state: &Arc<AppState>) {
     let Some(mut rx) = state.event_dispatch.take_receiver() else {
         tracing::warn!("spawn_dispatch_loop: receiver already taken — duplicate setup?");
         return;
     };
     let state = Arc::clone(state);
     tauri::async_runtime::spawn(async move {
-        while let Some(Queued { seq, event }) = rx.recv().await {
-            if let WebviewEvent::Subscription(e) = &event {
-                crate::os_notify::notify(&app, &state, e);
+        while let Some(event) = rx.recv().await {
+            if state
+                .event_dispatch
+                .overflowed
+                .swap(false, std::sync::atomic::Ordering::Relaxed)
+            {
+                state
+                    .event_router
+                    .deliver_all(&OutboundEnvelope::invalid_session());
             }
-            if let Some(envelope) = event.envelope(seq) {
+            if let Some(envelope) = event.envelope(None) {
                 state.event_router.deliver(&envelope, &event.audience());
             }
         }
         tracing::debug!("event-dispatch loop exited (channel closed)");
+    });
+}
+
+/// Deliver the host's event stream to the windows (plan D3.2): each event
+/// to its audience with its cursor, and each event the notification policy
+/// picks as an OS notification. `InvalidSession` (a new epoch at login or
+/// logout, or this task fell behind) makes every window reload; the stream
+/// is then taken again, live.
+pub fn spawn_host_stream(
+    app: AppHandle,
+    state: &Arc<AppState>,
+    host: Arc<rekindle_node::host::Host>,
+) {
+    use rekindle_ipc::HostApi as _;
+    use rekindle_types::subscription_events::StreamFrame;
+    let state = Arc::clone(state);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let mut stream = match host.subscribe(None).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    tracing::error!(error = %e, "the host's event stream did not open");
+                    return;
+                }
+            };
+            while let Some(frame) = stream.next().await {
+                match frame {
+                    StreamFrame::Event(sequenced) => {
+                        crate::state_helpers::project_own(&state, &sequenced.event);
+                        if let rekindle_types::subscription_events::SubscriptionEvent::Presence(
+                            rekindle_types::subscription_events::PresenceEvent::SelfChanged {
+                                snapshot,
+                                ..
+                            },
+                        ) = &sequenced.event
+                        {
+                            if let Some(status) = snapshot
+                                .status
+                                .as_deref()
+                                .and_then(|s| serde_json::from_value(s.into()).ok())
+                            {
+                                crate::tray::show_status(&app, Some(status));
+                            }
+                        }
+                        crate::os_notify::notify(&app, &state, &sequenced.event);
+                        crate::services::community::notify_stored_post(
+                            &app,
+                            &state,
+                            &sequenced.event,
+                        );
+                        crate::windows::follow_event(&app, &state, &sequenced.event);
+                        let event = WebviewEvent::Subscription(sequenced.event);
+                        if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
+                            state.event_router.deliver(&envelope, &event.audience());
+                        }
+                    }
+                    StreamFrame::InvalidSession => state
+                        .event_router
+                        .deliver_all(&OutboundEnvelope::invalid_session()),
+                    StreamFrame::Resumed(_) => {}
+                    // The stream ends here. After a wipe the GUI clears its
+                    // webviews and exits (plan E7.1); any other stop is the
+                    // GUI's own quit, already under way.
+                    StreamFrame::HostStopping { reason } => {
+                        if reason == rekindle_types::subscription_events::StopReason::DataWiped {
+                            crate::shutdown::exit_after_wipe(&app);
+                        }
+                        return;
+                    }
+                }
+            }
+            // The stream ended after an `InvalidSession` (this task fell
+            // behind): take it again, live.
+        }
     });
 }
 
@@ -291,15 +474,14 @@ pub fn emit(app: &AppHandle, event: WebviewEvent) {
     }
 }
 
-/// Send `event` to its audience, for callers that hold the state.
+/// Send `event` to its audience, for callers that hold the state: a
+/// [`SubscriptionEvent`] through the host's journal, the rest through the
+/// local queue.
 pub fn emit_from_state(state: &AppState, event: WebviewEvent) {
-    state.event_dispatch.enqueue(None, event);
-}
-
-/// Journal `event` (so a reloading window can recover it), then send it.
-pub fn emit_journaled(state: &AppState, event: WebviewEvent) {
-    let seq = state.event_journal.append(event.clone());
-    state.event_dispatch.enqueue(Some(seq), event);
+    match event {
+        WebviewEvent::Subscription(event) => state.host.publish(event),
+        other => state.event_dispatch.enqueue(other),
+    }
 }
 
 /// Send a shared-vocabulary event, live.
@@ -327,10 +509,25 @@ pub fn emit_membership(
 }
 
 /// Send a call-signalling event.
-pub fn emit_call(app: &AppHandle, event: rekindle_types::subscription_events::CallEvent) {
+pub fn emit_call(app: &AppHandle, event: CallEvent) {
     emit(
         app,
         WebviewEvent::Subscription(SubscriptionEvent::Call(event)),
+    );
+}
+
+/// Our own microphone mute changed (the mute button or the mute
+/// shortcut): a [`CallEvent::SelfMuteChanged`] on the call-event path,
+/// which the Host's skin signals fold into `MuteSelf`/`UnmuteSelf` (lead
+/// decision 58).
+pub fn emit_self_muted(state: &AppState, muted: bool) {
+    let timestamp_ms = rekindle_utils::timestamp_ms();
+    emit_from_state(
+        state,
+        WebviewEvent::Subscription(SubscriptionEvent::Call(CallEvent::SelfMuteChanged {
+            muted,
+            timestamp_ms,
+        })),
     );
 }
 
@@ -350,131 +547,54 @@ pub fn emit_community(app: &AppHandle, event: CommunityEvent) {
     emit(app, WebviewEvent::Community(event));
 }
 
-/// The journaled events after `since` that a window labelled `label` would
-/// have received, as envelopes.
+/// A reloading window's replay from `from` (plan D3.2): the journaled
+/// events after it that were addressed to `label`, then `Resumed`; or
+/// `InvalidSession`, when the host cannot serve the cursor.
 #[must_use]
-pub fn replay_for(state: &AppState, label: &str, since: u64) -> Vec<OutboundEnvelope> {
-    state
-        .event_journal
-        .replay_since(since)
+pub fn replay_for(
+    host: &rekindle_node::host::Host,
+    label: &str,
+    from: rekindle_types::subscription_events::Cursor,
+) -> Vec<OutboundEnvelope> {
+    use rekindle_types::subscription_events::StreamFrame;
+    host.replay(from)
         .into_iter()
-        .filter(|entry| entry.event.audience().includes(label))
-        .filter_map(|entry| entry.event.envelope(Some(entry.cursor)))
+        .filter_map(|frame| match frame {
+            StreamFrame::Event(sequenced) => {
+                let event = WebviewEvent::Subscription(sequenced.event);
+                event
+                    .audience()
+                    .includes(label)
+                    .then(|| event.envelope(Some(sequenced.cursor)))
+                    .flatten()
+            }
+            StreamFrame::Resumed(cursor) => Some(OutboundEnvelope::resumed(cursor)),
+            StreamFrame::InvalidSession => Some(OutboundEnvelope::invalid_session()),
+            // Never journaled, so a replay never holds it.
+            StreamFrame::HostStopping { .. } => None,
+        })
+        .collect()
+}
+
+/// The session's standing events addressed to `label`, with their cursors
+/// (plan E7.1): what a window that just opened is handed before its live
+/// events, so a security alert raised at unlock, before the window
+/// subscribed, still reaches it.
+#[must_use]
+pub fn standing_for(host: &rekindle_node::host::Host, label: &str) -> Vec<OutboundEnvelope> {
+    host.standing()
+        .into_iter()
+        .filter_map(|sequenced| {
+            let event = WebviewEvent::Subscription(sequenced.event);
+            event
+                .audience()
+                .includes(label)
+                .then(|| event.envelope(Some(sequenced.cursor)))
+                .flatten()
+        })
         .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rekindle_types::subscription_events::{
-        CallEvent, MembershipEvent, NotificationEvent, PresenceEvent, PresenceSnapshot, VoiceEvent,
-        VoiceScope,
-    };
-
-    const PK: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
-    const CALL: &str = "0123456789abcdef0123456789abcdef";
-    const REC: &str = "VLD0:um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
-
-    fn sub(e: SubscriptionEvent) -> Audience {
-        WebviewEvent::Subscription(e).audience()
-    }
-
-    #[test]
-    fn notifications_belong_to_the_buddy_list_only() {
-        let a = sub(SubscriptionEvent::Notification(
-            NotificationEvent::SystemAlert {
-                title: "t".into(),
-                body: "b".into(),
-            },
-        ));
-        assert!(a.includes("buddy-list"));
-        assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
-        assert!(!a.includes("settings"));
-    }
-
-    #[test]
-    fn a_direct_message_reaches_its_chat_window_only() {
-        let a = sub(SubscriptionEvent::ChannelMessage(
-            ChannelMessageEvent::DirectMessageAcknowledged {
-                message_id: 1,
-                conversation_id: PK.into(),
-            },
-        ));
-        assert!(a.includes("buddy-list"));
-        assert!(a.includes("chat-3f1a9c0b7e2d4f6a"));
-        assert!(!a.includes("chat-0000000000000000"));
-        assert!(!a.includes("community-browser"));
-    }
-
-    #[test]
-    fn group_dms_reach_their_dm_window() {
-        let a = sub(SubscriptionEvent::ChannelMessage(
-            ChannelMessageEvent::DirectMessageReceived {
-                peer_key: PK.into(),
-                timestamp: 1,
-                sender_name: None,
-                body: None,
-                decryption_failed: false,
-                automod_blurred: false,
-                conversation_id: REC.into(),
-                server_message_id: None,
-                reply_to_id: None,
-            },
-        ));
-        assert!(a.includes(&labels::conversation_label(REC).unwrap()));
-        assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
-    }
-
-    #[test]
-    fn joins_reach_every_community_window() {
-        let a = sub(SubscriptionEvent::Membership(
-            MembershipEvent::JoinProgress {
-                community: REC.into(),
-                stage: String::new(),
-                status: String::new(),
-            },
-        ));
-        assert!(a.includes("community-browser"));
-        assert!(a.includes("buddy-list"));
-        assert!(!a.includes("settings"));
-    }
-
-    #[test]
-    fn calls_reach_their_window_and_conversation_windows() {
-        let a = sub(SubscriptionEvent::Call(CallEvent::Ringing {
-            call_id: CALL.into(),
-        }));
-        assert!(a.includes("buddy-list"));
-        assert!(a.includes("call-0123456789ab"));
-        assert!(!a.includes("call-ffffffffffff"));
-        assert!(a.includes("chat-3f1a9c0b7e2d4f6a"));
-        assert!(!a.includes("community-browser"));
-        let voice = sub(SubscriptionEvent::Voice(VoiceEvent::LocalJoined {
-            scope: VoiceScope::Dm {
-                peer_key: PK.into(),
-            },
-        }));
-        assert!(voice.includes("call-0123456789ab"));
-    }
-
-    #[test]
-    fn device_events_reach_every_post_login_window() {
-        let a = sub(SubscriptionEvent::Presence(PresenceEvent::SelfChanged {
-            public_key: PK.into(),
-            snapshot: PresenceSnapshot::default(),
-        }));
-        assert!(a.includes("settings"));
-        assert!(!a.includes("login"));
-    }
-
-    #[test]
-    fn system_events_ride_the_community_channel() {
-        let e = WebviewEvent::Subscription(SubscriptionEvent::System(
-            rekindle_types::subscription_events::SystemEvent::RaidAlert {
-                community: REC.into(),
-                active: true,
-            },
-        ));
-        assert_eq!(e.channel(), "community-event");
-    }
-}
+#[path = "event_dispatch_tests.rs"]
+mod tests;

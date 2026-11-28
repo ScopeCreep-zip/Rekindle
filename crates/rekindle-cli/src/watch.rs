@@ -1,11 +1,12 @@
 //! Streaming commands: subscribe, print each matching event, stop on
-//! Ctrl-C (`channel watch`, `dm watch`, `voice join --watch`).
+//! Ctrl-C (`channel watch`, `community watch`, `dm watch`,
+//! `voice join --watch`).
 //!
 //! Text mode prints one line per event; `--format json|jsonl` and
 //! `--script` print each event as one JSON line, for pipelines.
 
 use rekindle_client::DaemonClient;
-use rekindle_types::subscription_events::{SubscriptionEvent, SubscriptionFilter};
+use rekindle_types::subscription_events::{StreamFrame, SubscriptionEvent, SubscriptionFilter};
 
 use crate::output::{format, OutputMode};
 
@@ -23,16 +24,31 @@ pub async fn stream(
     let mut events = client
         .take_event_receiver()
         .ok_or_else(|| anyhow::anyhow!("this connection's event stream is already in use"))?;
-    client.subscribe(filters).await?;
+    client.subscribe(filters, None).await?;
     loop {
+        // Biased, Ctrl-C first: an interrupt beside a queued event stops
+        // the watch at once; a busy stream cannot hold Ctrl-C off.
         tokio::select! {
+            biased;
             interrupt = tokio::signal::ctrl_c() => {
                 interrupt?;
                 return Ok(());
             }
-            event = events.recv() => {
-                let Some(event) = event else {
-                    anyhow::bail!("the daemon closed the connection");
+            frame = events.recv() => {
+                let event = match frame {
+                    None => anyhow::bail!("the daemon closed the connection"),
+                    Some(StreamFrame::Event(sequenced)) => sequenced.event,
+                    // A watch keeps no state to reload (plan D3.2).
+                    Some(StreamFrame::InvalidSession) => anyhow::bail!(
+                        "the event stream was reset (the identity was locked, or this watch \
+                         fell behind); run it again"
+                    ),
+                    Some(StreamFrame::Resumed(_)) => continue,
+                    // The daemon is stopping; the watch ends with it.
+                    Some(StreamFrame::HostStopping { reason }) => {
+                        tracing::info!(?reason, "the daemon is stopping");
+                        return Ok(());
+                    }
                 };
                 let Some(line) = render(&event) else { continue };
                 if mode.is_structured() {

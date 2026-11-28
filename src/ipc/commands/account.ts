@@ -1,96 +1,98 @@
-import { invoke } from "../invoke";
+import { hostInvoke } from "../invoke";
 import type {
-  FriendInfo, IdentitySummary, LoginResult, Message,
-} from "./types";
+  BlockedUser,
+  FriendCodeView,
+  FriendInviteCreated,
+  IdentityShown,
+  IdentitySummary,
+  IdentityView,
+  OutgoingInvite,
+  PendingRequest,
+  SafetyNumberView,
+} from "./dto";
+import type { DmMessage } from "./dto_dm";
+import type { FriendInfo } from "./types";
 
 export const accountCommands = {
-  // Auth
+  // Identity: Host calls (plan E1.1). A blank name is no name: the Host
+  // names the identity `User_` and its key's first characters.
   createIdentity: (passphrase: string, displayName?: string) =>
-    invoke<LoginResult>("create_identity", { passphrase, displayName: displayName ?? null }),
+    hostInvoke<IdentityView>("create_identity", {
+      passphrase,
+      displayName: displayName?.trim() ? displayName.trim() : null,
+    }),
   login: (publicKey: string, passphrase: string) =>
-    invoke<LoginResult>("login", { publicKey, passphrase }),
-  getIdentity: () => invoke<LoginResult | null>("get_identity"),
-  logout: () => invoke<void>("logout"),
-  listIdentities: () => invoke<IdentitySummary[]>("list_identities"),
-  deleteIdentity: (publicKey: string, passphrase: string) =>
-    invoke<void>("delete_identity", { publicKey, passphrase }),
+    hostInvoke<IdentityView>("login", { publicKey, passphrase }),
+  getIdentity: () => hostInvoke<IdentityShown | null>("get_identity"),
+  logout: () => hostInvoke<unknown>("logout"),
+  listIdentities: () => hostInvoke<IdentitySummary[]>("list_identities"),
+  /** Protected: the Host asks for the identity's passphrase in the review. */
+  deleteIdentity: (publicKey: string) => hostInvoke<unknown>("delete_identity", { publicKey }),
 
-  // Chat
-  prepareChatSession: (peerId: string) =>
-    invoke<void>("prepare_chat_session", { peerId }),
-  sendMessage: (to: string, body: string, idempotencyKey?: string) =>
-    invoke<void>("send_message", {
-      to,
-      body,
-      // Phase 8 — idempotency key dedupes click-spam. Caller may pass
-      // their own (e.g. a retry uses the SAME key to short-circuit);
-      // default is a fresh UUID per call.
-      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
-    }),
+  // Direct messages and friends: Host calls (plan E2.1). The windows learn
+  // their effects from the `Friend`/`ChannelMessage` events.
+  /** Resolves with the stored message (`sendState: "sent"`); a failed send
+   *  rejects, and its stored row reads `failed` in the history. */
+  sendMessage: (to: string, body: string, replyTo: string | null = null) =>
+    hostInvoke<DmMessage>("send_message", { to, body, replyTo }),
+  /** Sends our failed message again by its client id; the Host re-frames
+   *  the stored row, stores no new one, and publishes its new state. */
+  outboxRetry: (clientId: string) => hostInvoke<null>("outbox_retry", { clientId }),
+  outboxDiscard: (clientId: string) => hostInvoke<null>("outbox_discard", { clientId }),
   sendTyping: (peerId: string, typing: boolean) =>
-    invoke<void>("send_typing", { peerId, typing }),
-  getMessageHistory: (peerId: string, limit: number) =>
-    invoke<Message[]>("get_message_history", { peerId, limit }),
-  markRead: (peerId: string) => invoke<void>("mark_read", { peerId }),
+    hostInvoke<unknown>("send_typing", { peerId, typing }),
+  getMessageHistory: (peerId: string, limit: number, before?: number) =>
+    hostInvoke<DmMessage[]>("get_message_history", { peerId, limit, before: before ?? null }),
+  markRead: (peerId: string, renderedThrough: string | null) =>
+    hostInvoke<unknown>("mark_read", { peerId, renderedThrough }),
 
-  // Friends
-  addFriend: (
-    publicKey: string,
-    displayName: string,
-    message: string,
-    idempotencyKey?: string,
-  ) =>
-    invoke<void>("add_friend", {
-      publicKey,
-      displayName,
-      message,
-      // Phase 8 — idempotency key dedupes click-spam. Default is a
-      // fresh UUID per call; retries should pass the SAME key to
-      // short-circuit to the cached result.
-      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
-    }),
-  removeFriend: (publicKey: string) =>
-    invoke<void>("remove_friend", { publicKey }),
-  acceptRequest: (publicKey: string, displayName: string) =>
-    invoke<void>("accept_request", { publicKey, displayName }),
-  rejectRequest: (publicKey: string) =>
-    invoke<void>("reject_request", { publicKey }),
-  getFriends: () => invoke<FriendInfo[]>("get_friends"),
-  getPendingRequests: () =>
-    invoke<{ publicKey: string; displayName: string; message: string; receivedAt: number }[]>(
-      "get_pending_requests",
-    ),
+  addFriendFromCode: (code: string, message: string) =>
+    hostInvoke<unknown>("add_friend_from_code", { code, message }),
+  getFriendCode: () => hostInvoke<FriendCodeView>("get_friend_code"),
+  /** Reviewed by the Host (Consequential): codes already shared stop
+   *  working; resolves with the new code. */
+  rotateFriendToken: () => hostInvoke<FriendCodeView>("rotate_friend_token"),
+  removeFriend: (publicKey: string) => hostInvoke<unknown>("remove_friend", { publicKey }),
+  acceptRequest: (publicKey: string) => hostInvoke<unknown>("accept_request", { publicKey }),
+  rejectRequest: (publicKey: string) => hostInvoke<unknown>("reject_request", { publicKey }),
+  getFriends: () => hostInvoke<FriendInfo[]>("get_friends"),
+  getPendingRequests: () => hostInvoke<PendingRequest[]>("get_pending_requests"),
   createFriendGroup: (name: string) =>
-    invoke<number>("create_friend_group", { name }),
+    hostInvoke<{ groupId: number }>("create_friend_group", { name }),
   renameFriendGroup: (groupId: number, name: string) =>
-    invoke<void>("rename_friend_group", { groupId, name }),
+    hostInvoke<unknown>("rename_friend_group", { groupId, name }),
+  deleteFriendGroup: (groupId: number) => hostInvoke<unknown>("delete_friend_group", { groupId }),
 
   /** Set (or clear, with null) the local alias shown for one friend.
    *  Distinct from `setNickname`, which changes the user's own display
    *  name — this is the per-friend alias the buddy list renders. */
   setFriendNickname: (publicKey: string, nickname: string | null) =>
-    invoke<void>("set_friend_nickname", { publicKey, nickname }),
+    hostInvoke<unknown>("set_friend_nickname", { publicKey, nickname }),
   moveFriendToGroup: (publicKey: string, groupId: number | null) =>
-    invoke<void>("move_friend_to_group", { publicKey, groupId }),
-  generateInvite: () =>
-    invoke<{ url: string; inviteId: string }>("generate_invite"),
+    hostInvoke<unknown>("move_friend_to_group", { publicKey, groupId }),
+  generateInvite: () => hostInvoke<FriendInviteCreated>("generate_invite"),
+  /** Reviewed with the inviter's key fingerprint before it runs. */
   addFriendFromInvite: (inviteString: string) =>
-    invoke<void>("add_friend_from_invite", { inviteString }),
-  cancelInvite: (inviteId: string) =>
-    invoke<void>("cancel_invite", { inviteId }),
-  getOutgoingInvites: () =>
-    invoke<{ inviteId: string; url: string; createdAt: number; expiresAt: number; status: string; acceptedBy: string | null }[]>(
-      "get_outgoing_invites",
-    ),
-  blockUser: (publicKey: string, displayName?: string) =>
-    invoke<void>("block_user", { publicKey, displayName: displayName ?? null }),
-  unblockUser: (publicKey: string) =>
-    invoke<void>("unblock_user", { publicKey }),
-  getBlockedUsers: () =>
-    invoke<{ publicKey: string; displayName: string; blockedAt: number }[]>("get_blocked_users"),
-  cancelRequest: (publicKey: string) =>
-    invoke<void>("cancel_request", { publicKey }),
-  emitFriendsPresence: () =>
-    invoke<void>("emit_friends_presence"),
+    hostInvoke<unknown>("add_friend_from_invite", { inviteString }),
+  cancelInvite: (inviteId: string) => hostInvoke<unknown>("cancel_invite", { inviteId }),
+  getOutgoingInvites: () => hostInvoke<OutgoingInvite[]>("get_outgoing_invites"),
+  blockUser: (publicKey: string) => hostInvoke<unknown>("block_user", { publicKey }),
+  unblockUser: (publicKey: string) => hostInvoke<unknown>("unblock_user", { publicKey }),
+  getBlockedUsers: () => hostInvoke<BlockedUser[]>("get_blocked_users"),
+  cancelRequest: (publicKey: string) => hostInvoke<unknown>("cancel_request", { publicKey }),
+  retryHandshake: (publicKey: string) => hostInvoke<unknown>("retry_handshake", { publicKey }),
+  /** TrustChanging: the review shows whose session it is; the friend
+   *  compares safety numbers before accepting. */
+  resetSignalSession: (peerPublicKey: string) =>
+    hostInvoke<unknown>("reset_signal_session", { peerPublicKey }),
 
+  // Safety numbers and verification (plan E2.3).
+  getSafetyNumber: (publicKey: string) =>
+    hostInvoke<SafetyNumberView>("get_safety_number", { publicKey }),
+  /** TrustChanging: the review states the safety number the user compared. */
+  markIdentityVerified: (publicKey: string) =>
+    hostInvoke<unknown>("mark_identity_verified", { publicKey }),
+  /** TrustChanging: the review states the safety number. */
+  clearIdentityVerification: (publicKey: string) =>
+    hostInvoke<unknown>("clear_identity_verification", { publicKey }),
 };

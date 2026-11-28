@@ -12,76 +12,11 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use crate::services::gossip_adapter::deps_impl::build_adapter;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
-
-/// Send one envelope to exactly one member.
-///
-/// Distinct from [`send_to_channel_peers`] below, which is bound to the
-/// active voice session — this one takes the peer explicitly and is for
-/// directed replies: answering a specific asker rather than telling the
-/// community. The crate-level fan-out it delegates to forces `ttl = 0`,
-/// so an honest receiver never gossip-forwards the reply onward.
-pub async fn send_to_member(
-    state: &SharedState,
-    pool: &rekindle_db::Db,
-    community_id: &str,
-    peer_pseudonym: &str,
-    envelope: &CommunityEnvelope,
-) -> Result<(), String> {
-    let route_blob = crate::services::community::routes::resolve_member_route(
-        state,
-        pool,
-        community_id,
-        peer_pseudonym,
-    )
-    .await
-    .ok_or_else(|| format!("no route for {peer_pseudonym}"))?;
-
-    let adapter = build_adapter(state).ok_or("app handle / db pool unavailable")?;
-    rekindle_gossip::send_to_channel_peers(
-        Arc::new(adapter),
-        community_id,
-        envelope,
-        vec![rekindle_gossip::PeerInfo {
-            pseudonym_key: peer_pseudonym.to_string(),
-            route_blob,
-        }],
-    )
-    .await
-    .map_err(|e| e.to_string())
-}
-
-/// Sign + dedup + bump lamport + fan out. Returns `Err` if the app
-/// handle / Db can't be acquired; transport failures are
-/// best-effort and recorded as reliability + delivery rows inside
-/// the orchestrator.
-pub fn send_to_mesh(
-    state: &SharedState,
-    community_id: &str,
-    envelope: &CommunityEnvelope,
-) -> Result<(), String> {
-    let Some(adapter) = build_adapter(state) else {
-        return Err("app handle / db pool unavailable".to_string());
-    };
-    let adapter = Arc::new(adapter);
-    let cid = community_id.to_string();
-    let env = envelope.clone();
-    // Pre-port src-tauri `send_to_mesh` was sync (returned `Result`).
-    // The crate orchestrator is async because trait methods are async;
-    // every caller already runs on a tokio worker, so spawn the
-    // pipeline and return immediately — preserves the prior
-    // fire-and-forget semantics (pipeline errors are logged inside).
-    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop("mesh send", async move {
-        if let Err(error) = rekindle_gossip::send_to_mesh(adapter, &cid, &env).await {
-            tracing::warn!(community = %cid, %error, "send_to_mesh: pipeline error");
-        }
-    });
-    Ok(())
-}
 
 /// Architecture §10.6 — directed channel-scoped send for voice/video
 /// media and its per-stream control traffic. Resolves the recipient
@@ -163,16 +98,53 @@ pub fn send_to_channel_peers(
     Ok(())
 }
 
-/// Fan out a pre-signed envelope. Used by the presence-poll drain
-/// path which holds pending broadcasts from a prior empty-peers
-/// fan-out attempt.
-pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &SignedEnvelope) {
-    let Some(adapter) = build_adapter(state) else {
-        tracing::warn!(community = %community_id, "send_to_mesh_raw: adapter unavailable");
-        return;
+/// [`send_to_channel_peers`], awaited and not spawned onto the login
+/// scope: for an envelope that must leave during teardown, after which
+/// the scope is cancelled (the `VoiceLeave` of a quit or logout, plan
+/// C7.27). Returns once every per-peer send is handed to Veilid.
+pub async fn send_to_channel_peers_now(
+    state: &SharedState,
+    community_id: &str,
+    channel_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<(), String> {
+    let transport = {
+        let ve = state.voice_engine.lock();
+        let Some(handle) = ve.as_ref() else {
+            return Err("not in a voice session".to_string());
+        };
+        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
+            return Err(format!(
+                "active voice session is not bound to {community_id}/{channel_id}"
+            ));
+        }
+        handle.transport.clone()
     };
-    let adapter = Arc::new(adapter);
-    rekindle_gossip::send_to_mesh_raw(adapter, community_id, signed.clone());
+    let Some(adapter) = build_adapter(state) else {
+        return Err("app handle / db pool unavailable".to_string());
+    };
+    let peers: Vec<rekindle_gossip::PeerInfo> = transport
+        .lock()
+        .await
+        .peer_entries()
+        .into_iter()
+        .map(|(pseudonym_key, route_blob)| rekindle_gossip::PeerInfo {
+            pseudonym_key,
+            route_blob,
+        })
+        .collect();
+    let kind = crate::services::veilid::app_message::envelope_kind(envelope);
+    let peer_count = peers.len();
+    let sent = rekindle_gossip::send_to_channel_peers_now(
+        Arc::new(adapter),
+        community_id,
+        envelope,
+        peers,
+    )
+    .await;
+    let outcome = if sent.is_ok() { "sent" } else { "failed" };
+    tracing::debug!(kind, peer_count, outcome, "direct channel envelope");
+    sent.map_err(|e| e.to_string())
 }
 
 /// Bump a peer's reliability counters and mark dirty for the next
@@ -221,8 +193,8 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &rekindle_db::D
         return;
     }
     let owner = owner_key;
-    let rows: Vec<(String, String, i64, i64)> =
-        crate::db_helpers::db_call_or_default(pool, move |conn| {
+    let rows: Result<Vec<(String, String, u32, u32)>, String> =
+        crate::db_helpers::db_call(pool, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT community_id, peer_pseudonym, success_count, failure_count
                  FROM peer_reliability WHERE owner_key = ?1",
@@ -231,26 +203,27 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &rekindle_db::D
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u32>(3)?,
                 ))
             })?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })
         .await;
+    let rows = match rows {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "peer reliability unreadable; ranking starts neutral");
+            return;
+        }
+    };
     if rows.is_empty() {
         return;
     }
     let mut communities = state.communities.write();
     for (community_id, peer, succ, fail) in rows {
         if let Some(community) = communities.get_mut(&community_id) {
-            community.peer_reliability.insert(
-                peer,
-                (
-                    u32::try_from(succ).unwrap_or(0),
-                    u32::try_from(fail).unwrap_or(0),
-                ),
-            );
+            community.peer_reliability.insert(peer, (succ, fail));
         }
     }
 }

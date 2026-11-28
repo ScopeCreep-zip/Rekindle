@@ -1,5 +1,7 @@
 //! `merge` community CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{
     CommunityPolicyState, GovernanceEntry, GovernanceState, InviteState, MetadataState,
     PseudonymKey, SegmentState,
@@ -8,6 +10,7 @@ use super::{
 pub(super) fn apply_community(
     author: &PseudonymKey,
     entry: &GovernanceEntry,
+    stamp: OpStamp,
     state: &mut GovernanceState,
 ) {
     match entry {
@@ -16,27 +19,29 @@ pub(super) fn apply_community(
             description,
             icon_hash,
             banner_hash,
-            lamport,
         } => {
-            let existing_lamport = state.metadata.as_ref().map_or(0, |m| m.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.metadata.as_ref().map_or(OpStamp::MIN, |m| m.stamp);
+            if stamp > existing_stamp {
                 state.metadata = Some(MetadataState {
                     name: name.clone().unwrap_or_default(),
                     description: description.clone(),
                     icon_hash: icon_hash.clone(),
                     banner_hash: banner_hash.clone(),
-                    lamport: *lamport,
+                    stamp,
                 });
             }
         }
 
         // ── Notification default (architecture §17.1 tier 1): LWW ──
-        GovernanceEntry::CommunityNotificationDefault { level, lamport } => {
-            let existing_lamport = state.notification_default.as_ref().map_or(0, |d| d.lamport);
-            if *lamport > existing_lamport {
+        GovernanceEntry::CommunityNotificationDefault { level } => {
+            let existing_stamp = state
+                .notification_default
+                .as_ref()
+                .map_or(OpStamp::MIN, |d| d.stamp);
+            if stamp > existing_stamp {
                 state.notification_default = Some(crate::state::NotificationDefaultState {
                     level: level.clone(),
-                    lamport: *lamport,
+                    stamp,
                 });
             }
         }
@@ -52,7 +57,7 @@ pub(super) fn apply_community(
         GovernanceEntry::SegmentAdded {
             segment_index,
             registry_key,
-            governance_key,
+            anchor,
             slot_range_start,
             slot_range_end,
             ..
@@ -66,7 +71,7 @@ pub(super) fn apply_community(
                 state.segments.push(SegmentState {
                     segment_index: *segment_index,
                     registry_key: registry_key.clone(),
-                    governance_key: governance_key.clone(),
+                    anchor: anchor.clone(),
                     slot_range_start: *slot_range_start,
                     slot_range_end: *slot_range_end,
                 });
@@ -79,15 +84,17 @@ pub(super) fn apply_community(
             policy_text,
             max_joins_per_interval,
             join_interval_seconds,
-            lamport,
         } => {
-            let existing_lamport = state.community_policy.as_ref().map_or(0, |p| p.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state
+                .community_policy
+                .as_ref()
+                .map_or(OpStamp::MIN, |p| p.stamp);
+            if stamp > existing_stamp {
                 state.community_policy = Some(CommunityPolicyState {
                     policy_text: policy_text.clone(),
                     max_joins_per_interval: *max_joins_per_interval,
                     join_interval_seconds: *join_interval_seconds,
-                    lamport: *lamport,
+                    stamp,
                 });
             }
         }
@@ -99,7 +106,6 @@ pub(super) fn apply_community(
             max_uses,
             expires_at,
             secrets_record_key,
-            lamport,
         } => {
             state.invites.insert(
                 *invite_id,
@@ -108,18 +114,17 @@ pub(super) fn apply_community(
                     max_uses: *max_uses,
                     expires_at: *expires_at,
                     secrets_record_key: secrets_record_key.clone(),
-                    created_lamport: *lamport,
+                    created: stamp,
                     creator_pseudonym: author.clone(),
+                    uses: 0,
                 },
             );
         }
 
-        GovernanceEntry::InviteRevoked {
-            invite_id, lamport, ..
-        } => {
+        GovernanceEntry::InviteRevoked { invite_id, .. } => {
             // Only revoke if the revocation lamport > creation lamport
             if let Some(invite) = state.invites.get(invite_id) {
-                if *lamport > invite.created_lamport {
+                if stamp > invite.created {
                     state.invites.remove(invite_id);
                 }
             }

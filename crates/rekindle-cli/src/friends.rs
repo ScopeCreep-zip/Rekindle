@@ -1,8 +1,13 @@
-//! Friend commands: add, accept, reject, remove, list, requests.
+//! Friend commands (plan E2.1): requests, the list, removal and blocks,
+//! nicknames, invite links, groups, session resets, and safety numbers and
+//! verification (plan E2.3). The host reviews what needs it
+//! (`helpers::send`).
 
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::friends::{qr_text, FriendCodeView, SafetyNumberView};
 
-use crate::cli::FriendCmd;
+use crate::cli::{FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd};
+use crate::friend_ref;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
@@ -13,87 +18,177 @@ pub async fn dispatch(
     client: &DaemonClient,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
+    let request = match cmd {
+        FriendCmd::Add { code, message } => IpcRequest::FriendAddFromCode {
+            code: code.clone(),
+            message: message.clone().unwrap_or_default(),
+        },
+        FriendCmd::Accept { request_id } => IpcRequest::FriendAccept {
+            public_key: request_id.clone(),
+        },
+        FriendCmd::Reject { request_id } => IpcRequest::FriendReject {
+            public_key: request_id.clone(),
+        },
+        FriendCmd::Cancel { friend } => IpcRequest::FriendCancelRequest {
+            public_key: friend.clone(),
+        },
+        FriendCmd::Remove { friend } => IpcRequest::FriendRemove {
+            public_key: friend_ref::resolve(client, friend).await?,
+        },
+        FriendCmd::List { status, .. } => return list(client, status.as_deref(), mode).await,
+        FriendCmd::Requests => IpcRequest::FriendRequests,
+        FriendCmd::Block { friend } => IpcRequest::FriendBlock {
+            public_key: friend.clone(),
+        },
+        FriendCmd::Unblock { friend } => IpcRequest::FriendUnblock {
+            public_key: friend.clone(),
+        },
+        FriendCmd::Blocked => IpcRequest::FriendBlockedList,
+        FriendCmd::Nickname { friend, name } => IpcRequest::FriendSetNickname {
+            public_key: friend_ref::resolve(client, friend).await?,
+            nickname: name.clone(),
+        },
+        FriendCmd::Code { action } => return friend_code(client, action.as_ref(), mode).await,
+        FriendCmd::Invite(invite) => invite_request(invite),
+        FriendCmd::Group(group) => group_request(client, group).await?,
+        FriendCmd::ResetSession { friend } => IpcRequest::SessionResetStart {
+            public_key: friend.clone(),
+        },
+        FriendCmd::SafetyNumber { friend } => return safety_number(client, friend, mode).await,
+        FriendCmd::Verify { friend } => IpcRequest::IdentityMarkVerified {
+            peer: friend.clone(),
+        },
+        FriendCmd::Unverify { friend } => IpcRequest::IdentityClearVerification {
+            peer: friend.clone(),
+        },
+    };
+    let value = helpers::send(client, request).await?;
+    format::print_structured(&value, mode)
+}
+
+fn invite_request(cmd: &FriendInviteCmd) -> IpcRequest {
     match cmd {
-        FriendCmd::Add { target, message } => {
-            let value = client
-                .request_ok(IpcRequest::FriendAdd {
-                    target: target.clone(),
-                    message: message.clone().unwrap_or_default(),
-                })
-                .await?;
-            format::print_structured(&value, mode)
-        }
-        FriendCmd::Accept { request_id } => {
-            let value = client
-                .request_ok(IpcRequest::FriendAccept {
-                    public_key: request_id.clone(),
-                })
-                .await?;
-            format::print_structured(&value, mode)
-        }
-        FriendCmd::Reject { request_id } => {
-            let value = client
-                .request_ok(IpcRequest::FriendReject {
-                    public_key: request_id.clone(),
-                })
-                .await?;
-            format::print_structured(&value, mode)
-        }
-        FriendCmd::Remove { friend, force } => {
-            if !helpers::confirm_unless_forced(*force, &format!("Remove friend '{friend}'?"))? {
-                return format::print_text("Cancelled.");
-            }
-            let value = client
-                .request_ok(IpcRequest::FriendRemove {
-                    public_key: friend.clone(),
-                })
-                .await?;
-            format::print_structured(&value, mode)
-        }
-        FriendCmd::List { .. } => {
-            let value = client.request_ok(IpcRequest::FriendList).await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            let rows = value
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|f| {
-                            vec![
-                                f.get("display_name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?")
-                                    .to_string(),
-                                f.get("status")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("offline")
-                                    .to_string(),
-                                rekindle_client::fmt::abbreviate_key(
-                                    f.get("public_key").and_then(|v| v.as_str()).unwrap_or("?"),
-                                ),
-                                f.get("has_route")
-                                    .and_then(serde_json::Value::as_bool)
-                                    .map_or("no".into(), |b| {
-                                        if b {
-                                            "yes".into()
-                                        } else {
-                                            "no".into()
-                                        }
-                                    }),
-                            ]
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            table::print_table(&["Name", "Status", "Key", "Route"], &rows, mode)
-        }
-        FriendCmd::Requests => {
-            let value = client.request_ok(IpcRequest::FriendRequests).await?;
-            format::print_structured(&value, mode)
-        }
-        FriendCmd::Block { .. } | FriendCmd::Unblock { .. } => {
-            Err(crate::identity::unimplemented("friend block/unblock"))
-        }
+        FriendInviteCmd::Create => IpcRequest::FriendInviteCreate,
+        FriendInviteCmd::List => IpcRequest::FriendInviteList,
+        FriendInviteCmd::Cancel { invite_id } => IpcRequest::FriendInviteCancel {
+            invite_id: invite_id.clone(),
+        },
+        FriendInviteCmd::Redeem { link } => IpcRequest::FriendAddFromInvite {
+            invite: link.clone(),
+        },
     }
 }
+
+/// The request a group subcommand makes, its friend named by key
+/// ([`friend_ref::resolve`]).
+async fn group_request(client: &DaemonClient, cmd: &GroupCmd) -> anyhow::Result<IpcRequest> {
+    Ok(match cmd {
+        GroupCmd::Create { name } => IpcRequest::FriendGroupCreate { name: name.clone() },
+        GroupCmd::Rename { group_id, name } => IpcRequest::FriendGroupRename {
+            group_id: *group_id,
+            name: name.clone(),
+        },
+        GroupCmd::Delete { group_id } => IpcRequest::FriendGroupDelete {
+            group_id: *group_id,
+        },
+        GroupCmd::Move { friend, group_id } => IpcRequest::FriendGroupMove {
+            public_key: friend_ref::resolve(client, friend).await?,
+            group_id: *group_id,
+        },
+    })
+}
+
+/// `friend list`: the buddy list, filtered by status.
+async fn list(client: &DaemonClient, status: Option<&str>, mode: OutputMode) -> anyhow::Result<()> {
+    let value = helpers::send(client, IpcRequest::FriendList).await?;
+    if mode.is_structured() {
+        return format::print_structured(&value, mode);
+    }
+    let text = |f: &serde_json::Value, key: &str| {
+        f.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let rows = value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter(|f| status.is_none_or(|s| s == "all" || text(f, "status") == s))
+                .map(|f| {
+                    let name = f
+                        .get("nickname")
+                        .and_then(|v| v.as_str())
+                        .map_or_else(|| text(f, "displayName"), str::to_string);
+                    vec![
+                        rekindle_utils::text::sanitize_for_display(&name),
+                        text(f, "status"),
+                        rekindle_client::fmt::abbreviate_key(&text(f, "publicKey")),
+                        text(f, "friendshipState"),
+                    ]
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    table::print_table(&["Name", "Status", "Key", "Friendship"], &rows, mode)
+}
+
+/// `friend code [rotate]`: our friend code (a new one after a rotation,
+/// which the host reviews) and its QR.
+async fn friend_code(
+    client: &DaemonClient,
+    action: Option<&FriendCodeCmd>,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match action {
+        None => IpcRequest::FriendCode,
+        Some(FriendCodeCmd::Rotate) => IpcRequest::FriendTokenRotate,
+    };
+    let value = helpers::send(client, request).await?;
+    if mode.is_structured() {
+        return format::print_structured(&value, mode);
+    }
+    let view: FriendCodeView = serde_json::from_value(value)?;
+    format::print_text(&view.url)?;
+    format::print_text("")?;
+    format::print_text(&qr_text(&view.qr_rows))
+}
+
+/// `friend safety-number`: the 60 digits in twelve groups of five (four to
+/// a line, as Signal shows them), the QR code, and the verified state.
+async fn safety_number(client: &DaemonClient, peer: &str, mode: OutputMode) -> anyhow::Result<()> {
+    let value = helpers::send(
+        client,
+        IpcRequest::IdentitySafetyNumber {
+            peer: peer.to_string(),
+        },
+    )
+    .await?;
+    if mode.is_structured() {
+        return format::print_structured(&value, mode);
+    }
+    let view: SafetyNumberView = serde_json::from_value(value)?;
+    let groups: Vec<&str> = view
+        .digits
+        .as_bytes()
+        .chunks(5)
+        .filter_map(|group| std::str::from_utf8(group).ok())
+        .collect();
+    for line in groups.chunks(4) {
+        format::print_text(&line.join(" "))?;
+    }
+    format::print_text("")?;
+    format::print_text(&qr_text(&view.qr_rows))?;
+    let state = if view.changed {
+        "their key changed since you verified it: compare the new number"
+    } else if view.verified {
+        "verified"
+    } else {
+        "not verified"
+    };
+    format::print_text(state)
+}
+
+#[cfg(test)]
+#[path = "friends_tests.rs"]
+mod tests;

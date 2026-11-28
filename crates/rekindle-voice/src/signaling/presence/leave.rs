@@ -1,20 +1,24 @@
 //! Voice leave handling: transport removal, our media key's rotation on a
-//! departure (plan C7.20), and MCU-host re-election when the departing
-//! peer was hosting.
+//! departure (plans C7.20, C7.29), and MCU-host re-election when the
+//! departing peer was hosting.
 
 use std::sync::Arc;
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
+use crate::signaling::media_keys::Departure;
 use crate::signaling::stage::reconcile_stage_transport;
 use crate::topology;
 use crate::transport::VoiceTransport;
 use crate::VoiceMode;
+
+use super::roster::named_roster;
 
 pub(in crate::signaling) fn handle_voice_leave(
     deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
     sender_pseudonym: &str,
     channel_id: String,
+    departure: Departure,
 ) {
     // §10.6 channel scoping — mirror of the join gate: a leave in a
     // channel we're not bound to must not touch our transport (it
@@ -24,6 +28,7 @@ pub(in crate::signaling) fn handle_voice_leave(
     } else {
         None
     };
+    tracing::debug!(bound = transport.is_some(), "voice leave received");
     let Some(transport) = transport else {
         deps.emit_event(CommunityVoiceEvent::VoiceLeave {
             community_id: community_id.to_string(),
@@ -44,7 +49,11 @@ pub(in crate::signaling) fn handle_voice_leave(
         let sender_key = sender_key.clone();
         let my_pk = my_pk.clone();
         deps.scope().spawn_or_drop("voice leave apply", async move {
-            voice_leave_apply(&deps_task, &cid, &ch_id, transport, sender_key, my_pk).await;
+            let leaver = Leaver {
+                key: sender_key,
+                departure,
+            };
+            voice_leave_apply(&deps_task, &cid, &ch_id, transport, leaver, my_pk).await;
         });
     }
 
@@ -59,14 +68,27 @@ pub(in crate::signaling) fn handle_voice_leave(
 /// apply their voice leave in the channel we are bound to. Media liveness
 /// keeps a streaming peer on the roster through presence reconcile, so a
 /// removed member would otherwise go on receiving our media keys; this
-/// drops them and rotates our key. A no-op when we share no channel.
+/// drops them and rotates our key, in a stage channel too (plan C7.29).
+/// A no-op when we share no channel.
 pub fn member_departed(deps: &Arc<dyn VoiceSignalingDeps>, community_id: &str, departed: &str) {
     let Some(channel_id) = deps.voice_engine_channel_id() else {
         return;
     };
     if deps.voice_engine_bound_to(community_id, &channel_id) {
-        handle_voice_leave(deps, community_id, departed, channel_id);
+        handle_voice_leave(
+            deps,
+            community_id,
+            departed,
+            channel_id,
+            Departure::LeftCommunity,
+        );
     }
+}
+
+/// Who came off the roster, and how.
+struct Leaver {
+    key: String,
+    departure: Departure,
 }
 
 async fn voice_leave_apply(
@@ -74,17 +96,18 @@ async fn voice_leave_apply(
     community_id: &str,
     channel_id: &str,
     transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
-    sender_key: String,
+    leaver: Leaver,
     my_pk: String,
 ) {
+    let sender_key = leaver.key;
     let is_stage = deps
         .stage_channel_info(community_id, channel_id)
         .is_some_and(|s| s.is_stage);
 
-    let (removed, peer_count, current_mode) = {
+    let (removed, peer_count, current_mode, members) = {
         let mut t = transport.lock().await;
         let removed = t.remove_peer(&sender_key);
-        (removed, t.peer_count(), t.mode().clone())
+        (removed, t.peer_count(), t.mode().clone(), t.peer_keys())
     };
     if removed {
         deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -92,10 +115,10 @@ async fn voice_leave_apply(
             channel_id: channel_id.to_string(),
             pseudonym_key: sender_key.clone(),
             present: false,
-            display_name: None,
-            remote_count: peer_count,
+            display_name: deps.member_shown_name(community_id, &sender_key),
+            roster: named_roster(&**deps, community_id, members),
         });
-        // Plan C7.20 — it must not read what follows.
+        // Plans C7.20, C7.29 — it must not read what follows.
         crate::signaling::media_keys::on_peer_removed(
             deps,
             community_id,
@@ -103,6 +126,7 @@ async fn voice_leave_apply(
             &transport,
             &sender_key,
             is_stage,
+            leaver.departure,
         )
         .await;
     }

@@ -33,13 +33,16 @@ network is stronger when they do.
 In practical terms:
 
 - All community state lives in Veilid DHT records.
-- Every record uses the **SMPL schema with `o_cnt: 0`** — zero
-  owner-reserved subkeys. The Ed25519 keypair that creates the
-  record is **shared infrastructure** distributed in invites, not a
-  privileged credential.
-- Each member writes only to their own subkey.
-- Every reader independently merges all subkeys with deterministic
-  CRDT rules to produce a consistent governance view.
+- Governance is **member-sovereign** (ADR 0011): one immutable
+  anchor `A` (DFLT(1), its creation key discarded after the
+  `GenesisCert`) and one DFLT(8) member record `M` per member, owned
+  by a key only that member holds. Each member appends signed
+  governance ops to its own `M`; nobody can write another's.
+- Every reader independently verifies and merges the op DAG
+  (`rekindle_governance::merge`) to the same state; see
+  [`communities-governance.md`](communities-governance.md).
+- Channel records and the member registry are still SMPL `o_cnt: 0`
+  records written through a claimed slot (§3) until plan E3.4.
 - Permission enforcement is **reader-side**: any member can write
   any entry they like; honest readers drop entries the writer was
   not authorised to make.
@@ -117,7 +120,7 @@ missed if a watch lapses.
 Gossip carries **notifications**, not cargo. The wire payload is
 metadata:
 
-```
+```text
 MessageNotification {
     channel_id, subkey_index, message_id,
     lamport_ts, sequence, content_hash,
@@ -143,7 +146,11 @@ else uses SMPL writes and gossip, which are non-blocking.
 
 ## 3. The Universal SMPL Schema (Q-pid Equation)
 
-Every multi-writer record in a v2.0 community uses the same schema:
+Governance no longer uses this schema: it lives in the anchor and the
+member records ([`communities-governance.md`](communities-governance.md)
+§1). Channel records and the member registry still use it, with slot
+keypairs derived from the invite's `slot_seed`, until plan E3.4
+replaces the slot claim. Their schema:
 
 ```rust
 DHTSchema::SMPL {

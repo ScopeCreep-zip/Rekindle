@@ -1,44 +1,71 @@
-import { Channel } from "@tauri-apps/api/core";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { invoke } from "../invoke";
-import type { ChatEvent } from "./chat_events";
 import type {
-  PresenceEvent,
-  PresenceSubscriptionEvent,
-} from "./presence_events";
-import type {
-  VoiceEvent,
-  VoiceSubscriptionEvent,
-} from "./voice_events";
+  IntentReview,
+  LifecycleState,
+  SkinApplied,
+  SkinApplyFailure,
+  SkinTrial,
+} from "../commands/dto";
+import type { InfoviewView } from "../commands/dto_infoview";
+import type { ServersView } from "../commands/dto_servers";
+import type { ShellOp, SkinSignalSet } from "../commands/dto_skin_run";
+import type { TransferEvent } from "../commands/dto_transfer";
+import type { SettingsTab } from "../commands/types";
+import { Channel, invoke } from "../invoke";
+import type { ChatEvent, GroupDmEvent } from "./chat_events";
 import type { AnyCommunityEvent } from "./community_subscription_events";
 import type {
   NetworkStatusEvent,
   NetworkSubscriptionEvent,
   NotificationEvent,
   NotificationSubscriptionEvent,
+  OwnRecordsPhase,
+  OwnRouteClass,
+  RoutePauseCause,
 } from "./notification_events";
-import type { LifecycleState } from "../commands/dto";
-import type { DeepLinkRequest, SettingsTab } from "../commands/types";
+import type { PresenceEvent, PresenceSubscriptionEvent } from "./presence_events";
+import type { VoiceEvent, VoiceSubscriptionEvent } from "./voice_events";
+
+/// Where this window is in the host's event stream
+/// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
+interface Cursor {
+  epoch: number;
+  seq: number;
+}
 
 /// What the backend sends on a window's event channel
 /// (`src-tauri/src/event_router.rs::OutboundEnvelope`).
 interface OutboundEnvelope {
-  /// Journal sequence number for journaled events, else null.
-  seq: number | null;
-  /// The logical channel the payload belongs to (`chat-event`, …).
+  /// The host's cursor for a journaled event, else null.
+  cursor: Cursor | null;
+  /// The logical channel the payload belongs to (`chat-event`, …), or
+  /// `event-stream` for the stream's own frames.
   channel: string;
   payload: unknown;
 }
 
+/// The stream's own frames (`event_router::STREAM_CHANNEL`).
+const STREAM_CHANNEL = "event-stream";
+
 type Handler = (payload: never) => void;
+export type UnlistenFn = () => void;
 
 /// Handlers by logical channel. Every `subscribe*` function registers
 /// here; the window's one backend stream feeds it.
 const handlers = new Map<string, Set<Handler>>();
 
+/// Offer `payload` to every handler of `channel`. A handler that throws is
+/// reported and the rest still run. The throw must not escape: it would
+/// unwind through the Tauri `Channel`'s callback before that advances its
+/// next index (`@tauri-apps/api` 2.12.1 core.js:137-140), and every later
+/// message to this window would wait forever behind it (walk rows M45 and
+/// B61: the window stopped applying events after one reducer threw).
 function dispatch(channel: string, payload: unknown): void {
   for (const handler of handlers.get(channel) ?? []) {
-    (handler as (p: unknown) => void)(payload);
+    try {
+      (handler as (p: unknown) => void)(payload);
+    } catch (err) {
+      console.error(`a ${channel} handler failed`, err, payload);
+    }
   }
 }
 
@@ -55,26 +82,38 @@ function on<T>(channel: string, handler: (payload: T) => void): Promise<Unlisten
   });
 }
 
-/// `sessionStorage` key for the last journal sequence number this webview
-/// processed. `sessionStorage` survives a reload of this webview only, so
-/// a reload replays exactly what this window missed; a new window starts
-/// empty and hydrates from the database instead.
-const SEQ_KEY = "rekindle.eventSeq";
+/// `sessionStorage` key for the last cursor this webview processed.
+/// `sessionStorage` survives a reload of this webview only, so a reload
+/// replays exactly what this window missed; a new window starts empty and
+/// hydrates from the database instead.
+const CURSOR_KEY = "rekindle.eventCursor";
 
-function readSeq(): number | null {
+function readCursor(): Cursor | null {
   try {
-    const raw = sessionStorage.getItem(SEQ_KEY);
+    const raw = sessionStorage.getItem(CURSOR_KEY);
     if (raw === null) return null;
-    const n = Number(raw);
-    return Number.isSafeInteger(n) && n >= 0 ? n : null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      Number.isSafeInteger((parsed as Cursor).epoch) &&
+      Number.isSafeInteger((parsed as Cursor).seq)
+    ) {
+      return parsed as Cursor;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-function writeSeq(seq: number): void {
+function writeCursor(cursor: Cursor | null): void {
   try {
-    sessionStorage.setItem(SEQ_KEY, String(seq));
+    if (cursor === null) {
+      sessionStorage.removeItem(CURSOR_KEY);
+    } else {
+      sessionStorage.setItem(CURSOR_KEY, JSON.stringify(cursor));
+    }
   } catch {
     // Storage unavailable — a reload then just doesn't replay.
   }
@@ -82,38 +121,79 @@ function writeSeq(seq: number): void {
 
 let stream: Promise<void> | null = null;
 
+/// Resolves once this window's stream is registered with the backend: from
+/// then on every event reaches the handlers, so a snapshot read after it
+/// misses none (an event published between an earlier snapshot read and
+/// the registration would be lost, plan VI1).
+let markLive: () => void = () => {};
+const live = new Promise<void>((resolve) => {
+  markLive = resolve;
+});
+
+/// Wait until this window's event stream is live ([`startEventStream`]
+/// resolved). A store that reads a snapshot reads it after this, so no
+/// change between the snapshot and the subscription is lost.
+export function eventStreamLive(): Promise<void> {
+  return live;
+}
+
 /// Open this window's event stream. Call it once the window has
 /// registered its handlers (end of its `onMount` subscriptions): a
-/// reloading window is sent its missed events immediately. Idempotent per
-/// webview; a no-op under E2E, which has no Tauri event transport.
-export function startEventStream(): Promise<void> {
-  if (import.meta.env.VITE_E2E === "true") return Promise.resolve();
+/// reloading window is sent what it missed immediately. `reload` reloads
+/// the window's state from the backend; it runs when the host cannot serve
+/// the window's cursor (a new login or logout, or the window fell behind).
+/// Idempotent per webview.
+export function startEventStream(reload?: () => void): Promise<void> {
   if (stream) return stream;
-  const lastSeq = readSeq();
-  let maxSeq = lastSeq ?? 0;
+  const from = readCursor();
+  let last = from;
   const channel = new Channel<OutboundEnvelope>();
   channel.onmessage = (envelope) => {
-    if (envelope.seq !== null) {
-      // A journaled event already seen (replayed and also delivered live
-      // around the moment of subscription) is processed once.
-      if (envelope.seq <= maxSeq) return;
-      maxSeq = envelope.seq;
-      writeSeq(maxSeq);
+    if (envelope.channel === STREAM_CHANNEL) {
+      if (envelope.cursor === null) {
+        // invalidSession: what this window holds may be stale.
+        last = null;
+        writeCursor(null);
+        reload?.();
+      } else {
+        last = envelope.cursor;
+        writeCursor(last);
+      }
+      return;
+    }
+    const cursor = envelope.cursor;
+    if (cursor !== null) {
+      // An event already seen (replayed and also delivered live around
+      // the moment of subscription) is processed once.
+      if (last !== null && cursor.epoch === last.epoch && cursor.seq <= last.seq) return;
+      last = cursor;
+      writeCursor(last);
     }
     dispatch(envelope.channel, envelope.payload);
   };
-  stream = invoke<void>("subscribe_events", { channel, lastSeq }).catch((err) => {
+  stream = invoke<void>("subscribe_events", { channel, from }).then(markLive, (err) => {
     stream = null;
     console.error("subscribe_events failed — this window receives no events", err);
   });
   return stream;
 }
 
-export function subscribeChatEvents(
-  onEvent: (event: ChatEvent) => void,
-): Promise<UnlistenFn> {
+export function subscribeChatEvents(onEvent: (event: ChatEvent) => void): Promise<UnlistenFn> {
   return on<ChatEvent>("chat-event", (payload) => {
     onEvent(payload);
+  });
+}
+
+/**
+ * Subscribe to group-DM lifecycle events (plan E2.6). They ride the
+ * `chat-event` channel as `{ groupDm: … }`; unwrapped here so callers see
+ * just the group event.
+ */
+export function subscribeGroupDmEvents(
+  onEvent: (event: GroupDmEvent) => void
+): Promise<UnlistenFn> {
+  return on<ChatEvent>("chat-event", (payload) => {
+    if ("groupDm" in payload) onEvent(payload.groupDm);
   });
 }
 
@@ -126,16 +206,14 @@ export function subscribeChatEvents(
  * Unwrapped here so callers see just the presence event.
  */
 export function subscribePresenceEvents(
-  onEvent: (event: PresenceEvent) => void,
+  onEvent: (event: PresenceEvent) => void
 ): Promise<UnlistenFn> {
   return on<PresenceSubscriptionEvent>("presence-event", (payload) => {
     onEvent(payload.presence);
   });
 }
 
-export function subscribeVoiceEvents(
-  onEvent: (event: VoiceEvent) => void,
-): Promise<UnlistenFn> {
+export function subscribeVoiceEvents(onEvent: (event: VoiceEvent) => void): Promise<UnlistenFn> {
   return on<VoiceSubscriptionEvent>("voice-event", (payload) => {
     onEvent(payload.voice);
   });
@@ -148,15 +226,141 @@ export function subscribeVoiceEvents(
  * the daemon vocabulary; `isLegacyCommunityEvent` discriminates them.
  */
 export function subscribeCommunityEvents(
-  onEvent: (event: AnyCommunityEvent) => void,
+  onEvent: (event: AnyCommunityEvent) => void
 ): Promise<UnlistenFn> {
   return on<AnyCommunityEvent>("community-event", (payload) => {
     onEvent(payload);
   });
 }
 
+/**
+ * Subscribe to skin changes (`SystemEvent::SkinChanged`, plan E7.7.2):
+ * every window, the login window included, receives them on `skin-event`.
+ */
+export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promise<UnlistenFn> {
+  return on<{ system: { skinChanged: { skin: SkinApplied } } }>("skin-event", (payload) => {
+    onSkin(payload.system.skinChanged.skin);
+  });
+}
+
+/**
+ * Subscribe to the shell operations the Host addresses to this window from
+ * a press in another (`SystemEvent::SkinShell`, plan SK2-N4: a view switch
+ * pressed in a popup this window launched), on `skin-shell-event`.
+ */
+export function subscribeSkinShell(onOp: (op: ShellOp) => void): Promise<UnlistenFn> {
+  return on<{ system: { skinShell: { window: string; op: ShellOp } } }>(
+    "skin-shell-event",
+    (payload) => onOp(payload.system.skinShell.op)
+  );
+}
+
+/**
+ * Subscribe to this window's skin signals (`SystemEvent::SkinSignals`,
+ * plan SK2-A4 step 3): only the window they are for receives them, on
+ * `skin-signals-event`; the session replays the current set on open.
+ */
+export function subscribeSkinSignals(onSignals: (set: SkinSignalSet) => void): Promise<UnlistenFn> {
+  return on<{ system: { skinSignals: { window: string; set: SkinSignalSet } } }>(
+    "skin-signals-event",
+    (payload) => onSignals(payload.system.skinSignals.set)
+  );
+}
+
+/**
+ * Subscribe to the file transfers (`SubscriptionEvent::Transfer`, plan
+ * E7.2 G12): state changes, progress (at most 4 Hz), finished downloads
+ * and removals, on the buddy list's `transfer-event` channel.
+ */
+/**
+ * Subscribe to the Servers view the Host composed again
+ * (`SystemEvent::ServersViewChanged`, plan E7.2 G3), on `servers-event`:
+ * the buddy list and the skin-tree windows, at most once per 250 ms.
+ */
+export function subscribeServersView(onView: (view: ServersView) => void): Promise<UnlistenFn> {
+  return on<{ system: { serversViewChanged: { view: ServersView } } }>("servers-event", (payload) =>
+    onView(payload.system.serversViewChanged.view)
+  );
+}
+
+export function subscribeTransfers(
+  onTransfer: (event: TransferEvent) => void
+): Promise<UnlistenFn> {
+  return on<{ transfer: TransferEvent }>("transfer-event", (payload) =>
+    onTransfer(payload.transfer)
+  );
+}
+
+/**
+ * Subscribe to "Keep this skin?" (`SystemEvent::SkinTrialChanged`, plan
+ * E7.7.2): the Settings window receives the trial in progress, or `null`
+ * once it is kept, reverted or replaced, on `skin-trial-event`.
+ */
+export function subscribeSkinTrial(
+  onTrial: (trial: SkinTrial | null) => void
+): Promise<UnlistenFn> {
+  return on<{ system: { skinTrialChanged: { trial: SkinTrial | null } } }>(
+    "skin-trial-event",
+    (payload) => onTrial(payload.system.skinTrialChanged.trial)
+  );
+}
+
+/** `SystemEvent::SkinApplyFailed`: a window could not apply `skin` (plan SK2-T1). */
+export interface SkinApplyFailed {
+  window: string;
+  skin: string;
+  cause: SkinApplyFailure;
+  /** The Host reverted `skin`, which was on trial. */
+  reverted: boolean;
+}
+
+/**
+ * Subscribe to a window's failure to apply a skin (`SystemEvent::
+ * SkinApplyFailed`, plan SK2-T1): that window and Settings receive it on
+ * `skin-apply-event`, after the Host logged it and reverted a skin on trial.
+ */
+export function subscribeSkinApplyFailed(
+  onFailed: (failed: SkinApplyFailed) => void
+): Promise<UnlistenFn> {
+  return on<{ system: { skinApplyFailed: SkinApplyFailed } }>("skin-apply-event", (payload) =>
+    onFailed(payload.system.skinApplyFailed)
+  );
+}
+
+/** The quick wipe's state the Host published when an arm or disarm committed. */
+
+/**
+ * Subscribe to this window's Infoview pushes (`SystemEvent::Infoview`,
+ * plan E7.15 IV4): `infoview-event`, delivered to the asking window only.
+ */
+export function subscribeInfoview(onUpdated: (view: InfoviewView) => void): Promise<UnlistenFn> {
+  return on<{ system: { infoview: { updated: { window: string; view: InfoviewView } } } }>(
+    "infoview-event",
+    (payload) => onUpdated(payload.system.infoview.updated.view)
+  );
+}
+
+export interface QuickWipeChange {
+  armed: boolean;
+  shortcut: string | null;
+}
+
+/**
+ * Subscribe to the quick wipe's state (`SystemEvent::QuickWipeChanged`,
+ * plan E7.1): Settings receives it on `quick-wipe-event` once the Host
+ * commits an arm or disarm; the shell registers the panic shortcut on the
+ * same event.
+ */
+export function subscribeQuickWipe(
+  onChange: (change: QuickWipeChange) => void
+): Promise<UnlistenFn> {
+  return on<{ system: { quickWipeChanged: QuickWipeChange } }>("quick-wipe-event", (payload) =>
+    onChange(payload.system.quickWipeChanged)
+  );
+}
+
 export function subscribeNotificationEvents(
-  onEvent: (event: NotificationEvent) => void,
+  onEvent: (event: NotificationEvent) => void
 ): Promise<UnlistenFn> {
   return on<NotificationSubscriptionEvent>("notification-event", (payload) => {
     onEvent(payload.notification);
@@ -172,7 +376,7 @@ export function subscribeNotificationEvents(
  * every caller.
  */
 export function subscribeNetworkStatus(
-  onEvent: (event: NetworkStatusEvent) => void,
+  onEvent: (event: NetworkStatusEvent) => void
 ): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
@@ -183,37 +387,124 @@ export function subscribeNetworkStatus(
 }
 
 /**
+ * The network indicator's bars (`NetworkEvent::Strength`), already
+ * smoothed by the backend: the window draws what arrives (plan E7.2).
+ */
+export function subscribeNetworkStrength(onBars: (bars: number) => void): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("strength" in inner) {
+      onBars(inner.strength.bars);
+    }
+  });
+}
+
+/**
+ * Whether our inbound route is paused (`NetworkEvent::RoutePaused`, plan
+ * RV1c): the new-route budget is spent or unreadable, so the route stays down
+ * until the Host's `RouteResumed` (the callback's null). Never a silent redraw.
+ */
+export function subscribeRoutePaused(
+  onPause: (cause: RoutePauseCause | null) => void
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("routePaused" in inner) onPause(inner.routePaused.cause);
+    else if ("routeResumed" in inner) onPause(null);
+  });
+}
+
+/** Our own route of a class went down (with since and Veilid's reason) or came back up (null), plan F9-A. */
+export function subscribeOwnRouteDown(
+  onChange: (cls: OwnRouteClass, down: { sinceMs: number; reason: string } | null) => void
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("ownRouteDown" in inner)
+      onChange(inner.ownRouteDown.class, {
+        sinceMs: inner.ownRouteDown.sinceMs,
+        reason: inner.ownRouteDown.reason,
+      });
+    else if ("ownRouteUp" in inner) onChange(inner.ownRouteUp.class, null);
+  });
+}
+
+/** Own-route deaths above their baseline (`NetworkEvent::RouteDeathsAboveBaseline`, plan RV1): a warning. */
+export function subscribeRouteDeaths(
+  onDeaths: (d: {
+    class: OwnRouteClass;
+    deaths: number;
+    young: number;
+    windowSecs: number;
+    baseline: number;
+  }) => void
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("routeDeathsAboveBaseline" in inner) onDeaths(inner.routeDeathsAboveBaseline);
+  });
+}
+
+/**
+ * The Host's own-records stage (`NetworkEvent::OwnRecordsChanged`, plan
+ * E2.5 FC3): whether our identity is published yet, and why not if it
+ * failed.
+ */
+export function subscribeOwnRecords(
+  onStage: (phase: OwnRecordsPhase, error: string | null) => void
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("ownRecordsChanged" in inner) {
+      onStage(inner.ownRecordsChanged.phase, inner.ownRecordsChanged.error);
+    }
+  });
+}
+
+/**
  * Lifecycle FSM transitions (`{ state, at_ms }`). The derived lifecycle
  * store observes this to surface readiness in the UI. Under E2E there is
  * no event stream; the store is seeded via `lifecycleCurrent()` instead.
  */
 export function subscribeLifecycleEvents(
-  onState: (state: LifecycleState) => void,
+  onState: (state: LifecycleState) => void
 ): Promise<UnlistenFn> {
-  return on<{ state: LifecycleState; at_ms: number }>(
-    "lifecycle-event",
-    (payload) => {
-      onState(payload.state);
-    },
-  );
-}
-
-export function subscribeProfileUpdates(
-  onUpdate: () => void,
-): Promise<UnlistenFn> {
-  return on<null>("profile-updated", () => {
-    onUpdate();
+  return on<{ state: LifecycleState; at_ms: number }>("lifecycle-event", (payload) => {
+    onState(payload.state);
   });
 }
 
-/// Fires when an OS deep link is held for consent. The payload is the
-/// same `DeepLinkRequest` that `getPendingDeepLink` returns.
-export function subscribeDeepLinkEvents(
-  onEvent: (event: DeepLinkRequest) => void,
-): Promise<UnlistenFn> {
-  return on<DeepLinkRequest>("deep-link-action", (payload) => {
-    onEvent(payload);
+/// Our own profile (name, avatar) changed: the Host's
+/// `PresenceEvent::SelfProfileChanged` on the presence channel.
+export function subscribeProfileUpdates(onUpdate: () => void): Promise<UnlistenFn> {
+  return on<PresenceSubscriptionEvent>("presence-event", (payload) => {
+    if ("selfProfileChanged" in payload.presence) onUpdate();
   });
+}
+
+/// A review of an action the backend began (`SubscriptionEvent::IntentPending`).
+export function subscribeIntentEvents(
+  onReview: (review: IntentReview) => void
+): Promise<UnlistenFn> {
+  return on<{ intentPending: IntentReview }>("intent-event", (payload) => {
+    onReview(payload.intentPending);
+  });
+}
+
+/// A pairing link arrived from the OS and was refused
+/// (`WebviewEvent::PairingLinkRefused`): pairing codes are entered in Settings.
+export function subscribePairingLinkRefused(onRefused: () => void): Promise<UnlistenFn> {
+  return on<null>("pairing-link-refused", () => {
+    onRefused();
+  });
+}
+
+/// The open community window was asked to show a channel (plan E7.2 A: the
+/// skin's Show Voice on a community voice session), as settings switches tab.
+export function subscribeCommunityFocusChannel(
+  onChannel: (channel: string) => void
+): Promise<UnlistenFn> {
+  return on<string>("community-focus-channel", onChannel);
 }
 
 /// The open settings window was asked to show a tab.

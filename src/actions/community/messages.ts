@@ -1,66 +1,44 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { authState } from "../../stores/auth.store";
-import { addToast } from "../../stores/toast.store";
-import type { Message } from "../../stores/chat.store";
+import { isCommandError } from "../../ipc/commands/dto";
 import { clearBulkSelection } from "../../stores/chat.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
+import { afterDraftReports, sendDraftReport } from "../../utils/draft_reports";
+import { errorMessage } from "../../utils/error";
+import { mergeRead } from "../../utils/message_merge";
 import { transformMessages } from "../../utils/transformers";
 
 export async function handleSendChannelMessage(
   channelId: string,
   body: string,
-  replyToId?: string,
+  replyToId?: string
 ): Promise<void> {
   if (!body.trim()) return;
-  const trimmed = body.trim();
-
-  const tempId = Date.now();
-
-  // Optimistic insert with "sending" status — use pseudonym key as senderId (matches what Rust emits)
-  const community = communityState.communities[communityState.activeCommunity ?? ""];
-  const message: Message = {
-    id: tempId,
-    senderId: community?.myPseudonymKey ?? authState.publicKey ?? "",
-    body: trimmed,
-    timestamp: Date.now(),
-    isOwn: true,
-    status: "sending",
-    replyToId,
-  };
-
-  const existing = communityState.channelMessages[channelId];
-  if (existing) {
-    setCommunityState("channelMessages", channelId, (msgs) => [
-      ...msgs,
-      message,
-    ]);
-  } else {
-    setCommunityState("channelMessages", channelId, [message]);
-  }
-
+  // Our post is rendered from the Host's `New`, published at its local
+  // commit before any network send (plan CP1): the window inserts nothing
+  // here, and the row's state is the Host's (`ChannelSendStatus`, and the
+  // send's own answer by message id).
   try {
-    const result = await commands.sendChannelMessage(channelId, trimmed, replyToId);
-    const status = result.status === "queued" ? ("queued" as const) : ("sent" as const);
+    const result = await afterDraftReports(`channel:${channelId}`, () =>
+      commands.sendChannelMessage(channelId, body.trim(), replyToId)
+    );
+    const status = result.status;
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status, serverMessageId: result.messageId } : m)),
+      (msgs ?? []).map((m) => (m.serverMessageId === result.messageId ? { ...m, status } : m))
     );
     if (result.status === "queued") {
       addToast("Message queued: it will be delivered when the network is back", "info");
     }
   } catch (e) {
-    console.error("Failed to send channel message:", e);
-    addToast("Failed to send message", "error");
-    // Update status to failed
-    setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
-    );
+    if (!(isCommandError(e) && e.type === "cancelled"))
+      addToast(`Message not sent: ${errorMessage(e)}`, "error");
   }
 }
 
 export async function handleEditChannelMessage(
   channelId: string,
   messageId: string,
-  newBody: string,
+  newBody: string
 ): Promise<void> {
   try {
     await commands.editChannelMessage(channelId, messageId, newBody);
@@ -72,7 +50,7 @@ export async function handleEditChannelMessage(
 
 export async function handleDeleteChannelMessage(
   channelId: string,
-  messageId: string,
+  messageId: string
 ): Promise<void> {
   try {
     await commands.deleteChannelMessage(channelId, messageId);
@@ -82,27 +60,45 @@ export async function handleDeleteChannelMessage(
   }
 }
 
+/** A moderator removes someone else's message (plan E7.15): the Host's
+ *  `ChannelMessageAdminDelete` checks `MANAGE_MESSAGES` and the intent gate
+ *  reviews it. */
+export async function handleAdminDeleteChannelMessage(
+  communityId: string,
+  channelId: string,
+  messageId: string
+): Promise<void> {
+  try {
+    await commands.adminDeleteChannelMessage(communityId, channelId, messageId);
+  } catch (e) {
+    console.error("Failed to remove message:", e);
+    addToast(typeof e === "string" ? e : "Failed to remove message", "error");
+  }
+}
+
 export async function handleRetryChannelMessage(
   channelId: string,
-  messageId: number,
+  messageId: number
 ): Promise<void> {
   const messages = communityState.channelMessages[channelId];
   if (!messages) return;
   const message = messages.find((m) => m.id === messageId);
-  if (!message || message.status !== "failed") return;
+  if (message?.status !== "failed") return;
 
   setCommunityState("channelMessages", channelId, (msgs) =>
-    msgs.map((m) => (m.id === messageId ? { ...m, status: "sending" as const } : m)),
+    msgs.map((m) => (m.id === messageId ? { ...m, status: "sending" as const } : m))
   );
 
   try {
     const result = await commands.sendChannelMessage(channelId, message.body);
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status: result.status === "queued" ? "queued" as const : "sent" as const, serverMessageId: result.messageId } : m)),
+      msgs.map((m) =>
+        m.id === messageId ? { ...m, status: result.status, serverMessageId: result.messageId } : m
+      )
     );
   } catch {
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status: "failed" as const } : m)),
+      msgs.map((m) => (m.id === messageId ? { ...m, status: "failed" as const } : m))
     );
   }
 }
@@ -111,10 +107,15 @@ export async function handleLoadOlderMessages(
   communityId: string,
   channelId: string,
   beforeTimestamp: number,
-  limit: number = 50,
+  limit: number = 50
 ): Promise<boolean> {
   try {
-    const messages = await commands.getOlderChannelMessages(communityId, channelId, beforeTimestamp, limit);
+    const messages = await commands.getOlderChannelMessages(
+      communityId,
+      channelId,
+      beforeTimestamp,
+      limit
+    );
     if (messages.length === 0) return false;
     const mapped = transformMessages(messages);
     setCommunityState("channelMessages", channelId, (prev) => [...mapped, ...(prev ?? [])]);
@@ -125,17 +126,13 @@ export async function handleLoadOlderMessages(
   }
 }
 
-export async function handleLoadChannelMessages(
-  channelId: string,
-  limit: number,
-): Promise<void> {
+export async function handleLoadChannelMessages(channelId: string, limit: number): Promise<void> {
   try {
     const messages = await commands.getChannelMessages(channelId, limit);
     const mapped = transformMessages(messages);
-    const existing = communityState.channelMessages[channelId];
-    if (mapped.length > 0 || !existing || existing.length === 0) {
-      setCommunityState("channelMessages", channelId, mapped);
-    }
+    setCommunityState("channelMessages", channelId, (existing) =>
+      mergeRead(existing ?? [], mapped)
+    );
   } catch (e) {
     console.error("Failed to load channel messages:", e);
     addToast("Failed to load messages", "error");
@@ -145,18 +142,10 @@ export async function handleLoadChannelMessages(
 export async function handleSendVoiceMessage(
   communityId: string,
   channelId: string,
-  opusBytesB64: string,
-  durationMs: number,
-  waveformB64: string,
+  pcmB64: string
 ): Promise<boolean> {
   try {
-    await commands.sendVoiceMessage(
-      communityId,
-      channelId,
-      opusBytesB64,
-      durationMs,
-      waveformB64,
-    );
+    await commands.sendVoiceMessage(communityId, channelId, pcmB64);
     return true;
   } catch (e) {
     const msg = typeof e === "string" ? e : "Voice message failed";
@@ -171,7 +160,7 @@ export async function handleForwardChannelMessage(
   sourceChannelId: string,
   sourceMessageId: string,
   destCommunityId: string,
-  destChannelId: string,
+  destChannelId: string
 ): Promise<boolean> {
   try {
     await commands.forwardChannelMessage(
@@ -179,7 +168,7 @@ export async function handleForwardChannelMessage(
       sourceChannelId,
       sourceMessageId,
       destCommunityId,
-      destChannelId,
+      destChannelId
     );
     addToast("Message forwarded", "success");
     return true;
@@ -193,9 +182,9 @@ export async function handleForwardChannelMessage(
 
 /**
  * Bulk-delete a set of channel messages as a moderator. The backend writes
- * one `GovernanceEntry::AdminDelete` per id (capped at 100), gossips
- * `MessageDeleted` for each, purges the local SQLite row, and emits a local
- * `MessageDeleted` event so the UI updates immediately. Per
+ * one `GovernanceEntry::AdminDelete` per id (capped at 100) naming each
+ * post's author (plan E3.3 M1), which every reader applies as a tombstone
+ * "removed by" us (M4), and emits the `Deleted` event for our own row. Per
  * `feedback_no_fallback.md` we do NOT optimistically remove from the store —
  * the backend's local emit is the single source of truth.
  */
@@ -203,7 +192,7 @@ export async function handleBulkDeleteChannelMessages(
   communityId: string,
   channelId: string,
   messageIds: string[],
-  reason?: string,
+  reason?: string
 ): Promise<void> {
   if (messageIds.length === 0) {
     clearBulkSelection();
@@ -214,13 +203,10 @@ export async function handleBulkDeleteChannelMessages(
       communityId,
       channelId,
       messageIds,
-      reason,
+      reason
     );
     clearBulkSelection();
-    addToast(
-      `Deleted ${deleted} message${deleted === 1 ? "" : "s"}`,
-      "success",
-    );
+    addToast(`Deleted ${deleted} message${deleted === 1 ? "" : "s"}`, "success");
   } catch (e) {
     const msg = typeof e === "string" ? e : "Bulk delete failed";
     console.error("Bulk delete failed:", e);
@@ -232,7 +218,7 @@ export async function handleAddReaction(
   communityId: string,
   channelId: string,
   messageId: string,
-  emoji: string,
+  emoji: string
 ): Promise<void> {
   try {
     await commands.addReaction(communityId, channelId, messageId, emoji);
@@ -246,7 +232,7 @@ export async function handleRemoveReaction(
   communityId: string,
   channelId: string,
   messageId: string,
-  emoji: string,
+  emoji: string
 ): Promise<void> {
   try {
     await commands.removeReaction(communityId, channelId, messageId, emoji);
@@ -260,7 +246,7 @@ export async function handleVotePoll(
   communityId: string,
   channelId: string,
   pollId: string,
-  selectedAnswers: number[],
+  selectedAnswers: number[]
 ): Promise<void> {
   try {
     await commands.votePoll(communityId, channelId, pollId, selectedAnswers);
@@ -278,7 +264,7 @@ export async function handleCreatePoll(
   question: string,
   answers: string[],
   multiSelect: boolean,
-  durationSeconds?: number,
+  durationSeconds?: number
 ): Promise<string | null> {
   try {
     const pollId = await commands.createPoll(
@@ -288,7 +274,7 @@ export async function handleCreatePoll(
       question,
       answers,
       multiSelect,
-      durationSeconds,
+      durationSeconds
     );
     await handleLoadChannelMessages(channelId, 100);
     return pollId;
@@ -302,7 +288,7 @@ export async function handleCreatePoll(
 export async function handleClosePoll(
   communityId: string,
   channelId: string,
-  pollId: string,
+  pollId: string
 ): Promise<void> {
   try {
     await commands.closePoll(communityId, channelId, pollId);
@@ -316,7 +302,7 @@ export async function handleClosePoll(
 export async function handlePinMessage(
   communityId: string,
   channelId: string,
-  messageId: string,
+  messageId: string
 ): Promise<void> {
   try {
     await commands.pinMessage(communityId, channelId, messageId);
@@ -329,7 +315,7 @@ export async function handlePinMessage(
 export async function handleUnpinMessage(
   communityId: string,
   channelId: string,
-  messageId: string,
+  messageId: string
 ): Promise<void> {
   try {
     await commands.unpinMessage(communityId, channelId, messageId);
@@ -341,7 +327,7 @@ export async function handleUnpinMessage(
 
 export async function handleGetChannelPins(
   communityId: string,
-  channelId: string,
+  channelId: string
 ): Promise<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]> {
   try {
     return await commands.getChannelPins(communityId, channelId);
@@ -351,13 +337,17 @@ export async function handleGetChannelPins(
   }
 }
 
-export async function handleSendChannelTyping(
+/**
+ * Our composer changed: whether it holds text, for the Host to decide what
+ * typing to send (plan E3.4 S9), in edit order and never swallowed
+ * (utils/draft_reports.ts).
+ */
+export function handleSendChannelTyping(
   communityId: string,
   channelId: string,
+  typing: boolean
 ): Promise<void> {
-  try {
-    await commands.sendChannelTyping(communityId, channelId);
-  } catch {
-    // Typing indicators are ephemeral — silently ignore failures
-  }
+  return sendDraftReport(`channel:${channelId}`, () =>
+    commands.sendChannelTyping(communityId, channelId, typing)
+  );
 }

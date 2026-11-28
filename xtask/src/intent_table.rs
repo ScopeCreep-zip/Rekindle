@@ -1,0 +1,284 @@
+//! `check-intent-table` (rule B23, plan U1.2): every Tauri command
+//! registered in `src-tauri/src/invoke.rs` (its domain macros) and every `IpcRequest` variant
+//! is classified in `rekindle_types::intent::COMMAND_TABLE`, and the table
+//! names nothing that does not exist. A new command does not ship until it
+//! is an intent of some class or listed as not one, so no frontend can
+//! carry an unclassified action past the gate.
+
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use anyhow::{anyhow, Context, Result};
+
+const INVOKE: &str = "src-tauri/src/invoke.rs";
+const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
+const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community";
+const IPC_TRANSFER: &str = "crates/rekindle-ipc/src/protocol/transfer.rs";
+const IPC_SERVERS: &str = "crates/rekindle-ipc/src/protocol/servers.rs";
+const IPC_LOBBY: &str = "crates/rekindle-ipc/src/protocol/lobby.rs";
+const IPC_GROUP_DM: &str = "crates/rekindle-ipc/src/protocol/group_dm.rs";
+/// The `IpcRequest` variants that each carry one sub-enum in its own file
+/// (variant, sub-enum, file): the variant stands for every leaf of the
+/// sub-enum, each named on the wire by its `#[serde(rename)]`.
+const CARRIERS: &[(&str, &str, &str)] = &[
+    ("Transfer", "TransferRequest", IPC_TRANSFER),
+    ("Servers", "ServersRequest", IPC_SERVERS),
+    ("Lobby", "LobbyRequest", IPC_LOBBY),
+    ("GroupDm", "GroupDmRequest", IPC_GROUP_DM),
+];
+const TABLE: &str = "crates/rekindle-types/src/intent/table";
+
+/// The command names in `invoke.rs`'s domain lists.
+fn tauri_commands(src: &str) -> Vec<String> {
+    src.split("commands::")
+        .skip(1)
+        .filter_map(|rest| {
+            let path: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+                .collect();
+            path.rsplit("::").next().map(str::to_string)
+        })
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// The variant names of `pub enum {name}` in `src`.
+fn enum_variants(src: &str, name: &str, path: &str) -> Result<Vec<String>> {
+    let file = syn::parse_file(src).with_context(|| format!("parsing {path}"))?;
+    file.items
+        .iter()
+        .find_map(|item| match item {
+            syn::Item::Enum(e) if e.ident == name => {
+                Some(e.variants.iter().map(|v| v.ident.to_string()).collect())
+            }
+            _ => None,
+        })
+        .ok_or_else(|| anyhow!("no `enum {name}` in {path}"))
+}
+
+/// A variant's wire name: its `#[serde(rename = "…")]`, else its ident.
+fn wire_name(variant: &syn::Variant) -> Result<String> {
+    let mut name = variant.ident.to_string();
+    for attr in variant.attrs.iter().filter(|a| a.path().is_ident("serde")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                name = meta.value()?.parse::<syn::LitStr>()?.value();
+            } else if meta.input.peek(syn::Token![=]) {
+                meta.value()?.parse::<syn::Expr>()?;
+            }
+            Ok(())
+        })
+        .with_context(|| format!("reading the serde attribute of `{}`", variant.ident))?;
+    }
+    Ok(name)
+}
+
+/// The leaf names of `pub enum {name}` in `src` (the file `path`): each
+/// variant's wire name, which `IpcRequest::name` answers (`TransferList`,
+/// `ServersView`, …).
+fn carrier_leaves(src: &str, name: &str, path: &str) -> Result<Vec<String>> {
+    let file = syn::parse_file(src).with_context(|| format!("parsing {path}"))?;
+    let e = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            syn::Item::Enum(e) if e.ident == name => Some(e),
+            _ => None,
+        })
+        .ok_or_else(|| anyhow!("no `enum {name}` in {path}"))?;
+    e.variants.iter().map(wire_name).collect()
+}
+
+/// The leaf names of `pub enum IpcRequest`: its `Community` variant stands
+/// for every leaf of every domain sub-enum `CommunityRequest` carries, and
+/// each `carriers` variant `(variant, sub-enum, file, source)` for every
+/// leaf of its sub-enum, which `IpcRequest::name` answers. `community` is
+/// each file of `IPC_COMMUNITY`.
+fn ipc_requests(
+    protocol: &str,
+    community: &[String],
+    carriers: &[(&str, &str, &str, String)],
+) -> Result<Vec<String>> {
+    let top = enum_variants(protocol, "IpcRequest", IPC_PROTOCOL)?;
+    let carried = || std::iter::once("Community").chain(carriers.iter().map(|c| c.0));
+    for carrier in carried() {
+        if !top.iter().any(|v| v == carrier) {
+            return Err(anyhow!("no `IpcRequest::{carrier}` in {IPC_PROTOCOL}"));
+        }
+    }
+    let mut enums = Vec::new();
+    for src in community {
+        let file = syn::parse_file(src).with_context(|| format!("parsing {IPC_COMMUNITY}"))?;
+        enums.extend(file.items.into_iter().filter_map(|item| match item {
+            syn::Item::Enum(e) => Some(e),
+            _ => None,
+        }));
+    }
+    let find = |name: &str| {
+        enums
+            .iter()
+            .find(|e| e.ident == name)
+            .ok_or_else(|| anyhow!("no `enum {name}` in {IPC_COMMUNITY}"))
+    };
+    let mut nested = Vec::new();
+    for domain in &find("CommunityRequest")?.variants {
+        let sub = match &domain.fields {
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                match &fields.unnamed[0].ty {
+                    syn::Type::Path(path) => path.path.segments.last().map(|s| s.ident.to_string()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+        .ok_or_else(|| {
+            anyhow!(
+                "`CommunityRequest::{}` does not carry one domain enum",
+                domain.ident
+            )
+        })?;
+        nested.extend(find(&sub)?.variants.iter().map(|v| v.ident.to_string()));
+    }
+    for (_, sub, path, src) in carriers {
+        nested.extend(carrier_leaves(src, sub, path)?);
+    }
+    Ok(top
+        .into_iter()
+        .filter(|v| !carried().any(|c| c == v))
+        .chain(nested)
+        .collect())
+}
+
+/// Every `.rs` file of `IPC_COMMUNITY`, in name order.
+fn community_sources(root: &Path) -> Result<Vec<String>> {
+    let dir = root.join(IPC_COMMUNITY);
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(&dir).with_context(|| format!("reading {IPC_COMMUNITY}"))? {
+        let path = entry
+            .with_context(|| format!("reading {IPC_COMMUNITY}"))?
+            .path();
+        if path.extension().is_some_and(|x| x == "rs") {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths
+        .iter()
+        .map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display())))
+        .collect()
+}
+
+/// The first element of every `(name, kind)` row of one part of
+/// `COMMAND_TABLE`: each `const …_ROWS: &[…] = &[…]` in a file of `intent/table/`.
+fn table_names(src: &str) -> Result<Vec<String>> {
+    let file = syn::parse_file(src).context("parsing the intent table")?;
+    let mut names = Vec::new();
+    for part in file.items.iter().filter_map(|item| match item {
+        syn::Item::Const(c) if c.ident.to_string().ends_with("_ROWS") => Some(c),
+        _ => None,
+    }) {
+        let syn::Expr::Reference(reference) = &*part.expr else {
+            return Err(anyhow!("{} is not `&[…]`", part.ident));
+        };
+        let syn::Expr::Array(rows) = &*reference.expr else {
+            return Err(anyhow!("{} is not `&[…]`", part.ident));
+        };
+        for row in &rows.elems {
+            let syn::Expr::Tuple(t) = row else {
+                return Err(anyhow!("a {} row is not a tuple", part.ident));
+            };
+            let Some(syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            })) = t.elems.first()
+            else {
+                return Err(anyhow!("a {} row does not start with a name", part.ident));
+            };
+            names.push(s.value());
+        }
+    }
+    Ok(names)
+}
+
+/// The names of every part of the table, the files read in name order.
+fn table_parts(root: &Path) -> Result<Vec<String>> {
+    let dir = root.join(TABLE);
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .with_context(|| format!("listing {TABLE}"))?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect::<std::io::Result<_>>()
+        .with_context(|| format!("listing {TABLE}"))?;
+    files.retain(|p| p.extension().is_some_and(|x| x == "rs"));
+    files.sort();
+    let mut names = Vec::new();
+    for path in files {
+        let src = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        names.extend(table_names(&src)?);
+    }
+    if names.is_empty() {
+        return Err(anyhow!("no `const …_ROWS` table part in {TABLE}"));
+    }
+    Ok(names)
+}
+
+/// Every mismatch between the code's names and the table's.
+fn compare(commands: &[String], requests: &[String], table: &[String]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut seen = BTreeSet::new();
+    for name in table {
+        if !seen.insert(name.as_str()) {
+            problems.push(format!("`{name}` is listed twice in {TABLE}"));
+        }
+    }
+    let code: BTreeSet<&str> = commands
+        .iter()
+        .chain(requests)
+        .map(String::as_str)
+        .collect();
+    for name in &code {
+        if !seen.contains(name) {
+            problems.push(format!(
+                "`{name}` is not classified in {TABLE} (an IntentKind, or None for a read)"
+            ));
+        }
+    }
+    for name in &seen {
+        if !code.contains(name) {
+            problems.push(format!(
+                "{TABLE} lists `{name}`, which is neither a registered command nor an IpcRequest"
+            ));
+        }
+    }
+    problems
+}
+
+pub(crate) fn check_intent_table(root: &Path) -> Result<()> {
+    let read = |rel: &str| {
+        std::fs::read_to_string(root.join(rel)).with_context(|| format!("reading {rel}"))
+    };
+    let carriers = CARRIERS
+        .iter()
+        .map(|&(variant, sub, path)| Ok((variant, sub, path, read(path)?)))
+        .collect::<Result<Vec<_>>>()?;
+    let problems = compare(
+        &tauri_commands(&read(INVOKE)?),
+        &ipc_requests(&read(IPC_PROTOCOL)?, &community_sources(root)?, &carriers)?,
+        &table_parts(root)?,
+    );
+    if problems.is_empty() {
+        return Ok(());
+    }
+    for p in &problems {
+        eprintln!("  ✗ {p}");
+    }
+    Err(anyhow!(
+        "{} intent-table problem(s); classify per realignment/r9-intents.md §7.2",
+        problems.len()
+    ))
+}
+
+#[cfg(test)]
+#[path = "intent_table_tests.rs"]
+mod tests;

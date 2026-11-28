@@ -100,6 +100,14 @@ impl AttachmentState {
         }
     }
 
+    /// The network indicator's bars (plan E7.2, live finding L8): one per
+    /// attached level Veilid reports for "signal strength" (0.5.8
+    /// `veilid_api/types/veilid_state.rs:3-24`: weak, fair, good, strong,
+    /// full), none while detached or still attaching.
+    pub fn bars(self) -> u8 {
+        self.strength().saturating_sub(1)
+    }
+
     /// Human-readable label for display.
     pub fn as_str(self) -> &'static str {
         match self {

@@ -1,8 +1,7 @@
 use rekindle_records::lease::LeaseId;
-use veilid_core::{DHTSchema, KeyPair};
+use rekindle_records::port::OpenIntent;
+use rekindle_records::port::{RecordPort, SetOutcome};
 
-use super::parse_record_key;
-use super::pool::{RecordPool, SetOutcome};
 use crate::error::ProtocolError;
 
 // Subkey constants for the user profile DHT record.
@@ -13,7 +12,7 @@ use crate::error::ProtocolError;
 // aliases so existing call sites keep reading naturally.
 pub use rekindle_types::dht_layout::profile::{
     AVATAR as SUBKEY_AVATAR, DISPLAY_NAME as SUBKEY_DISPLAY_NAME, GAME_INFO as SUBKEY_GAME_INFO,
-    METADATA as SUBKEY_METADATA, PREKEY_BUNDLE as SUBKEY_PREKEY_BUNDLE,
+    METADATA as SUBKEY_METADATA, PREKEY_RECORDS as SUBKEY_PREKEY_RECORDS,
     RELAY_POOL as SUBKEY_RELAY_POOL, ROUTE_BLOB as SUBKEY_ROUTE_BLOB, STATUS as SUBKEY_STATUS,
     STATUS_MESSAGE as SUBKEY_STATUS_MESSAGE, STATUS_ONLINE, SUBKEY_COUNT as PROFILE_SUBKEY_COUNT,
 };
@@ -23,7 +22,12 @@ pub use rekindle_types::dht_layout::profile::{
 pub struct ProfileFields<'a> {
     pub display_name: &'a str,
     pub status_message: &'a str,
-    pub prekey_bundle: &'a [u8],
+    /// Our device list (plan E2.4): the encoded `PrekeyRecordList`
+    /// naming each device's prekey record. `None` at the unlock, which
+    /// writes it with [`publish_device_list`] once the record it names
+    /// holds its first-contact keys, so the rest of the profile need not
+    /// wait for them (plan E2.B).
+    pub prekey_records: Option<&'a [u8]>,
     pub route_blob: &'a [u8],
 }
 
@@ -39,16 +43,12 @@ pub struct ProfileFields<'a> {
 /// # Errors
 /// The record could not be created, or a write failed outright.
 pub async fn create_profile(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     fields: ProfileFields<'_>,
-) -> Result<(LeaseId, String, KeyPair, SetOutcome), ProtocolError> {
-    let schema = DHTSchema::dflt(
-        u16::try_from(PROFILE_SUBKEY_COUNT)
-            .map_err(|e| ProtocolError::DhtError(format!("profile subkey count: {e}")))?,
-    )
-    .map_err(|e| ProtocolError::DhtError(format!("invalid profile schema: {e}")))?;
-    let (lease, key, keypair) = pool.create(schema, None).await?;
-    let key = key.to_string();
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>, SetOutcome), ProtocolError> {
+    let (lease, key, keypair) = pool
+        .create(&rekindle_records::schema::profile(), None)
+        .await?;
     let outcome = publish_fields(pool, &key, fields, "profile create").await?;
     tracing::info!(key = %key, name = %fields.display_name, ?outcome, "profile record created");
     Ok((lease, key, keypair, outcome))
@@ -61,12 +61,12 @@ pub async fn create_profile(
 /// The record could not be opened within the pool's retry budget. That is
 /// login's to report: re-creating would change the key peers know.
 pub async fn open_profile(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
-    owner_keypair: KeyPair,
+    owner_keypair: &str,
 ) -> Result<LeaseId, ProtocolError> {
     let lease = pool
-        .acquire(&parse_record_key(key)?, Some(owner_keypair))
+        .acquire(key, Some(owner_keypair), OpenIntent::Hold)
         .await?;
     tracing::info!(key, "profile record reopened");
     Ok(lease)
@@ -79,31 +79,44 @@ pub async fn open_profile(
 /// # Errors
 /// The record could not be reached, or a write failed outright.
 pub async fn publish_profile_fields(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     fields: ProfileFields<'_>,
 ) -> Result<SetOutcome, ProtocolError> {
     publish_fields(pool, key, fields, "profile reopen").await
 }
 
+/// Write our device list (subkey 5, plan E2.4) to our profile: the unlock
+/// calls it once the prekey record it names holds its first-contact keys.
+///
+/// # Errors
+/// The record could not be reached, or the write failed outright.
+pub async fn publish_device_list(
+    pool: &dyn RecordPort,
+    key: &str,
+    list: &[u8],
+) -> Result<SetOutcome, ProtocolError> {
+    set_own_profile_subkey(pool, key, SUBKEY_PREKEY_RECORDS, list.to_vec()).await
+}
+
 /// Write one subkey of our own profile. Needs the session's writable lease
 /// (taken at login by [`create_profile`] or [`open_profile`]): the write is
 /// signed by that lease's writer, and fails if there is none. Durable: a
 /// write that misses consensus is held and re-pushed by the pool until it
-/// lands (`RecordPool::set_durable`).
+/// lands (`RecordPort::set_durable`).
 ///
 /// # Errors
 /// The record could not be reached, or the write failed outright.
 pub async fn set_own_profile_subkey(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     subkey: u32,
     value: Vec<u8>,
 ) -> Result<SetOutcome, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let outcome = pool.set_durable(lease, subkey, value).await;
+    let lease = pool.acquire(key, None, OpenIntent::Hold).await?;
+    let outcome = pool.set_durable(lease, subkey, value, None).await;
     pool.release(lease).await;
-    outcome
+    Ok(outcome?)
 }
 
 /// Write our own STATUS subkey (status byte + time). Present-tense: a plain
@@ -114,14 +127,11 @@ pub async fn set_own_profile_subkey(
 /// # Errors
 /// The record could not be reached, or the write failed outright.
 pub async fn set_own_profile_status(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     value: Vec<u8>,
 ) -> Result<SetOutcome, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let outcome = pool.set(lease, SUBKEY_STATUS, value, None).await;
-    pool.release(lease).await;
-    outcome
+    Ok(pool.write_once(key, SUBKEY_STATUS, value, None).await?)
 }
 
 /// One subkey of a profile, or `None` if it has not been published.
@@ -130,33 +140,52 @@ pub async fn set_own_profile_status(
 /// # Errors
 /// The record could not be opened or read.
 pub async fn read_profile_subkey(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     subkey: u32,
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let value = pool.get(lease, subkey, force_refresh).await;
-    pool.release(lease).await;
-    Ok(value?.map(|v| v.data().to_vec()))
+    Ok(pool
+        .read_once(key, subkey, force_refresh)
+        .await?
+        .map(|v| v.data))
 }
 
-/// The status subkey's payload: the status byte, then the time in ms.
+/// One subkey of a profile with its seq (the record's write count, which
+/// only grows), or `None` if it has not been published; read from the
+/// network (plan RH1r-c S2: a re-read route is taken only under a higher
+/// seq).
+///
+/// # Errors
+/// The record could not be opened or read.
+pub async fn read_profile_subkey_seq(
+    pool: &dyn RecordPort,
+    key: &str,
+    subkey: u32,
+) -> Result<Option<(Vec<u8>, u32)>, ProtocolError> {
+    Ok(pool
+        .read_once(key, subkey, true)
+        .await?
+        .map(|v| (v.data, v.seq)))
+}
+
+/// The status subkey's payload: the status byte, then `now_ms` (the
+/// caller's clock).
 #[must_use]
-pub fn status_payload(status: u8) -> Vec<u8> {
+pub fn status_payload(status: u8, now_ms: i64) -> Vec<u8> {
     let mut payload = Vec::with_capacity(9);
     payload.push(status);
-    payload.extend_from_slice(&rekindle_utils::timestamp_ms_i64().to_be_bytes());
+    payload.extend_from_slice(&now_ms.to_be_bytes());
     payload
 }
 
-/// Write the login fields (display name, status message, prekey bundle,
+/// Write the login fields (display name, status message, prekey device list,
 /// route blob), all durable. Not the STATUS: the session's one STATUS
 /// publisher writes it once the profile is open, so login never writes a
 /// status over one the user already picked (plan C7.8c). Returns the first
 /// missed outcome ([`SetOutcome::missed`]), or `Landed`.
 async fn publish_fields(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     fields: ProfileFields<'_>,
     context: &str,
@@ -167,20 +196,26 @@ async fn publish_fields(
             SUBKEY_STATUS_MESSAGE,
             fields.status_message.as_bytes().to_vec(),
         ),
-        (SUBKEY_PREKEY_BUNDLE, fields.prekey_bundle.to_vec()),
         (SUBKEY_ROUTE_BLOB, fields.route_blob.to_vec()),
-    ];
+    ]
+    .into_iter()
+    .chain(
+        fields
+            .prekey_records
+            .map(|list| (SUBKEY_PREKEY_RECORDS, list.to_vec())),
+    );
+    // The subkeys are written at once: Veilid locks per subkey, so
+    // they overlap and the profile lands in one set latency (plan E2.B).
+    let outcomes = futures::future::join_all(writes.map(|(subkey, value)| async move {
+        (
+            subkey,
+            set_own_profile_subkey(pool, key, subkey, value).await,
+        )
+    }))
+    .await;
     let mut first_miss = SetOutcome::Landed;
-    for (subkey, value) in writes {
-        let outcome = set_own_profile_subkey(pool, key, subkey, value).await?;
-        if subkey == SUBKEY_PREKEY_BUNDLE {
-            tracing::info!(
-                subkey,
-                bytes = fields.prekey_bundle.len(),
-                ?outcome,
-                "pqxdh_bundle_published kind=LastResort+OneTimeBatch ({context})",
-            );
-        }
+    for (subkey, outcome) in outcomes {
+        let outcome = outcome?;
         if outcome.missed() {
             if matches!(outcome, SetOutcome::Superseded(_)) {
                 // A newer write of ours (another device of this identity) won.
@@ -205,11 +240,7 @@ async fn publish_fields(
     Ok(first_miss)
 }
 
-// The five pull accessors that lived here — `read_subkey`,
-// `read_display_name`, `read_status`, `read_route_blob`,
-// `read_prekey_bundle` — are gone. Nothing pulled a peer's profile
-// subkey on demand: display name, status and route blob arrive through
-// the presence watch, and a peer's prekey bundle arrives in the friend
-// request or invite payload that needs it. Push won; the pull half was
-// never wired to anything. (`read_profile_subkey` above serves the daemon's
-// friend-request flow and its friend-list queries.)
+// A peer's profile is pushed to us through the presence watch (display
+// name, status, route). The one pull is the first contact's read of the
+// prekey device list (`super::prekeys::read_device_list`, plan E2.4), and
+// `read_profile_subkey` above serves the friend-list queries.

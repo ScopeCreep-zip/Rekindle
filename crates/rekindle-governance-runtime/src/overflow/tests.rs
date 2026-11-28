@@ -1,24 +1,21 @@
 use super::*;
 use rekindle_types::id::{ChannelId, RoleId};
 
-fn channel_entry(name: &str, lamport: u64) -> GovernanceEntry {
+fn channel_entry(name: &str) -> GovernanceEntry {
     GovernanceEntry::ChannelCreated {
         channel_id: ChannelId([0u8; 16]),
         name: name.to_string(),
         channel_type: "text".into(),
-        record_key: String::new(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport,
     }
 }
 
-fn role_entry(lamport: u64) -> GovernanceEntry {
+fn role_entry() -> GovernanceEntry {
     GovernanceEntry::RoleAssignment {
         target: PseudonymKey([1u8; 32]),
         role_id: RoleId([0u8; 16]),
-        lamport,
     }
 }
 
@@ -28,7 +25,7 @@ fn entry_size(e: &GovernanceEntry) -> usize {
 
 #[test]
 fn single_page_when_under_budget() {
-    let entries = vec![role_entry(1), role_entry(2), role_entry(3)];
+    let entries = vec![role_entry(), role_entry(), role_entry()];
     let pages = partition_into_pages(entries.clone(), 100_000, 100_000).unwrap();
     assert_eq!(pages.len(), 1);
     assert_eq!(pages[0].len(), 3);
@@ -37,9 +34,9 @@ fn single_page_when_under_budget() {
 #[test]
 fn splits_into_two_pages_at_budget() {
     // Budget that fits ~2 role entries on the primary page, forcing overflow.
-    let one = entry_size(&role_entry(1));
+    let one = entry_size(&role_entry());
     let primary_budget = one * 2 + one / 2; // room for exactly 2
-    let entries = vec![role_entry(1), role_entry(2), role_entry(3), role_entry(4)];
+    let entries = vec![role_entry(), role_entry(), role_entry(), role_entry()];
     let pages = partition_into_pages(entries, primary_budget, primary_budget).unwrap();
     assert!(
         pages.len() >= 2,
@@ -57,7 +54,7 @@ fn splits_into_two_pages_at_budget() {
 fn oversized_primary_entry_spills_to_overflow_page() {
     // An entry that exceeds the tiny primary budget but fits the overflow
     // budget must land on an overflow page, leaving the primary empty.
-    let big = channel_entry(&"x".repeat(400), 1);
+    let big = channel_entry(&"x".repeat(400));
     let sz = entry_size(&big);
     let pages = partition_into_pages(vec![big], sz / 2, sz * 2).unwrap();
     assert_eq!(pages.len(), 2);
@@ -70,7 +67,7 @@ fn oversized_primary_entry_spills_to_overflow_page() {
 
 #[test]
 fn unsplittable_entry_errors() {
-    let big = channel_entry(&"y".repeat(500), 1);
+    let big = channel_entry(&"y".repeat(500));
     let sz = entry_size(&big);
     let err = partition_into_pages(vec![big], sz / 2, sz / 2);
     assert!(matches!(err, Err(n) if n == sz));
@@ -83,13 +80,13 @@ fn roundtrip_partition_then_concat_preserves_entries() {
     let input: Vec<GovernanceEntry> = (0..40)
         .map(|i| {
             if i % 2 == 0 {
-                channel_entry(&format!("chan-{i}"), i)
+                channel_entry(&format!("chan-{i}"))
             } else {
-                role_entry(i)
+                role_entry()
             }
         })
         .collect();
-    let one = entry_size(&role_entry(1));
+    let one = entry_size(&role_entry());
     let pages = partition_into_pages(input.clone(), one * 3, one * 7).unwrap();
     assert!(pages.len() >= 2, "test budgets should force multiple pages");
     let flattened: Vec<GovernanceEntry> = pages.into_iter().flatten().collect();
@@ -134,6 +131,7 @@ impl OverflowIo for MockDht {
         &self,
         record_key: &str,
         _writer: Option<String>,
+        _intent: rekindle_records::port::OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError> {
         let id = self
             .next_lease
@@ -184,7 +182,7 @@ async fn write_then_read_reassembles_across_overflow_pages() {
     let my_slot = 5u32;
 
     let input: Vec<GovernanceEntry> = (0..30u64)
-        .map(|i| channel_entry(&format!("chan{i:02}"), i))
+        .map(|i| channel_entry(&format!("chan{i:02}")))
         .collect();
     let one = entry_size(&input[0]);
     // Budgets force the primary to hold ~4 entries and spill the rest into
@@ -256,7 +254,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
     write_overflow_page(
         &mock,
         "ovl-1",
-        &[channel_entry("evil", 2)],
+        &[channel_entry("evil")],
         None,
         &attacker,
         &attacker_pseudo,
@@ -265,7 +263,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
     .await
     .unwrap();
     let (_p, bytes) = build_signed_payload(
-        &[channel_entry("good", 1)],
+        &[channel_entry("good")],
         Some("ovl-1".to_string()),
         &signing,
         &author,
@@ -279,7 +277,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
     assert_eq!(
         flattened.len(),
         1,
-        "mis-authored overflow page must be dropped"
+        "misauthored overflow page must be dropped"
     );
     assert_eq!(mock.outstanding(), 0, "every borrow must be released");
 }

@@ -1,0 +1,325 @@
+//! What a skin action does (plan SK2-A4, design §2.2): the Host maps each
+//! [`SkinAction`] a pack's trigger names to an `IpcRequest` run through
+//! the intent gate (ADR 0019), to a [`ShellOp`] the window's shell runs
+//! (the OS drag/resize must start inside the pointer event; a panel or a
+//! menu opens in the window), or to [`SkinRun::NotBuiltYet`] for an
+//! action Rekindle has no feature for yet, which the window shows (never
+//! silently nothing). The backend owns the selection a selection-dependent
+//! action acts on ([`SkinSelection`]) and the per-window signals the
+//! pack's state triggers follow ([`SkinSignals`], design §2.5).
+
+use serde::{Deserialize, Serialize};
+
+use super::skin_action::{
+    AnimateSpec, AppSignal, EngineMenu, EngineView, NodeState, PopupRef, SkinAction,
+    SkinSettingsTab, SoundRef, TileRef,
+};
+use super::skin_layout::SkinWindow;
+use super::skin_tree::Edge;
+
+/// A panel of the window's shell an action opens (today's dialogs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ShellPanel {
+    AddFriend,
+    NewChat,
+    NewGroup,
+    StartGroupCall,
+    CreateCommunity,
+    JoinCommunity,
+    Shortcuts,
+    Notifications,
+    /// The Communities row's New (plan E7.7): a chooser, Create or Join.
+    CommunityStart,
+}
+
+/// A 1:1 call operation: the shell's call commands own calls until plan
+/// E4.1 moves them into the Host (then these rows become requests).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
+pub enum CallOp {
+    /// Place a voice call to `friend` (Xfire's `AppHostVoiceChat`).
+    Voice {
+        friend: String,
+    },
+    /// Answer the incoming call `call_id` that is ringing (Xfire's
+    /// `AppVoiceChat` on `ChatButtonAnswerCall`, Symbiosis
+    /// `Components/Common.xml:450-452`).
+    Answer {
+        call_id: String,
+    },
+    /// Join the group call `call_id` in progress in the group `group_id`
+    /// (Xfire's `AppGroupVoiceChat`/`AppVoiceChat` on a group window's
+    /// `GroupChatButtonAnswerCall`, tip `ButtonGroupJoinVoiceChatTip`;
+    /// Symbiosis `Components/GroupChatWindow.xml:144-147`).
+    JoinGroup {
+        group_id: String,
+        call_id: String,
+    },
+    /// Leave the 1:1 call `call_id` we are in (Xfire's `AppLeaveVoiceChat`
+    /// in a chat window, `ChatButtonLeaveCall`).
+    Leave {
+        call_id: String,
+    },
+    /// Leave the group call `call_id` of the group `group_id`, or cancel it
+    /// while it still rings out from us (Xfire's `AppLeaveGroupVoiceChat`
+    /// and `AppCancelVoiceChat` on a group window's call tab; the call
+    /// layer ends both through `end_group_call`).
+    LeaveGroup {
+        group_id: String,
+        call_id: String,
+    },
+    Video {
+        friend: String,
+    },
+    /// Join the voice channel `channel` of the community `community` (a
+    /// community window's `AppVoiceChat`/`AppHostVoiceChat`, plan E7.7
+    /// HSC1): the shell's `join_voice_channel` holds community voice until
+    /// plan E4.1 makes `VoiceJoin` the Host's.
+    JoinVoice {
+        community: String,
+        channel: String,
+    },
+    End,
+    Mute,
+    Unmute,
+}
+
+/// The call window `ShowVoiceWindow` brings up (plan E7.2 G-item A): the
+/// Host's active call, else our community voice session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
+pub enum CallTarget {
+    /// The call window of the call `call_id`.
+    Call { call_id: String },
+    /// The community window of `community`, on its voice `channel`.
+    Voice { community: String, channel: String },
+}
+
+/// One member of [`ShellOp::StartGroupCall`]'s prefill: the identity key
+/// and the name the group's roster gives it (the group window's member
+/// list's source; a label, never an identity).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupCallInvitee {
+    pub pubkey: String,
+    pub display_name: String,
+}
+
+/// An operation the window's shell runs. Fields are camelCase like the
+/// variants (the TS mirror reads `groupId`, `attachmentId`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
+pub enum ShellOp {
+    DragWindow,
+    Minimize,
+    Maximize,
+    Close,
+    Resize(Edge),
+    /// An engine menu, its items from `MenuRegistry`; `context` for a
+    /// pointer-placed one (`ContextMenu`).
+    OpenMenu {
+        menu: EngineMenu,
+        context: bool,
+    },
+    ShowView(EngineView),
+    GroupPage {
+        group: u16,
+        page: u16,
+    },
+    ShowTile(TileRef),
+    HideTile(TileRef),
+    LaunchPopup(PopupRef),
+    Animate(AnimateSpec),
+    AnimateStop,
+    AnimationStart {
+        group: u16,
+        spec: AnimateSpec,
+    },
+    AnimationStop {
+        group: u16,
+    },
+    SetState(NodeState),
+    PlaySound(SoundRef),
+    OpenPanel(ShellPanel),
+    OpenChat {
+        friend: String,
+    },
+    OpenProfile {
+        friend: String,
+    },
+    OpenSafetyNumber {
+        friend: String,
+    },
+    OpenGameInvite {
+        friend: String,
+    },
+    /// The New Group panel, prefilled with `peer` when the window has a
+    /// friend (SK2-G §6: `NewRoom`/`CreateRoom`); the group it creates
+    /// records `peer` as the chat it came from.
+    NewRoom {
+        peer: Option<String>,
+    },
+    /// The group window of `group_id` (`EnterRoom`, `JoinRoom`,
+    /// `EnterAttachedRoom` on a joined group).
+    OpenGroupChat {
+        group_id: String,
+    },
+    /// The friend picker that invites more into the joined group
+    /// `group_id` (`InviteUsersToRoom`, SK2-G §6, plan E7.2 G8): its
+    /// choice is one `GroupDmInvite`, and the group's `inviteRefused`
+    /// verdict says when the Host refuses it.
+    InviteToRoom {
+        group_id: String,
+    },
+    /// The Start Group Call panel scoped to the group DM `group_id`
+    /// (a group window's `AppHostGroupVoiceChat`, Symbiosis
+    /// `Components/GroupChatWindow.xml:123`), prefilled with the group's
+    /// `members` besides us from its roster; the call it starts carries
+    /// `group_id` (`start_group_call { groupId }`). The buddy list's own
+    /// Start Group Call stays `OpenPanel(StartGroupCall)` with no group.
+    StartGroupCall {
+        group_id: String,
+        group_name: String,
+        members: Vec<GroupCallInvitee>,
+    },
+    Call(CallOp),
+    /// Bring up the window of the active call or voice session
+    /// (`ShowVoiceWindow`).
+    ShowCall {
+        target: CallTarget,
+    },
+    ShowSettings(SkinSettingsTab),
+    /// The info panel of the community `community` (a community window's
+    /// `AppViewProfile`, plan E7.7 HSC1).
+    OpenCommunityInfo {
+        community: String,
+    },
+    /// Ask the user where to save a never-fetched attachment (the native
+    /// save dialog, `suggested_name` the uploader's sanitized filename),
+    /// then send `TransferStart` with that destination (plan E7.2 G12).
+    ChooseDownloadDest {
+        attachment_id: String,
+        target: super::transfer::TransferTarget,
+        suggested_name: String,
+    },
+    /// The local search panel, scoped to the view it was opened from
+    /// (`SearchFor`, SK2-G §8); its query is one `LocalSearch`.
+    OpenSearch {
+        scope: super::local_search::LocalSearchScope,
+    },
+    /// The window of the selected `community` (the Communities row's Open,
+    /// plan E7.7).
+    OpenCommunity {
+        community: String,
+    },
+    /// Leave the selected `community`: the shell runs the existing leave,
+    /// which goes through the Host's leave intent (ADR 0019).
+    LeaveCommunity {
+        community: String,
+    },
+    ReportBug,
+    CopyKey,
+    EditName,
+    Quit,
+}
+
+/// The answer to `RunSkinAction` when the action is not a request (a
+/// request's answer is that request's own).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
+pub enum SkinRun {
+    Shell(ShellOp),
+    /// Rekindle has no feature for `action` yet (design §2.2 "Feature
+    /// gaps"): the button stays, and the window says so with `message`
+    /// (the Host's words, naming the plan row that builds it).
+    NotBuiltYet {
+        action: SkinAction,
+        message: String,
+    },
+    /// The operation is the window labelled `window`'s, which the Host
+    /// handed it on that window's channel (`SystemEvent::SkinShell`): a
+    /// view switch pressed in a popup runs in its launcher (plan SK2-N4).
+    /// The window pressed runs nothing.
+    Launcher {
+        window: String,
+    },
+}
+
+/// What a window has selected, kept by the Host (design §2.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
+pub enum SkinSelection {
+    Friend {
+        public_key: String,
+    },
+    /// A game server in the Servers view (SK2-G §3): its game and `host:port`.
+    Server {
+        game_id: u32,
+        address: String,
+    },
+    /// A download in the transfers view, or an offered attachment in a
+    /// channel (SK2-G §4), by attachment id and where it lives.
+    Transfer {
+        attachment_id: String,
+        target: super::transfer::TransferTarget,
+    },
+    /// A picture or video in the media view (SK2-G §7), by its file.
+    Media {
+        path: String,
+    },
+    /// A group DM, a room (SK2-G §5–§6), by group id.
+    Group {
+        group_id: String,
+    },
+    /// A friend group's header in the buddy list (`buddycat` /
+    /// `customgroup`, plan E7.15 IV5): its Infoview page. `None` is the
+    /// default group of friends in no group.
+    FriendGroup {
+        group_id: Option<i64>,
+    },
+    /// A community (plan E7.7): a row selected in the buddy list's
+    /// Communities view (plan CB1: channel and server `None`), or a
+    /// community window (HSC1): its community, the channel
+    /// it shows (`None` before one is shown) and the game server selected
+    /// in its "SERVERS" list (`None`: Join takes the first listed). The
+    /// window sends it on open and on every channel or server change.
+    Community {
+        community: String,
+        channel: Option<String>,
+        server: Option<String>,
+    },
+}
+
+/// A window's current signal set (design §2.5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinSignals {
+    pub window: SkinWindow,
+    pub set: Vec<AppSignal>,
+}

@@ -36,25 +36,6 @@ fn normalize_tags_rejects_overlimits() {
 }
 
 #[test]
-fn detect_png_magic() {
-    let png = b"\x89PNG\r\n\x1a\n....";
-    assert_eq!(detect_image_media_type(png, false), Some("image/png"));
-}
-
-#[test]
-fn detect_webp_magic() {
-    let webp = b"RIFF....WEBPmore";
-    assert_eq!(detect_image_media_type(webp, false), Some("image/webp"));
-}
-
-#[test]
-fn detect_gif_only_when_animated_allowed() {
-    let gif = b"GIF89a....";
-    assert_eq!(detect_image_media_type(gif, true), Some("image/gif"));
-    assert_eq!(detect_image_media_type(gif, false), None);
-}
-
-#[test]
 fn detect_audio_ogg_webm_mp3() {
     assert_eq!(detect_audio_kind(b"OggS...."), Some("audio/ogg"));
     assert_eq!(
@@ -68,30 +49,6 @@ fn detect_audio_ogg_webm_mp3() {
         Some("audio/mpeg")
     );
     assert_eq!(detect_audio_kind(b"random"), None);
-}
-
-#[test]
-fn validate_emoji_rejects_empty_and_oversize() {
-    assert!(validate_emoji_bytes(&[], false).is_err());
-    let oversize = vec![0u8; MAX_STATIC_EMOJI_BYTES + 1];
-    assert!(matches!(
-        validate_emoji_bytes(&oversize, false),
-        Err(ChannelError::BodyTooLarge { .. })
-    ));
-}
-
-#[test]
-fn validate_emoji_accepts_png() {
-    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
-    png.extend_from_slice(&[0u8; 100]);
-    assert!(validate_emoji_bytes(&png, false).is_ok());
-}
-
-#[test]
-fn validate_sticker_animated_rejects_static_gif_unless_allowed() {
-    let gif = b"GIF89a....".to_vec();
-    assert!(validate_sticker_bytes(&gif, true).is_ok());
-    assert!(validate_sticker_bytes(&gif, false).is_err());
 }
 
 #[test]

@@ -26,8 +26,8 @@
 // platform (empty encode list) reports and proceeds — the user can
 // watch video without sending.
 
-import { commands } from "../ipc/commands";
 import type { Codec, MediaCapabilities, ScalabilityMode } from "../ipc/commands";
+import { commands } from "../ipc/commands";
 import { wireCodecToWebCodecsString } from "../utils/webcodecs";
 
 const PROBE_WIDTH = 854;
@@ -62,9 +62,7 @@ function codecProbes(): {
 /** Run one isConfigSupported probe, mapping rejection to `false`
  *  (Safari rejects on unrecognized codecs instead of resolving
  *  `{ supported: false }` — w3c/webcodecs#744). */
-async function probeSupported(
-  fn: () => Promise<{ supported?: boolean }>,
-): Promise<boolean> {
+async function probeSupported(fn: () => Promise<{ supported?: boolean }>): Promise<boolean> {
   try {
     return (await fn()).supported === true;
   } catch {
@@ -135,9 +133,7 @@ export async function probeAndReportLocalVideoCapabilities(): Promise<void> {
     };
     cachedCaps = emptyCaps;
     await commands.reportLocalVideoCapabilities(emptyCaps);
-    throw new Error(
-      "WebView has no usable WebCodecs video support — video calls cannot run.",
-    );
+    throw new Error("WebView has no usable WebCodecs video support — video calls cannot run.");
   }
 
   // L1T2 is probed against the VP9 encoder only — the negotiator
@@ -153,7 +149,7 @@ export async function probeAndReportLocalVideoCapabilities(): Promise<void> {
         framerate: PROBE_FRAMERATE,
         bitrate: PROBE_BITRATE,
         scalabilityMode: "L1T2",
-      }),
+      })
     );
     if (l1t2) supportedScalabilityModes.push("l1t2");
   }
@@ -169,7 +165,7 @@ export async function probeAndReportLocalVideoCapabilities(): Promise<void> {
       VideoDecoder.isConfigSupported({
         codec: wireCodecToWebCodecsString(firstDecode),
         optimizeForLatency: true,
-      }),
+      })
     );
   }
 

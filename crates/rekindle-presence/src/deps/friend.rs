@@ -46,9 +46,11 @@ pub enum FriendPresenceEvent {
         friend_key: String,
         status: UserStatusKind,
     },
-    GameChanged {
+    /// The friend's own display name (their profile's subkey 0) changed
+    /// (live A/B finding 39); the adapter publishes it as a friend event.
+    DisplayNameChanged {
         friend_key: String,
-        game: Option<GameInfoSnapshot>,
+        display_name: String,
     },
 }
 
@@ -58,8 +60,7 @@ pub enum FriendPresenceEvent {
 /// acquisition, watch subscriptions, set_dht_value) are hidden behind
 /// adapter-side methods that exchange only strings + byte vectors.
 /// What publishing our own STATUS needs (plan C7.8c): the one publisher
-/// per session runs over this, so a host that has no friend-presence
-/// surface (the daemon) implements only it.
+/// per session runs over this, the host's own presence (plan E1.1).
 #[async_trait]
 pub trait StatusPublisherDeps: Send + Sync + 'static {
     /// Our profile record key, or `None` before the profile is published.
@@ -71,6 +72,9 @@ pub trait StatusPublisherDeps: Send + Sync + 'static {
         profile_key: &str,
         payload: Vec<u8>,
     ) -> Result<(), PresenceError>;
+    /// Our public key and our current friend-presence key (plan E2.5),
+    /// which the STATUS payload is sealed under; `None` before it is minted.
+    fn presence_key(&self) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)>;
     /// Current authenticated user's status (if logged in).
     fn current_identity_status(&self) -> Option<UserStatusKind>;
     /// Wall-clock now in milliseconds since the unix epoch. Hoisted
@@ -80,10 +84,19 @@ pub trait StatusPublisherDeps: Send + Sync + 'static {
 }
 
 #[async_trait]
-pub trait FriendPresenceDeps: StatusPublisherDeps {
+pub trait FriendPresenceDeps: Send + Sync + 'static {
+    /// Wall-clock now in milliseconds since the unix epoch (staleness).
+    fn now_ms(&self) -> i64;
+
     // === Friend lookup ===
     fn friend_for_dht_key(&self, dht_key: &str) -> Option<String>;
     fn is_friend_accepted(&self, friend_key: &str) -> bool;
+    /// The friend's current friend-presence key (their `FriendsKey`, plan
+    /// E2.5): their STATUS and GAME_INFO open under it, or are dropped.
+    fn friend_presence_key(
+        &self,
+        friend_key: &str,
+    ) -> Option<rekindle_secrets::friend_presence::PresenceKey>;
 
     // === Friend state mutations ===
     /// Apply a status update and return whether the prior status was
@@ -92,13 +105,26 @@ pub trait FriendPresenceDeps: StatusPublisherDeps {
         -> SetFriendStatusOutcome;
     fn set_friend_offline(&self, friend_key: &str, last_seen_ts_ms: i64);
     fn set_friend_last_heartbeat(&self, friend_key: &str, heartbeat_ts_ms: i64);
+    /// Store the friend's game in the projection; the adapter publishes
+    /// the change of an accepted friend's game itself (the one place it
+    /// changes, lead decision (51)).
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>);
+    /// Store the friend's own display name, read from their profile, in
+    /// the projection and the database; whether it changed (live A/B
+    /// finding 39).
+    fn set_friend_display_name(&self, friend_key: &str, display_name: &str) -> bool;
     fn set_friend_dht_record_key(&self, friend_key: &str, dht_record_key: &str);
 
-    // === DHT manager mutations ===
-    fn register_friend_dht_key(&self, dht_key: &str, friend_key: &str);
+    // === Route and watch state ===
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>);
-    fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool);
+    /// Their profile's route subkey went empty (they withdrew a route
+    /// that is down, plan RV2 F9 A3): drop the route we cached for them,
+    /// so nothing is sent over the dead blob.
+    fn drop_route_blob(&self, friend_key: &str);
+    /// Their profile names a new device list (subkey 5): a first contact
+    /// waiting for their prekey record is attempted now (live finding
+    /// L-FR3; the watch drives it, no poll, D4).
+    fn prekeys_changed(&self, friend_key: &str);
 
     // === DHT IO (async) ===
     //
@@ -128,21 +154,10 @@ pub trait FriendPresenceDeps: StatusPublisherDeps {
     // === Event emit ===
     fn emit(&self, event: FriendPresenceEvent);
 
-    // === Friend-sync surface (22.c-REDO) ===
+    // === Watch-change reads and the staleness timer (plan E2.5) ===
 
-    /// `(friend_key, dht_record_key)` pairs for every friend whose
-    /// profile DHT record is known. Used by the periodic sync loop
-    /// to iterate friends + force-poll their profile subkeys when
-    /// watches haven't fired.
-    fn friends_with_dht_keys(&self) -> Vec<(String, String)>;
-
-    /// Friend keys whose DHT watch failed and need force-polling
-    /// from the network each tick (per Veilid GitLab #377). Pre-port
-    /// these landed in `state.unwatched_friends`.
-    fn unwatched_friends(&self) -> std::collections::HashSet<String>;
-
-    /// Force a fresh `get_dht_value` for one subkey on the friend's
-    /// profile record. Returns the raw bytes when the subkey has
+    /// Read one changed subkey of the friend's profile record (a watch
+    /// reported it; plan E2.5). Returns the raw bytes when the subkey has
     /// a payload, `None` when it's empty or the read failed.
     async fn fetch_friend_dht_subkey(
         &self,
@@ -152,7 +167,7 @@ pub trait FriendPresenceDeps: StatusPublisherDeps {
     ) -> Option<Vec<u8>>;
 
     /// Friend keys whose `last_heartbeat_at` is older than
-    /// `threshold_ms` (and aren't already Offline). The sync loop
+    /// `threshold_ms` (and aren't already Offline). The staleness timer
     /// marks each one offline + emits FriendOffline (privacy-gated
     /// by `is_friend_accepted`). Pre-port this lived in
     /// `check_stale_presences`.

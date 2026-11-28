@@ -4,7 +4,7 @@
 //! [`SubscriptionEvent`] wraps them all. Consumers pattern-match on the
 //! outer enum to route by domain, then on the inner enum to handle specifics.
 //!
-//! Every `ControlPayload` (rekindle-codec) and `DmPayload` (rekindle-transport) variant
+//! Every `ControlPayload` (rekindle-codec) variant and every inbound 1:1 kind
 //! maps to exactly one event. No Veilid types cross this boundary.
 
 mod call;
@@ -12,30 +12,41 @@ mod channel;
 mod crypto;
 mod friend;
 mod governance;
+mod group_dm;
 mod membership;
 mod network;
 mod notification;
 mod presence;
 mod scope;
 mod social;
+mod stream;
 mod system;
+mod transfer;
 mod typing;
 mod voice;
 
 pub use call::{CallEvent, DirectCallInfo};
-pub use channel::ChannelMessageEvent;
-pub use crypto::{CryptoEvent, PqBundleKind};
+pub use channel::{ChannelMessageEvent, ConversationContext};
+pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;
-pub use governance::GovernanceEvent;
+pub use governance::{GovernanceEvent, OpPublicationState, OpQuarantineReason};
+pub use group_dm::{GroupDmEvent, GroupDmMember};
 pub use membership::MembershipEvent;
-pub use network::{NetworkEvent, RouteAvailability};
-pub use notification::NotificationEvent;
+pub use network::{
+    NetworkEvent, OwnRecordsPhase, OwnRouteClass, OwnRouteDownSet, OwnRouteOutage,
+    RouteAvailability, RoutePauseCause,
+};
+pub use notification::{AlertSubject, NotificationEvent};
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use scope::EventScope;
 pub use social::SocialEvent;
+pub use stream::{Cursor, Sequenced, StopReason, StreamFrame};
 pub use system::SystemEvent;
+pub use transfer::TransferEvent;
 pub use typing::{TypingContext, TypingEvent};
-pub use voice::{LinkMeasurement, VoiceEvent, VoiceParticipant, VoiceScope};
+pub use voice::{
+    JoinHandshake, LinkMeasurement, VoiceEvent, VoiceMediaReady, VoiceParticipant, VoiceScope,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +71,8 @@ pub enum SubscriptionEvent {
     Membership(MembershipEvent),
     /// Friend lifecycle (request, accept, reject, remove).
     Friend(FriendEvent),
+    /// Group-DM lifecycle (invite, join, leave, key rotation, send state).
+    GroupDm(GroupDmEvent),
     /// Cryptographic key events (MEK rotation, MEK request, MEK transfer).
     Crypto(CryptoEvent),
     /// Voice channel activity (join, leave, mute, roster).
@@ -79,12 +92,18 @@ pub enum SubscriptionEvent {
     Network(NetworkEvent),
     /// System-level signals (announcements, raid alerts, kicked, sync, bootstrap).
     System(SystemEvent),
+    /// File transfers (plan E7.2 G12): state changes and finished downloads.
+    Transfer(TransferEvent),
     /// Unread count changed for a specific context.
     UnreadChanged { context: UnreadContext, count: u32 },
+    /// The backend began an action that needs the user's review (plan
+    /// D3.3): any connection of the identity renders it and commits it.
+    IntentPending(crate::intent::IntentReview),
 }
 
 /// Context for unread count changes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum UnreadContext {
     Channel { community: String, channel: String },
     Dm { peer_key: String },
@@ -103,6 +122,7 @@ pub enum EventCategory {
     Presence,
     Membership,
     Friend,
+    GroupDm,
     Crypto,
     Voice,
     Governance,
@@ -111,17 +131,20 @@ pub enum EventCategory {
     Notification,
     Network,
     System,
+    Transfer,
     UnreadChanged,
+    Intent,
 }
 
 impl EventCategory {
     /// Every category, for subscribers that want all of them.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 17] = [
         Self::ChannelMessage,
         Self::Typing,
         Self::Presence,
         Self::Membership,
         Self::Friend,
+        Self::GroupDm,
         Self::Crypto,
         Self::Voice,
         Self::Governance,
@@ -130,7 +153,9 @@ impl EventCategory {
         Self::Notification,
         Self::Network,
         Self::System,
+        Self::Transfer,
         Self::UnreadChanged,
+        Self::Intent,
     ];
 }
 
@@ -143,6 +168,7 @@ impl SubscriptionEvent {
             Self::Presence(_) => EventCategory::Presence,
             Self::Membership(_) => EventCategory::Membership,
             Self::Friend(_) => EventCategory::Friend,
+            Self::GroupDm(_) => EventCategory::GroupDm,
             Self::Crypto(_) => EventCategory::Crypto,
             Self::Voice(_) => EventCategory::Voice,
             Self::Governance(_) => EventCategory::Governance,
@@ -151,30 +177,40 @@ impl SubscriptionEvent {
             Self::Notification(_) => EventCategory::Notification,
             Self::Network(_) => EventCategory::Network,
             Self::System(_) => EventCategory::System,
+            Self::Transfer(_) => EventCategory::Transfer,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
+            Self::IntentPending(_) => EventCategory::Intent,
         }
     }
 
-    /// Extract the community governance key from this event, if it has one.
+    /// Extract the community anchor key from this event, if it has one.
     /// Returns None for global events (friend, network, unread).
     pub fn community(&self) -> Option<&str> {
         match self {
             Self::ChannelMessage(e) => match e {
                 ChannelMessageEvent::New { community, .. }
                 | ChannelMessageEvent::Edited { community, .. }
-                | ChannelMessageEvent::Deleted { community, .. } => Some(community),
+                | ChannelMessageEvent::Deleted { community, .. }
+                | ChannelMessageEvent::ChannelSendStatus { community, .. }
+                | ChannelMessageEvent::ChannelHistoryGap { community, .. }
+                | ChannelMessageEvent::ChannelHistoryGapClosed { community, .. }
+                | ChannelMessageEvent::AttachmentDownloaded { community, .. }
+                | ChannelMessageEvent::ExpressionAssetReady { community, .. } => Some(community),
                 // Direct-conversation events belong to a peer, not a
                 // community.
                 ChannelMessageEvent::DirectMessageReceived { .. }
-                | ChannelMessageEvent::DirectMessageAcknowledged { .. }
-                | ChannelMessageEvent::DirectConversationInvited { .. }
+                | ChannelMessageEvent::DirectMessageSent { .. }
+                | ChannelMessageEvent::DmSendStatus { .. }
+                | ChannelMessageEvent::DmHistoryGap { .. }
+                | ChannelMessageEvent::DisappearingTimerChanged { .. }
+                | ChannelMessageEvent::MessagesExpired { .. }
                 | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },
             Self::Typing(e) => match e {
                 TypingEvent::Started { context, .. } | TypingEvent::Stopped { context, .. } => {
                     match context {
                         TypingContext::Channel { community, .. } => Some(community),
-                        TypingContext::Dm { .. } => None,
+                        TypingContext::Dm { .. } | TypingContext::GroupDm { .. } => None,
                     }
                 }
             },
@@ -182,13 +218,18 @@ impl SubscriptionEvent {
                 PresenceEvent::CommunityMemberChanged { community, .. } => Some(community),
                 // Neither is community-scoped: a DM peer's presence and
                 // our own belong to the device, not to one community.
-                PresenceEvent::FriendChanged { .. } | PresenceEvent::SelfChanged { .. } => None,
+                PresenceEvent::FriendChanged { .. }
+                | PresenceEvent::SelfChanged { .. }
+                | PresenceEvent::SelfProfileChanged { .. } => None,
             },
-            Self::Membership(e) => Some(match e {
+            Self::Membership(e) => match e {
+                // Device-scoped: it passes every community filter.
+                MembershipEvent::Forgotten { .. } => None,
                 MembershipEvent::JoinRequested { community, .. }
-                | MembershipEvent::JoinAccepted { community, .. }
-                | MembershipEvent::JoinRejected { community, .. }
                 | MembershipEvent::Joined { community, .. }
+                | MembershipEvent::SelfJoined { community, .. }
+                | MembershipEvent::JoinWithdrawn { community, .. }
+                | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
                 | MembershipEvent::Removed { community, .. }
                 | MembershipEvent::Kicked { community, .. }
@@ -202,17 +243,14 @@ impl SubscriptionEvent {
                 | MembershipEvent::OnboardingAnswersSubmitted { community, .. }
                 | MembershipEvent::MembersRefreshed { community }
                 | MembershipEvent::MemberDiscovered { community, .. }
-                | MembershipEvent::JoinProgress { community, .. } => community,
-            }),
+                | MembershipEvent::JoinProgress { community, .. } => Some(community),
+            },
             Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }
                 | CryptoEvent::MekRequested { community, .. }
-                | CryptoEvent::MekTransferred { community, .. }
-                | CryptoEvent::AdminKeypairGranted { community }
-                | CryptoEvent::SlotKeypairGranted { community, .. } => Some(community),
-                // PqBundlePublished is a profile-level event (subkey 5 of
-                // the user's identity record), not community-scoped.
-                CryptoEvent::PqBundlePublished { .. } => None,
+                | CryptoEvent::MekTransferred { community, .. } => Some(community),
+                // Our prekey record is the identity's, not a community's.
+                CryptoEvent::PrekeyRecordPublished { .. } => None,
             },
             // `None` for a DM call and for device changes, both of
             // which belong to no community.
@@ -223,6 +261,7 @@ impl SubscriptionEvent {
                 | SocialEvent::ReactionRemoved { community, .. }
                 | SocialEvent::MessagePinned { community, .. }
                 | SocialEvent::MessageUnpinned { community, .. }
+                | SocialEvent::PollChanged { community, .. }
                 | SocialEvent::ThreadCreated { community, .. }
                 | SocialEvent::ThreadMessagePosted { community, .. }
                 | SocialEvent::ThreadArchiveChanged { community, .. }
@@ -235,18 +274,22 @@ impl SubscriptionEvent {
                 | SocialEvent::GameServerRemoved { community, .. } => community,
             }),
             Self::System(e) => match e {
-                SystemEvent::Announcement { community, .. } => community.as_deref(),
-                SystemEvent::RaidAlert { community, .. }
-                | SystemEvent::RaidDetected { community, .. }
+                SystemEvent::RaidDetected { community, .. }
                 | SystemEvent::AutoModAlert { community, .. }
-                | SystemEvent::ChannelLockdown { community, .. }
-                | SystemEvent::Kicked { community }
                 | SystemEvent::BootstrapRequested { community, .. }
-                | SystemEvent::BootstrapReceived { community }
-                | SystemEvent::SyncRequested { community, .. }
-                | SystemEvent::SyncReceived { community, .. } => Some(community),
+                | SystemEvent::BootstrapReceived { community } => Some(community),
                 // Audit chain breakage is a local-device event, not community-scoped.
-                SystemEvent::AuditChainBroken { .. } => None,
+                SystemEvent::AuditChainBroken { .. }
+                | SystemEvent::SkinChanged { .. }
+                | SystemEvent::SkinTrialChanged { .. }
+                | SystemEvent::SkinApplyFailed { .. }
+                | SystemEvent::QuickWipeChanged { .. }
+                | SystemEvent::ActivityAppended { .. }
+                | SystemEvent::Infoview(_)
+                | SystemEvent::FavouriteServerAdded { .. }
+                | SystemEvent::ServersViewChanged { .. }
+                | SystemEvent::SkinSignals { .. }
+                | SystemEvent::SkinShell { .. } => None,
             },
             // Not community-scoped: a friend event, a network state
             // change and an unread bump all belong to the device, not
@@ -258,9 +301,12 @@ impl SubscriptionEvent {
             // A call belongs to its participants, not to a community.
             Self::Call(_)
             | Self::Network(_)
+            | Self::Transfer(_)
             | Self::Notification(_)
             | Self::UnreadChanged { .. }
-            | Self::Friend(_) => None,
+            | Self::IntentPending(_)
+            | Self::Friend(_)
+            | Self::GroupDm(_) => None,
         }
     }
 }
@@ -274,7 +320,7 @@ impl SubscriptionEvent {
 pub struct SubscriptionFilter {
     /// Event categories to match. None = all categories.
     pub categories: Option<Vec<EventCategory>>,
-    /// Community scope (governance key). None = all communities + global events.
+    /// Community scope (anchor key). None = all communities + global events.
     /// Some(key) = only events for that community + global events.
     pub community_scope: Option<String>,
 }

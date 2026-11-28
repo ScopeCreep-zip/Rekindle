@@ -1,55 +1,43 @@
+import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import type { CommunityProfilePatch, WelcomeScreen } from "../../ipc/commands/dto";
+import { isCommandError } from "../../ipc/commands/dto";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { decodeBase64ToBytes } from "../../utils/base64";
+import { errorMessage } from "../../utils/error";
 
+/**
+ * Send `patch`, our card's edit in one community (plan PF2: each field
+ * unchanged, cleared or set, so a partial change never wipes another field),
+ * then show the card as the Host now holds it.
+ */
 export async function handleUpdateCommunityProfile(
   communityId: string,
-  bio: string | null,
-  pronouns: string | null,
-  themeColor: number | null,
-  badges: string[],
-  avatarRef: string | null = null,
-  bannerRef: string | null = null,
+  patch: CommunityProfilePatch
 ): Promise<boolean> {
   try {
-    await commands.updateCommunityProfile(
-      communityId,
-      bio,
-      pronouns,
-      themeColor,
-      badges,
-      avatarRef,
-      bannerRef,
-    );
-    setCommunityState("communities", communityId, {
-      myBio: bio,
-      myPronouns: pronouns,
-      myThemeColor: themeColor,
-      myBadges: badges,
-      myAvatarRef: avatarRef,
-      myBannerRef: bannerRef,
-    });
-    const community = communityState.communities[communityId];
-    const myPseudonymKey = community?.myPseudonymKey;
-    if (community && myPseudonymKey) {
-      const memberIdx = community.members.findIndex((m) => m.pseudonymKey === myPseudonymKey);
-      if (memberIdx >= 0) {
-        setCommunityState("communities", communityId, "members", memberIdx, {
-          bio,
-          pronouns,
-          themeColor,
-          badges,
-          avatarRef,
-          bannerRef,
-        });
-      }
+    await commands.updateCommunityProfile(communityId, patch);
+    const detail = (await commands.getCommunityDetails()).find((d) => d.id === communityId);
+    if (detail) {
+      setCommunityState("communities", communityId, {
+        myBio: detail.myBio ?? null,
+        myPronouns: detail.myPronouns ?? null,
+        myThemeColor: detail.myThemeColor ?? null,
+        myBadges: detail.myBadges ?? [],
+        myCustomStatus: detail.myCustomStatus ?? null,
+        // Our pictures as the Host now holds them (PF2), never from the edit.
+        myAvatarRef: detail.myAvatarRef ?? null,
+        myBannerRef: detail.myBannerRef ?? null,
+      });
     }
+    // Our own member row is the Host's too.
+    refreshCommunityMembers(communityId);
     addToast("Profile updated", "success");
     return true;
   } catch (e) {
-    const msg = typeof e === "string" ? e : "Failed to update profile";
-    console.error("Failed to update community profile:", e);
-    addToast(msg, "error");
+    if (isCommandError(e) && e.type === "cancelled") return false;
+    addToast(`Profile not updated: ${errorMessage(e)}`, "error");
     return false;
   }
 }
@@ -57,7 +45,7 @@ export async function handleUpdateCommunityProfile(
 /// Pick a file in the native dialog and upload it. Null if cancelled.
 export async function handleUploadAttachment(
   communityId: string,
-  channelId: string,
+  channelId: string
 ): Promise<string | null> {
   try {
     const id = await commands.uploadAttachment(communityId, channelId);
@@ -76,7 +64,7 @@ export async function handleUploadAttachment(
 export async function handleDownloadAttachment(
   communityId: string,
   channelId: string,
-  attachmentId: string,
+  attachmentId: string
 ): Promise<boolean> {
   try {
     return await commands.downloadAttachment(communityId, channelId, attachmentId);
@@ -91,7 +79,7 @@ export async function handleDownloadAttachment(
 export async function handleRevealAttachment(
   communityId: string,
   channelId: string,
-  attachmentId: string,
+  attachmentId: string
 ): Promise<void> {
   try {
     await commands.revealDownloadedAttachment(communityId, channelId, attachmentId);
@@ -107,11 +95,17 @@ export async function handleLoadVoiceMessage(
   communityId: string,
   channelId: string,
   attachmentId: string,
-  mimeType: string,
-): Promise<Blob | null> {
+  mimeType: string
+): Promise<{ blob: Blob; durationMs: number; waveform: Uint8Array } | null> {
   try {
-    const bytes = await commands.getVoiceMessageAudio(communityId, channelId, attachmentId);
-    return new Blob([bytes], { type: mimeType });
+    const view = await commands.getVoiceMessageAudio(communityId, channelId, attachmentId);
+    return {
+      blob: new Blob([decodeBase64ToBytes(view.audio) as Uint8Array<ArrayBuffer>], {
+        type: mimeType,
+      }),
+      durationMs: view.durationMs,
+      waveform: decodeBase64ToBytes(view.waveform),
+    };
   } catch (e) {
     const msg = typeof e === "string" ? e : "Could not load voice message";
     console.error("Voice message fetch failed:", e);
@@ -123,7 +117,7 @@ export async function handleLoadVoiceMessage(
 export async function handlePinAttachment(
   communityId: string,
   attachmentId: string,
-  pinned: boolean,
+  pinned: boolean
 ): Promise<void> {
   try {
     await commands.pinAttachment(communityId, attachmentId, pinned);
@@ -141,9 +135,7 @@ export async function handlePinAttachment(
  * Backend validates `MANAGE_COMMUNITY` and that the segment is full;
  * returns the new `segment_index`.
  */
-export async function handleExpandCommunitySegment(
-  communityId: string,
-): Promise<number | null> {
+export async function handleExpandCommunitySegment(communityId: string): Promise<number | null> {
   try {
     const newIndex = await commands.expandCommunitySegment(communityId);
     addToast(`Community expanded — segment ${newIndex} ready for new members`, "success");
@@ -156,19 +148,10 @@ export async function handleExpandCommunitySegment(
   }
 }
 
-export async function handleUpdateCommunityPresence(
-  communityId: string,
-  status: string,
-): Promise<void> {
-  try {
-    await commands.updateCommunityPresence(communityId, status);
-  } catch (e) {
-    console.error("Failed to update community presence:", e);
-  }
-}
-
 export async function handleSetNotificationOverride(
-  communityId: string, channelId: string, level: "all" | "mentions" | "nothing"
+  communityId: string,
+  channelId: string,
+  level: "all" | "mentions" | "nothing"
 ): Promise<void> {
   try {
     await commands.setChannelNotificationLevel(communityId, channelId, level);
@@ -192,7 +175,7 @@ export async function handleSetNotificationOverride(
 export async function handleSetChannelNotificationSound(
   communityId: string,
   channelId: string,
-  soundRef: string | null,
+  soundRef: string | null
 ): Promise<void> {
   try {
     await commands.setNotificationSound(communityId, channelId, soundRef);
@@ -206,7 +189,7 @@ export async function handleSetChannelNotificationSound(
         "channels",
         index,
         "notificationSoundRef",
-        soundRef,
+        soundRef
       );
     }
     addToast("Notification sound updated", "success");
@@ -227,10 +210,41 @@ export async function handleLoadOnboardingConfig(communityId: string): Promise<v
   }
 }
 
+/** The `WelcomeScreen` DTO's shape (ipc/commands/dto.ts), entry by entry. */
+function isWelcomeScreen(v: unknown): v is WelcomeScreen {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.description === "string" &&
+    Array.isArray(o.channels) &&
+    o.channels.every((c: unknown) => {
+      if (c === null || typeof c !== "object") return false;
+      const e = c as Record<string, unknown>;
+      return (
+        typeof e.channelId === "string" &&
+        typeof e.description === "string" &&
+        (e.emoji === null || typeof e.emoji === "string")
+      );
+    })
+  );
+}
+
 export async function handleLoadWelcomeScreen(communityId: string): Promise<void> {
   try {
-    const screen = await commands.getWelcomeScreen(communityId);
-    setCommunityState("communities", communityId, "welcomeScreen", screen);
+    const answer: unknown = await commands.getWelcomeScreen(communityId);
+    if (!isWelcomeScreen(answer)) {
+      // A malformed answer is refused here, at the boundary: written into
+      // the store it threw inside WelcomeScreen.tsx's render and Solid
+      // dropped the rest of that update (walk W6b, a mock's `[]`).
+      console.error("Malformed welcome screen answer:", answer);
+      setCommunityState("communities", communityId, "welcomeScreen", undefined);
+      return;
+    }
+    // The Host answers its empty default when no welcome screen is set
+    // (`OnboardingAdapter::welcome_screen`): that is no screen, not a blank
+    // page shown on every open.
+    const isSet = answer.description !== "" || answer.channels.length > 0;
+    setCommunityState("communities", communityId, "welcomeScreen", isSet ? answer : undefined);
   } catch (e) {
     console.error("Failed to load welcome screen:", e);
   }
@@ -239,7 +253,7 @@ export async function handleLoadWelcomeScreen(communityId: string): Promise<void
 export async function handleSubmitOnboarding(
   communityId: string,
   answers: { questionId: string; selectedOptions: string[] }[],
-  acknowledgedRules?: boolean,
+  acknowledgedRules?: boolean
 ): Promise<boolean> {
   try {
     await commands.submitOnboardingAnswers(communityId, answers, acknowledgedRules);

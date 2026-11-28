@@ -23,10 +23,7 @@ pub(super) fn configure_encoder(encoder: &gst::Element, config: &CaptureConfig) 
     // deadline=1 µs selects VPX_DL_REALTIME — the entire point.
     encoder.set_property("deadline", 1i64);
     encoder.set_property_from_str("end-usage", "cbr");
-    encoder.set_property(
-        "target-bitrate",
-        i32::try_from(u64::from(config.start_bitrate_kbps) * 1000).unwrap_or(i32::MAX),
-    );
+    set_target_bitrate(encoder, config.start_bitrate_kbps);
     encoder.set_property(
         "keyframe-max-dist",
         i32::try_from(config.keyframe_max_dist).unwrap_or(128),
@@ -51,6 +48,13 @@ pub(super) fn configure_encoder(encoder: &gst::Element, config: &CaptureConfig) 
     encoder.set_property("buffer-optimal-size", 400i32);
     encoder.set_property("threads", 2i32);
     encoder.set_property_from_str("error-resilient", "default");
+}
+
+/// Set the encoder-domain CBR target. `vp9enc` applies rate-control
+/// properties to an initialized encoder live (`vpx_codec_enc_config_set`).
+pub(super) fn set_target_bitrate(encoder: &gst::Element, kbps: u32) {
+    let bps = i32::try_from(u64::from(kbps) * 1000).unwrap_or(i32::MAX);
+    encoder.set_property("target-bitrate", bps);
 }
 
 pub(super) fn map_bus_error(err: &gst::message::Error, source_desc: &str) -> CaptureError {

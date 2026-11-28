@@ -19,44 +19,17 @@ pub use sign::{sign_envelope, verify_envelope};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum CommunityEnvelope {
-    /// Gossip notification that a new message exists in a channel SMPL record.
-    ///
-    /// Chiral Network model: gossip carries the notification (cargo manifest),
-    /// not the cargo (ciphertext). Recipients fetch the actual MEK-encrypted
-    /// content from the sender's SMPL subkey via `get_dht_value`.
-    ///
-    /// This ensures ciphertext exists only on DHT storage nodes (5 replicas),
-    /// not across the entire gossip fan-out graph (50-100+ relay nodes).
-    MessageNotification {
-        channel_id: String,
-        message_id: String,
-        author_pseudonym: String,
-        /// Sender's SMPL subkey index — where to fetch the ciphertext.
-        subkey_index: u32,
-        /// Lamport logical timestamp for causal ordering.
-        lamport_ts: u64,
-        /// Per-sender, per-channel sequence number for gap detection.
-        sequence: u64,
-        /// blake3 hash of the MEK-encrypted ciphertext, for integrity
-        /// verification after DHT fetch. Ensures the fetched value matches
-        /// what the sender wrote.
-        content_hash: String,
-        timestamp: u64,
-    },
     /// A control operation (channel/role/invite/event management, moderation, etc.).
-    Control(ControlPayload),
-    /// Presence update from a member.
-    PresenceUpdate {
-        pseudonym_key: String,
-        status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        game_info: Option<PresenceGameInfo>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        route_blob: Option<Vec<u8>>,
-    },
-    /// Typing indicator (ephemeral, not stored).
+    ///
+    /// Boxed: the control payload is several times the size of every
+    /// other variant, so an unboxed one made each envelope that size.
+    Control(Box<ControlPayload>),
+    /// Typing indicator (ephemeral, not stored; plan E3.4 S9): a start
+    /// lasting `ttl_ms`, or the stop when `ttl_ms` is 0, in the channel
+    /// whose tag under the current text key of its scope is `channel_tag`.
     TypingIndicator {
-        channel_id: String,
+        channel_tag: [u8; 16],
+        ttl_ms: u32,
         pseudonym_key: String,
     },
     /// Watch Relay (architecture §14.3 / §11.7): a member with an active
@@ -64,8 +37,7 @@ pub enum CommunityEnvelope {
     /// to peers via gossip, so members without watch slots still learn
     /// when a record's subkey changes. The receiver is expected to
     /// `get_dht_value` to fetch the new value (we deliberately do NOT
-    /// carry ciphertext over gossip — same Chiral Network principle as
-    /// `MessageNotification`).
+    /// carry ciphertext over gossip: the Chiral Network principle).
     WatchRelay {
         /// Hex-encoded Veilid record key whose subkey changed.
         record_key: String,
@@ -79,6 +51,30 @@ pub enum CommunityEnvelope {
 }
 
 impl CommunityEnvelope {
+    /// The envelope carrying `payload`.
+    #[must_use]
+    pub fn control(payload: ControlPayload) -> Self {
+        Self::Control(Box::new(payload))
+    }
+
+    /// The control payload, when this envelope carries one.
+    #[must_use]
+    pub fn as_control(&self) -> Option<&ControlPayload> {
+        match self {
+            Self::Control(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    /// The control payload by value, when this envelope carries one.
+    #[must_use]
+    pub fn into_control(self) -> Option<ControlPayload> {
+        match self {
+            Self::Control(payload) => Some(*payload),
+            _ => None,
+        }
+    }
+
     /// Is this envelope addressed to **one** member rather than the
     /// community?
     ///
@@ -91,29 +87,30 @@ impl CommunityEnvelope {
     /// This is the single definition. There were two, and they
     /// disagreed: `rekindle-transport`'s postcard
     /// `SignedGossipEnvelope::is_private` listed six variants while
-    /// `src-tauri`'s `is_private_control_payload` listed four, omitting
-    /// `JoinRejected` and `KickedNotification` — so a desktop node
+    /// `src-tauri`'s `is_private_control_payload` listed four — so a desktop node
     /// re-broadcast two payloads a daemon node would not. The union is
     /// the correct answer, plus the media plane, which was previously
     /// guarded separately and only on one track.
     #[must_use]
     pub fn is_directed(&self) -> bool {
-        let Self::Control(payload) = self else {
+        let Some(payload) = self.as_control() else {
             return false;
         };
         matches!(
             payload,
-            // Wrapped or granted to a single recipient.
-            ControlPayload::JoinAccepted { .. }
-                | ControlPayload::JoinRejected { .. }
-                | ControlPayload::SlotKeypairGrant { .. }
-                | ControlPayload::AdminKeypairGrant { .. }
-                | ControlPayload::MekTransfer(_)
+            // Wrapped for a single recipient.
+            ControlPayload::MekTransfer(_)
                 | ControlPayload::MekTransferAck(_)
-                | ControlPayload::KickedNotification
                 // Answers to one peer's question.
-                | ControlPayload::SyncResponse { .. }
-                | ControlPayload::BootstrapResponse { .. }
+                | ControlPayload::BootstrapResponseV2 { .. }
+                | ControlPayload::BootstrapPartial { .. }
+                | ControlPayload::BootstrapRefused { .. }
+                | ControlPayload::CheckpointStateRequest { .. }
+                | ControlPayload::CheckpointStateResponse { .. }
+                | ControlPayload::CheckpointHintRequest { .. }
+                | ControlPayload::CheckpointHintResponse { .. }
+                | ControlPayload::FrontierRequest { .. }
+                | ControlPayload::FrontierResponse { .. }
                 // Media plane — §10.6. Directed to a call or channel
                 // roster; flooding it would multiply a video stream by
                 // the fan-out degree at every hop.
@@ -127,19 +124,6 @@ impl CommunityEnvelope {
                 | ControlPayload::RequestAttachment { .. }
         )
     }
-}
-
-/// Game information for community presence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PresenceGameInfo {
-    pub game_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub game_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub elapsed_seconds: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server_address: Option<String>,
 }
 
 /// A participant entry in a voice roster broadcast.
@@ -157,6 +141,19 @@ pub struct VoiceRosterEntry {
     /// roster UI never depends on registry-scan timing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// The participant's session key, as it announced it.
+    #[serde(default)]
+    pub session_key: MediaSessionKey,
+}
+
+/// A participant's per-session media key (X25519) and its community
+/// pseudonym's signature over it (plan C7.29): call-media keys are sealed
+/// to it, so they stop opening when the session ends.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaSessionKey {
+    pub key: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 /// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519

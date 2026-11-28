@@ -1,9 +1,10 @@
 [package]
 name = "rekindle-mek-rotation"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Phase 17 — cascade MEK rotation protocol (election + distribute + cache + persist)"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

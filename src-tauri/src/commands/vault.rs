@@ -20,14 +20,14 @@ pub struct VaultDiagnostics {
 #[cfg(debug_assertions)]
 #[tauri::command]
 pub async fn vault_diagnostics(
-    keystore_handle: tauri::State<'_, crate::keystore::KeystoreHandle>,
+    keystore_handle: tauri::State<'_, rekindle_vault::VaultHandle>,
 ) -> Result<VaultDiagnostics, String> {
     let guard = keystore_handle.lock();
     let Some(keystore) = guard.as_ref() else {
         return Err("vault locked — no keystore initialized".to_string());
     };
     let entries = keystore.entry_count().map_err(|e| e.to_string())?;
-    let last_write_ms = std::fs::metadata(keystore.vault_path())
+    let last_write_ms = std::fs::metadata(keystore.path())
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())

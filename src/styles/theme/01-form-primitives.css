@@ -26,9 +26,35 @@
 
 
 
+  /* A long word or URL breaks anywhere rather than widening the list. */
   .chat-message-body {
     font-size: 12px;
     color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  /* One line: the sender's name gives way (ellipsis), the timestamp and
+     the markers after it never wrap or shrink. The row is always as tall
+     as the action bar it ends with (.message-actions), so showing the bar
+     on hover never moves the messages below it (plan MA1). */
+  .chat-message-header {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    min-height: 24px;
+  }
+
+  .chat-message-header > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .chat-message-header > .chat-message-sender-other,
+  .chat-message-header > .chat-message-sender-self {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .chat-message-timestamp {
@@ -40,7 +66,7 @@
   /* Message input */
   .message-input {
     background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border: 1px solid var(--color-xfire-border);
     border-radius: 0.25rem;
     padding: 6px 8px;
     font-size: 12px;
@@ -55,7 +81,7 @@
   }
 
   .message-input::placeholder {
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
   }
 
   /* Status bar */
@@ -69,7 +95,6 @@
     padding: 0 8px;
     font-size: 11px;
     color: var(--color-xfire-text-status);
-    flex-shrink: 0;
   }
 
   /* Context menu */
@@ -77,9 +102,9 @@
     position: fixed;
     z-index: var(--z-context-menu);
     background: var(--color-xfire-bg-panel);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border: 1px solid var(--color-xfire-border);
     border-radius: 0.25rem;
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+    box-shadow: 0 10px 15px -3px color-mix(in srgb, var(--color-xfire-shadow) 30%, transparent);
     padding: 4px 0;
     min-width: 144px;
   }
@@ -96,7 +121,26 @@
   }
 
   .context-menu-item-danger {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
+  }
+
+  /* A menu item the Host says cannot run now stays listed, with why. */
+  .context-menu-item[data-disabled] {
+    color: var(--color-xfire-text-disabled);
+    cursor: default;
+  }
+  .context-menu-item[data-disabled]:hover {
+    background: transparent;
+  }
+  .context-menu-item-reason {
+    margin-left: 6px;
+    color: var(--color-xfire-text-disabled);
+  }
+
+  /* A danger item's hover is its own tint: the accent hover under red text
+   * reads 3.86:1 (plan E7.7.0b). */
+  .context-menu-item-danger:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 12%, transparent);
   }
 
   /* Login — must claim the flex-1 slot inside `.app-frame` so the
@@ -117,27 +161,16 @@
   .login-title {
     font-size: 26px;
     font-weight: 700;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
-  .login-subtitle {
+  /* `.form-hint`: why a form's submit is unavailable for now (e.g. waiting
+   * for the network). */
+  .login-subtitle,
+  .form-hint {
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     text-align: center;
-  }
-
-  .login-toggle-btn {
-    background: none;
-    border: none;
-    color: var(--color-xfire-link, var(--color-xfire-accent));
-    font-size: 11px;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: color 0.15s;
-  }
-
-  .login-toggle-btn:hover {
-    color: var(--color-xfire-text);
   }
 
   /* Account Picker — like `.login-container`, takes the flex-1 slot so
@@ -170,16 +203,21 @@
   }
 
   .account-bubble {
+    width: 80px;
+    position: relative;
+    border-radius: 8px;
+    transition: background var(--motion-duration-fast);
+  }
+
+  .account-bubble-select {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    width: 80px;
+    width: 100%;
     cursor: pointer;
-    position: relative;
     padding: 8px 4px;
-    border-radius: 8px;
-    transition: background 0.15s;
+    border-radius: inherit;
   }
 
   .account-bubble:hover {
@@ -210,18 +248,22 @@
     font-size: 10px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--motion-duration-fast);
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .account-bubble:hover .account-bubble-delete {
+  /* Shown on hover, and while the keyboard is on the bubble or the button
+     itself, so a keyboard user sees the control they have focused. */
+  .account-bubble:hover .account-bubble-delete,
+  .account-bubble:focus-within .account-bubble-delete,
+  .account-bubble-delete:focus-visible {
     opacity: 1;
   }
 
   .account-bubble-delete:hover {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     background: color-mix(in srgb, var(--color-xfire-busy) 15%, transparent);
   }
 
@@ -239,7 +281,7 @@
     cursor: pointer;
     border-radius: 50%;
     padding: 4px;
-    transition: box-shadow 0.2s;
+    transition: box-shadow var(--motion-duration-base);
   }
 
   .lock-avatar:hover {
@@ -258,21 +300,15 @@
     background: transparent;
     border: 1px dashed var(--color-xfire-accent);
     border-radius: 4px;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 12px;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .account-create-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
-  }
-
-  .delete-confirm-text {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    margin-bottom: 12px;
   }
 
   /* Settings */
@@ -287,17 +323,17 @@
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 12px;
-    color: var(--color-xfire-text);
+    color: var(--color-xfire-text-secondary);
   }
 
 
   .settings-option:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
   }
 
   .settings-hint {
     font-size: 11px;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     padding: 8px 12px;
     font-style: italic;
   }
@@ -305,7 +341,7 @@
   .settings-category-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-text-dim);
+    color: var(--color-xfire-text-status);
     padding: 8px 12px;
     font-style: normal;
     text-transform: uppercase;
@@ -332,6 +368,99 @@
     color: var(--color-xfire-text);
   }
 
+  /* Settings → Appearance (plan E7.7.2). */
+  .skin-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .skin-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding-right: 12px;
+    border-radius: 4px;
+  }
+
+  /* The skin shown is Xfire's selected list row, solid: its text, the
+   * target-size line, badge and credits included, is the selected text. */
+  .skin-row-shown {
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-selection-text);
+  }
+
+  .skin-row-shown :is(.skin-access, .skin-badge, .skin-credits, .skin-credits-stated, .skin-credits-term, .skin-credits-value, .skin-credits-url, .skin-credits-licence) {
+    color: var(--color-xfire-selection-text);
+  }
+
+  .skin-choice {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  .skin-name {
+    overflow-wrap: anywhere;
+  }
+
+  /* A skin's target sizes (plan SK14), on its own line under the name. */
+  .skin-access {
+    flex-basis: 100%;
+    padding-left: 24px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .skin-badge {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    white-space: nowrap;
+  }
+
+  .skin-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .skin-action {
+    white-space: nowrap;
+  }
+
+  .skin-import {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .skin-file-input {
+    display: none;
+  }
+
+  .skin-error {
+    font-style: normal;
+  }
+
+  /* The trial prompt's layout around its `.sec-review` card. */
+  .skin-trial {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  /* The commit is full width (`@layer sec`); revert sits under it. */
+  .skin-trial-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
   /* Profile */
   .profile-content {
     flex: 1;
@@ -342,6 +471,15 @@
     flex-direction: column;
     align-items: center;
     gap: 12px;
+  }
+
+  /* The profile is where a name is read in full: long names and status
+     messages wrap inside the column instead of spilling past it. */
+  .profile-display-name,
+  .profile-status-message {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
 
   .profile-display-name {
@@ -373,7 +511,7 @@
 
   .profile-game-name {
     font-size: 12px;
-    color: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame-text);
   }
 
 
@@ -422,17 +560,20 @@
     flex-shrink: 0;
   }
 
+  /* The field has a fixed height (`.message-input-field`), so every
+   * control centres on it; bottom alignment put the 34 px emoji button
+   * and the icon-high attach and mic buttons on three different lines. */
   .message-input-shell {
     position: relative;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 8px;
   }
 
   .message-input-emoji-btn {
     width: 34px;
     height: 34px;
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border: 1px solid var(--color-xfire-border);
     background: var(--color-xfire-bg-input);
     color: var(--color-xfire-text-secondary);
     border-radius: 6px;

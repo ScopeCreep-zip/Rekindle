@@ -27,7 +27,7 @@
 //! a validly-signed `MemberPresence` whose author is neither banned nor
 //! departed — evaluated once per poll tick by
 //! `parse_and_classify_row`, with the answer left in
-//! [`crate::daemon::community_runtime`].
+//! [`crate::host::community::store`].
 //!
 //! Everything downstream reads that materialised roster. Re-deriving it
 //! per request would verify every signature again to answer a question
@@ -42,7 +42,7 @@
 //! |---|---|
 //! | channel message catch-up | no local message store to catch up *into* — the DHT read itself works, both tracks now writing SMPL channel segment records |
 //! | event RSVPs | no event store |
-//! | voice roster | no voice engine |
+//! | voice roster | no media engine until E4.1 (our own channel is `host::own_voice`) |
 //!
 //! Each is a recorded capability gap, not a stub to be forgotten: the
 //! presence poll degrades to "roster and gossip overlay only", which is
@@ -50,7 +50,6 @@
 
 mod deps_impl;
 mod events;
-mod gossip;
 mod lifecycle;
 mod registry;
 mod state_reads;
@@ -64,8 +63,8 @@ use crate::daemon::dispatch::DaemonContext;
 ///
 /// Owned rather than borrowed: the presence poll is a long-lived
 /// spawned loop, so it needs `'static` state — the same reason
-/// `DaemonMekAdapter` holds an `Arc`, and unlike the short-lived
-/// `DaemonGovernanceAdapter` which lives for one request.
+/// `DaemonMekAdapter` and
+/// `HostGovernance` hold an `Arc`.
 pub struct DaemonPresenceAdapter {
     pub(super) ctx: Arc<DaemonContext>,
 }

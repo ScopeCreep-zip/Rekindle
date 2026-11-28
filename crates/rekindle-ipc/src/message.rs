@@ -17,8 +17,13 @@ use uuid::Uuid;
 /// Postcard encoding is positional, so a field change makes old and new
 /// frames mutually unreadable. The bus server drops a frame whose
 /// `wire_version` is not this one; the Noise prologue
-/// (`REKINDLE-IPC-v2`) already refuses a mismatched peer at handshake.
-pub const WIRE_VERSION: u8 = 2;
+/// (`REKINDLE-IPC-v3`) already refuses a mismatched peer at handshake.
+pub const WIRE_VERSION: u8 = 3;
+
+/// This build's protocol id (`build.rs`: a hash of the sources that shape a
+/// frame). Both ends send it in the Noise handshake and refuse a peer whose
+/// id differs (plan D3.2), with [`crate::error::IpcError::BuildMismatch`].
+pub const BUILD_ID: &str = env!("REKINDLE_IPC_BUILD_ID");
 
 /// Security level classification for IPC messages.
 ///
@@ -105,9 +110,12 @@ pub struct Message<T> {
     /// Server-stamped Noise static key of the sending connection. NEVER
     /// set by clients: the server overwrites it on every routed frame.
     pub verified_sender_key: Option<[u8; 32]>,
+    /// Server-stamped id of the sending connection. NEVER set by clients: the
+    /// host keys a connection's held intents by it (plan D3.3).
+    pub verified_sender_conn: Option<u64>,
     /// Agent type classification.
     pub agent_type: Option<AgentType>,
-    /// Community scope for event routing (governance key, or None for global).
+    /// Community scope for event routing (anchor key, or None for global).
     pub community_scope: Option<String>,
 }
 
@@ -152,6 +160,7 @@ impl<T: Serialize> Message<T> {
             security_level: level,
             verified_sender_name: None, // Server fills this
             verified_sender_key: None,  // Server fills this
+            verified_sender_conn: None, // Server fills this
             agent_type: ctx.agent_type,
             community_scope: None,
         }
@@ -184,6 +193,7 @@ impl<T: fmt::Debug> fmt::Debug for Message<T> {
             .field("security_level", &self.security_level)
             .field("verified_sender_name", &self.verified_sender_name)
             .field("verified_sender_key", &self.verified_sender_key.is_some())
+            .field("verified_sender_conn", &self.verified_sender_conn)
             .field("agent_type", &self.agent_type)
             .field("community_scope", &self.community_scope)
             .field("payload", &self.payload)
@@ -192,55 +202,5 @@ impl<T: fmt::Debug> fmt::Debug for Message<T> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_ctx() -> MessageContext {
-        MessageContext::new(Uuid::nil())
-    }
-
-    #[test]
-    fn message_new_sets_wire_version() {
-        let msg = Message::new(&test_ctx(), "hello", SecurityLevel::Open, Instant::now());
-        assert_eq!(msg.wire_version, WIRE_VERSION);
-    }
-
-    #[test]
-    fn message_new_defaults_are_safe() {
-        let msg = Message::new(&test_ctx(), 42u32, SecurityLevel::Open, Instant::now());
-        // [RC-2] verified_sender_name must be None on construction.
-        assert!(msg.verified_sender_name.is_none());
-        // correlation_id must be None on new requests.
-        assert!(msg.correlation_id.is_none());
-    }
-
-    #[test]
-    fn message_roundtrip_preserves_wire_version() {
-        let msg = Message::new(
-            &test_ctx(),
-            "test",
-            SecurityLevel::Authenticated,
-            Instant::now(),
-        );
-        let bytes = super::super::framing::encode_frame(&msg).unwrap();
-        let decoded: Message<String> = super::super::framing::decode_frame(&bytes).unwrap();
-        assert_eq!(decoded.wire_version, WIRE_VERSION);
-        assert_eq!(decoded.payload, "test");
-    }
-
-    #[test]
-    fn with_correlation_sets_id() {
-        let msg = Message::new(&test_ctx(), 0u8, SecurityLevel::Open, Instant::now());
-        let corr = Uuid::now_v7();
-        let msg = msg.with_correlation(corr);
-        assert_eq!(msg.correlation_id, Some(corr));
-    }
-
-    #[test]
-    fn security_level_ordering() {
-        assert!(SecurityLevel::Open < SecurityLevel::Authenticated);
-        assert!(SecurityLevel::Authenticated < SecurityLevel::Agent);
-        assert!(SecurityLevel::Agent < SecurityLevel::Internal);
-        assert!(SecurityLevel::Internal < SecurityLevel::Admin);
-    }
-}
+#[path = "message_tests.rs"]
+mod tests;

@@ -1,4 +1,5 @@
-//! 30-second game-detection poll runtime with shutdown + change-only
+//! Game-detection poll runtime (at the identity's
+//! `game_scan_interval_secs`, the caller's `poll_interval`) with shutdown + change-only
 //! publish semantics.
 //!
 //! Owns the `GameDetector` + `last_game` change-detection state;
@@ -18,10 +19,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::scanner::{DetectedGame, GameDetector};
-
-/// Default poll cadence (30 s) — matches the original `game_service.rs`
-/// pre-consolidation behavior.
-pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Publisher implemented by the Tauri shell. Called once per detected
 /// game-state change. Bundles UI emit + DHT publish + community
@@ -58,7 +55,14 @@ pub async fn run<P: GameDetectorPublisher>(
     let mut interval = tokio::time::interval(poll_interval);
     let mut last_game: Option<String> = None;
     loop {
+        // Biased, stop first: a stop that lands with a tick ends the loop
+        // without one more scan and publish.
         tokio::select! {
+            biased;
+            () = stop.cancelled() => {
+                tracing::info!("game detection runtime shutting down");
+                break;
+            }
             _ = interval.tick() => {
                 let detected = detector.scan_once();
                 let current_name = detected.as_ref().map(|g| g.game_name.clone());
@@ -72,51 +76,10 @@ pub async fn run<P: GameDetectorPublisher>(
                     last_game = current_name;
                 }
             }
-            () = stop.cancelled() => {
-                tracing::info!("game detection runtime shutting down");
-                break;
-            }
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use parking_lot::Mutex;
-
-    struct CapturingPublisher {
-        events: Mutex<Vec<Option<DetectedGame>>>,
-    }
-
-    #[async_trait]
-    impl GameDetectorPublisher for CapturingPublisher {
-        async fn publish_game_status(&self, detected: Option<DetectedGame>) {
-            self.events.lock().push(detected);
-        }
-    }
-
-    #[tokio::test]
-    async fn shutdown_breaks_the_loop() {
-        let detector = GameDetector::new(
-            crate::database::GameDatabase::bundled(),
-            Duration::from_millis(10),
-        );
-        let publisher = Arc::new(CapturingPublisher {
-            events: Mutex::new(Vec::new()),
-        });
-        let stop = tokio_util::sync::CancellationToken::new();
-        let handle = tokio::spawn(run(
-            detector,
-            publisher.clone(),
-            stop.clone(),
-            Duration::from_millis(10),
-        ));
-        tokio::time::sleep(Duration::from_millis(30)).await;
-        stop.cancel();
-        handle.await.unwrap();
-        // No assertion on events count — sysinfo on macOS doesn't
-        // reliably enumerate processes in test env. The point of the
-        // test is that shutdown works.
-    }
-}
+#[path = "runtime_tests.rs"]
+mod tests;

@@ -1,7 +1,9 @@
-import { commands } from "../ipc/commands";
 import type { NetworkStatus } from "../ipc/commands";
-import { setSettingsState } from "../stores/settings.store";
+import { commands } from "../ipc/commands";
+import { asImageKind } from "../ipc/commands/system";
 import type { SettingsState } from "../stores/settings.store";
+import { setSettingsState } from "../stores/settings.store";
+import { addToast } from "../stores/toast.store";
 
 export async function handleLoadSettings(): Promise<void> {
   try {
@@ -13,20 +15,18 @@ export async function handleLoadSettings(): Promise<void> {
       startMinimized: prefs.startMinimized,
       showGameActivity: prefs.gameDetectionEnabled,
       autoAwayMinutes: prefs.autoAwayMinutes,
-      autoVolunteerRelayForNewFriends:
-        prefs.autoVolunteerRelayForNewFriends ?? false,
+      autoVolunteerRelayForNewFriends: prefs.autoVolunteerRelayForNewFriends ?? false,
       ringtoneEnabled: prefs.ringtoneEnabled ?? true,
       ringtoneVolume: prefs.ringtoneVolume ?? 0.4,
       inCallDndAutoEnable: prefs.inCallDndAutoEnable ?? true,
+      notificationContent: prefs.notificationContent ?? "nameOnly",
     });
   } catch (e) {
     console.error("Failed to load settings:", e);
   }
 }
 
-export async function handleSaveSettings(
-  settings: Partial<SettingsState>,
-): Promise<void> {
+export async function handleSaveSettings(settings: Partial<SettingsState>): Promise<void> {
   try {
     const currentPrefs = await commands.getPreferences();
     const updated = {
@@ -43,12 +43,6 @@ export async function handleSaveSettings(
       ...(settings.startMinimized !== undefined && {
         startMinimized: settings.startMinimized,
       }),
-      ...(settings.showGameActivity !== undefined && {
-        gameDetectionEnabled: settings.showGameActivity,
-      }),
-      ...(settings.autoAwayMinutes !== undefined && {
-        autoAwayMinutes: settings.autoAwayMinutes,
-      }),
       ...(settings.autoVolunteerRelayForNewFriends !== undefined && {
         autoVolunteerRelayForNewFriends: settings.autoVolunteerRelayForNewFriends,
       }),
@@ -61,6 +55,9 @@ export async function handleSaveSettings(
       ...(settings.inCallDndAutoEnable !== undefined && {
         inCallDndAutoEnable: settings.inCallDndAutoEnable,
       }),
+      ...(settings.notificationContent !== undefined && {
+        notificationContent: settings.notificationContent,
+      }),
     };
     await commands.setPreferences(updated);
     setSettingsState(settings);
@@ -69,11 +66,42 @@ export async function handleSaveSettings(
   }
 }
 
-export async function handleSetAvatar(avatarData: number[]): Promise<void> {
+/// Auto-away's threshold (0 off): the Host stores it and applies it at once
+/// (an auto-away whose reason went ends), answering what it stored.
+export async function handleSetAutoAway(minutes: number): Promise<void> {
   try {
-    await commands.setAvatar(avatarData);
+    const prefs = await commands.setAutoAway(minutes);
+    setSettingsState({ autoAwayMinutes: prefs.autoAwayMinutes });
   } catch (e) {
-    console.error("Failed to set avatar:", e);
+    console.error("Failed to set auto-away:", e);
+  }
+}
+
+/// Turn game detection on or off: the Host starts or stops its scanner at
+/// once and answers with what it stored, which the switch shows.
+export async function handleSetGameDetection(enabled: boolean): Promise<void> {
+  try {
+    const prefs = await commands.setGameDetection(enabled);
+    setSettingsState({ showGameActivity: prefs.gameDetectionEnabled });
+  } catch (e) {
+    addToast(`Game detection not changed: ${String(e)}`, "error");
+  }
+}
+
+/// Set our avatar from a picked file's bytes and MIME type. A format the
+/// Host does not accept, or a refused upload, is shown; `true` on success.
+export async function handleSetAvatar(avatarData: number[], mime: string): Promise<boolean> {
+  const kind = asImageKind(mime);
+  if (!kind) {
+    addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+    return false;
+  }
+  try {
+    await commands.setAvatar(avatarData, kind);
+    return true;
+  } catch (e) {
+    addToast(`Avatar not changed: ${String(e)}`, "error");
+    return false;
   }
 }
 

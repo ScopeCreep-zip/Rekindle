@@ -48,6 +48,9 @@ pub struct GroupCallState {
     /// stored here).
     pub call_key: Option<[u8; 32]>,
     pub status: GroupCallStatus,
+    /// The group DM this call belongs to (`GroupCallOffer.group_id`);
+    /// `None` for a buddy-list group call.
+    pub group_id: Option<String>,
 }
 
 impl std::fmt::Debug for GroupCallState {
@@ -63,40 +66,11 @@ impl std::fmt::Debug for GroupCallState {
             .field("has_secret", &self.our_x25519_secret.is_some())
             .field("has_call_key", &self.call_key.is_some())
             .field("status", &self.status)
+            .field("group_id", &self.group_id)
             .finish()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn debug_redacts_secret_and_key() {
-        let state = GroupCallState {
-            call_id: "abc".into(),
-            initiator_pubkey: "deadbeef".into(),
-            kind: 0,
-            participants: vec!["p1".into(), "p2".into()],
-            accepted: HashSet::new(),
-            our_x25519_secret: Some(StaticSecret::random_from_rng(rand::rngs::OsRng)),
-            call_key: Some([0xAB; 32]),
-            status: GroupCallStatus::Outgoing,
-        };
-        let dbg = format!("{state:?}");
-        // Must NOT contain the actual key bytes or any hex pattern that
-        // would suggest a 32-byte key leaked through.
-        assert!(!dbg.contains("AB"));
-        assert!(dbg.contains("has_call_key: true"));
-        assert!(dbg.contains("has_secret: true"));
-        assert!(dbg.contains("participants_count: 2"));
-    }
-
-    #[test]
-    fn status_variants_present() {
-        let _ = GroupCallStatus::Outgoing;
-        let _ = GroupCallStatus::Incoming;
-        let _ = GroupCallStatus::Active;
-        let _ = GroupCallStatus::Ended;
-    }
-}
+#[path = "group_state_tests.rs"]
+mod tests;

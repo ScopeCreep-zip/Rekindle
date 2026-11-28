@@ -1,15 +1,14 @@
-//! Background loop lifecycle: watch renewal, poll (tier 3 fallback),
-//! maintenance (typing expiry + dedup eviction), and shutdown.
+//! Background loop lifecycle: maintenance (typing expiry + dedup
+//! eviction) and shutdown.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_lifecycle::ScopeClosed;
-use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::events::{self, SubscriptionEvent};
-use super::{poll, SubscriptionManager};
+use super::SubscriptionManager;
 
 /// How often the maintenance loop sweeps. Matches the typing expiry
 /// deadline in `rekindle_events::state`, the shorter of the two it
@@ -20,53 +19,14 @@ const TYPING_SWEEP_SECS: u64 = 5;
 const STOP_DEADLINE: Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 impl SubscriptionManager {
-    /// Start the background poll loop (tier 3 fallback).
-    ///
-    /// Sweeps all watched DHT records every `interval_secs` with force_refresh.
-    /// When changes are found, emits `ValueChanged` events through the broadcast
-    /// channel. The daemon-internal consumer acts on these to trigger `process_inbox`
-    /// and friend inbox scans — completing the tier 3 guarantee for daemon actions.
-    ///
-    /// # Errors
-    /// [`ScopeClosed`] when the manager's scope was already shut down.
-    pub fn start_poll_loop(&self, interval_secs: u64) -> Result<(), ScopeClosed> {
-        let (change_tx, mut change_rx) = mpsc::channel::<(String, Vec<u32>)>(64);
-
-        // Spawn the poll loop (reads DHT with force_refresh, signals changes)
-        let node = Arc::clone(&self.node);
-        let watches = Arc::clone(&self.watches);
-        self.scope.spawn_with_token("subscription poll", |stop| {
-            poll::run_poll_loop(node, watches, interval_secs, change_tx, stop)
-        })?;
-
-        // Spawn the change consumer (routes poll signals into the event pipeline)
-        let event_tx = self.event_tx.clone();
-        let dedup = Arc::clone(&self.dedup);
-        self.scope.spawn("subscription poll consumer", async move {
-            while let Some((record_key, changed_subkeys)) = change_rx.recv().await {
-                let event = SubscriptionEvent::Network(events::NetworkEvent::ValueChanged {
-                    record_key,
-                    changed_subkeys,
-                });
-                // Dedup gate — suppresses if this change was already seen via watch
-                if dedup.write().check(&event) {
-                    let _ = event_tx.send(event);
-                }
-            }
-        })?;
-
-        info!(interval_secs, "poll loop started (tier 3 fallback)");
-        Ok(())
-    }
-
     /// Sweep expired typing indicators and dedup entries.
     ///
     /// `TypingEvent::Stopped` documents itself as "triggered by: expiry
-    /// timer" — there was no timer. `collect_expired_channel_typers`,
-    /// `collect_expired_dm_typers` and `EventDedup::evict_expired` were
-    /// all written and never called, so a peer who stopped typing stayed
-    /// "typing…" until they typed again, and the dedup cache only ever
-    /// shed entries by hitting its capacity bound.
+    /// timer" — there was no timer. `collect_expired_channel_typers` and
+    /// `EventDedup::evict_expired` were written and never called, so a
+    /// member who stopped typing stayed "typing…" until they typed again,
+    /// and the dedup cache only ever shed entries by hitting its capacity
+    /// bound. DM typing expires in the Host (`operations::dm::typing`).
     ///
     /// Ticks at the typing expiry interval because that is the shorter
     /// of the two deadlines; the dedup TTL is far longer and sweeping it
@@ -85,19 +45,20 @@ impl SubscriptionManager {
                 tokio::time::interval(std::time::Duration::from_secs(TYPING_SWEEP_SECS));
             interval.tick().await; // skip the immediate first tick
             loop {
+                // Biased, stop first: a stop beside a tick sweeps no more.
                 tokio::select! {
+                    biased;
+                    () = stop.cancelled() => {
+                        info!("maintenance loop shutting down");
+                        break;
+                    }
                     _ = interval.tick() => {
                         // Guards dropped before sending: `process_event`
                         // is not reachable from here, but the broadcast
                         // send can block and these are parking_lot
                         // guards.
-                        let (channel_expired, dm_expired) = {
-                            let mut guard = state.write();
-                            (
-                                guard.typing.collect_expired_channel_typers(),
-                                guard.typing.collect_expired_dm_typers(),
-                            )
-                        };
+                        let channel_expired =
+                            state.write().typing.collect_expired_channel_typers();
                         dedup.write().evict_expired();
 
                         for (community, channel, who) in channel_expired {
@@ -108,18 +69,6 @@ impl SubscriptionManager {
                                 },
                             ));
                         }
-                        for peer_key in dm_expired {
-                            let _ = event_tx.send(SubscriptionEvent::Typing(
-                                events::TypingEvent::Stopped {
-                                    context: events::TypingContext::Dm { peer_key: peer_key.clone() },
-                                    who: peer_key,
-                                },
-                            ));
-                        }
-                    }
-                    () = stop.cancelled() => {
-                        info!("maintenance loop shutting down");
-                        break;
                     }
                 }
             }
@@ -134,9 +83,6 @@ impl SubscriptionManager {
         if let Err(stuck) = self.scope.shutdown(STOP_DEADLINE).await {
             warn!(%stuck, "subscription loops did not stop in time");
         }
-        // The watches' leases end with the session's record pool, which
-        // lock ends right after this (`end_records`).
-        self.watches.write().entries.clear();
         info!("subscription manager shut down");
     }
 }

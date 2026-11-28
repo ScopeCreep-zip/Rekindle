@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-utils"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Shared utility functions for Rekindle workspace crates"
 
 [features]
@@ -17,7 +19,9 @@ log-scrub = [ "dep:regex", "dep:tracing", "dep:tracing-subscriber" ]
 # frontends that read the same file.
 config = [ "dep:toml", "dep:serde", "paths" ]
 # `DataRoot`: the directories every host and frontend shares.
-paths = [ "dep:dirs", "dep:thiserror" ]
+paths = [ "dep:dirs", "dep:thiserror", "dep:rustix" ]
+# `log_capture`: a log sink tests read back. Only dev-dependencies enable it.
+test-support = [ "dep:parking_lot" ]
 
 [dependencies]
 rand = { workspace = true }
@@ -34,6 +38,8 @@ tokio = { workspace = true, optional = true }
 tokio-util = { version = "0.7", optional = true }
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
+# Behind the `test-support` feature only.
+parking_lot = { workspace = true, optional = true }
 # Behind the `config` feature only.
 toml = { version = "0.8", optional = true }
 # The `dirs` release Tauri 2.12.1 resolves its app directories with, so
@@ -42,7 +48,13 @@ dirs = { version = "7", optional = true }
 serde = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 
+# Behind the `paths` feature: Time Machine's exclusion attribute on
+# `state/` through the safe `setxattr` (plan E7.1, `paths/backup.rs`).
+[target.'cfg(target_os = "macos")'.dependencies]
+rustix = { version = "1", features = [ "fs" ], optional = true }
+
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 serde_json = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

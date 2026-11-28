@@ -1,0 +1,101 @@
+//! Our own presence (plan E1.1): what `PresenceGet` answers, for the
+//! status picker, the game panel and the TUI.
+
+use serde::{Deserialize, Serialize};
+
+use crate::presence::{IdleState, SessionStatus};
+
+/// The status, message, game and idle state the host holds for us.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnPresenceView {
+    pub status: SessionStatus,
+    pub status_message: String,
+    pub game: Option<OwnGame>,
+    pub idle: IdleState,
+}
+
+/// Our time in one game (`GameTotalsGet`, plan E7.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTotalView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+    /// Seconds played over every session.
+    pub total_secs: u64,
+    /// When the last session ended, Unix ms.
+    pub last_played: i64,
+}
+
+/// A game on the hide list (`HiddenGamesGet`, plan E7.2): never shown to
+/// anyone, still recorded for the local history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenGameView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+}
+
+/// A game we can launch (`InstalledGamesGet`, plan E7.15 IV3): installed
+/// through Steam or played before, never a hidden one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledGameView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+    /// Whether `GameLaunch` without a server can start it (the database has
+    /// a Steam id for it); a frontend shows no Launch link otherwise.
+    pub launchable: bool,
+}
+
+/// One of our favourite game servers (plan E7.2). `invitable` is the
+/// Host's answer to whether a `GameInvite` may name it: the game is not
+/// hidden and current-game sharing is on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavouriteServerView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+    /// The `ServerAddress` text (host:port).
+    pub address: String,
+    /// At most 64 characters; empty is none.
+    pub label: String,
+    pub added_at: i64,
+    pub invitable: bool,
+}
+
+/// The game we are playing, detected or set by hand.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnGame {
+    pub game_id: u32,
+    pub game_name: String,
+    /// Seconds since the game started.
+    pub elapsed_seconds: u32,
+    /// The server to join, `host:port`, already parsed.
+    pub server_address: Option<String>,
+    /// The game's icon, `src/assets/game-icons/<key>.png`, resolved from
+    /// the game database (plan E7.2).
+    pub icon_key: Option<String>,
+}
+
+/// One game's time, summed over sessions (plan E7.2): a row of
+/// `game_sessions` totals, of a friend's `friend_game_totals`, and an entry
+/// of the `GameTotals` DmFrame (0x0172).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameTotal {
+    /// The game database id (never 0).
+    pub game_id: u32,
+    /// Seconds played, over every session.
+    pub total_secs: u64,
+    /// When the last session ended, Unix ms.
+    pub last_played: i64,
+}

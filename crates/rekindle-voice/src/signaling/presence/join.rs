@@ -5,13 +5,14 @@
 use std::sync::Arc;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::subscription_events::JoinHandshake;
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 use crate::signaling::stage::reconcile_stage_transport;
 use crate::transport::VoiceTransport;
 
 use super::mcu::maybe_switch_to_mcu;
-use super::roster::roster_entries;
+use super::roster::{named_roster, roster_entries};
 
 pub(in crate::signaling) fn handle_voice_join(
     deps: &Arc<dyn VoiceSignalingDeps>,
@@ -19,7 +20,6 @@ pub(in crate::signaling) fn handle_voice_join(
     sender_pseudonym: &str,
     channel_id: String,
     route_blob: Vec<u8>,
-    display_name: Option<String>,
 ) {
     // §10.5 rotation moved into `voice_join_apply`, gated on the
     // roster ACTUALLY changing: VoiceJoin re-announces (every route
@@ -35,58 +35,32 @@ pub(in crate::signaling) fn handle_voice_join(
     // for any other channel (or while we're not in voice at all) is
     // pure UI signaling: adding the peer would pollute our roster and
     // leak our channel's media to members of a different channel.
+    let display_name = deps.member_shown_name(community_id, sender_pseudonym);
     let transport = if deps.voice_engine_bound_to(community_id, &channel_id) {
         deps.transport_handle()
     } else {
         None
     };
+    deps.emit_event(CommunityVoiceEvent::VoiceJoin {
+        community_id: community_id.to_string(),
+        channel_id: channel_id.clone(),
+        pseudonym_key: sender_pseudonym.to_string(),
+        route_blob: route_blob.clone(),
+        display_name,
+    });
     let Some(transport) = transport else {
-        deps.emit_event(CommunityVoiceEvent::VoiceJoin {
-            community_id: community_id.to_string(),
-            channel_id,
-            pseudonym_key: sender_pseudonym.to_string(),
-            route_blob,
-            display_name,
-        });
         return;
     };
 
-    let my_pk = deps.my_pseudonym(community_id).unwrap_or_default();
-    let sender_key = sender_pseudonym.to_string();
-    let blob = route_blob.clone();
-
-    {
-        let deps_task = Arc::clone(deps);
-        let cid = community_id.to_string();
-        let ch_id = channel_id.clone();
-        let transport = Arc::clone(&transport);
-        let sender_key = sender_key.clone();
-        let blob = blob.clone();
-        let my_pk = my_pk.clone();
-        let joiner_name = display_name.clone();
-        deps.scope().spawn_or_drop("voice join apply", async move {
-            voice_join_apply(
-                &deps_task,
-                &cid,
-                &ch_id,
-                transport,
-                JoinApply {
-                    sender_key,
-                    blob,
-                    joiner_name,
-                    my_pk,
-                },
-            )
-            .await;
-        });
-    }
-
-    deps.emit_event(CommunityVoiceEvent::VoiceJoin {
-        community_id: community_id.to_string(),
-        channel_id,
-        pseudonym_key: sender_pseudonym.to_string(),
-        route_blob,
-        display_name,
+    let deps_task = Arc::clone(deps);
+    let cid = community_id.to_string();
+    let join = JoinApply {
+        sender_key: sender_pseudonym.to_string(),
+        blob: route_blob,
+        my_pk: deps.my_pseudonym(community_id).unwrap_or_default(),
+    };
+    deps.scope().spawn_or_drop("voice join apply", async move {
+        voice_join_apply(&deps_task, &cid, &channel_id, transport, join).await;
     });
 }
 
@@ -96,7 +70,6 @@ pub(in crate::signaling) fn handle_voice_join(
 struct JoinApply {
     sender_key: String,
     blob: Vec<u8>,
-    joiner_name: Option<String>,
     my_pk: String,
 }
 
@@ -110,18 +83,18 @@ async fn voice_join_apply(
     let JoinApply {
         sender_key,
         blob,
-        joiner_name,
         my_pk,
     } = join;
     let is_stage = deps
         .stage_channel_info(community_id, channel_id)
         .is_some_and(|s| s.is_stage);
 
-    let (newly_added, remote_count) = {
+    let (newly_added, members) = {
         let mut t = transport.lock().await;
-        let newly = t.add_peer(&sender_key, &blob, joiner_name.as_deref());
-        (newly, t.peer_count())
+        let newly = t.add_peer(&sender_key, &blob);
+        (newly, t.peer_keys())
     };
+    let joiner_name = deps.member_shown_name(community_id, &sender_key);
     if newly_added {
         deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
             community_id: community_id.to_string(),
@@ -129,11 +102,11 @@ async fn voice_join_apply(
             pseudonym_key: sender_key.clone(),
             present: true,
             display_name: joiner_name.clone(),
-            remote_count,
+            roster: named_roster(&**deps, community_id, members),
         });
         // Plan C7.20 — a genuine membership change (this peer was not on
-        // the roster) gets it our media key: the current one, or a
-        // rotated one to everyone. A re-announce is a route upsert and
+        // the roster) gets it our media key, ratcheted past what it
+        // must not read (plan C7.29). A re-announce is a route upsert and
         // shares nothing; a peer missing our key asks for it.
         crate::signaling::media_keys::on_peer_added(
             deps,
@@ -141,7 +114,6 @@ async fn voice_join_apply(
             channel_id,
             &transport,
             &sender_key,
-            is_stage,
         )
         .await;
     }
@@ -152,11 +124,16 @@ async fn voice_join_apply(
     // Without a media route there is nothing to introduce us by; the ack
     // goes out when the route is back and re-announced.
     if let Some(route_blob) = deps.our_media_route_blob() {
-        let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+        let ack = CommunityEnvelope::control(ControlPayload::VoiceJoinAck {
             channel_id: channel_id.to_string(),
             joiner_pseudonym: sender_key.clone(),
             display_name: deps.my_display_name(),
             route_blob,
+            session_key: crate::signaling::media_keys::our_session_key(
+                &**deps,
+                community_id,
+                channel_id,
+            ),
         });
         deps.send_to_channel(community_id, channel_id, &ack);
     } else {
@@ -166,15 +143,16 @@ async fn voice_join_apply(
     // Mutual-join race: if WE are still unseen (joined moments ago and
     // nobody acked yet), this peer's VoiceJoin is itself evidence the
     // channel sees us — count it as our leg 2 and complete our leg 3.
-    let mutual_seen = transport.lock().await.advance_handshake_seen();
-    if mutual_seen {
-        deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
-            state: "seen".to_string(),
-            peer: Some(sender_key.clone()),
-            display_name: joiner_name.clone(),
-        });
+    if advance_handshake(
+        &**deps,
+        community_id,
+        channel_id,
+        &transport,
+        JoinHandshake::Seen,
+        Some((sender_key, joiner_name)),
+    )
+    .await
+    {
         send_confirmed_if_first(&**deps, community_id, channel_id, &transport).await;
     }
 
@@ -191,9 +169,9 @@ async fn voice_join_apply(
 
     maybe_switch_to_mcu(&**deps, community_id, channel_id, &transport, &my_pk).await;
 
-    let participants = roster_entries(&**deps, &my_pk, &transport).await;
+    let participants = roster_entries(&**deps, community_id, channel_id, &my_pk, &transport).await;
     if !participants.is_empty() {
-        let envelope = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
+        let envelope = CommunityEnvelope::control(ControlPayload::VoiceRoster {
             channel_id: channel_id.to_string(),
             participants,
         });
@@ -211,23 +189,49 @@ pub(in crate::signaling) async fn send_confirmed_if_first(
     channel_id: &str,
     transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
 ) {
-    if !transport.lock().await.advance_handshake_connected() {
-        return;
+    if advance_handshake(
+        deps,
+        community_id,
+        channel_id,
+        transport,
+        JoinHandshake::Connected,
+        None,
+    )
+    .await
+    {
+        tracing::info!(
+            community = %community_id,
+            channel = %channel_id,
+            "voice join handshake complete (confirmed sent)",
+        );
     }
-    let confirmed = CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed {
-        channel_id: channel_id.to_string(),
-    });
-    deps.send_to_channel(community_id, channel_id, &confirmed);
-    deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        state: "connected".to_string(),
-        peer: None,
-        display_name: None,
-    });
-    tracing::info!(
-        community = %community_id,
-        channel = %channel_id,
-        "voice join handshake complete (confirmed sent)",
-    );
+}
+
+/// Apply and publish one handshake leg on the same lock as LocalJoined.
+pub(super) async fn advance_handshake(
+    deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    channel_id: &str,
+    transport: &tokio::sync::Mutex<VoiceTransport>,
+    stage: JoinHandshake,
+    peer: Option<(String, String)>,
+) -> bool {
+    let session = transport.lock().await.session_state();
+    session.advance_handshake(stage, |media_ready| {
+        if stage == JoinHandshake::Connected {
+            let confirmed = CommunityEnvelope::control(ControlPayload::VoiceJoinConfirmed {
+                channel_id: channel_id.to_string(),
+            });
+            deps.send_to_channel(community_id, channel_id, &confirmed);
+        }
+        let (peer, display_name) = peer.unzip();
+        deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            state: stage,
+            media_ready,
+            peer,
+            display_name,
+        });
+    })
 }

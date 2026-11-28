@@ -1,0 +1,68 @@
+MainTitleBar Drag
+  TopLeft Decor target [0, 0, 24, 24] art [0, 0, 16, 46] Short
+  TopRight Decor target [-8, 0, 24, 24] art [8, 0, 16, 46] Short
+  Logo Logo label "Rekindle" cover [0, 0, 23, 9] glyph RekindleMarkSmall target [0, -7, 24, 24] art [0, 7, 23, 9] Size
+  Title Decor target [0, 0, 206, 52] art [0, 0, 206, 52] Frame
+  Minimize Button target [-12, -6, 24, 24] art [12, 6, 12, 12] Size
+  Maximize Button target [0, -6, 12, 24] art [0, 6, 12, 12] Short
+  Close Button target [0, -6, 24, 24] art [0, 6, 12, 12] Size
+AdBar Decor
+  AdArea AdArea
+MenuBar MenuBar
+  MenuBg Part
+    FileMenu MenuTitle label "Rekindle" cover [15, 0, 47, 18] target [0, -3, 67, 24] art [0, 3, 67, 18] Size
+    ToolsMenu MenuTitle target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+    HelpMenu MenuTitle target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+Content Group
+  ExpandButton Button target [-8, -1, 24, 24] art [8, 1, 16, 21] Size
+  TabHeader TabStrip
+    TabNormalButton Tab(Friends) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabServerButton Tab(Servers) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabDownloadButton Tab(Files) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [7, 3, 60, 11] target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+  TabbedControl Views
+    BuddyView View(Friends)
+    ServerView View(Servers)
+    DownloadView View(Files)
+    TabbedControl.Communities View(Communities)
+BottomBar Group
+  BottomLeft Decor target [0, 17, 24, 24] art [0, -17, 60, 41] Size
+  BottomRight Decor target [37, 17, 24, 24] art [-37, -17, 61, 41] Size
+  BottomCenter Decor
+    TCLink Button target [0, -8, 113, 24] art [0, 8, 113, 8] Size
+  TabButtonArea ButtonBar
+    FriendsButtons ButtonRow(Friends)
+      AddButton Button target [0, 0, 33, 30] art [0, 0, 43, 30] Size
+      ImButton Button
+      InfoButton Button target [0, 0, 47, 30] art [0, 0, 57, 30] Size
+      JoinFriendButton Button
+    ServersButtons ButtonRow(Servers)
+      AddServerButton Button target [0, 0, 33, 29] art [0, 0, 43, 29] Size
+      RefreshButton Button
+      PlaceHolder Decor
+      JoinServerButton Button
+    FilesButtons ButtonRow(Files)
+      StartDownloadButton Button target [0, 0, 33, 29] art [0, 0, 43, 29] Size
+      StopDownloadButton Button
+      ExecuteDownloadButton Button target [0, 0, 47, 29] art [0, 0, 57, 29] Size
+      DownloadInfoButton Button
+    FriendsButtons.Communities ButtonRow(Communities)
+      CommunitiesOpen Button target [0, 0, 33, 30] art [0, 0, 57, 30] Size
+      CommunitiesLeave Button
+        CommunitiesLeaveText.Communities Part label "Leave"
+      CommunitiesNew Button
+popup InfoPopup
+  XfireTopRow Decor
+  InfoMiddle Decor
+    InfoTopLeft Decor
+    InfoTopRight Decor target [9, 0, 24, 195] art [-9, 0, 33, 195] Size
+    InfoBG Decor
+      InfoOutline Decor
+        InfoView InfoView
+  InfoBottomRow Decor
+    CloseInfoView Button target [0, -5, 31, 24] art [0, 5, 31, 13] Size
+    InfoJoinButton Button target [0, -5, 30, 24] art [0, 5, 30, 13] Size
+    JoinChatTab ButtonBar
+      HostChatButton Button target [0, -5, 30, 24] art [0, 5, 30, 13] Size
+      JoinChatButton Button target [0, -5, 30, 24] art [0, 5, 30, 13] Size
+      LeaveChatButton Button target [0, -5, 30, 24] art [0, 5, 30, 13] Size

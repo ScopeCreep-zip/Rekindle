@@ -11,6 +11,7 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::invite_quota;
 use rekindle_governance::permissions::compute_permissions;
 use rekindle_governance::state::{GovernanceState, SegmentState};
+use rekindle_records::port::OpenIntent;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
@@ -161,7 +162,10 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
 
     let mut last_full_segment: Option<u32> = None;
     for candidate in &candidates {
-        let lease = match deps.acquire_record(&candidate.registry_key, None).await {
+        let lease = match deps
+            .acquire_record(&candidate.registry_key, None, OpenIntent::Check)
+            .await
+        {
             Ok(lease) => lease,
             Err(e) => {
                 tracing::warn!(
@@ -205,7 +209,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
     let mut segment_full = false;
     // Architecture §6.2 Step 7: one inspect fanout → the present-subkey set.
     // Empty = "no value present" (not "seq == 0") so an occupied-but-seq-0
-    // slot is never mis-claimed; the same set is reused by Step 12 presence
+    // slot is never misclaimed; the same set is reused by Step 12 presence
     // collection so it reads only occupied slots, never a blind 0..255 sweep.
     let present = deps.inspect_dht_record_present_subkeys(lease).await?;
     let mut present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
@@ -257,8 +261,11 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
             pseudonym_key: ctx.my_pseudo.clone(),
             display_name: ctx.display_name.clone(),
             status: ctx.join_status_label.into(),
-            route_blob: vec![],
-            last_heartbeat: rekindle_utils::timestamp_secs(),
+            // The route we already publish, as every later presence write
+            // carries it: the inviter answers our `RequestMEK` only once
+            // its scan reads a route on this row.
+            route_blob: deps.our_route_blob(),
+            last_heartbeat: deps.clock().now_secs(),
             ..Default::default()
         };
         let presence_sig =
@@ -278,7 +285,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
                 lease,
                 local_subkey,
                 presence_bytes,
-                Some(slot_kp_str.clone()),
+                Some(zeroize::Zeroizing::new(slot_kp_str.clone())),
             )
             .await?;
         if write_outcome.is_some() {
@@ -331,12 +338,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
     full_segment_index: u32,
 ) -> Result<ClaimedSlot, GovernanceRuntimeError> {
     let community_id = ctx.community_id;
-    let perms = compute_permissions(
-        ctx.my_pseudo,
-        None,
-        ctx.gov_state,
-        rekindle_utils::timestamp_secs(),
-    );
+    let perms = compute_permissions(ctx.my_pseudo, None, ctx.gov_state, deps.clock().now_secs());
     let have_manage_community = (perms & MANAGE_COMMUNITY) != 0;
     let requester_pseudonym = hex::encode(ctx.my_pseudo.0);
 
@@ -361,7 +363,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
             full_segment_index,
             "Plate Gate: joiner lacks MANAGE_COMMUNITY — gossiping RequestSegmentExpansion"
         );
-        let envelope = CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
+        let envelope = CommunityEnvelope::control(ControlPayload::RequestSegmentExpansion {
             community_id: community_id.to_string(),
             requester_pseudonym,
             full_segment_index,
@@ -371,8 +373,9 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
 
     // Poll up to 30s for the new segment to land in our merged
     // governance state. Quicker than a watch-driven notify, simpler than
-    // a Notify channel, and bounded.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    // a Notify channel, and bounded. The tokio clock, as the poll's sleep,
+    // so a paused runtime advances both together (plan C9.2).
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut new_segments: Vec<SegmentState>;
     loop {
         new_segments = deps
@@ -387,7 +390,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
         if max_seg > full_segment_index {
             break;
         }
-        if std::time::Instant::now() >= deadline || crate::join_gate::should_stop(deps) {
+        if tokio::time::Instant::now() >= deadline || crate::join_gate::should_stop(deps) {
             return Err(GovernanceRuntimeError::Adapter(format!(
                 "Community is full and no admin expanded within 30s. The community has {} active segment(s); admins must run expand_community_segment to grow it.",
                 new_segments.len() + 1
@@ -420,7 +423,7 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
 ) -> InitialPresence {
     use futures::stream::{FuturesUnordered, StreamExt};
 
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let mut presence = InitialPresence::default();
     presence.known_members.insert(my_pseudo_hex.to_string());
 
@@ -433,7 +436,10 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     // anyone who claimed a slot after our Step 7 inspect.
     const SCAN_PARALLELISM: usize = 16;
     // One borrow for the whole scan, released once every read is done.
-    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+    let Ok(lease) = deps
+        .acquire_record(registry_key, None, OpenIntent::Check)
+        .await
+    else {
         return presence;
     };
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(SCAN_PARALLELISM));

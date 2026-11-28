@@ -23,18 +23,18 @@ use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 pub(crate) async fn handle_approve(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
     member_pseudonym: &str,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Err(e) = ctx.resolve_community(governance_key) {
+    if let Err(e) = ctx.resolve_community(anchor) {
         return e;
     }
     match rekindle_governance_runtime::admission::approve_member(
         &adapter(ctx),
-        governance_key,
+        anchor,
         member_pseudonym,
     )
     .await
@@ -48,14 +48,14 @@ pub(crate) async fn handle_approve(
 pub(crate) async fn handle_reject(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
     member_pseudonym: &str,
     reason: &str,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Err(e) = ctx.resolve_community(governance_key) {
+    if let Err(e) = ctx.resolve_community(anchor) {
         return e;
     }
     // Empty string from the CLI means "no reason given"; keep that
@@ -63,7 +63,7 @@ pub(crate) async fn handle_reject(
     let reason = (!reason.is_empty()).then_some(reason);
     match rekindle_governance_runtime::admission::reject_member(
         &adapter(ctx),
-        governance_key,
+        anchor,
         member_pseudonym,
         reason,
     )
@@ -86,30 +86,29 @@ pub(crate) async fn handle_reject(
 pub(crate) fn handle_pending_members(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
 ) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
-    if let Err(e) = ctx.resolve_community(governance_key) {
+    if let Err(e) = ctx.resolve_community(anchor) {
         return e;
     }
     let adapter = adapter(ctx);
     let pending: Vec<serde_json::Value> =
-        rekindle_governance_runtime::admission::pending_members(&adapter, governance_key)
+        rekindle_governance_runtime::admission::pending_members(&adapter, anchor)
             .into_iter()
             .map(|p| {
                 serde_json::json!({
                     "pseudonymHex": p.pseudonym_hex,
                     "displayName": p.display_name,
-                    "lamport": p.lamport,
+                    "lamport": p.stamp.lamport,
                 })
             })
             .collect();
-    let mode =
-        match rekindle_governance_runtime::admission::admission_mode(&adapter, governance_key) {
-            rekindle_types::governance::AdmissionMode::Open => "open",
-            rekindle_types::governance::AdmissionMode::ApprovalRequired => "approvalRequired",
-        };
+    let mode = match rekindle_governance_runtime::admission::admission_mode(&adapter, anchor) {
+        rekindle_types::governance::AdmissionMode::Open => "open",
+        rekindle_types::governance::AdmissionMode::ApprovalRequired => "approvalRequired",
+    };
     IpcResponse::ok(&serde_json::json!({ "mode": mode, "pending": pending }))
 }

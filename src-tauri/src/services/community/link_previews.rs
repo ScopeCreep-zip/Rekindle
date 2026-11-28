@@ -14,7 +14,7 @@ use rekindle_types::permissions;
 
 use crate::channels::CommunityEvent;
 use crate::commands::community::require_permission;
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
 
@@ -37,7 +37,7 @@ pub async fn fetch_and_broadcast(
     let preview = rekindle_link_preview::fetch_link_preview(url, message_id)
         .await
         .map_err(|e| format!("link preview fetch failed: {e}"))?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::LinkPreview {
+    let envelope = CommunityEnvelope::control(ControlPayload::LinkPreview {
         channel_id: channel_id.to_string(),
         message_id: preview.message_id.clone(),
         url: preview.url.clone(),
@@ -46,7 +46,9 @@ pub async fn fetch_and_broadcast(
         site_name: preview.site_name.clone(),
         fetched_at: preview.fetched_at,
     });
-    crate::services::community::send_to_mesh(state, community_id, &envelope)?;
+    crate::state_helpers::host_governance(state)
+        .map(|host| host.send_to_mesh_impl(community_id, &envelope))
+        .map_err(|e| e.to_string())?;
     Ok(preview)
 }
 
@@ -90,7 +92,7 @@ pub fn handle_incoming_link_preview(
         "link preview fetch",
         async move {
             let (chan, msg) = (channel_id.clone(), preview.message_id.clone());
-            let author: Option<String> = db_call_or_default(&pool, move |conn| {
+            let author = db_call(&pool, move |conn| {
                 conn.query_row(
                     "SELECT sender_key FROM messages \
                  WHERE owner_key = ?1 AND conversation_id = ?2 \
@@ -105,6 +107,13 @@ pub fn handle_incoming_link_preview(
                 })
             })
             .await;
+            let author: Option<String> = match author {
+                Ok(author) => author,
+                Err(e) => {
+                    tracing::warn!(error = %e, "LinkPreview author unreadable; dropping it");
+                    return;
+                }
+            };
             if author.as_deref() != Some(sender.as_str()) {
                 tracing::debug!(
                     community = %community_id,
@@ -137,7 +146,16 @@ async fn user_link_previews_enabled(state: &SharedState) -> bool {
     let Ok(pool) = state.db.current() else {
         return false;
     };
-    crate::services::community_link_previews_runtime::link_previews_enabled(&pool, owner_key).await
+    match crate::services::community_link_previews_runtime::link_previews_enabled(&pool, owner_key)
+        .await
+    {
+        Ok(enabled) => enabled,
+        Err(e) => {
+            // Previews reveal this device's IP: an unreadable setting is off.
+            tracing::warn!(error = %e, "link preview setting unreadable; previews stay off");
+            false
+        }
+    }
 }
 
 fn sender_has_embed_links(

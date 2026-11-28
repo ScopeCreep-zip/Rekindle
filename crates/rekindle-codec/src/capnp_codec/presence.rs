@@ -1,14 +1,30 @@
-use super::{capnp_err, pack, read_game_status, unpack, write_game_status, CodecError};
-use crate::message::envelope::GameInfo;
+use super::{
+    bounds, capnp_err, pack, read_game_status, unpack_bounded, write_game_status, CodecError,
+};
+use serde::{Deserialize, Serialize};
+
 use crate::presence_capnp;
 
-/// Encode a presence update (status byte + optional game info).
-pub fn encode_update(status: u8, game: Option<&GameInfo>) -> Vec<u8> {
+/// Game information for rich presence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameInfo {
+    pub game_id: u32,
+    pub game_name: String,
+    pub server_info: Option<String>,
+    pub elapsed_seconds: u32,
+    /// Direct server address ("ip:port") for join-game functionality.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_address: Option<String>,
+}
+
+/// Encode a presence update (status byte + optional game info), stamped
+/// `timestamp_ms` from the caller's clock.
+pub fn encode_update(status: u8, game: Option<&GameInfo>, timestamp_ms: u64) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<presence_capnp::presence_update::Builder<'_>>();
         root.set_status(status);
-        root.set_timestamp(rekindle_utils::timestamp_ms());
+        root.set_timestamp(timestamp_ms);
         if let Some(g) = game {
             write_game_status(root.init_game_status(), g);
         }
@@ -18,7 +34,7 @@ pub fn encode_update(status: u8, game: Option<&GameInfo>) -> Vec<u8> {
 
 /// Decode packed bytes into `(status, Option<GameInfo>)`.
 pub fn decode_update(data: &[u8]) -> Result<(u8, Option<GameInfo>), CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_BOUND)?;
     let root = reader
         .get_root::<presence_capnp::presence_update::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -35,7 +51,7 @@ pub fn decode_update(data: &[u8]) -> Result<(u8, Option<GameInfo>), CodecError> 
 }
 
 /// Encode a standalone `GameStatus` (used for DHT subkey 4).
-pub fn encode_game_status(info: &GameInfo) -> Vec<u8> {
+pub fn encode_game_status(info: &GameInfo) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let root = builder.init_root::<presence_capnp::game_status::Builder<'_>>();
@@ -46,7 +62,7 @@ pub fn encode_game_status(info: &GameInfo) -> Vec<u8> {
 
 /// Decode packed bytes into a `GameInfo`.
 pub fn decode_game_status(data: &[u8]) -> Result<GameInfo, CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_BOUND)?;
     let root = reader
         .get_root::<presence_capnp::game_status::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

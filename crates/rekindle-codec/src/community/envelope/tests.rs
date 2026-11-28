@@ -12,7 +12,8 @@ fn sign_and_verify_roundtrip() {
     let pseudonym_hex = hex::encode(verifying_key.to_bytes());
 
     let envelope = CommunityEnvelope::TypingIndicator {
-        channel_id: "ch_01".into(),
+        channel_tag: [1; 16],
+        ttl_ms: 6_000,
         pseudonym_key: pseudonym_hex.clone(),
     };
     // Wire-format encoding matches the live gossip path (Cap'n
@@ -24,6 +25,7 @@ fn sign_and_verify_roundtrip() {
         &signing_key,
         "community_abc",
         &pseudonym_hex,
+        [7u8; 16],
         &envelope_bytes,
     );
 
@@ -42,6 +44,7 @@ fn verify_rejects_tampered_data() {
         &signing_key,
         "community_abc",
         &pseudonym_hex,
+        [7u8; 16],
         envelope_bytes,
     );
 
@@ -60,7 +63,13 @@ fn verify_rejects_wrong_key() {
     let wrong_hex = hex::encode(wrong_verifying.to_bytes());
 
     let envelope_bytes = b"test data";
-    let mut signed = sign_envelope(&signing_key, "community_abc", "placeholder", envelope_bytes);
+    let mut signed = sign_envelope(
+        &signing_key,
+        "community_abc",
+        "placeholder",
+        [7u8; 16],
+        envelope_bytes,
+    );
 
     // Replace sender pseudonym with wrong key
     signed.sender_pseudonym = wrong_hex;
@@ -74,7 +83,7 @@ fn verify_rejects_wrong_key() {
 /// silently defaulted to `vp9 @0` fails the assert.
 #[test]
 fn envelope_video_fragment_codec_capnp_roundtrip() {
-    let data = CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
+    let data = CommunityEnvelope::control(ControlPayload::VideoFragment(VideoFragmentPayload {
         channel_id: "ch_video".into(),
         stream_id: [0xAB; 16],
         frame_seq: 7,
@@ -89,8 +98,8 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
     }));
     let bytes = encode_community_envelope(&data).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
+    match back.into_control() {
+        Some(ControlPayload::VideoFragment(VideoFragmentPayload {
             codec,
             keyframe,
             frame_seq,
@@ -105,7 +114,7 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
         other => panic!("wrong variant after capnp round-trip: {other:?}"),
     }
 
-    let parity = CommunityEnvelope::Control(ControlPayload::VideoParityFragment(
+    let parity = CommunityEnvelope::control(ControlPayload::VideoParityFragment(
         VideoParityFragmentPayload {
             channel_id: "ch_video".into(),
             stream_id: [0xCD; 16],
@@ -123,16 +132,14 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
     ));
     let bytes = encode_community_envelope(&parity).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::VideoParityFragment(
-            VideoParityFragmentPayload {
-                codec,
-                data_count,
-                frame_len,
-                key_index,
-                ..
-            },
-        )) => {
+    match back.into_control() {
+        Some(ControlPayload::VideoParityFragment(VideoParityFragmentPayload {
+            codec,
+            data_count,
+            frame_len,
+            key_index,
+            ..
+        })) => {
             assert_eq!(codec, Codec::Vp8);
             assert_eq!(data_count, 4);
             assert_eq!(frame_len, 4096);
@@ -158,11 +165,11 @@ fn envelope_media_capabilities_capnp_roundtrip() {
         supports_optimize_for_latency: true,
         supported_scalability_modes: vec![ScalabilityMode::Flat, ScalabilityMode::L1T2],
     };
-    let envelope = CommunityEnvelope::Control(inner);
+    let envelope = CommunityEnvelope::control(inner);
     let bytes = encode_community_envelope(&envelope).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+    match back.into_control() {
+        Some(ControlPayload::MediaCapabilities {
             channel_id,
             max_pixel_count,
             max_fps,
@@ -194,7 +201,7 @@ fn envelope_media_capabilities_sign_and_verify() {
     let signing_key = SigningKey::from_bytes(&[7u8; 32]);
     let verifying_key = VerifyingKey::from(&signing_key);
     let pseudo = hex::encode(verifying_key.to_bytes());
-    let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+    let envelope = CommunityEnvelope::control(ControlPayload::MediaCapabilities {
         channel_id: "ch_42".into(),
         max_pixel_count: 854 * 480,
         max_fps: 15,
@@ -204,82 +211,8 @@ fn envelope_media_capabilities_sign_and_verify() {
         supported_scalability_modes: vec![ScalabilityMode::Flat],
     });
     let bytes = encode_community_envelope(&envelope).unwrap();
-    let signed = sign_envelope(&signing_key, "community_xyz", &pseudo, &bytes);
+    let signed = sign_envelope(&signing_key, "community_xyz", &pseudo, [7u8; 16], &bytes);
     assert!(verify_envelope(&signed).is_ok());
-}
-
-#[test]
-fn envelope_message_notification_capnp_roundtrip() {
-    let envelope = CommunityEnvelope::MessageNotification {
-        channel_id: "ch_01".into(),
-        message_id: "msg_abc".into(),
-        author_pseudonym: "pseudo_123".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
-        sequence: 7,
-        content_hash: "abc123".into(),
-        timestamp: 1_234_567_890,
-    };
-    let bytes = encode_community_envelope(&envelope).unwrap();
-    let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::MessageNotification { channel_id, .. } => {
-            assert_eq!(channel_id, "ch_01");
-        }
-        _ => panic!("wrong variant"),
-    }
-}
-
-/// Regression guard: MessageNotification must NEVER contain a "ciphertext" field
-/// in the typed Rust enum. Gossip carries the cargo manifest (metadata), not the
-/// cargo (ciphertext). Ciphertext exists only on DHT storage nodes (5 replicas),
-/// not across the entire gossip fan-out graph.
-#[test]
-fn message_notification_contains_no_ciphertext() {
-    let envelope = CommunityEnvelope::MessageNotification {
-        channel_id: "ch_01".into(),
-        message_id: "msg_abc".into(),
-        author_pseudonym: "pseudo_123".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
-        sequence: 7,
-        content_hash: "abc123def456".into(),
-        timestamp: 1_234_567_890,
-    };
-    // Debug-format inspection: `Debug` derives the field names the
-    // type really has. If a `ciphertext` field is ever added to
-    // `MessageNotification`, this regression catches it.
-    let debug = format!("{envelope:?}");
-    assert!(
-        !debug.contains("ciphertext"),
-        "MessageNotification must NOT contain ciphertext — gossip carries \
-         notifications only. Got: {debug}"
-    );
-}
-
-/// Regression guard: `MessageNotification` packs compactly on the
-/// wire. Cap'n Proto packed format keeps this notification well
-/// under the Veilid 32 KB `app_message` limit; if ciphertext
-/// sneaks in, this limit fails immediately.
-#[test]
-fn message_notification_payload_stays_compact() {
-    let envelope = CommunityEnvelope::MessageNotification {
-        channel_id: "ch01".into(),
-        message_id: "m01".into(),
-        author_pseudonym: "p01".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
-        sequence: 3,
-        content_hash: "abc123".into(),
-        timestamp: 1_234_567_890,
-    };
-    let bytes = encode_community_envelope(&envelope).unwrap();
-    assert!(
-        bytes.len() < 200,
-        "MessageNotification should be compact (< 200 bytes packed), was {} bytes. \
-         If this fails, check if ciphertext or large fields were added.",
-        bytes.len()
-    );
 }
 
 #[test]
@@ -287,10 +220,10 @@ fn control_payload_capnp_roundtrip() {
     let payload = ControlPayload::MemberLeave {
         pseudonym_key: "abc123".into(),
     };
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MemberLeave { pseudonym_key }) => {
+    match back.into_control() {
+        Some(ControlPayload::MemberLeave { pseudonym_key }) => {
             assert_eq!(pseudonym_key, "abc123");
         }
         _ => panic!("wrong variant"),
@@ -307,16 +240,22 @@ fn mek_transfer_ack_capnp_roundtrip() {
         channel_id: Some("ch_42".into()),
         generation: 17,
         requester_pseudonym: "deadbeef".repeat(4), // 32-hex-char pseudonym
+        transfer_id: vec![5; 16],
+        ack_tag: vec![6; 32],
     });
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
+    match back.into_control() {
+        Some(ControlPayload::MekTransferAck(MekTransferAckPayload {
             community_id,
             channel_id,
             generation,
             requester_pseudonym,
+            transfer_id,
+            ack_tag,
         })) => {
+            assert_eq!(transfer_id, vec![5; 16]);
+            assert_eq!(ack_tag, vec![6; 32]);
             assert_eq!(community_id, "veilid:abc");
             assert_eq!(channel_id.as_deref(), Some("ch_42"));
             assert_eq!(generation, 17);
@@ -332,11 +271,13 @@ fn mek_transfer_ack_capnp_roundtrip() {
         channel_id: None,
         generation: 99,
         requester_pseudonym: "cafebabe".repeat(4),
+        transfer_id: vec![],
+        ack_tag: vec![],
     });
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload_none)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload_none)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
+    match back.into_control() {
+        Some(ControlPayload::MekTransferAck(MekTransferAckPayload {
             channel_id,
             generation,
             ..
@@ -357,10 +298,10 @@ fn request_segment_expansion_capnp_roundtrip() {
         requester_pseudonym: "feedface".repeat(4),
         full_segment_index: 0,
     };
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
+    match back.into_control() {
+        Some(ControlPayload::RequestSegmentExpansion {
             community_id,
             requester_pseudonym,
             full_segment_index,
@@ -376,6 +317,7 @@ fn request_segment_expansion_capnp_roundtrip() {
 #[test]
 fn signed_envelope_capnp_roundtrip() {
     let signed = SignedEnvelope {
+        message_id: [7u8; 16],
         community_id: "comm_01".into(),
         sender_pseudonym: "abc123".into(),
         envelope_bytes: vec![1, 2, 3],
@@ -383,6 +325,6 @@ fn signed_envelope_capnp_roundtrip() {
         ttl: 5,
     };
     let bytes = encode_signed_envelope(&signed);
-    let back = crate::capnp_envelope::decode_signed_envelope(&bytes).unwrap();
+    let back = crate::capnp_envelope::decode_signed_envelope(&bytes.unwrap()).unwrap();
     assert_eq!(back.community_id, "comm_01");
 }

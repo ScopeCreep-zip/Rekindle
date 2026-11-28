@@ -1,0 +1,491 @@
+//! The 1:1 frames on both hosts (plan E2.3): every 1:1 datagram is
+//! `'D' ‖ DmFrame`, and a kind travels as its typeId's carrier says:
+//!
+//! - a ratchet message under the peer's session (`rekindle_db::ratchet`,
+//!   recorded before anything is sent);
+//! - a PreKeyInit that opens a session and carries its first payload;
+//! - a pre-session frame, HPKE Base-sealed to the peer's identity and
+//!   signed by ours over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖
+//!   ct` (RFC 9180 §9.1.1's mitigation: Base mode authenticates no
+//!   sender, and Veilid names none).
+//!
+//! The typeId rides in the clear, so every ratchet AD binds it
+//! ([`ad_extra`]).
+
+use rekindle_codec::capnp_codec::direct::{
+    Carrier, ContentHint, DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, PqPrekey,
+    PreKeyInitBody, RatchetBody, RatchetHeader, SealedBody, SealedContent,
+};
+use rekindle_crypto::signal::{
+    Header, Outgoing, PqPrekeyId, PreKeyBundle, PreKeyInit, RatchetMessage,
+};
+use rekindle_crypto::{presession, CryptoError, Identity};
+use rekindle_db::ratchet::{self, PeerAddress, RatchetError};
+use rekindle_types::domains;
+
+use super::DIRECT_TAG;
+use crate::operations::friend::{FriendError, FriendHost};
+
+/// A sealed frame's random nonce: the replay guard keeps `(sender, nonce)`.
+pub type Nonce = [u8; 16];
+
+/// The ratchet AD's `ad_extra` for a kind: its typeId, so a frame cannot
+/// be relabelled as another kind.
+#[must_use]
+pub fn ad_extra(type_id: DmTypeId) -> [u8; 2] {
+    type_id.as_u16().to_be_bytes()
+}
+
+/// Whether a ratchet message of `type_id` is user content, logged in
+/// `message_send_log` when we send it and asked for again with a
+/// `RetryRequest` when it does not open (plan E2.5, D24): a direct message
+/// and its edits, deletes and reactions.
+#[must_use]
+pub fn is_logged(type_id: DmTypeId) -> bool {
+    matches!(
+        type_id,
+        DmTypeId::DmText | DmTypeId::DmEdit | DmTypeId::DmDelete | DmTypeId::DmReaction
+    )
+}
+
+/// The message a logged kind is about, as its send-log row's `client_id`
+/// (plan E7.1): a text's own id, an edit's, delete's or reaction's
+/// target, so the message's expiry deletes every logged plaintext of it.
+#[must_use]
+pub fn logged_client_id(body: &DirectBody) -> Option<String> {
+    let id = match body {
+        DirectBody::DmText(t) => &t.client_id,
+        DirectBody::DmEdit(e) => &e.target_client_id,
+        DirectBody::DmDelete(d) => &d.target_client_id,
+        DirectBody::DmReaction(r) => &r.target_client_id,
+        _ => return None,
+    };
+    Some(super::client_id_text(id))
+}
+
+/// The HPKE info label of a sealed kind; `None` for the other carriers.
+#[must_use]
+pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
+    Some(match type_id {
+        DmTypeId::FriendRequest => domains::DM_FRIEND_REQUEST_HPKE,
+        DmTypeId::PreKeyRejected => domains::DM_PREKEY_REJECTED_HPKE,
+        DmTypeId::SessionResetRequest => domains::DM_SESSION_RESET_REQUEST_HPKE,
+        DmTypeId::SessionResetDecline => domains::DM_SESSION_RESET_DECLINE_HPKE,
+        DmTypeId::RegisterPushRelay => domains::DM_PUSH_REGISTER_HPKE,
+        DmTypeId::UnregisterPushRelay => domains::DM_PUSH_UNREGISTER_HPKE,
+        DmTypeId::WakeNotify => domains::DM_PUSH_WAKE_HPKE,
+        _ => return None,
+    })
+}
+
+/// The datagram for `frame`: [`DIRECT_TAG`] then its encoding. Every 1:1
+/// send builds its bytes here.
+///
+/// # Errors
+/// `Invalid` when the datagram is over Veilid's message cap: it fails on
+/// every path, so it is refused rather than queued (plan C7.25).
+pub fn wire(frame: &DmFrame) -> Result<Vec<u8>, FriendError> {
+    let encoded = frame.encode()?;
+    let mut datagram = Vec::with_capacity(encoded.len() + 1);
+    datagram.push(DIRECT_TAG);
+    datagram.extend_from_slice(&encoded);
+    rekindle_records::port::check_message_len(&datagram)
+        .map_err(|e| FriendError::Invalid(e.to_string()))?;
+    Ok(datagram)
+}
+
+/// The peer a frame to `to` (a hex identity) is for.
+///
+/// # Errors
+/// `Invalid` when `to` is not a public key.
+pub fn peer_address(to: &str) -> Result<PeerAddress, FriendError> {
+    super::recipient_key(to).map(PeerAddress::sole_device)
+}
+
+/// A ratchet step's failure as the friend operations report it.
+pub(crate) fn ratchet_error(to: &str, e: RatchetError) -> FriendError {
+    match e {
+        RatchetError::Crypto(CryptoError::NoSession(_)) => FriendError::Conflict(format!(
+            "No secure session with {to}. They haven't completed a handshake yet — they need \
+             to accept your friend request before you can send encrypted messages."
+        )),
+        RatchetError::Crypto(CryptoError::IdentityAddressMismatch { .. }) => {
+            FriendError::Invalid(format!("the bundle for {to} is under another identity"))
+        }
+        other => FriendError::Failed(format!("ratchet step with {to}: {other}")),
+    }
+}
+
+/// The plaintext of a ratchet or PreKeyInit message carrying `body`.
+/// Where a frame sits: its entry on our outbox stream to the peer and on
+/// our dm chain to them (0: on neither). Only a chain entry's hint carries
+/// a `chain_seq` (live A/B finding 71 refined); a `StreamRecord` row has a
+/// stream seq and none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Position {
+    pub stream_seq: u64,
+    pub chain_seq: u64,
+}
+
+fn content(
+    body: &DirectBody,
+    hint: ContentHint,
+    at: Position,
+    sent_at_ms: u64,
+) -> Result<Vec<u8>, rekindle_codec::CodecError> {
+    DmContent {
+        stream_seq: at.stream_seq,
+        chain_seq: at.chain_seq,
+        content_hint: hint,
+        sent_at_ms,
+        payload: body.encode()?,
+    }
+    .encode()
+}
+
+/// `body` as a ratchet message under our session with `to`, recorded
+/// before it is returned (user content with its send-log row, [`is_logged`]). With no session at all with an accepted friend
+/// (they rotated their identity, or ours moved), the message opens one from
+/// a slot of their prekey record (plan E2.3: "the next send to the new
+/// identity initiates from its published bundle"; E2.4: from its record). This never re-initiates
+/// a session that exists: a broken one is ruling Q1's prompt (E2.5). Typing
+/// never opens one (plan audit R-4): with no session it is refused.
+///
+/// # Errors
+/// No session with `to` and none can be opened (`Conflict`), or the step
+/// failed.
+pub async fn ratchet_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    hint: ContentHint,
+) -> Result<DmFrame, FriendError> {
+    ratchet_frame_at(
+        host,
+        to,
+        body,
+        hint,
+        Position::default(),
+        host.clock().now_ms(),
+    )
+    .await
+}
+
+/// [`ratchet_frame`] for the entry `at` of our outbox stream (and chain) to
+/// `to` (plan E2.5): the seqs ride in the encrypted content, with `sent_at_ms`,
+/// when the message was written (E2.B F3).
+///
+/// # Errors
+/// As [`ratchet_frame`].
+pub async fn ratchet_frame_at(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    hint: ContentHint,
+    at: Position,
+    sent_at_ms: u64,
+) -> Result<DmFrame, FriendError> {
+    let type_id = body.type_id();
+    let local = host.local_party()?;
+    let peer = peer_address(to)?;
+    let (db, plaintext) = (host.db()?, content(body, hint, at, sent_at_ms)?);
+    let encrypted = if is_logged(type_id) {
+        ratchet::encrypt_record_and_log_outbound(
+            &db,
+            &local,
+            &peer,
+            &plaintext,
+            &ad_extra(type_id),
+            type_id.as_u16(),
+            logged_client_id(body),
+        )
+        .await
+    } else {
+        ratchet::encrypt_and_record_outbound(&db, &local, &peer, &plaintext, &ad_extra(type_id))
+            .await
+    };
+    let outgoing = match encrypted {
+        Ok(outgoing) => outgoing,
+        Err(RatchetError::Crypto(CryptoError::NoSession(_)))
+            if type_id != DmTypeId::Typing
+                && crate::operations::friend::state::is_accepted(host, to) =>
+        {
+            // A kind that may not open a session (a `StreamRecord`, an
+            // ack) waits for the one the next content message opens: an
+            // outbox row of it is deferred, not wedged, so it never holds
+            // its stream (a `StreamRecord` left unacknowledged by our
+            // rotation once wedged the stream behind it).
+            if !type_id.is_first_payload() {
+                return Err(FriendError::Conflict(format!(
+                    "no secure session with {to}: a {type_id:?} waits for the one a message opens"
+                )));
+            }
+            let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
+            let (frame, _) = open_frame(host, to, bundle, body, at).await?;
+            return Ok(frame);
+        }
+        Err(RatchetError::Crypto(CryptoError::NoSession(_)))
+            if crate::operations::group_dm::opens_member_session(type_id) =>
+        {
+            // A roster member who is not our friend (plan E2.6): the
+            // session opens from the prekey record their roster profile
+            // names, with this group frame as the init's first payload.
+            let bundle = crate::operations::group_dm::member_bundle(host, to).await?;
+            let (frame, initiated) = open_frame(host, to, bundle, body, at).await?;
+            if initiated {
+                crate::operations::group_dm::first_contact::began(host, to, body);
+            }
+            return Ok(frame);
+        }
+        Err(e) => return Err(ratchet_error(to, e)),
+    };
+    Ok(outgoing_frame(local.owner(), type_id, outgoing))
+}
+
+/// The frame of a `type_id` message from `sender`: a ratchet frame, or,
+/// while the peer has not acknowledged the session, a PreKeyInit frame
+/// whose first payload is this message (plan E2.5h: the peer can open the
+/// session from any message until it answers). Only a kind that may open a
+/// session is wrapped (the codec's allowlist, plan audit G1): any other
+/// could open nothing on a peer without the session, so it rides the
+/// pending session as a ratchet message.
+#[must_use]
+pub fn outgoing_frame(sender: [u8; 32], type_id: DmTypeId, outgoing: Outgoing) -> DmFrame {
+    match outgoing {
+        Outgoing::PreKey(init) if !type_id.is_first_payload() => DmFrame {
+            type_id,
+            sender,
+            body: FrameBody::Ratchet(ratchet_body(init.message)),
+        },
+        Outgoing::Message(message) => DmFrame {
+            type_id,
+            sender,
+            body: FrameBody::Ratchet(ratchet_body(message)),
+        },
+        Outgoing::PreKey(init) => DmFrame {
+            type_id: DmTypeId::PreKeyInit,
+            sender,
+            body: FrameBody::PreKeyInit(init_body(init, type_id)),
+        },
+    }
+}
+
+/// Open a session with `to` from its `bundle`, carrying `first` (an accept,
+/// or any ratchet kind) as the init's encrypted first payload, as the entry
+/// `at` of our outbox stream to `to` (`Position::default()`: none). The seqs
+/// rides in the content as in [`ratchet_frame_at`]: the peer acknowledges
+/// a stream entry by it, so a first message that dropped it would wait for
+/// a resend under the session it opened.
+///
+/// # Errors
+/// `first` may not open a session, the bundle is not `to`'s, or the step
+/// failed.
+pub async fn initiate_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    bundle: PreKeyBundle,
+    first: &DirectBody,
+    at: Position,
+) -> Result<DmFrame, FriendError> {
+    let first_type_id = first.type_id();
+    if !first_type_id.is_first_payload() {
+        return Err(FriendError::Invalid(format!(
+            "{first_type_id:?} cannot open a session"
+        )));
+    }
+    let local = host.local_party()?;
+    let peer = peer_address(to)?;
+    let init = ratchet::initiate_and_record_outbound(
+        &host.db()?,
+        &local,
+        &peer,
+        bundle,
+        &content(first, ContentHint::Default, at, host.clock().now_ms())?,
+        &ad_extra(first_type_id),
+    )
+    .await
+    .map_err(|e| ratchet_error(to, e))?;
+    crate::operations::prekeys::began_first_contact(host, to, first_type_id);
+    Ok(DmFrame {
+        type_id: DmTypeId::PreKeyInit,
+        sender: local.owner(),
+        body: FrameBody::PreKeyInit(init_body(init, first_type_id)),
+    })
+}
+
+/// [`initiate_frame`] for a send that found no session: the bundle was
+/// fetched over the network, and a session the peer opened meanwhile (a
+/// crossing) is sent on instead of replaced
+/// ([`ratchet::open_and_record_outbound`], Sesame §3.3). Whether the frame
+/// initiates (it carries our PreKeyInit).
+///
+/// # Errors
+/// As [`initiate_frame`].
+async fn open_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    bundle: PreKeyBundle,
+    body: &DirectBody,
+    at: Position,
+) -> Result<(DmFrame, bool), FriendError> {
+    let type_id = body.type_id();
+    if !type_id.is_first_payload() {
+        return Err(FriendError::Invalid(format!(
+            "{type_id:?} cannot open a session"
+        )));
+    }
+    let local = host.local_party()?;
+    let outgoing = ratchet::open_and_record_outbound(
+        &host.db()?,
+        &local,
+        &peer_address(to)?,
+        bundle,
+        &content(body, ContentHint::Default, at, host.clock().now_ms())?,
+        &ad_extra(type_id),
+    )
+    .await
+    .map_err(|e| ratchet_error(to, e))?;
+    let initiated = matches!(outgoing, Outgoing::PreKey(_));
+    if initiated {
+        crate::operations::prekeys::began_first_contact(host, to, type_id);
+    }
+    Ok((outgoing_frame(local.owner(), type_id, outgoing), initiated))
+}
+
+/// `body` (a sealed kind) as a pre-session frame to `to` under `nonce`.
+/// A retry passes its first attempt's nonce, so a copy that already
+/// arrived is dropped; `sent_at` is always now.
+///
+/// # Errors
+/// `body` is not a sealed kind, `to` is not a key, or the identity is
+/// locked.
+pub fn sealed_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    nonce: Nonce,
+) -> Result<DmFrame, FriendError> {
+    let identity = host.local_party()?.identity;
+    let recipient = super::recipient_key(to)?;
+    seal_presession(&identity, &recipient, body, nonce, host.clock().now_ms())
+}
+
+/// [`sealed_frame`] from `identity` to `recipient` at `now_ms`.
+///
+/// # Errors
+/// `body` is not a sealed kind, or `recipient` is not a curve point.
+pub fn seal_presession(
+    identity: &Identity,
+    recipient: &[u8; 32],
+    body: &DirectBody,
+    nonce: Nonce,
+    now_ms: u64,
+) -> Result<DmFrame, FriendError> {
+    let type_id = body.type_id();
+    let info = sealed_info(type_id)
+        .ok_or_else(|| FriendError::Invalid(format!("{type_id:?} is not a sealed kind")))?;
+    let plaintext = SealedContent {
+        nonce,
+        sent_at_ms: now_ms,
+        payload: body.encode()?,
+    }
+    .encode()?;
+    let sealed = presession::seal(identity, recipient, type_id.as_u16(), info, &plaintext)
+        .map_err(|e| FriendError::Invalid(format!("seal {type_id:?}: {e}")))?;
+    Ok(DmFrame {
+        type_id,
+        sender: identity.public_key_bytes(),
+        body: FrameBody::Sealed(SealedBody {
+            enc: sealed.enc,
+            ciphertext: sealed.ciphertext,
+            signature: sealed.signature,
+        }),
+    })
+}
+
+/// `body` to `to` as its kind travels after a session exists: a ratchet
+/// message, or a sealed frame under a fresh nonce.
+///
+/// # Errors
+/// A PreKeyInit or accept kind (they open a session: [`initiate_frame`]),
+/// or the sealing failed.
+pub async fn frame(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    hint: ContentHint,
+) -> Result<DmFrame, FriendError> {
+    match body.type_id().carrier() {
+        // A group entry goes pairwise only as a member's hint (plan E2.6).
+        Carrier::Ratchet | Carrier::GroupChain => ratchet_frame(host, to, body, hint).await,
+        Carrier::Sealed => {
+            let mut nonce = Nonce::default();
+            host.rng().fill(&mut nonce);
+            sealed_frame(host, to, body, nonce)
+        }
+        Carrier::PreKeyInit | Carrier::FirstPayload => Err(FriendError::Invalid(format!(
+            "{:?} opens a session: initiate it from a bundle",
+            body.type_id()
+        ))),
+    }
+}
+
+/// A ratchet message's wire body.
+#[must_use]
+pub fn ratchet_body(message: RatchetMessage) -> RatchetBody {
+    RatchetBody {
+        header: RatchetHeader {
+            dh: message.header.dh,
+            pn: message.header.pn,
+            n: message.header.n,
+        },
+        ciphertext: message.ciphertext,
+    }
+}
+
+/// The ratchet message a wire body carries.
+#[must_use]
+pub fn ratchet_message(body: &RatchetBody) -> RatchetMessage {
+    RatchetMessage {
+        header: Header {
+            dh: body.header.dh,
+            pn: body.header.pn,
+            n: body.header.n,
+        },
+        ciphertext: body.ciphertext.clone(),
+    }
+}
+
+/// A PreKeyInit's wire body; `IK_A` travels as the frame's sender.
+#[must_use]
+pub fn init_body(init: PreKeyInit, first_type_id: DmTypeId) -> PreKeyInitBody {
+    PreKeyInitBody {
+        base_key: init.base_key,
+        signed_prekey_id: init.signed_prekey_id,
+        one_time_prekey_id: init.one_time_prekey_id,
+        pq_prekey: match init.pq_prekey {
+            PqPrekeyId::OneTime(id) => PqPrekey::OneTime(id),
+            PqPrekeyId::LastResort(id) => PqPrekey::LastResort(id),
+        },
+        kem_ciphertext: init.kem_ciphertext,
+        first_type_id,
+        message: ratchet_body(init.message),
+    }
+}
+
+/// The PreKeyInit a wire body from `sender` carries.
+#[must_use]
+pub fn init_from_body(sender: [u8; 32], body: &PreKeyInitBody) -> PreKeyInit {
+    PreKeyInit {
+        identity_key: sender,
+        base_key: body.base_key,
+        signed_prekey_id: body.signed_prekey_id,
+        one_time_prekey_id: body.one_time_prekey_id,
+        pq_prekey: match body.pq_prekey {
+            PqPrekey::OneTime(id) => PqPrekeyId::OneTime(id),
+            PqPrekey::LastResort(id) => PqPrekeyId::LastResort(id),
+        },
+        kem_ciphertext: body.kem_ciphertext.clone(),
+        message: ratchet_message(&body.message),
+    }
+}

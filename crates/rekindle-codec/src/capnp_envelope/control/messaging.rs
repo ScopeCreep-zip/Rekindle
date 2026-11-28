@@ -5,42 +5,6 @@ use crate::community::envelope::ControlPayload;
 use crate::community_envelope_capnp as cap;
 use crate::error::CodecError;
 
-pub(super) fn write_message_edited(
-    mut p: cap::message_edited_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::MessageEdited {
-        channel_id,
-        message_id,
-        new_ciphertext,
-        mek_generation,
-        edited_at,
-    } = payload
-    else {
-        unreachable!("write_message_edited: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-    p.set_message_id(message_id);
-    p.set_new_ciphertext(new_ciphertext);
-    p.set_mek_generation(*mek_generation);
-    p.set_edited_at(*edited_at);
-}
-
-pub(super) fn write_message_deleted(
-    mut p: cap::message_deleted_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::MessageDeleted {
-        channel_id,
-        message_id,
-    } = payload
-    else {
-        unreachable!("write_message_deleted: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-    p.set_message_id(message_id);
-}
-
 pub(super) fn write_reaction_added(
     mut p: cap::reaction_added_payload::Builder<'_>,
     payload: &ControlPayload,
@@ -143,27 +107,6 @@ pub(super) fn write_link_preview(
         p.set_site_name(s);
     }
     p.set_fetched_at(*fetched_at);
-}
-
-pub(super) fn read_message_edited(
-    p: cap::message_edited_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::MessageEdited {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        message_id: text_to_string(p.get_message_id().map_err(|e| capnp_err(&e))?)?,
-        new_ciphertext: p.get_new_ciphertext().map_err(|e| capnp_err(&e))?.to_vec(),
-        mek_generation: p.get_mek_generation(),
-        edited_at: p.get_edited_at(),
-    })
-}
-
-pub(super) fn read_message_deleted(
-    p: cap::message_deleted_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::MessageDeleted {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        message_id: text_to_string(p.get_message_id().map_err(|e| capnp_err(&e))?)?,
-    })
 }
 
 pub(super) fn read_reaction_added(

@@ -1,0 +1,50 @@
+@layer components {
+
+  /* Game invites (plan E7.2): a friend's "join me" card above the chat
+   * log, naming the game and the host:port the join will connect to. */
+  .game-invite-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px 0;
+  }
+
+  .game-invite {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 30%, transparent);
+    color: var(--color-xfire-text);
+    font-family: var(--font-family-xfire);
+  }
+
+  .game-invite-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .game-invite-server {
+    font-family: monospace;
+  }
+}
+
+@layer components {
+
+  /* Favourite servers (plan E7.2, Settings → Application): game, host:port
+   * and label on one wrapping row; a group lobby's four actions (plan E7.2
+   * G6, GameLobbyCard) wrap the same way. */
+  .favourite-server-form,
+  .game-lobby-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .favourite-server-form .form-input {
+    flex: 1 1 8em;
+    min-width: 0;
+  }
+}

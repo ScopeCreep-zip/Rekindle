@@ -1,9 +1,10 @@
 [package]
 name = "rekindle-client"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Shared client for Rekindle frontends: the daemon connection, on-demand start, config and display helpers"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -23,3 +24,6 @@ uuid = { version = "1", features = [ "v7" ] }
 rekindle-ipc = { path = "../rekindle-ipc" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "config", "log-scrub", "paths" ] }
+
+[dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }

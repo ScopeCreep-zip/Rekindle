@@ -38,7 +38,7 @@ pub async fn cmd_status(
 ) -> anyhow::Result<()> {
     use rekindle_types::display::{Check, StatusSnapshot};
 
-    let value = client.request_ok(IpcRequest::Status).await?;
+    let value = helpers::send(client, IpcRequest::Status).await?;
 
     if mode.is_structured() {
         return format::print_structured(&value, mode);
@@ -77,7 +77,7 @@ pub async fn cmd_status(
             checks
         };
 
-        format::print_doctor_checks(&filtered, mode, false)?;
+        format::print_doctor_checks(&filtered, mode)?;
 
         if args.exit_code {
             use rekindle_types::display::CheckStatus;
@@ -130,7 +130,6 @@ fn print_status_compact(
             rekindle_client::fmt::format_uptime(snapshot.uptime_secs),
         ),
         ("Communities", snapshot.community_count.to_string()),
-        ("Watches", snapshot.active_watches.to_string()),
         (
             "Gossip Meshes",
             format!(
@@ -152,12 +151,14 @@ pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
             rekindle_client::fmt::format_bytes(size)
         )
     });
-    let session_exists = helpers::session_path().map(|p| p.exists()).unwrap_or(false);
+    let registry_exists = helpers::registry_path()
+        .map(|p| p.exists())
+        .unwrap_or(false);
 
     if mode.is_structured() {
         let value = serde_json::json!({
             "daemon": "not running",
-            "session_exists": session_exists,
+            "identities_exist": registry_exists,
             "storage": storage_info,
         });
         return format::print_structured(&value, mode);
@@ -166,8 +167,8 @@ pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
     let pairs = vec![
         ("Daemon", "not running".to_string()),
         (
-            "Session file",
-            if session_exists {
+            "Identities",
+            if registry_exists {
                 "exists".into()
             } else {
                 concat!("not found — run: ", crate::error::cmd!("init")).into()
@@ -188,8 +189,8 @@ pub async fn dispatch(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     match cmd {
-        NetworkCmd::Peers { .. } => {
-            let value = client.request_ok(IpcRequest::NetworkPeers).await?;
+        NetworkCmd::Peers => {
+            let value = helpers::send(client, IpcRequest::NetworkPeers).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -229,7 +230,7 @@ pub async fn dispatch(
             table::print_table(&["Peer", "Route", "Failures", "Circuit"], &peers, mode)
         }
         NetworkCmd::Status | NetworkCmd::Routes { .. } | NetworkCmd::Config => {
-            let value = client.request_ok(IpcRequest::NetworkStatus).await?;
+            let value = helpers::send(client, IpcRequest::NetworkStatus).await?;
             format::print_structured(&value, mode)
         }
     }

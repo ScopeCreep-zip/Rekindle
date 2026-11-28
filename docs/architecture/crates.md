@@ -23,7 +23,7 @@ This file is the inventory and the tier diagram.
 The list below mirrors `[workspace] members` in the repository root
 `Cargo.toml`. Counts are `.rs` files under each crate's `src/`.
 
-```
+```text
 crates/
 # ── Tier 1 — Vocabulary ───────────────────────────────────────────────
 ├── rekindle-types/                 (35) shared IDs, enums, error taxonomy
@@ -36,20 +36,23 @@ crates/
 # ── Tier 3 — Wire format, records, local state ────────────────────────
 ├── rekindle-codec/                     wire types + encodings: Cap'n Proto schemas/codecs, envelopes, record pages, dedup
 ├── rekindle-records/                (4) DHT record lifecycle, SMPL schema
-├── rekindle-db/                    (17) schema, Db handle, repositories, node lock [NEW]
+├── rekindle-db/                    (38) schema, Db handle, repositories, node lock, 1:1 ratchet storage [NEW]
 ├── rekindle-events/                 (5) dedup + SubscriptionState + EventJournal [NEW]
 ├── rekindle-idempotency/            (2) LRU+TTL command-dedup cache [NEW]
 ├── rekindle-mek-rotation/           (9) cascade election + MEK distribute [NEW]
 ├── rekindle-analytics/              (8) local-only SQL aggregations [NEW]
+├── rekindle-image/                  (5) the one limited image decoder: declared kind, limits, re-encode
+├── rekindle-skin/                   (6) skin package format rekindle-skin/1: strict zip walk, manifest rules [NEW]
 
 # ── Tier 4 — Routing ──────────────────────────────────────────────────
 ├── rekindle-route/                  (6) private-route lifecycle, peer cache
 ├── rekindle-lifecycle/              (4) 9-state app FSM + TransportGuard [NEW]
+├── rekindle-record-pool/            (4) the session's DHT record pool over the DhtBackend port; no Veilid (ADR 0021) [NEW]
+├── rekindle-outbox/                 (6) the one durable outbox: send streams, delivery states, retry (D22) [NEW]
 
 # ── Tier 5 — Gossip mesh + presence ───────────────────────────────────
 ├── rekindle-gossip/                 (9) gossip mesh primitives
 ├── rekindle-presence/              (24) presence primitives + orchestrators [NEW]
-├── rekindle-friendship/             (4) inbox-scan coordinator [NEW]
 
 # ── Tier 6 — Governance ───────────────────────────────────────────────
 ├── rekindle-governance/            (24) pure CRDT merge, permissions
@@ -69,7 +72,7 @@ crates/
 ├── rekindle-crypto/                (22) identity, Signal Protocol, DHT record keys
 ├── rekindle-game-detect/           (11) cross-platform game detection
 ├── rekindle-voice/                 (32) Opus codec, audio I/O, jitter, mixer
-├── rekindle-e2e-server/             (1) HTTP IPC bridge for Playwright E2E tests
+├── rekindle-netsim/                 (7) seeded network simulator over the record/route/message ports (tests only)
 
 # ── Daemon / CLI track ────────────────────────────────────────────────
 ├── rekindle-transport/             (87) the daemon's Veilid adapter (over rekindle-protocol)
@@ -106,9 +109,9 @@ The tier hierarchy is a contract. The CI gauntlet greps every crate's
 |------|--------|---------|-----------|
 | 1 | `types` | `serde`, `thiserror` | `tokio`, async, `veilid-core`, `tauri`, any crypto lib |
 | 2 | `secrets`, `vault`, `audit` | crypto libs (only here) | `veilid-core`, `tauri`, network I/O |
-| 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only | `veilid-core`, `tauri` |
+| 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics`, `image`, `skin` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only, `image` (pure-Rust codecs) for `image` only | `veilid-core`, `tauri`, `unsafe` in `image` and `skin` |
 | 4 | `route`, `lifecycle` | `tokio` | `veilid-core`, `tauri` |
-| 5 | `gossip`, `presence`, `friendship` | `tokio`, `async-trait` (deps traits) | `veilid-core`, `tauri` |
+| 5 | `gossip`, `presence` | `tokio`, `async-trait` (deps traits) | `veilid-core`, `tauri` |
 | 6 | `governance`, `governance-runtime` | `tokio` (runtime only), `async-trait` | `veilid-core`, `tauri`, `rusqlite`, `iota_stronghold` |
 | 7 | `channel`, `dm`, `calls`, `files`, `link-preview`, `video` | `tokio`, `async-trait`, file I/O (`files` cache) | `veilid-core`, `tauri` |
 
@@ -116,10 +119,16 @@ The Veilid boundary is **transitive linkage**
 ([ADR 0014](../decisions/0014-veilid-boundary-is-transitive.md)). Only these may
 link `veilid-core`:
 
-- `rekindle-protocol` — every Veilid call: the record pool (`dht::pool`),
-  `RouteImports`, `OwnRoutes`, node startup. Rule B22
+- `rekindle-protocol` — every Veilid call: the record pool's Veilid backend
+  (`dht::backend::VeilidDht`; the pool itself is `rekindle-record-pool`,
+  ADR 0021, re-exported as `dht::pool`),
+  `RouteImports`, the own-route allocator (`VeilidRouteAllocator`), node
+  startup, and the ports' Veilid implementation (`ports`). Rule B22
   (`cargo xtask check-veilid-dht-calls`) keeps each call in its owner.
-- `rekindle-transport` — the daemon's adapter over `rekindle-protocol`.
+- `rekindle-transport` — the daemon's transport. It links Veilid only through
+  `rekindle-protocol` and names no Veilid type: it runs on the
+  `rekindle_records::port` traits (plan C9.1; the same xtask keeps
+  `veilid_core` out of it and out of `rekindle-records`).
 - `rekindle-node` — the host, through `rekindle-transport`.
 - `rekindle-desktop` — until F1 makes it a thin client.
 
@@ -135,10 +144,12 @@ column rather than inside it, and are consumed by whichever frontend needs
 them. They respect the no-`tauri` rule but may take a `veilid-core`
 dependency where it is unavoidable (`rekindle-sync` uses Veilid's
 `watch_dht_values` orchestration; `rekindle-crypto` does not).
+`rekindle-db` (Tier 3) depends on `rekindle-crypto` to run the 1:1 ratchet's
+`SessionRecord` inside `Db::call`, one transaction per message (plan E2.3).
 
 ## Visual Tier Diagram
 
-```
+```text
    ┌─────────────────┐                  ┌──────────────────┐
    │ src-tauri       │                  │ rekindle, -tui   │
    │ (desktop app)   │                  │ (rekindle-client)│
@@ -163,11 +174,12 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
               │ Tier 7  channel, dm, calls, files,       │
               │         video, link-preview              │
               │ Tier 6  governance + governance-runtime  │
-              │ Tier 5  gossip, presence, friendship     │
-              │ Tier 4  route, lifecycle                 │
-              │ Tier 3  codec, records, events,          │
+              │ Tier 5  gossip, presence                 │
+              │ Tier 4  route, lifecycle, record-pool    │
+              │ Tier 3  codec, records, events, db,      │
               │         idempotency, mek-rotation,       │
-              │         analytics                        │
+              │         analytics, image                 │
+              │         (db ──► crypto: the 1:1 ratchet) │
               │ Tier 2  secrets, vault, audit            │
               │ Tier 1  types                            │
               └──────────────────────────────────────────┘

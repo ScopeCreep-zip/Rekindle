@@ -1,11 +1,6 @@
-import { Component, onCleanup } from "solid-js";
+import { type Component, onCleanup } from "solid-js";
 
-import {
-  announce,
-  assertiveMessage,
-  cancelPendingClears,
-  politeMessage,
-} from "../../stores/announce.store";
+import { assertiveMessage, cancelPendingClears, politeMessage } from "../../stores/announce.store";
 
 /**
  * Architecture §32 a11y — the two live regions screen readers watch.
@@ -25,25 +20,14 @@ const AnnounceRegion: Component = () => {
 
   return (
     <>
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        class="live-region-sr-only"
-      >
+      <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
         {politeMessage()}
       </div>
-      <div
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-        class="live-region-sr-only"
-      >
+      <div role="alert" aria-live="assertive" aria-atomic="true" class="sr-only">
         {assertiveMessage()}
       </div>
     </>
   );
 };
 
-export { announce };
 export default AnnounceRegion;

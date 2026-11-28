@@ -47,36 +47,19 @@ pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
             h.update(b"|");
             h.update(sender_pseudonym.as_bytes());
         }
-        CryptoEvent::AdminKeypairGranted { community } => {
-            h.update(b"admin_kp|");
-            h.update(community.as_bytes());
-        }
-        CryptoEvent::SlotKeypairGranted {
-            community,
-            slot_index,
-            segment_index,
-        } => {
-            h.update(b"slot_kp|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(&slot_index.to_le_bytes());
-            h.update(b"|");
-            h.update(&segment_index.to_le_bytes());
-        }
-        CryptoEvent::PqBundlePublished { subkey, kind } => {
-            h.update(b"pq_bundle|");
-            h.update(&subkey.to_le_bytes());
-            h.update(b"|");
-            h.update(match kind {
-                rekindle_types::subscription_events::PqBundleKind::LastResort => b"lr".as_slice(),
-                rekindle_types::subscription_events::PqBundleKind::OneTimeBatch => b"ot".as_slice(),
-            });
+        CryptoEvent::PrekeyRecordPublished { head, slots } => {
+            h.update(b"prekey_record|");
+            h.update(&[u8::from(*head)]);
+            for slot in slots {
+                h.update(b"|");
+                h.update(&slot.to_le_bytes());
+            }
         }
     }
 }
 
-pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 5;
+pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 5;
 
     // Scope first, so every variant is keyed to its call without each
     // one restating community + channel — and so a DM call, which has
@@ -148,7 +131,11 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
         }
         VoiceEvent::JoinHandshake { state, peer, .. } => {
             h.update(b"handshake|");
-            h.update(state.as_bytes());
+            h.update(match state {
+                rekindle_types::subscription_events::JoinHandshake::Announced => b"announced",
+                rekindle_types::subscription_events::JoinHandshake::Seen => b"seen",
+                rekindle_types::subscription_events::JoinHandshake::Connected => b"connected",
+            });
             h.update(b"|");
             h.update(peer.as_deref().unwrap_or("").as_bytes());
         }
@@ -197,7 +184,7 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
             h.update(b"|");
             h.update(actor_pseudonym.as_bytes());
             h.update(b"|");
-            h.update(&rekindle_utils::timestamp_ms().to_le_bytes());
+            h.update(&now_ms.to_le_bytes());
         }
         VoiceEvent::SpeakResponded {
             requester_pseudonym,

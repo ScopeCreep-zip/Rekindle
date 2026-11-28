@@ -4,5 +4,8 @@
 
 pub mod audit;
 pub mod community_keys;
+pub mod device_keys;
+pub mod group_rendezvous;
 pub mod mek;
-pub mod signal;
+pub mod owner_keys;
+pub mod pending_rotation;

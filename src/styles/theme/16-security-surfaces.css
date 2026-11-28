@@ -1,0 +1,367 @@
+/* Security surfaces (plan E7.7.0). `@layer sec` is last in the cascade, and
+ * these rules read only the reserved `--sec-*` tokens (`global.css`), so no
+ * skin can restyle them (`cargo xtask check-sec-surfaces`).
+ *
+ * The security-critical parts of each surface, and nothing else, are drawn
+ * here; a skin can recolour the dialog around them (title, frame, overlay,
+ * proof fields, error line), never these:
+ * - the commit controls `.sec-btn-commit`, `.sec-btn-commit-danger`,
+ *   `.sec-btn-secondary` (intent review, deep-link consent, device
+ *   pairing, safety number): the destructive commit always looks
+ *   destructive, the safe one never does; their metrics are the
+ *   `.form-btn-*` ones they replace;
+ * - the review card `.sec-review` with what a decision rests on: the
+ *   subject, the escalations and facts, what undo and notification apply
+ *   and the acknowledgement the Host words (`IntentDialog`), the
+ *   statement of what a deep link does and the key fingerprint
+ *   (`DeepLinkConsentDialog`);
+ * - the pairing QR and its code (`AddDeviceModal`);
+ * - the safety number's card and the key-trust badges (plan E2.3).
+ * Each sets its own ground, text colour and font, so nothing is inherited
+ * from the themeable dialog it sits in. */
+@layer sec {
+  .sec-btn-commit,
+  .sec-btn-commit-danger,
+  .sec-btn-secondary {
+    border: 1px solid;
+    border-radius: 0.25rem;
+    font-family: var(--sec-font-family);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--sec-motion-duration);
+  }
+
+  /* Commit and destructive commit share one size and place, so a review
+   * that turns destructive changes the button's colour and its verb, not
+   * where it sits. */
+  .sec-btn-commit,
+  .sec-btn-commit-danger {
+    width: 100%;
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  .sec-btn-commit {
+    background: var(--sec-commit-bg);
+    border-color: var(--sec-commit-border);
+    color: var(--sec-commit-fg);
+  }
+
+  .sec-btn-commit-danger {
+    background: var(--sec-danger-bg);
+    border-color: var(--sec-danger-border);
+    color: var(--sec-danger-fg);
+  }
+
+  .sec-btn-secondary {
+    padding: 8px 16px;
+    font-size: 12px;
+    background: var(--sec-secondary-bg);
+    border-color: var(--sec-secondary-border);
+    color: var(--sec-secondary-fg);
+  }
+
+  /* Hover is a fixed step toward the reserved shade (plan E7.7.0b), so its
+   * pairs are measured like the resting ones. */
+  .sec-btn-commit:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sec-commit-bg) 88%, var(--sec-hover-shade));
+  }
+
+  .sec-btn-commit-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sec-danger-bg) 88%, var(--sec-hover-shade));
+  }
+
+  .sec-btn-secondary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sec-secondary-bg) 88%, var(--sec-hover-shade));
+  }
+
+  /* Disabled: its own fixed colours, never a fade (`opacity` is refused on
+   * a security class, `cargo xtask check-sec-surfaces`). */
+  .sec-btn-commit:disabled,
+  .sec-btn-commit-danger:disabled,
+  .sec-btn-secondary:disabled {
+    background: var(--sec-disabled-bg);
+    border-color: var(--sec-disabled-border);
+    color: var(--sec-disabled-fg);
+    cursor: not-allowed;
+  }
+
+  .sec-btn-commit:focus-visible,
+  .sec-btn-commit-danger:focus-visible,
+  .sec-btn-secondary:focus-visible {
+    outline: 2px solid var(--sec-focus);
+    outline-offset: 2px;
+    /* The ring's own ground, wider than ring and offset, so its contrast
+     * never depends on the themeable dialog behind it (WCAG C40). */
+    box-shadow: 0 0 0 6px var(--sec-focus-ground);
+  }
+
+  @media (prefers-contrast: more) {
+    .sec-btn-commit,
+    .sec-btn-commit-danger,
+    .sec-btn-secondary {
+      border-width: 2px;
+    }
+  }
+
+  /* The review card: a fixed ground and text, so a skin can neither paint
+   * the facts in the dialog's own colour nor restyle the warning. */
+  .sec-review {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--sec-review-bg);
+    color: var(--sec-review-fg);
+    border: 1px solid var(--sec-review-border);
+    border-radius: 4px;
+    font-family: var(--sec-font-family);
+    font-size: 12px;
+  }
+
+  .sec-review-subject {
+    font-weight: 600;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .sec-review-facts {
+    margin: 0;
+    padding-left: 16px;
+  }
+
+  .sec-review-fact {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    /* A long unbroken name (a skin, a device) wraps, never clips. */
+    overflow-wrap: anywhere;
+  }
+
+  /* An escalation (a verified key that changed, plan E2.3): the words carry
+   * it, the colour repeats them. */
+  .sec-review-escalation {
+    color: var(--sec-review-danger-fg);
+    font-weight: 600;
+  }
+
+  .sec-review-meta {
+    font-size: 11px;
+    color: var(--sec-review-muted-fg);
+  }
+
+  .sec-review-ack {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .sec-review-ack input {
+    accent-color: var(--sec-commit-bg);
+  }
+
+  .sec-fingerprint {
+    margin: 0;
+    color: var(--sec-review-muted-fg);
+  }
+
+  .sec-fingerprint-value {
+    color: var(--sec-review-fg);
+    font-family: var(--sec-mono-font-family);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Device pairing: the QR on the scanner's light backing (the SVG is the
+   * Host's) and the code beside it, which the new device must receive
+   * exactly. */
+  .sec-pairing-qr {
+    display: inline-block;
+    padding: 12px;
+    background: var(--sec-qr-backing);
+    border: 1px solid var(--sec-secondary-border);
+    border-radius: 6px;
+    line-height: 0;
+  }
+
+  .sec-pairing-qr svg {
+    display: block;
+    width: 256px;
+    height: 256px;
+  }
+
+  .sec-pairing-code {
+    display: inline-block;
+    margin: 6px 0;
+    padding: 4px 8px;
+    background: var(--sec-qr-backing);
+    color: var(--sec-qr-ink);
+    border: 1px solid var(--sec-secondary-border);
+    border-radius: 4px;
+    font-family: var(--sec-mono-font-family);
+    font-size: 12px;
+  }
+
+  /* StatusDot's shape cutouts (WCAG 1.4.1): a fixed ground per base, so a
+   * skin that sets a status colour equal to its own background cannot
+   * erase the crescent, bar or triangle. */
+  .status-dot-cutout {
+    fill: var(--sec-status-cutout);
+  }
+
+  /* The safety number (plan E2.3): the digits, their QR code and the
+   * verified state on a fixed light card, the way Signal shows them, so a
+   * skin can neither hide nor restyle what two people compare. Our friend
+   * code (plan E2.5, D17) sits on the same card, so a skin cannot swap what
+   * a friend scans or copies. */
+  .sec-safety-number,
+  .sec-friend-code {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--sec-qr-backing);
+    color: var(--sec-qr-ink);
+    border: 1px solid var(--sec-secondary-border);
+    border-radius: 6px;
+    font-family: var(--sec-font-family);
+    font-size: 12px;
+  }
+
+  .sec-safety-number-state {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+  }
+
+  .sec-safety-number-digits {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    gap: 4px 12px;
+    font-family: var(--sec-mono-font-family);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+
+  .sec-safety-number-qr,
+  .sec-friend-code-qr {
+    display: block;
+    width: 160px;
+    height: 160px;
+  }
+
+  .sec-safety-number-qr-ground,
+  .sec-friend-code-qr-ground {
+    fill: var(--sec-qr-backing);
+  }
+
+  .sec-safety-number-qr-modules,
+  .sec-friend-code-qr-modules {
+    fill: var(--sec-qr-ink);
+  }
+
+  .sec-friend-code-url {
+    max-width: 260px;
+    font-family: var(--sec-mono-font-family);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+    text-align: center;
+    user-select: all;
+  }
+
+  .sec-friend-code-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .sec-safety-number-hint,
+  .sec-friend-code-hint {
+    margin: 0;
+    max-width: 260px;
+    text-align: center;
+    font-size: 11px;
+  }
+
+  /* Key trust at a glance: the word is the cue, the colour only repeats it. */
+  .sec-verified-badge,
+  .sec-key-changed-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border: 1px solid;
+    border-radius: 3px;
+    font-family: var(--sec-font-family);
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .sec-verified-badge {
+    background: var(--sec-verified-bg);
+    border-color: var(--sec-verified-bg);
+    color: var(--sec-verified-fg);
+  }
+
+  .sec-badge-icon {
+    font-family: var(--sec-icon-font-family);
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1;
+  }
+
+  .sec-key-changed-badge {
+    background: var(--sec-changed-bg);
+    border-color: var(--sec-changed-bg);
+    color: var(--sec-changed-fg);
+  }
+
+  /* Windows High Contrast (forced colors): the commit controls keep a
+   * system-colour border and focus ring; the QR codes keep their dark
+   * modules on the light backing, or no scanner reads them; StatusDot's
+   * cutouts paint the system ground, so the crescent, bar and triangle that
+   * tell away, busy and in-game apart survive the forced palette. */
+  @media (forced-colors: active) {
+    .sec-btn-commit,
+    .sec-btn-commit-danger,
+    .sec-btn-secondary,
+    .sec-review,
+    .sec-pairing-code,
+    .sec-safety-number,
+    .sec-verified-badge,
+    .sec-key-changed-badge {
+      border-color: CanvasText;
+    }
+
+    .sec-btn-commit-danger {
+      border-width: 2px;
+    }
+
+    .sec-btn-commit:disabled,
+    .sec-btn-commit-danger:disabled,
+    .sec-btn-secondary:disabled {
+      border-color: GrayText;
+      color: GrayText;
+    }
+
+    .sec-btn-commit:focus-visible,
+    .sec-btn-commit-danger:focus-visible,
+    .sec-btn-secondary:focus-visible {
+      outline: 2px solid Highlight;
+    }
+
+    .sec-pairing-qr,
+    .sec-pairing-qr svg,
+    .sec-safety-number-qr,
+    .sec-friend-code-qr {
+      forced-color-adjust: none;
+    }
+
+    .status-dot-cutout {
+      fill: Canvas;
+      forced-color-adjust: none;
+    }
+  }
+}

@@ -1,4 +1,4 @@
-//! Outbound RPC calls — request-response via Veilid app_call.
+//! Outbound RPC calls — request-response over app calls.
 //!
 //! RPC is used ONLY for operations requiring both parties online:
 //! - Community leave notification (best-effort cleanup + rekey trigger)
@@ -11,10 +11,10 @@
 use tracing::{debug, info};
 
 use super::node::TransportNode;
-use super::peer_registry::PeerTarget;
 use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
-use crate::payload::rpc::{CallResponse, CommunityLeaveNotification, SyncRequest, SyncResponse};
+use crate::payload::rpc::{CallResponse, CommunityLeaveNotification};
+use rekindle_records::port::PeerTarget;
 
 // ── Community leave ────────────────────────────────────────────────────
 
@@ -27,18 +27,19 @@ pub async fn community_leave(
     node: &TransportNode,
     target: &PeerTarget,
     recipient: &[u8; 32],
-    governance_key: &str,
+    anchor: &str,
     leaving_pseudonym: &str,
     signing_key: &[u8; 32],
     sender_public_hex: &str,
+    now_ms: u64,
 ) -> Result<CallResponse> {
     debug!(
-        governance = governance_key,
+        governance = anchor,
         pseudonym = leaving_pseudonym,
         "rpc: community_leave"
     );
     let notification = CommunityLeaveNotification {
-        governance_key: governance_key.into(),
+        anchor: anchor.into(),
         leaving_pseudonym_hex: leaving_pseudonym.into(),
     };
     let payload =
@@ -55,67 +56,22 @@ pub async fn community_leave(
             signing_key,
             sender_public_hex,
             &payload,
+            now_ms,
         )
         .await?;
 
-    let response: CallResponse = postcard::from_bytes(&response_bytes).unwrap_or(CallResponse::Ack);
+    // An undecodable reply (a NAK among them) is an error, never an Ack.
+    let response: CallResponse = postcard::from_bytes(&response_bytes).map_err(|e| {
+        TransportError::DeserializationFailed {
+            type_id: TypeId::CommunityLeave as u8,
+            reason: e.to_string(),
+        }
+    })?;
 
-    info!(governance = governance_key, "community leave RPC complete");
+    info!(governance = anchor, "community leave RPC complete");
     Ok(response)
 }
 
 // ── Governance operations ──────────────────────────────────────────────
 
 // ── Sync ───────────────────────────────────────────────────────────────
-
-/// Send a sync request to an archiver node, signed to its identity key
-/// `recipient`.
-pub async fn sync_request(
-    node: &TransportNode,
-    target: &PeerTarget,
-    recipient: &[u8; 32],
-    channel_id: &str,
-    since_timestamp: u64,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<SyncResponse> {
-    debug!(
-        channel = channel_id,
-        since = since_timestamp,
-        "rpc: sync_request"
-    );
-    let request = SyncRequest {
-        channel_id: channel_id.into(),
-        since_timestamp,
-    };
-    let payload =
-        postcard::to_stdvec(&request).map_err(|e| TransportError::SerializationFailed {
-            reason: e.to_string(),
-        })?;
-
-    let response_bytes = node
-        .caller()
-        .call(
-            target,
-            recipient,
-            TypeId::SyncRequest,
-            signing_key,
-            sender_hex,
-            &payload,
-        )
-        .await?;
-
-    let response: SyncResponse = postcard::from_bytes(&response_bytes).map_err(|e| {
-        TransportError::DeserializationFailed {
-            type_id: TypeId::SyncResponse as u8,
-            reason: e.to_string(),
-        }
-    })?;
-
-    info!(
-        channel = channel_id,
-        messages = response.messages.len(),
-        "sync response received"
-    );
-    Ok(response)
-}

@@ -21,18 +21,17 @@ pub fn default_auto_archive_seconds(thread_type: &str) -> u64 {
     }
 }
 
-/// Architecture §14 — a thread is archived when it was manually
-/// archived at a lamport >= last activity, OR when it has been idle
-/// past its auto-archive window.
+/// Architecture §4.6 — a thread is archived when a manual archive stands
+/// (no `ThreadUnarchived` after it and no reply naming it, see
+/// `ChannelMessage::revives`), OR when it has been idle past its
+/// auto-archive window (a local UI rule, T3).
 #[must_use]
 pub fn is_thread_archived(
-    archived_lamport: Option<u64>,
-    last_lamport: u64,
+    manually_archived: bool,
     last_activity_secs: u64,
     auto_archive_seconds: u64,
     now_secs: u64,
 ) -> bool {
-    let manually_archived = archived_lamport.is_some_and(|archived| last_lamport <= archived);
     let auto_archived = last_activity_secs > 0
         && last_activity_secs.saturating_add(auto_archive_seconds) < now_secs;
     manually_archived || auto_archived
@@ -50,10 +49,12 @@ pub struct ThreadMessageView {
     pub decryption_failed: bool,
     pub timestamp_ms: u64,
     pub is_own: bool,
+    pub send_state: rekindle_types::message::SendState,
     pub server_message_id: Option<String>,
-    pub mek_generation: u64,
-    pub subkey_index: u32,
-    pub lamport_ts: u64,
+    /// A sealed reply names its key generation. Pending replies are unsealed.
+    pub mek_generation: Option<u64>,
+    /// Its author's stream seq in the thread (the body's position).
+    pub stream_seq: u64,
 }
 
 #[cfg(test)]

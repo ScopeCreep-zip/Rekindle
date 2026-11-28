@@ -17,8 +17,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | Field | Type | Purpose |
 |---|---|---|
 | `identity` | `Arc<RwLock<Option<IdentityState>>>` | Logged-in user identity, set after vault unlock |
-| `identity_secret` | `Mutex<Option<[u8; 32]>>` | Ed25519 secret bytes for envelope signing |
-| `signal_manager` | `Arc<RwLock<Option<Arc<SignalManagerHandle>>>>` | Signal session manager (X3DH + Double Ratchet) |
+| `identity_secret` | `Mutex<Option<[u8; 32]>>` | Ed25519 secret bytes for signing |
 | `keystore` | `crate::keystore::KeystoreHandle` | VaultStore handle (`rekindle-vault` SQLCipher) |
 | `node` | `Arc<RwLock<Option<NodeHandle>>>` | Veilid node handle |
 | `dht_manager` | `Arc<RwLock<Option<DHTManagerHandle>>>` | Maps of watched DHT keys to friends (DHT calls go through `record_pool`) |
@@ -40,7 +39,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | Field | Type | Purpose |
 |---|---|---|
 | `audit_chain` | `Mutex<Option<rekindle_audit::AuditChain>>` | Tamper-evident BLAKE3-keyed audit chain. MAC key lives in the vault under `("audit", "mac_key")`. See [`audit-chain.md`](audit-chain.md). |
-| `envelope_store` | `Arc<RwLock<Option<Arc<dyn rekindle_transport::EnvelopeStore>>>>` | SQLite-backed durable pending-envelope retry queue |
 | `friend_store` | `Arc<RwLock<Option<Arc<dyn rekindle_transport::FriendStore>>>>` | SQLite-backed friend authority used by `rekindle-transport`'s receive path |
 | `channel_write_retry_tx` | `Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>` | Queued SMPL channel-message write handle |
 
@@ -51,8 +49,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `friends` | `Arc<RwLock<HashMap<String, FriendState>>>` | Friend state by pubkey |
 | `unwatched_friends` | `RwLock<HashSet<String>>` | Friends whose DHT watch failed; `sync_service` polls them with `force_refresh=true` |
 | `pre_away_status` | `RwLock<Option<UserStatus>>` | Status before auto-away (restored on activity) |
-| `friendship_handle` | `Arc<FriendshipHandle>` | `rekindle-friendship::InboxScanCoordinator` wiring — watch + 30 s poll + direct trigger |
-| `pending_session_resets` | `Arc<Mutex<HashMap<String, Vec<u8>>>>` | In-memory `SessionResetRequest` map (resync after Signal session reset) |
 
 ## Communities & Channels
 
@@ -91,7 +87,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `game_detector` | `Arc<Mutex<Option<GameDetectorHandle>>>` | Game detection state |
 | `file_caches` | `RwLock<HashMap<String, ChunkCache>>` | Per-community Lost Cargo `ChunkCache` |
 | `pinned_attachments` | `RwLock<HashMap<String, PinnedSet>>` | Per-community pinned attachment IDs (skipped during eviction) |
-| `file_cache_root` | `RwLock<Option<PathBuf>>` | `<app_data>/file_cache/` root path |
+| `file_cache_root` | `RwLock<Option<PathBuf>>` | Old `<app_data>/file_cache/` root path (community avatars only, until plan E3.1; chunks live under `state/{pk}.files/`) |
 
 ## Relay, Push Relay, Notifications
 
@@ -110,7 +106,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `event_journal` | `Arc<EventJournal<WebviewEvent>>` | 10 k-capacity FIFO of journaled webview events, replayed to a window that reloads (`subscribe_events`) |
 | `event_router` | `crate::event_router::WebviewRouter` | Per-window event channels; see [`event-dispatch.md`](event-dispatch.md) |
 | `dedup_cache` | `Mutex<DedupCache>` | Global gossip-mesh dedup cache |
-| `envelope_replay` | `Mutex<ReplayGuard>` | 1:1 envelopes already accepted, kept until they leave the freshness window; cleared on logout |
 
 ## Idempotency
 
@@ -166,6 +161,6 @@ The pattern is:
    cannot cross `.await` points).
 3. Drop the guard before any `.await`.
 
-`db_helpers::{db_call, db_call_or_default, db_fire}` use the same
-discipline for the SQLite pool — fire-and-forget vs. async-await vs.
-return-default semantics are picked per call site.
+`db_helpers::{db_call, db_fire}` use the same
+discipline for the SQLite pool — fire-and-forget or awaited, picked per
+call site; a read never turns an error into a default (plan D2).

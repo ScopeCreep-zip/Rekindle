@@ -5,7 +5,7 @@
 //! change, just moved into a shared crate.
 
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::Instant;
+use tokio::time::Instant;
 
 use tokio::sync::{broadcast, Notify};
 

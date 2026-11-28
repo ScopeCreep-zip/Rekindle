@@ -4,17 +4,17 @@ Rekindle uses three persistent backends, each serving a distinct
 purpose. SQLite stores local state and message history. The
 **Vault** (`rekindle-vault`, SQLCipher double-encryption) replaces
 the previous `iota_stronghold` dependency and holds private keys,
-MEKs, and Signal keying material. Veilid DHT provides distributed
+and MEKs. Signal keying material (ratchet sessions, prekeys) lives in the identity's SQLCipher database. Veilid DHT provides distributed
 storage for profile data, presence, and community state.
 
 ## Storage Backend Summary
 
 | Backend | Scope | Contents |
 |---------|-------|----------|
-| SQLite | Local device | Identity, friends, messages, communities, Signal sessions, DMs, sync state, audit chain, analytics, pending envelopes |
-| Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, Signal keying material, MEKs, audit MAC key, slot keypairs |
+| SQLite | Local device | Identity, friends, messages, communities, ratchet sessions and prekeys, DMs, sync state, audit chain, analytics, pending messages |
+| Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, MEKs, audit MAC key, slot keypairs |
 | Veilid DHT | Distributed | Profile, presence, mailbox, friend list, community governance / registry / channels, account record, personal sync record |
-| Filesystem | Local device | Lost Cargo per-community chunk cache (`<data>/file_cache/<community_id>/...`) |
+| Filesystem | Local device | Lost Cargo per-identity chunk cache (`<data>/state/{pk}.files/<scope name>/...`, keyed-hash directory names) |
 
 The `event_journal` field on `AppState` is **in-memory only** — it
 does not touch SQLite or the vault — but it is the fourth piece of
@@ -32,9 +32,9 @@ same folders:
 
 | Field | Location | Holds |
 |---|---|---|
-| `data` | `dirs::data_dir()/com.rekindle.app` | Veilid storage (`veilid/`), the file cache (`file_cache/`), the node lock (`node.lock`) |
-| `state` | `data/state` | `rekindled`'s `session.json` and `audit.jsonl` |
-| `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer), `rekindle.db` and the `{pk}.vault` files (until plan D1 moves them per identity) |
+| `data` | `dirs::data_dir()/com.rekindle.app` | the node lock (`node.lock`); `file_cache/` only for community avatars until plan E3.1 |
+| `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`, `{pk}.files/` (the file cache); the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`) |
+| `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer) |
 | `logs` | `~/Library/Logs/com.rekindle.app` (macOS), `dirs::data_local_dir()/com.rekindle.app/logs` elsewhere | `rekindled.log`, `rekindle.log`, `rekindle-tui.log` (the desktop logs to stdout) |
 
 On macOS `data` and `config` are the same folder. `create_dirs` makes
@@ -42,10 +42,40 @@ every directory owner-only (`0700`). `rekindle_db::lock::NodeLock` holds
 `data/node.lock` for the life of the process, so the desktop and
 `rekindled` refuse to run on the same root at once.
 
+### Identities (plan D1)
+
+Each identity has its own files under `state/`, and both hosts reach them
+through one implementation, `rekindle_node::host::identity`
+(`list`, `create`, `unlock`, `lock`, `delete`, `remove`, `rename`,
+`rotate`, `export`, `import`, `verify_passphrase`):
+
+- `{pk}.vault` and its 64-byte header `{pk}.vault.hdr` (Argon2id
+  parameters and salt): the identity's secrets, sealed by its passphrase
+  (`rekindle-vault`).
+- `{pk}.db`: its SQLCipher database, keyed by the vault-derived
+  `AppDbKey`; it opens only after an unlock. Every connection runs WAL
+  with `foreign_keys`, `secure_delete`, `synchronous=FULL`, `fullfsync`
+  and `checkpoint_fullfsync` on (`rekindle_db::open`): on macOS a plain
+  `fsync` does not reach the disk platter, and a ratchet step committed
+  before its message is sent must survive a power loss (SQLite applies
+  the two full-fsync flags on macOS only).
+- `identities.json`: the registry the login picker and `IdentityList` read
+  while locked (public key, display name, creation time; no secret).
+
+`layout-version` holds the `SCHEMA_VERSION` the root was laid out for.
+Both hosts run `rekindle_db::reset::apply` at startup, under the node
+lock and before any store opens: a root laid out for another version is
+reset. A wrong passphrase counts on the host's one per-identity limiter;
+the fifth consecutive failure locks the identity out, escalating.
+
+The daemon's session (`rekindle_transport::Session`) is a projection of
+the unlocked identity's database and vault (`rekindle_node::host::session`);
+`session.json` and the OS keyring are gone.
+
 ## SQLite Schema
 
-The database file is `DataRoot::database()` (`{config}/rekindle.db`; see
-[Data Root](#data-root)). All tables are defined in
+Each identity's database is `DataRoot::identity_db(pk)` (`state/{pk}.db`;
+see [Data Root](#data-root)). All tables are defined in
 `crates/rekindle-db/schema/001_init.sql`; `SCHEMA_VERSION` in
 `crates/rekindle-db/src/open.rs` is bumped whenever that file changes.
 The SQL for the tables more than one host uses is in
@@ -60,10 +90,17 @@ groups them by concern.
   (multi-account). Includes Ed25519 public key, display name, DHT
   record keys for profile / friend list / account / mailbox /
   personal sync, optional avatar BLOB, and a stable per-device
-  `device_id` (random 16-byte UUID hex) used for the cross-device
-  DeviceList without exposing more PII.
-- **`trusted_identities`** — TOFU identity-key tracking with optional
-  `verified` flag for out-of-band confirmation.
+  `device_id` (16 random bytes, 32 lowercase hex characters, `CHECK`ed),
+  minted once by the own-records stage; the prekey device list and the
+  cross-device DeviceList name it and nothing replaces it. The owned
+  records' owner keypairs are in the vault, each entry holding the
+  record key with its keypair (`rekindle_vault::typed::owner_keys`): the
+  entry is written first, and the unlock repairs the column from an entry
+  that names another record (a crash between the two writes).
+- **`signal_identities`** — peers' identity keys (TOFU) with the
+  `verified` flag and `verified_at` for out-of-band safety-number
+  confirmation; `changed_from_key` / `changed_at` hold an unacknowledged
+  change of a verified key (the `VerifiedKeyChanged` escalation).
 - **`friend_groups`** — collapsible buddy list groupings.
 - **`friends`** — friend list with per-identity scoping. Tracks
   display name, nickname override, group, presence DHT record key,
@@ -77,34 +114,28 @@ groups them by concern.
   channels. Indexed by `(owner_key, conversation_id, timestamp)`.
   Carries `message_id` (channel messages), `mek_generation`,
   `lamport_ts`, `automod_blurred` flag, `forwarded_from_author`, and a
-  `flags` bitmask. Dedup constraint on `(owner_key, conversation_id,
-  conversation_type, sender_key, timestamp)`.
+  `flags` bitmask. A row with a client id (`message_id`, every DM) is
+  deduplicated by `(sender_key, message_id)`, so two messages in one
+  millisecond are both kept; a row without one by `(conversation_type,
+  sender_key, timestamp)`.
 - **`pending_messages`** — offline retry queue (max 20 retries).
 - **`pending_friend_requests`** — incoming friend requests awaiting
-  user action; carries the requester's PreKeyBundle, profile / route /
-  mailbox info, and optional `invite_id`.
+  user action; carries the requester's profile / route / mailbox info
+  and optional `invite_id` (no prekeys: the accepter reads the
+  requester's prekey record).
 - **`outgoing_invites`** — sent invites tracked by `invite_id` with
   status (`pending` / `responded` / `accepted` / `rejected` /
   `cancelled` / `expired`).
 - **`message_delivery`** — per-message per-recipient delivery
   tracking for community channel messages.
 
-### Direct Messages (Architecture §27)
-
-- **`dms`** — DM and group-DM conversations backed by SMPL records
-  (`o_cnt:0`). Holds SMPL `record_key`, `is_group`, initiator
-  identity, our `my_subkey` index, JSON-encoded participant list,
-  `slot_seed_hex`, `wrapped_mek_blob` (group DMs only), and
-  `mek_generation`.
-- **`dm_messages`** — local message log per DM (one friend can have
-  multiple unlinkable DM contexts).
-
 ### Communities
 
 - **`communities`** — joined communities. Tracks DHT record keys
-  (`manifest_key`, `member_registry_key`, `governance_key`), our
+  (`member_registry_key`; the id is the anchor `A`'s key), our
   pseudonym, current MEK generation, plate-gate `my_segment_index`,
-  `my_subkey_index`, and `lamport_clock`.
+  `my_subkey_index`, and `beat_seq` (our `M`/1 beat count,
+  advanced and persisted before each beat; plan E3.4 S1).
 - **`channels`** — channels within communities. Types: `text`,
   `voice`, `announcement`, `forum`, `stage`, `directory`, `media`,
   `events`, `dm`. Includes `topic`, `slowmode_seconds`, `nsfw`,
@@ -138,44 +169,64 @@ groups them by concern.
 
 ### Governance and Audit
 
-- **`governance_entries_cache`** — hydrated cache of merged
-  `GovernanceEntry` rows so the CRDT merge does not need to re-fetch
-  from the DHT on every command.
-- **`outbound_seqs`** — per-(community, channel) outbound sequence
-  counters for gap detection on the sender side.
+- **`governance_ops`** — every governance op held, verified or not:
+  its hash, author, author record, seq, lamport, encoded bytes and fate
+  (applied, pending deps, quarantined); the merge reads the verified
+  set (`rekindle_db::repo`, `rekindle-governance-runtime/src/op_log.rs`).
+  **`governance_heads`** keeps our own op-log head and frontier;
+  **`governance_partial`** marks a community joined from a checkpoint
+  hint until its backfill ends; `governance_checkpoints` holds adopted cuts and
+  their snapshots (`checkpoint_rows.rs`).
 - **`audit_entries`** — tamper-evident audit log. Each row carries
   `prev_mac` + `mac` per [`audit-chain.md`](audit-chain.md). The MAC
   key lives in the vault; loss of the vault loses the chain.
 
 ### Calls
 
-- **`active_call_states`** — in-progress call state for crash recovery.
 - **`missed_calls`** — missed-call log surfaced in the buddy list.
 - **`voice_session_events`** — append-only join / leave log for
   computing peak-concurrent-voice metrics per channel.
 
-### Reliability and Retry
-
-- **`pending_envelopes`** — durable retry queue used by
-  `envelope_store_sqlite.rs` as `rekindle_transport`'s
-  `EnvelopeStore` implementation.
-- **`seen_envelopes`** — receive-side dedup window (envelope ID →
-  seen-at).
-
 ### Signal Protocol
 
-- **`signal_sessions`** — serialized Signal Protocol session state
-  per peer.
-- **`prekeys`** — unused; Signal prekeys live in the vault (see below).
-  Removed when the app database gains its Signal tables.
+- **`ratchet_sessions`** — one `rekindle_crypto::SessionRecord` (the spec
+  Double Ratchet state) per peer identity and device, stepped and stored in
+  the same transaction as whatever the message changed, before any send
+  (`rekindle_db::ratchet`).
+- **`signal_prekeys`** — our prekeys by `kind` (`spk` signed, `pq_lr`
+  ML-KEM last resort, `opk` / `pq_opk` one-time), each with the record
+  subkey publishing it (`published_subkey`), `consumed_at` and
+  `retired_at`; `rekindle_db::prekeys`.
+- **`prekey_slots_used`** — the slots of a peer device's prekey record we
+  initiated from (B2's pick skips them); swept once the record no longer
+  lists the id, or after 90 days.
+- **`prekey_rejections`** — the `PreKeyRejected` notices we sent (B5): one
+  per initiator base key, at most 10 per sender per 3 h; kept 30 days.
+- **`prekey_lr_inits`** — the `(lr_id, spk_id, base_key)` of every init
+  that opened a session on the last-resort key (B8's record of LR use,
+  B9's replay set); kept while that last-resort key is held.
+- **`unprocessed`** — decrypted inbound 1:1 messages not yet applied,
+  written in the ratchet transaction, deleted by the apply and replayed at
+  unlock (D24); keyed by ratchet header `(header_dh, header_n)`. Kept at
+  most `UNPROCESSED_MAX_AGE` (1.5 × `DELIVERY_HORIZON`) or 10 attempts; a
+  row that does not read back is quarantined (`quarantined_at`, skipped
+  by every replay) rather than failing the replay of the others.
 
-Prekey lifecycle (PQXDH §3.2–§3.3): the signed prekey and the PQ
-last-resort key are minted once and reused (`current_bundle`, published
-at profile subkey 5 and carried in invites). Every bundle sent to one
-peer (friend request, friend accept, session reset) comes from
-`handout_bundle`, which adds a fresh X25519 and ML-KEM one-time key under
-random ids; the responder deletes them when consumed, and beyond 200
-unclaimed keys per kind the oldest are deleted.
+Prekey lifecycle (plan E2.4, PQXDH §3.2–§3.3): the rows back this
+device's prekey record (see [Prekey Record](#prekey-record-dflt101)). Every
+id is a random non-zero u31, unique per kind. The "prekey maintenance"
+task (hourly, both hosts) refills a consumed slot, fills every empty slot
+once fewer than 10 are fresh, replaces a slot older than 90 days, and
+rotates the head (signed prekey + last-resort key) every 2 days; the
+`crypto.prekeys` status check warns when fewer than 10 slots are fresh or
+the head is older than 14 days. A replaced key is marked `retired_at` and
+still opens an init in flight; the archive sweep deletes retired and
+consumed rows 30 days on. A one-time key is consumed only after the first
+message under it decrypts (`rekindle_db::ratchet::accept_init`, B8): in one
+transaction its secret is erased, an LR use is recorded, the session is
+stored and the slot is refilled; the refilled slot is written to the
+record after the commit, and the unlock reconciliation re-publishes any
+row the record does not match.
 
 ### Notifications & Settings
 
@@ -205,12 +256,11 @@ unclaimed keys per kind the oldest are deleted.
 
 ### Full-Text Search (Architecture §23)
 
-Three FTS5 virtual tables with `unicode61 remove_diacritics 2`
+Two FTS5 virtual tables with `unicode61 remove_diacritics 2`
 tokenizer (no `porter` stemming — Rekindle is multilingual):
 
 - `messages_fts` — content table `messages`, content_rowid `id`
 - `thread_messages_fts` — content table `thread_messages`, content_rowid `id`
-- `dm_messages_fts` — content table `dm_messages`, content_rowid `id`
 
 Each has `AFTER INSERT/UPDATE/DELETE` triggers keeping the index
 in lock-step.
@@ -220,13 +270,12 @@ in lock-step.
 - `idx_friends_group_id` on `friends(owner_key, group_id)`
 - `idx_messages_conversation` on `messages(owner_key, conversation_id, timestamp)`
 - `idx_messages_unread` on `messages(owner_key, conversation_id, is_read)` where `is_read = 0`
-- `idx_messages_dedup` UNIQUE on `messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)`
-- `idx_messages_message_id` UNIQUE on `messages(owner_key, conversation_id, message_id)` where `message_id IS NOT NULL`
+- `idx_messages_dedup` UNIQUE on `messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)` where `message_id IS NULL`
+- `idx_messages_message_id` UNIQUE on `messages(owner_key, conversation_id, sender_key, message_id)` where `message_id IS NOT NULL`
 - `idx_channels_community_id` on `channels(owner_key, community_id)`
 - `idx_community_members_community` on `community_members(owner_key, community_id, pseudonym_key)`
 - `idx_pending_recipient` on `pending_messages(owner_key, recipient_key)`
 - `idx_thread_messages_thread` on `thread_messages(owner_key, community_id, thread_id, timestamp)`
-- `idx_dm_messages_record_ts` on `dm_messages(owner_key, record_key, timestamp)`
 - `idx_member_leaves_recent` on `community_member_leaves(owner_key, community_id, left_at)`
 - `idx_voice_session_events_channel` on `voice_session_events(owner_key, community_id, channel_id, occurred_at)`
 
@@ -239,10 +288,10 @@ all tables and recreates them from `001_init.sql`, reporting
 `schema_reset` so the host wipes the storage below.
 
 Because SQLite, the vault, and Veilid DHT store interrelated state
-(friend keys, DHT record keypairs, Signal sessions), a schema reset
+(friend keys, DHT record keypairs), a schema reset
 also triggers:
 
-1. Removal of the vault store and its salt sidecar.
+1. Removal of the vault store and its `.hdr` header.
 2. Removal of the `veilid/` local storage directory.
 3. Removal of the Lost Cargo file cache root.
 
@@ -257,11 +306,11 @@ The handle is `rekindle_db::Db`: a `rekindle_asql::Connection` (the
 vendored tokio-rusqlite) running `rusqlite` on a dedicated background
 thread, plus a liveness token plan C6 checks before closing it. In the
 desktop all access goes through
-`db_helpers::{db_call, db_call_or_default, db_fire}`. Read-only state
+`db_helpers::{db_call, db_fire}`. Read-only state
 lookups go through `state_helpers`.
 
-`rusqlite` 0.39 is used (not `sqlx`) to match `veilid-core` 0.5.7's
-`keyvaluedb-sqlite` → `async-sqlite` → `rusqlite` 0.39 chain; one
+`rusqlite` 0.39 is used (not `sqlx`) to match `veilid-core` 0.5.8's
+`keyvaluedb-sqlite` 0.2.6 → `async-sqlite` 0.5.7 → `rusqlite` 0.39 chain (the pinned fork, ADR 0017); one
 `libsqlite3-sys` (0.37, bundled SQLCipher) serves the whole process.
 
 ### Repositories
@@ -277,7 +326,9 @@ uses. Each function takes `&rusqlite::Connection` and runs inside a
 | `pending_requests` | `pending_friend_requests` |
 | `communities` | `communities` |
 | `members` | `community_members` (owner-scoped; `members::roles` for role sets) |
-| `governance_cache` | `governance_entries_cache` |
+| `governance_ops` | `governance_ops`, `governance_heads` |
+| `governance_checkpoints` | `governance_checkpoints` |
+| `governance_partial` | `governance_partial` |
 | `audit` | `audit_entries` |
 
 Repository tests run against the real schema. `cargo xtask check-sqlite`
@@ -289,18 +340,35 @@ crates the plan's E phase empties.
 
 The vault is **double-encrypted**:
 
-1. **SQLCipher** (AES-256-CBC, page-level) encrypts the entire
-   database file. The key is
-   `BLAKE3-keyed("rekindle v1 vault-sqlcipher", master)` where
-   `master = Argon2id(passphrase, salt)`.
-2. **Per-entry AES-256-GCM** seals every `entries.ciphertext` row
-   independently with a key derived from
-   `BLAKE3-keyed("rekindle v1 vault-entry-gcm", master)`.
+`master = Argon2id(passphrase, salt)` (64 bytes), and three keys are
+`blake3::derive_key` of it under registered labels
+(`rekindle_types::domains`):
 
-The 32-byte salt lives in a sidecar file `{vault_path}.salt` —
-plaintext, since salts only need to be unique per install, not
-secret. The vault DB itself is at `{config}/{pubkey}.vault`
-(per-identity, so multi-account works without snapshot collisions).
+1. **SQLCipher** (AES-256-CBC, page-level) encrypts the entire
+   vault file, keyed under `rekindle-vault-sqlcipher-v1`.
+2. **Per-entry AES-256-GCM** seals every `entries.ciphertext` row
+   independently (AAD `namespace ‖ 0x00 ‖ key`), keyed under
+   `rekindle-vault-entry-v1`.
+3. The **app-db key** (`AppDbKey`, `rekindle-vault-app-db-v1`) keys the
+   identity's own SQLCipher database (`state/{pk}.db`), so one passphrase
+   unlocks both.
+
+The Argon2id parameters and the 32-byte salt live in the 64-byte header
+`state/{pk}.vault.hdr`, plaintext (neither is secret) and readable
+before decryption; `VaultStore::create` writes it and `open` never
+creates one. The vault itself is `state/{pk}.vault` (per identity, so
+multi-account works without collisions).
+
+The identity database, not the vault, holds the 1:1 ratchet sessions and
+the prekey secrets (plan D3: single-layer under SQLCipher, ruling R2).
+It is never exported: an identity export carries the registry entry, the
+vault and its header only, and the import creates a fresh database
+(sessions are re-established, prekeys re-minted). Secrets erased from it
+are not left in its WAL: `secure_delete` zeroes freed pages,
+`journal_size_limit=0` truncates the WAL at each reset, and a prekey
+consumption (`ratchet::accept_init`) and the archive sweep
+(`prekeys::sweep_archive`) run `wal_checkpoint(TRUNCATE)` after they
+commit (DR §8.1).
 
 The on-disk schema is a single table:
 
@@ -321,7 +389,6 @@ re-exports them):
 
 | Module | Namespace / key pattern | Purpose |
 |---|---|---|
-| `typed::signal` | `signal` / `trusted:{peer}`, `session:{peer}`, `session_index`, `signed_prekey:{id}`, `prekey:{id}`, `prekey_index`, `pq_lr:{id}`, `pq_ot:{id}`, `pq_ot_index` | Trusted peer identities, Double Ratchet sessions and PQXDH prekeys (indexes list one-time keys oldest first). The Signal identity itself is derived from the Ed25519 identity at login and never stored |
 | `typed::community_keys` | `communities` / `slot_keypair_{community_id}`, `slot_seed_{community_id}`, `registry_keypair_{community_id}` | Per-community slot / registry keypairs and slot seed |
 | `typed::mek` | `communities` / `mek_{community}`, `community_mek_{community}_{generation}`, `community_mek_generations_{community}`, `mek_{community}_{channel}`, `mek_{community}_{channel}_{generation}`, `mek_generations_{community}_{channel}` | Every MEK generation per scope, the scope's latest key, and the generations index that leaving a community erases |
 | `typed::audit` | `audit` / `mac_key`, `tail` | BLAKE3-keyed MAC key + tail anchor for the audit chain |
@@ -336,7 +403,7 @@ for the migration rationale and the threat-model implications.
 
 ## DHT Record Layout
 
-### User Profile Record (DFLT, 8 subkeys)
+### User Profile Record (DFLT, 9 subkeys)
 
 | Subkey | Content | Format |
 |--------|---------|--------|
@@ -345,9 +412,34 @@ for the migration rationale and the threat-model implications.
 | 2 | Status enum | UTF-8 (`online`, `away`, `busy`, `offline`, `invisible`) |
 | 3 | Avatar | WebP bytes |
 | 4 | Game info | Cap'n Proto `GameStatus` |
-| 5 | PreKeyBundle | Cap'n Proto `PreKeyBundle` |
+| 5 | Prekey records | Cap'n Proto `PrekeyRecordList` (each device's id and prekey record key; one entry until E5.3) |
 | 6 | Route blob | Raw bytes (Veilid private route) |
 | 7 | Metadata | Reserved (extensible header) |
+| 8 | Strand Relay pool | JSON list of opaque relay route blobs, padded with dummies |
+
+### Prekey Record (DFLT(101))
+
+One record per device, owned by a keypair of its own (vault
+`OwnerKey::Prekeys`, key in `identity.prekey_record_key`) and named from
+profile subkey 5. It is created or reopened by the unlock's own-records
+stage, reconciled and topped up before the profile names it, and survives
+an identity rotation: `rotate_identity` publishes the new identity's full
+set into the same record.
+
+| Subkey | Content | Format |
+|--------|---------|--------|
+| 0 | Head: signed prekey and ML-KEM-768 last-resort key, their ids, signatures and `issuedAt` | Cap'n Proto `PrekeyRecordHead` |
+| 1..=100 | One slot each: a one-time X25519 prekey and a one-time ML-KEM-768 key, ids and signatures | Cap'n Proto `OpkSlot` |
+
+Each subkey value is capped at 10,381 B (`min(32,768, 1,048,576 / 101)`,
+pinned by `dht_layout::prekeys::MAX_SUBKEY_VALUE_LEN`). Every signature is
+the identity's Ed25519 over a domain label, the id, the key and, for the
+head's two keys, the head's `issued_at`:
+`PREKEY_SPK_SIG ‖ u32be(spk_id) ‖ i64be(issued_at) ‖ EncodeEC(spk)`,
+`PREKEY_PQ_LR_SIG ‖ u32be(id) ‖ i64be(issued_at) ‖ EncodeKEM(pqpk)`,
+`PREKEY_PQ_OT_SIG ‖ u32be(id) ‖ EncodeKEM(pqpk)` and
+`PREKEY_OPK_SIG ‖ u32be(opk_id) ‖ EncodeEC(opk)` (labels in
+`rekindle-types/src/domains.rs`; `rekindle-crypto::signal::pqxdh::verify`).
 
 ### Friend List Record
 
@@ -375,22 +467,23 @@ Lazy-created on first opt-in to multi-device. Subkeys hold the device
 list, read state per channel, sync preferences, paired device public
 keys, and sync manifest. Reconciled by the cross-device sync service.
 
-### Conversation Record (DFLT, encrypted, per-friend pair)
+### Community Records
 
-Each friend pair maintains two DHT records — one owned by each
-side. Records are encrypted with
-`DhtRecordKey::derive_conversation_key()` from the X25519 DH shared
-secret. Each record contains a child `DHTLog` for message history.
+Governance is member-sovereign (ADR 0011, `dht_layout.rs`):
 
-### Community Records (SMPL `o_cnt:0`, 255 subkeys — universal v2.0 schema)
+- **Anchor `A`** — DFLT(1), subkey 0 the `GenesisCert`; the creation
+  key is discarded after that one write. Its key is the community id.
+- **Member record `M`** — DFLT(8), one per member, owned by
+  `K_M(p)` (`VaultKey::MemberRecordOwner`): 0 card, 1 presence beat,
+  2 op-log head, 3 frontier (heads + roster checksum), 4 outbox,
+  5 history ad, 6 routes. Op-log pages are sealed DFLT(1) records
+  whose owner is discarded. Readers merge every member's ops via
+  `rekindle_governance::merge`.
 
-All community records share the universal SMPL schema. The
-`o_cnt: 0` property means the creation keypair is discarded after
-genesis — the record has no privileged owner.
+The member registry and channel records below are still SMPL
+`o_cnt: 0` (255 subkeys), written through a slot claimed with keys
+derived from the invite's `slot_seed`, until plan E3.4:
 
-- **Governance record** — every member writes their
-  `GovernanceEntry` history to their assigned subkey. Reader merges
-  all subkeys via `rekindle-governance::merge::merge()`.
 - **Member registry record** — a presence directory, not a ledger.
   Members claim a free subkey on join and overwrite it each
   heartbeat; it never grows. Membership is a predicate over these
@@ -417,17 +510,31 @@ DMs are SMPL records with `o_cnt:0`, exactly two member subkeys for
 deterministically via X25519 ECDH between identity keys (no
 key-exchange round-trip). Group DMs wrap the MEK per recipient.
 
+### Group Rendezvous Record (SMPL, 65 subkeys; plan decision 67)
+
+One per group, minted by the creator (eight one-time writers, `m_cnt 8`):
+subkey 0 holds `OPENED`, subkey `1 + 8i + j` member `i`'s first contact to
+member `j`. Each member's place is the `group_dm_rendezvous` row
+(`owner_key`, `group_id`, the record key, our slot, our row's writer, the
+creator's slot plan), deleted with its group; the creator's eight writers
+are in the vault (`typed::group_rendezvous`) until it leaves. The outbox
+row of a first contact names the group, never the writer.
+
 ## Lost Cargo File Cache (Architecture §28.9)
 
-Per-community filesystem cache for chunked attachments managed by
+Per-identity filesystem cache for chunked attachments managed by
 `rekindle-files`. Path layout:
 
-```
-<data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
-                                                                <chunk_index>.meta
+```text
+<data>/state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin
 ```
 
-Two-character fanout directory follows the Git object-store pattern.
+Every directory name is a 32-hex BLAKE3-keyed hash (scope name =
+`keyed_name(k_names, "community:" ‖ id)`, also `dm:` and `avatars:`;
+attachment name keyed from `"attachment:" ‖ scope name ‖ ":" ‖ id`;
+`k_names` = `derive_file_cache_name_key(master_secret)`, HKDF-SHA256,
+salt `rekindle-file-cache-names-v1`). Names are stable across restarts
+and unlinkable without the secret. Identity delete removes the tree.
 Eviction runs synchronously after every `cache.insert()` until
 `total_bytes ≤ budget`; pinned attachments are skipped. Pinned-
 attachment IDs come from the merged
@@ -445,15 +552,14 @@ paths resolve.
 
 | Schema | Top-level structs |
 |--------|-------------------|
-| `message.capnp` | `MessageEnvelope`, `ChatMessage`, `Attachment` |
-| `identity.capnp` | `UserProfile`, `PreKeyBundle` |
+| `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
+| `identity.capnp` | `PrekeyRecordHead`, `OpkSlot`, `PrekeyRecordList` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
 | `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |
 | `voice.capnp` | `VoiceSignaling` |
-| `conversation.capnp` | `ConversationHeader` |
 | `account.capnp` | `AccountHeader`, `ContactEntry`, `ChatEntry` |
 
 `postcard` / `bincode` is used for the v2.0 community gossip
-envelope and DM payloads — those are internal binary formats not
+envelope — those are internal binary formats not
 intended for cross-language use.

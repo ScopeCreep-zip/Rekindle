@@ -39,10 +39,8 @@ impl CallStateMachine {
         };
         self.active.insert(call_id.clone(), state);
 
-        // W16.5b — note the absence of an `Effect::SendCallRinging`:
-        // the runtime's `on_call` handler synthesizes
-        // `CallResponse::CallRinging { call_id }` and returns it as
-        // `app_call_reply` synchronously. No outbound envelope.
+        // No `Effect::SendCallRinging`: the ringing acknowledgement is the
+        // host's synchronous reply to the invite, not an outbound message.
         vec![
             Effect::PersistCallState {
                 call_id: call_id.clone(),

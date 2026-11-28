@@ -1,0 +1,2028 @@
+{
+  "ForumPostCreated.queued": {
+    "starter": "queued",
+    "starterMessageId": "abababababababababababababababababababababababababababababababab:tmsg_4567",
+    "threadId": "abababababababababababababababab"
+  },
+  "ThreadReplyOutcome.queued": {
+    "messageId": "abababababababababababababababababababababababababababababababab:tmsg_0123",
+    "sendState": "queued"
+  },
+  "audit.entry": {
+    "actorPub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "atMs": 1700000000000,
+    "cursor": 7,
+    "kind": "VaultUnlocked",
+    "mac": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+    "payload": {
+      "first_time": false
+    },
+    "prevMac": "abababababababababababababababababababababababababababababababab"
+  },
+  "audit.verified.broken": {
+    "at": 7,
+    "detail": "entry 7: recomputed MAC does not match",
+    "length": 12,
+    "state": "broken"
+  },
+  "audit.verified.intact": {
+    "length": 12,
+    "state": "intact"
+  },
+  "channel.message": {
+    "attachment": {
+      "attachmentId": "att_1",
+      "chunkCount": 1,
+      "downloaded": false,
+      "filename": "a.png",
+      "mimeType": "image/png",
+      "totalSize": 10
+    },
+    "automodBlurred": false,
+    "body": "hello channel",
+    "decryptionFailed": false,
+    "flags": 0,
+    "id": 7,
+    "isOwn": false,
+    "poll": {
+      "answers": [
+        {
+          "index": 0,
+          "text": "A",
+          "voteCount": 1,
+          "voters": [
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ]
+        }
+      ],
+      "closed": false,
+      "multiSelect": false,
+      "pollId": "00000000000000000000000000000000",
+      "question": "Pick one",
+      "selectedAnswers": []
+    },
+    "reactions": [
+      {
+        "count": 1,
+        "emoji": "+1",
+        "reactors": [
+          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ]
+      }
+    ],
+    "sendState": "delivered",
+    "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "serverMessageId": "msg_1",
+    "timestamp": 1760000000
+  },
+  "channel.voice_message_audio": {
+    "audio": "T2dnUw==",
+    "durationMs": 2340,
+    "waveform": "AID/"
+  },
+  "command.done": {
+    "undo": null,
+    "value": null
+  },
+  "command.done.undo": {
+    "undo": {
+      "expiresAtMs": 1700000010000,
+      "id": "01900000-0000-7000-8000-000000000001",
+      "inverse": "clearGamePresence"
+    },
+    "value": {
+      "elapsedSeconds": 90,
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "iconKey": "xfire/8507",
+      "serverAddress": "10.0.0.1:27015"
+    }
+  },
+  "command.error.cancelled": {
+    "type": "cancelled"
+  },
+  "command.error.failed": {
+    "data": {
+      "code": 401,
+      "message": "Wrong passphrase",
+      "remediation": null
+    },
+    "type": "failed"
+  },
+  "command.error.intentRequired": {
+    "data": {
+      "acknowledgement": null,
+      "cancelSends": false,
+      "class": "protected",
+      "escalations": [],
+      "expiresAtMs": 1700000300000,
+      "facts": [],
+      "intentId": "01900000-0000-7000-8000-000000000001",
+      "kind": "deleteIdentity",
+      "notifies": "nobody",
+      "proof": "passphrase",
+      "reversibility": "never",
+      "subject": {
+        "ownIdentity": {
+          "name": "Me"
+        }
+      }
+    },
+    "type": "intentRequired"
+  },
+  "community.auditEntry": {
+    "action": "member_banned",
+    "actorName": "aaaa aaaa",
+    "actorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "details": "spam",
+    "target": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "targetName": "Bea",
+    "timestamp": 7
+  },
+  "community.banView": {
+    "displayName": "Bea",
+    "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "community.channelView": {
+    "channelType": "forum",
+    "denied": {
+      "createPublicThreads": "You need the Create Public Threads permission.",
+      "sendInThreads": "You need the Send In Threads permission."
+    },
+    "id": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+    "locked": false,
+    "lockedReason": "",
+    "name": "Ideas",
+    "notificationLevel": "default"
+  },
+  "community.denied": {
+    "manageChannels": "You need the Manage Channels permission.",
+    "offerSuccessor": "Only a creator of this community can offer a successor community."
+  },
+  "community.inviteCreated": {
+    "codeHash": "abababababababababababababababababababababababababababababababab",
+    "expiresAt": 1700604800,
+    "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "url": "rekindle://invite/VLD0:g/VLD0:s/0b0b"
+  },
+  "community.inviteView.ours": {
+    "codeHash": "abababababababababababababababababababababababababababababababab",
+    "createdAt": 1700000000000,
+    "createdBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expiresAt": null,
+    "fingerprint": "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+    "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "maxUses": 5,
+    "url": "rekindle://invite/VLD0:g/VLD0:s/0b0b",
+    "uses": 2
+  },
+  "community.memberView": {
+    "customStatus": "brb",
+    "displayName": "Bea",
+    "displayRole": "Shooters",
+    "fingerprint": "bbbb bbbb",
+    "group": {
+      "id": "05050505050505050505050505050505",
+      "kind": "role",
+      "name": "Shooters"
+    },
+    "lastActive": 0,
+    "moderation": {
+      "ban": "You need the Ban Members permission.",
+      "deafen": null,
+      "kick": null,
+      "manageRoles": "You can't moderate someone at or above your highest role.",
+      "mute": "You need the Mute Members permission.",
+      "timeout": null
+    },
+    "outranks": true,
+    "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "roleIds": [
+      "00000000000000000000000000000000",
+      "05050505050505050505050505050505"
+    ],
+    "status": "online",
+    "timeoutUntil": null
+  },
+  "community.profilePatch": {
+    "avatarRef": {
+      "op": "set",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "badges": {
+      "op": "unchanged"
+    },
+    "bannerRef": {
+      "op": "clear"
+    },
+    "bio": {
+      "op": "set",
+      "value": "At the LAN"
+    },
+    "customStatus": {
+      "op": "unchanged"
+    },
+    "displayName": {
+      "op": "unchanged"
+    },
+    "pronouns": {
+      "op": "unchanged"
+    },
+    "themeColor": {
+      "op": "clear"
+    }
+  },
+  "dm.disappearingTimer": {
+    "maxSeconds": 2419200,
+    "presets": [
+      0,
+      30,
+      300,
+      3600,
+      28800,
+      86400,
+      604800,
+      2419200
+    ],
+    "seconds": 3600
+  },
+  "dm.historyGap": {
+    "body": "",
+    "expireAt": null,
+    "expireSeconds": 0,
+    "historyGapThrough": 4,
+    "id": 10,
+    "isOwn": false,
+    "messageId": null,
+    "replyToId": null,
+    "sendState": "delivered",
+    "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timerNoticeSeconds": null,
+    "timestamp": 1700000000000
+  },
+  "dm.inboxEntry": {
+    "body": "gg",
+    "isRead": false,
+    "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "senderKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timestamp": 1700000000000
+  },
+  "dm.message": {
+    "body": "gg",
+    "expireAt": null,
+    "expireSeconds": 0,
+    "historyGapThrough": null,
+    "id": 9,
+    "isOwn": true,
+    "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11",
+    "replyToId": null,
+    "sendState": "delivered",
+    "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timerNoticeSeconds": null,
+    "timestamp": 1700000000000
+  },
+  "dm.timerNotice": {
+    "body": "",
+    "expireAt": null,
+    "expireSeconds": 3600,
+    "historyGapThrough": null,
+    "id": 11,
+    "isOwn": false,
+    "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e12",
+    "replyToId": null,
+    "sendState": "delivered",
+    "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timerNoticeSeconds": 3600,
+    "timestamp": 1700000000000
+  },
+  "friends.blockedUser": {
+    "blockedAt": 1700000000000,
+    "displayName": "Eve",
+    "publicKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "friends.friend.accepted": {
+    "displayName": "Bob",
+    "friendshipState": "accepted",
+    "gameInfo": {
+      "elapsedSeconds": 90,
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "iconKey": "xfire/8507",
+      "joinable": true,
+      "joinableReason": null,
+      "serverAddress": "10.0.0.1:27015",
+      "serverInfo": null
+    },
+    "group": "Raid team",
+    "groupDmBlock": "Their profile is not known yet",
+    "groupId": 7,
+    "groupLabel": "Raid team",
+    "handshakeError": null,
+    "handshakeRetrying": false,
+    "identityPinMismatch": true,
+    "lastSeenAt": 1700000000000,
+    "nickname": "Bobby",
+    "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "status": "busy",
+    "statusMessage": "raiding"
+  },
+  "friends.friend.pendingOut": {
+    "displayName": "Cy",
+    "friendshipState": "pendingOut",
+    "gameInfo": null,
+    "group": null,
+    "groupDmBlock": "Waiting for them to accept your friend request",
+    "groupId": null,
+    "groupLabel": "Friends",
+    "handshakeError": "their accept carried no session data",
+    "handshakeRetrying": false,
+    "identityPinMismatch": false,
+    "lastSeenAt": null,
+    "nickname": null,
+    "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "status": "offline",
+    "statusMessage": null
+  },
+  "friends.friendCode": {
+    "profileKey": "VLD0:abc",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "qrRows": [
+      "101",
+      "010",
+      "101"
+    ],
+    "token": "abcdefghijklmnopqrstuvwx2q",
+    "url": "rekindle://add/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/VLD0:abc/abcdefghijklmnopqrstuvwx2q"
+  },
+  "friends.gameInfo.cannotLaunch": {
+    "elapsedSeconds": 30,
+    "gameId": 4300,
+    "gameName": "Minecraft",
+    "iconKey": "xfire/6216",
+    "joinable": false,
+    "joinableReason": "cannotLaunch",
+    "serverAddress": "10.0.0.1:25565",
+    "serverInfo": null
+  },
+  "friends.inviteCreated": {
+    "createdAt": 1700000000000,
+    "expiresAt": 1700604800000,
+    "inviteId": "3f2a7c1e-0000-4000-8000-000000000001",
+    "url": "rekindle://abc"
+  },
+  "friends.outgoingInvite": {
+    "acceptedBy": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "createdAt": 1700000000000,
+    "expiresAt": 1700172800000,
+    "inviteId": "3f2a7c1e-0000-4000-8000-000000000001",
+    "status": "responded",
+    "url": "rekindle://abc"
+  },
+  "friends.pendingRequest": {
+    "displayName": "Dee",
+    "message": "remember me from LAN night?",
+    "publicKey": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "receivedAt": 1700000000000
+  },
+  "friends.safetyNumber": {
+    "changed": true,
+    "digits": "123456789012345678901234567890123456789012345678901234567890",
+    "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "qrRows": [
+      "101",
+      "010",
+      "101"
+    ],
+    "scannable": "CAI=",
+    "verified": false,
+    "verifiedAt": null
+  },
+  "groupDm.view.pending": {
+    "callRefused": "accept the invite first",
+    "epoch": 0,
+    "favourite": false,
+    "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+    "inviteRefused": "accept the invite first",
+    "members": [
+      {
+        "key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "label": "bob"
+      },
+      {
+        "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "label": "aaaa aaaa"
+      },
+      {
+        "key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "label": "carol"
+      }
+    ],
+    "name": "raid night",
+    "originPeer": null,
+    "pending": true,
+    "renameRefused": "accept the invite first"
+  },
+  "identity.shown": {
+    "communities": 2,
+    "displayName": "Ann",
+    "friendListDhtKey": "VLD0:fffffffffffffffffffffffffffffffffffffffffff",
+    "mailboxDhtKey": "VLD0:mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "profileDhtKey": "VLD0:ppppppppppppppppppppppppppppppppppppppppppp",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "identity.shown.locked": null,
+  "identity.summary": {
+    "createdAt": 1700000000000,
+    "displayName": "Ann",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "identity.view": {
+    "displayName": "Ann",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "infoview.subject.community": {
+    "community": "VLD0:community",
+    "type": "community"
+  },
+  "infoview.subject.friend": {
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "type": "friend"
+  },
+  "infoview.subject.friendGroup": {
+    "groupId": null,
+    "type": "friendGroup"
+  },
+  "infoview.subject.own": {
+    "type": "own"
+  },
+  "infoview.subject.selection": {
+    "type": "selection"
+  },
+  "lobbyGet.closed": {
+    "close": {
+      "allowed": false,
+      "reason": "noMembers"
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "alreadyIn"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "closed"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "closed"
+    }
+  },
+  "lobbyGet.launched": {
+    "close": {
+      "allowed": true
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "ownLobby"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "launched",
+      "server": "203.0.113.7:27015"
+    }
+  },
+  "lobbyGet.none": null,
+  "lobbyGet.open": {
+    "close": {
+      "allowed": false,
+      "reason": "notHost"
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": true
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "notHost"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "notIn"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "open"
+    }
+  },
+  "localSearch.hit.file": {
+    "arg": {
+      "attachmentId": "att-1",
+      "name": "map.zip",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "file"
+  },
+  "localSearch.hit.friend": {
+    "arg": {
+      "name": "Alice",
+      "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "friend"
+  },
+  "localSearch.hit.groupDm": {
+    "arg": {
+      "groupId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "name": "Raid night"
+    },
+    "kind": "groupDm"
+  },
+  "localSearch.hit.member": {
+    "arg": {
+      "community": "VLD0:community",
+      "name": "Bob",
+      "pseudonym": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "member"
+  },
+  "localSearch.hit.message": {
+    "arg": {
+      "afterBody": "ok",
+      "body": "see you at nine",
+      "conversationId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "messageId": "m1",
+      "rank": 1.5,
+      "scope": "dm",
+      "senderKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "timestamp": 1700000000000
+    },
+    "kind": "message"
+  },
+  "localSearch.hit.server": {
+    "arg": {
+      "address": "203.0.113.7:27015",
+      "gameId": 4100,
+      "label": "Clan server"
+    },
+    "kind": "server"
+  },
+  "localSearch.result": {
+    "hits": [
+      {
+        "arg": {
+          "name": "Alice",
+          "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "kind": "friend"
+      }
+    ]
+  },
+  "localSearch.scope.conversation": {
+    "arg": {
+      "conversationId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "conversation"
+  },
+  "localSearch.scope.files": {
+    "kind": "files"
+  },
+  "localSearch.scope.friends": {
+    "kind": "friends"
+  },
+  "localSearch.scope.servers": {
+    "kind": "servers"
+  },
+  "onboarding.config.default": {
+    "defaultChannels": [],
+    "enabled": false,
+    "guideSteps": [],
+    "mode": "default",
+    "questions": []
+  },
+  "onboarding.config.guided": {
+    "defaultChannels": [
+      "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+    ],
+    "enabled": true,
+    "guideSteps": [
+      {
+        "channelId": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+        "description": "Introduce yourself",
+        "emoji": "👋",
+        "title": "Say hello"
+      }
+    ],
+    "mode": "guided",
+    "questions": [
+      {
+        "description": "Pick one",
+        "options": [
+          {
+            "channelsToShow": [
+              "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+            ],
+            "optionId": "opt_fps",
+            "rolesToAssign": [
+              "05050505050505050505050505050505"
+            ],
+            "title": "Shooters"
+          }
+        ],
+        "questionId": "q_01",
+        "required": true,
+        "singleSelect": true,
+        "title": "What do you play?"
+      }
+    ],
+    "welcomeMessage": "Welcome!"
+  },
+  "onboarding.welcomeScreen": {
+    "channels": [
+      {
+        "channelId": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+        "description": "Chat with everyone"
+      }
+    ],
+    "description": "LAN party HQ"
+  },
+  "preferences": {
+    "autoAwayMinutes": 10,
+    "autoVolunteerRelayForNewFriends": false,
+    "echoCancellation": true,
+    "gameDetectionEnabled": true,
+    "gameScanIntervalSecs": 15,
+    "inCallDndAutoEnable": true,
+    "inputChannels": {},
+    "inputDevice": null,
+    "inputVolume": 1.0,
+    "keepActivityLog": true,
+    "noiseSuppression": true,
+    "notificationContent": "nameOnly",
+    "notificationSound": true,
+    "notificationsEnabled": true,
+    "outputDevice": null,
+    "outputVolume": 1.0,
+    "readReceiptsEnabled": true,
+    "ringtoneEnabled": true,
+    "ringtoneVolume": 0.4000000059604645,
+    "shareCurrentGame": false,
+    "shareGameTotals": false,
+    "startMinimized": false,
+    "videoDeviceId": null,
+    "videoDeviceLabel": null
+  },
+  "presence.gameTotals": [
+    {
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "iconKey": "xfire/8507",
+      "lastPlayed": 1700000000000,
+      "totalSecs": 9000
+    }
+  ],
+  "presence.hiddenGames": [
+    {
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "iconKey": "xfire/8507"
+    }
+  ],
+  "presence.view.autoAway": {
+    "game": null,
+    "idle": "autoAway",
+    "status": "away",
+    "statusMessage": ""
+  },
+  "presence.view.invisible": {
+    "game": null,
+    "idle": "unavailable",
+    "status": "invisible",
+    "statusMessage": ""
+  },
+  "presence.view.playing": {
+    "game": {
+      "elapsedSeconds": 90,
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "iconKey": "xfire/8507",
+      "serverAddress": "10.0.0.1:27015"
+    },
+    "idle": "active",
+    "status": "busy",
+    "statusMessage": "fragging"
+  },
+  "serversView": {
+    "categories": [
+      {
+        "community": null,
+        "kind": "favourites",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": false,
+              "reason": "alreadyFavourite"
+            },
+            "address": "203.0.113.7:27015",
+            "friend": null,
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "info": {
+              "kind": "notQueried"
+            },
+            "join": {
+              "gameId": 4181,
+              "joinable": false,
+              "joinableReason": "cannotLaunch",
+              "launchSource": "favourite",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "Scrims",
+            "lastSeen": null,
+            "remove": {
+              "allowed": true
+            },
+            "source": "favourite"
+          }
+        ]
+      },
+      {
+        "community": null,
+        "kind": "recent",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": true
+            },
+            "address": "203.0.113.7:27015",
+            "friend": null,
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "info": {
+              "kind": "answered",
+              "map": "de_dust2",
+              "maxPlayers": 24,
+              "name": "Frag Night #1",
+              "pingMs": 31,
+              "players": 12
+            },
+            "join": {
+              "gameId": 4181,
+              "joinable": true,
+              "launchSource": "recent",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "",
+            "lastSeen": 1700000000,
+            "remove": {
+              "allowed": true
+            },
+            "source": "recent"
+          }
+        ]
+      },
+      {
+        "community": null,
+        "kind": "friends",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": true
+            },
+            "address": "203.0.113.7:27015",
+            "friend": {
+              "displayName": "Bob",
+              "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "info": {
+              "kind": "querying"
+            },
+            "join": {
+              "gameId": 4181,
+              "joinable": true,
+              "launchSource": "friendPresence",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "",
+            "lastSeen": null,
+            "remove": {
+              "allowed": false,
+              "reason": "notRemovable"
+            },
+            "source": "friendPresence"
+          },
+          {
+            "addFavourite": {
+              "allowed": true
+            },
+            "address": "203.0.113.7:27015",
+            "friend": {
+              "displayName": "Bob",
+              "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "info": {
+              "kind": "notQueried"
+            },
+            "join": {
+              "gameId": 4181,
+              "joinable": true,
+              "launchSource": "invite",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "",
+            "lastSeen": null,
+            "remove": {
+              "allowed": false,
+              "reason": "notRemovable"
+            },
+            "source": "invite"
+          }
+        ]
+      },
+      {
+        "community": {
+          "anchor": "VLD0:um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2",
+          "name": "Frag Night"
+        },
+        "kind": "community",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": false,
+              "reason": "noNumericGame"
+            },
+            "address": "203.0.113.7:27015",
+            "friend": null,
+            "gameId": null,
+            "gameName": "minecraft",
+            "iconKey": null,
+            "info": {
+              "kind": "unanswered",
+              "reason": "This game has no server query"
+            },
+            "join": {
+              "gameId": null,
+              "joinable": false,
+              "joinableReason": "cannotLaunch",
+              "launchSource": "community",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "Survival",
+            "lastSeen": null,
+            "remove": {
+              "allowed": false,
+              "reason": "notRemovable"
+            },
+            "source": "community"
+          }
+        ]
+      }
+    ],
+    "refresh": {
+      "allowed": true
+    }
+  },
+  "serversViewEmpty": {
+    "categories": [
+      {
+        "community": null,
+        "kind": "recent",
+        "rows": []
+      }
+    ],
+    "refresh": {
+      "allowed": false,
+      "reason": "refreshing"
+    }
+  },
+  "skin.action.all": [
+    {
+      "kind": "dragWindow"
+    },
+    {
+      "kind": "minimize"
+    },
+    {
+      "kind": "maximize"
+    },
+    {
+      "kind": "close"
+    },
+    {
+      "arg": "bottomRight",
+      "kind": "resize"
+    },
+    {
+      "arg": "file",
+      "kind": "menu"
+    },
+    {
+      "arg": "sys",
+      "kind": "contextMenu"
+    },
+    {
+      "arg": "friends",
+      "kind": "showView"
+    },
+    {
+      "arg": {
+        "group": 4,
+        "page": 1
+      },
+      "kind": "groupPage"
+    },
+    {
+      "arg": {
+        "kind": "this"
+      },
+      "kind": "showTile"
+    },
+    {
+      "arg": {
+        "kind": "named",
+        "name": "Lamp"
+      },
+      "kind": "hideTile"
+    },
+    {
+      "arg": {
+        "popup": "MainInfoViewPopup"
+      },
+      "kind": "launchPopup"
+    },
+    {
+      "arg": {
+        "action": 1,
+        "delay": 4
+      },
+      "kind": "animate"
+    },
+    {
+      "kind": "animateStop"
+    },
+    {
+      "arg": {
+        "group": 100,
+        "spec": {
+          "action": 1,
+          "delay": 4
+        }
+      },
+      "kind": "animationStart"
+    },
+    {
+      "arg": {
+        "group": 100
+      },
+      "kind": "animationStop"
+    },
+    {
+      "arg": "disabled",
+      "kind": "setState"
+    },
+    {
+      "kind": "addFriend"
+    },
+    {
+      "kind": "chatFriend"
+    },
+    {
+      "kind": "profileFriend"
+    },
+    {
+      "kind": "viewProfile"
+    },
+    {
+      "kind": "joinFriend"
+    },
+    {
+      "kind": "sendMessage"
+    },
+    {
+      "kind": "voiceChat"
+    },
+    {
+      "kind": "hostVoiceChat"
+    },
+    {
+      "kind": "leaveVoiceChat"
+    },
+    {
+      "kind": "groupVoiceChat"
+    },
+    {
+      "kind": "hostGroupVoiceChat"
+    },
+    {
+      "kind": "leaveGroupVoiceChat"
+    },
+    {
+      "kind": "cancelVoiceChat"
+    },
+    {
+      "kind": "endVoiceChat"
+    },
+    {
+      "kind": "muteSelf"
+    },
+    {
+      "kind": "unmuteSelf"
+    },
+    {
+      "kind": "showVoiceWindow"
+    },
+    {
+      "kind": "hostGameLobby"
+    },
+    {
+      "kind": "joinGameLobby"
+    },
+    {
+      "kind": "leaveGameLobby"
+    },
+    {
+      "kind": "launchGameLobby"
+    },
+    {
+      "kind": "addServer"
+    },
+    {
+      "kind": "refreshServer"
+    },
+    {
+      "kind": "startDownload"
+    },
+    {
+      "kind": "stopDownload"
+    },
+    {
+      "kind": "openDownload"
+    },
+    {
+      "kind": "downloadInfo"
+    },
+    {
+      "kind": "newRoom"
+    },
+    {
+      "kind": "createRoom"
+    },
+    {
+      "kind": "enterRoom"
+    },
+    {
+      "kind": "enterAttachedRoom"
+    },
+    {
+      "kind": "joinRoom"
+    },
+    {
+      "kind": "inviteUsersToRoom"
+    },
+    {
+      "kind": "deleteSelected"
+    },
+    {
+      "kind": "openSelected"
+    },
+    {
+      "kind": "uploadSelected"
+    },
+    {
+      "kind": "searchFor"
+    },
+    {
+      "arg": {
+        "url": "http://www.xfire.com/"
+      },
+      "kind": "launchUrl"
+    },
+    {
+      "arg": {
+        "sound": "OfflineSound"
+      },
+      "kind": "playSound"
+    },
+    {
+      "kind": "showWindow"
+    },
+    {
+      "kind": "hideWindow"
+    },
+    {
+      "kind": "dialogOk"
+    },
+    {
+      "kind": "dialogCancel"
+    },
+    {
+      "arg": "fps",
+      "kind": "enableOverlay"
+    },
+    {
+      "arg": "webCam",
+      "kind": "disableOverlay"
+    },
+    {
+      "kind": "updateClock"
+    },
+    {
+      "kind": "tackWindow"
+    },
+    {
+      "kind": "untackWindow"
+    },
+    {
+      "kind": "openOverlayOptions"
+    },
+    {
+      "kind": "attachedClose"
+    },
+    {
+      "kind": "browseBack"
+    },
+    {
+      "kind": "browseForward"
+    },
+    {
+      "kind": "newChat"
+    },
+    {
+      "kind": "newGroup"
+    },
+    {
+      "kind": "createCommunity"
+    },
+    {
+      "kind": "joinCommunity"
+    },
+    {
+      "arg": "appearance",
+      "kind": "showSettings"
+    },
+    {
+      "kind": "showShortcuts"
+    },
+    {
+      "kind": "reportBug"
+    },
+    {
+      "arg": "invisible",
+      "kind": "setStatus"
+    },
+    {
+      "kind": "logOff"
+    },
+    {
+      "kind": "quit"
+    },
+    {
+      "kind": "copyKey"
+    },
+    {
+      "kind": "editName"
+    },
+    {
+      "kind": "showSafetyNumber"
+    },
+    {
+      "kind": "showGameInvite"
+    },
+    {
+      "kind": "videoChat"
+    },
+    {
+      "kind": "openNotifications"
+    }
+  ],
+  "skin.applyFailure.sheetError": {
+    "data": {
+      "detail": "the stylesheet failed to load"
+    },
+    "type": "sheetError"
+  },
+  "skin.callOp.answer": {
+    "arg": {
+      "callId": "call-1"
+    },
+    "kind": "answer"
+  },
+  "skin.callOp.joinGroup": {
+    "arg": {
+      "callId": "call-1",
+      "groupId": "group-1"
+    },
+    "kind": "joinGroup"
+  },
+  "skin.callOp.joinVoice": {
+    "arg": {
+      "channel": "voice",
+      "community": "VLD0:community"
+    },
+    "kind": "joinVoice"
+  },
+  "skin.callOp.leave": {
+    "arg": {
+      "callId": "call-1"
+    },
+    "kind": "leave"
+  },
+  "skin.callOp.leaveGroup": {
+    "arg": {
+      "callId": "call-1",
+      "groupId": "group-1"
+    },
+    "kind": "leaveGroup"
+  },
+  "skin.contentFit": {
+    "max": 80,
+    "min": 25
+  },
+  "skin.entry.builtin": {
+    "conforming": false,
+    "credits": {
+      "authors": [
+        "Xfire, Inc."
+      ],
+      "contributors": [
+        "Tim Brengle"
+      ],
+      "licence": "noneStated",
+      "url": "http://www.xfire.com/"
+    },
+    "id": "builtin:xfire-classic",
+    "importedAt": null,
+    "name": "Xfire",
+    "shortTargets": 4
+  },
+  "skin.entry.library": {
+    "conforming": true,
+    "credits": {
+      "authors": [],
+      "contributors": [],
+      "licence": {
+        "text": "Free to share."
+      },
+      "url": null
+    },
+    "id": "pkg:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "importedAt": 1760000000000,
+    "name": "Night",
+    "shortTargets": 0
+  },
+  "skin.entry.uncredited": {
+    "conforming": false,
+    "credits": null,
+    "id": "pkg:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "importedAt": 1760000000001,
+    "name": "Plain",
+    "shortTargets": 2
+  },
+  "skin.event.samples": [
+    {
+      "kind": "click"
+    },
+    {
+      "kind": "leftDown"
+    },
+    {
+      "arg": "servers",
+      "kind": "show"
+    },
+    {
+      "arg": {
+        "arg": "join",
+        "kind": "can"
+      },
+      "kind": "app"
+    },
+    {
+      "arg": {
+        "arg": "voiceChat",
+        "kind": "cannot"
+      },
+      "kind": "app"
+    },
+    {
+      "arg": {
+        "arg": "clock",
+        "kind": "prefEnabled"
+      },
+      "kind": "app"
+    },
+    {
+      "arg": {
+        "kind": "disconnected"
+      },
+      "kind": "app"
+    }
+  ],
+  "skin.layout_source.chat": "chat",
+  "skin.layout_source.main": "main",
+  "skin.layout_source.room": "room",
+  "skin.manifest.text": {
+    "listHeader": {
+      "bold": true,
+      "colour": "#C8D7E6",
+      "font": "Arial",
+      "size": 11
+    },
+    "menu": {
+      "font": "Tahoma",
+      "size": 11
+    }
+  },
+  "skin.menuRegistry": {
+    "menus": [
+      {
+        "items": [
+          {
+            "label": "Add Friend…",
+            "run": {
+              "kind": "addFriend"
+            }
+          },
+          {
+            "label": "New Chat…",
+            "run": {
+              "kind": "newChat"
+            }
+          },
+          {
+            "label": "New Group…",
+            "run": {
+              "kind": "newGroup"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Create Community…",
+            "run": {
+              "kind": "createCommunity"
+            }
+          },
+          {
+            "label": "Join Community…",
+            "run": {
+              "kind": "joinCommunity"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Profile",
+            "run": {
+              "arg": "profile",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Privacy",
+            "run": {
+              "arg": "privacy",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "About",
+            "run": {
+              "arg": "about",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Log Off",
+            "run": {
+              "kind": "logOff"
+            }
+          },
+          {
+            "danger": true,
+            "label": "Exit",
+            "run": {
+              "kind": "quit"
+            }
+          }
+        ],
+        "menu": "file"
+      },
+      {
+        "items": [
+          {
+            "label": "Options",
+            "run": {
+              "arg": "application",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Notifications",
+            "run": {
+              "arg": "notifications",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Audio",
+            "run": {
+              "arg": "audio",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Skins",
+            "run": {
+              "arg": "appearance",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Start Group Call…",
+            "run": {
+              "kind": "hostGroupVoiceChat"
+            }
+          },
+          {
+            "label": "Keyboard Shortcuts",
+            "run": {
+              "kind": "showShortcuts"
+            }
+          }
+        ],
+        "menu": "tool"
+      },
+      {
+        "items": [
+          {
+            "label": "Documentation",
+            "run": {
+              "arg": "help",
+              "kind": "showView"
+            }
+          },
+          {
+            "label": "Report Bug",
+            "run": {
+              "kind": "reportBug"
+            }
+          }
+        ],
+        "menu": "help"
+      },
+      {
+        "items": [
+          {
+            "label": "Online",
+            "run": {
+              "arg": "online",
+              "kind": "setStatus"
+            }
+          },
+          {
+            "label": "Away",
+            "run": {
+              "arg": "away",
+              "kind": "setStatus"
+            }
+          },
+          {
+            "label": "Busy",
+            "run": {
+              "arg": "busy",
+              "kind": "setStatus"
+            }
+          },
+          {
+            "label": "Appear Offline",
+            "run": {
+              "arg": "invisible",
+              "kind": "setStatus"
+            }
+          }
+        ],
+        "menu": "status"
+      },
+      {
+        "items": [
+          {
+            "label": "Minimize",
+            "run": {
+              "kind": "minimize"
+            }
+          },
+          {
+            "label": "Maximize",
+            "run": {
+              "kind": "maximize"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Close",
+            "run": {
+              "kind": "close"
+            }
+          }
+        ],
+        "menu": "sys"
+      },
+      {
+        "items": [],
+        "menu": "cwActions"
+      },
+      {
+        "items": [],
+        "menu": "cwHelp"
+      },
+      {
+        "items": [],
+        "menu": "gcSystem"
+      },
+      {
+        "items": [],
+        "menu": "gcActions"
+      },
+      {
+        "items": [],
+        "menu": "gcHelp"
+      }
+    ]
+  },
+  "skin.nodeInset.fixed": {
+    "left": 0,
+    "right": 28
+  },
+  "skin.nodeInset.maxWidth": {
+    "left": 0,
+    "maxWidth": 151,
+    "right": 54
+  },
+  "skin.nodeSpan.after": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 10,
+        "sibling": "XfireMenuText"
+      }
+    },
+    "kind": "fixed",
+    "size": 26
+  },
+  "skin.nodeSpan.share": {
+    "at": {
+      "kind": "start",
+      "offset": 0
+    },
+    "kind": "share",
+    "permille": 800
+  },
+  "skin.nodeSpan.shareAfter": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 0,
+        "sibling": "Divider"
+      }
+    },
+    "kind": "share",
+    "permille": 1000
+  },
+  "skin.run.launcher": {
+    "arg": {
+      "window": "buddy-list"
+    },
+    "kind": "launcher"
+  },
+  "skin.run.notBuiltYet": {
+    "arg": {
+      "action": {
+        "kind": "searchFor"
+      },
+      "message": "Search isn't in Rekindle yet (plan E7.2 G11)"
+    },
+    "kind": "notBuiltYet"
+  },
+  "skin.run.shell": {
+    "arg": {
+      "arg": {
+        "arg": {
+          "friend": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "voice"
+      },
+      "kind": "call"
+    },
+    "kind": "shell"
+  },
+  "skin.selection.community": {
+    "arg": {
+      "channel": "ch",
+      "community": "VLD0:community",
+      "server": "gs_00"
+    },
+    "kind": "community"
+  },
+  "skin.selection.friend": {
+    "arg": {
+      "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "kind": "friend"
+  },
+  "skin.selection.friendGroup": {
+    "arg": {
+      "groupId": 3
+    },
+    "kind": "friendGroup"
+  },
+  "skin.selection.group": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "group"
+  },
+  "skin.selection.media": {
+    "arg": {
+      "path": "shot.png"
+    },
+    "kind": "media"
+  },
+  "skin.selection.server": {
+    "arg": {
+      "address": "203.0.113.7:27015",
+      "gameId": 4100
+    },
+    "kind": "server"
+  },
+  "skin.selection.transfer": {
+    "arg": {
+      "attachmentId": "att-1",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "transfer"
+  },
+  "skin.shell": {
+    "images": [
+      "skin://app/0123/abcd.png"
+    ],
+    "menus": {
+      "menus": [
+        {
+          "items": [
+            {
+              "label": "Add Friend…",
+              "run": {
+                "kind": "addFriend"
+              }
+            },
+            {
+              "label": "New Chat…",
+              "run": {
+                "kind": "newChat"
+              }
+            },
+            {
+              "label": "New Group…",
+              "run": {
+                "kind": "newGroup"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Create Community…",
+              "run": {
+                "kind": "createCommunity"
+              }
+            },
+            {
+              "label": "Join Community…",
+              "run": {
+                "kind": "joinCommunity"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Profile",
+              "run": {
+                "arg": "profile",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Privacy",
+              "run": {
+                "arg": "privacy",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "About",
+              "run": {
+                "arg": "about",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Log Off",
+              "run": {
+                "kind": "logOff"
+              }
+            },
+            {
+              "danger": true,
+              "label": "Exit",
+              "run": {
+                "kind": "quit"
+              }
+            }
+          ],
+          "menu": "file"
+        },
+        {
+          "items": [
+            {
+              "label": "Options",
+              "run": {
+                "arg": "application",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Notifications",
+              "run": {
+                "arg": "notifications",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Audio",
+              "run": {
+                "arg": "audio",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Skins",
+              "run": {
+                "arg": "appearance",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Start Group Call…",
+              "run": {
+                "kind": "hostGroupVoiceChat"
+              }
+            },
+            {
+              "label": "Keyboard Shortcuts",
+              "run": {
+                "kind": "showShortcuts"
+              }
+            }
+          ],
+          "menu": "tool"
+        },
+        {
+          "items": [
+            {
+              "label": "Documentation",
+              "run": {
+                "arg": "help",
+                "kind": "showView"
+              }
+            },
+            {
+              "label": "Report Bug",
+              "run": {
+                "kind": "reportBug"
+              }
+            }
+          ],
+          "menu": "help"
+        },
+        {
+          "items": [
+            {
+              "label": "Online",
+              "run": {
+                "arg": "online",
+                "kind": "setStatus"
+              }
+            },
+            {
+              "label": "Away",
+              "run": {
+                "arg": "away",
+                "kind": "setStatus"
+              }
+            },
+            {
+              "label": "Busy",
+              "run": {
+                "arg": "busy",
+                "kind": "setStatus"
+              }
+            },
+            {
+              "label": "Appear Offline",
+              "run": {
+                "arg": "invisible",
+                "kind": "setStatus"
+              }
+            }
+          ],
+          "menu": "status"
+        },
+        {
+          "items": [
+            {
+              "label": "Minimize",
+              "run": {
+                "kind": "minimize"
+              }
+            },
+            {
+              "label": "Maximize",
+              "run": {
+                "kind": "maximize"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Close",
+              "run": {
+                "kind": "close"
+              }
+            }
+          ],
+          "menu": "sys"
+        },
+        {
+          "items": [],
+          "menu": "cwActions"
+        },
+        {
+          "items": [],
+          "menu": "cwHelp"
+        },
+        {
+          "items": [],
+          "menu": "gcSystem"
+        },
+        {
+          "items": [],
+          "menu": "gcActions"
+        },
+        {
+          "items": [],
+          "menu": "gcHelp"
+        }
+      ]
+    },
+    "minHeight": 400,
+    "minWidth": 368,
+    "root": [
+      {
+        "children": [
+          {
+            "id": "Plain",
+            "role": {
+              "kind": "group"
+            }
+          }
+        ],
+        "controlGroup": 1,
+        "id": "ButtonArea",
+        "role": {
+          "kind": "buttonBar"
+        }
+      }
+    ],
+    "window": "main"
+  },
+  "skin.shell.openSearch": {
+    "arg": {
+      "scope": {
+        "kind": "files"
+      }
+    },
+    "kind": "openSearch"
+  },
+  "skin.shellOp.chooseDownloadDest": {
+    "arg": {
+      "attachmentId": "att-1",
+      "suggestedName": "notes.txt",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "chooseDownloadDest"
+  },
+  "skin.shellOp.inviteToRoom": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "inviteToRoom"
+  },
+  "skin.shellOp.newRoom": {
+    "arg": {
+      "peer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "kind": "newRoom"
+  },
+  "skin.shellOp.openCommunityInfo": {
+    "arg": {
+      "community": "VLD0:community"
+    },
+    "kind": "openCommunityInfo"
+  },
+  "skin.shellOp.openGroupChat": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "openGroupChat"
+  },
+  "skin.shellOp.showCall.call": {
+    "arg": {
+      "target": {
+        "arg": {
+          "callId": "c1"
+        },
+        "kind": "call"
+      }
+    },
+    "kind": "showCall"
+  },
+  "skin.shellOp.showCall.voice": {
+    "arg": {
+      "target": {
+        "arg": {
+          "channel": "ch",
+          "community": "VLD0:community"
+        },
+        "kind": "voice"
+      }
+    },
+    "kind": "showCall"
+  },
+  "skin.trigger": {
+    "on": {
+      "arg": {
+        "arg": "chat",
+        "kind": "cannot"
+      },
+      "kind": "app"
+    },
+    "run": {
+      "arg": "disabled",
+      "kind": "setState"
+    }
+  },
+  "skin.window.chat": "chat",
+  "skin.window.community": "community",
+  "skin.window.main": "main"
+}

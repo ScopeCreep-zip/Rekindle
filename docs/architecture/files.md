@@ -56,15 +56,22 @@ struct AttachmentBitmap {
 }
 ```
 
-The offer is announced in the channel record (alongside the message it
-attaches to). The bitmap is announced via gossip: peers periodically
-broadcast which chunks they currently hold for the attachments they
-care about. This lets requesters do BitTorrent-style swarm fetch — pick
+The offer rides the message it attaches to, an entry of the author's
+channel outbox (member record subkey 4, plan E3.3 slice 7, ADR 0011).
+The author holds every chunk when it seals the offer, so the offer is
+its possession: it writes no `AttachmentCached`. A member that finishes
+a download appends an `AttachmentCached` entry (a full bitmap) to its
+own channel outbox, a row of its `channel_post` stream with no echo. A
+downloader finds its sources by reading the members' outbox entries of
+the channel (`read_author_outboxes`): the offer's author plus each
+`AttachmentCached` author. Nothing is written to a channel record slot.
+Peers may also gossip which chunks they currently hold for the
+attachments they care about. This lets requesters do BitTorrent-style swarm fetch — pick
 the rarest chunk and ask the smallest set of peers that hold it.
 
 ## Per-file FEK (Signal/Matrix pattern)
 
-```
+```text
 plaintext chunks ─encrypt(FEK)─▶ chunk ciphertext ─store─▶ peer cache
                                                                  │
 plaintext FEK ─wrap(channel MEK)─▶ wrapped_fek ─in offer─────────┘
@@ -119,27 +126,37 @@ Verification:
 
 ## Filesystem cache
 
-```
-<app_data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
-                                       │
-                                       └── git-style 2-char fanout (256-way)
+```text
+<data>/state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin
 ```
 
-- **Path format** is git-style: first 2 hex chars of the attachment ID
-  fan out the cache directory, then the full attachment hex, then one
-  file per cached chunk.
+- **Path format:** the cache lives per identity under `state/{pk}.files/`.
+  Every directory name is a 32-hex BLAKE3-keyed hash. The scope name is
+  `keyed_name(k_names, "community:" ‖ id)` (`dm:` and `avatars:` scopes
+  work the same way); the attachment name is keyed from
+  `"attachment:" ‖ scope name ‖ ":" ‖ id`. `k_names` is
+  `rekindle_secrets::derive::derive_file_cache_name_key(master_secret)`
+  (HKDF-SHA256, salt `rekindle-file-cache-names-v1`). Names are stable
+  across restarts and unlinkable without the secret, so before unlock the
+  tree shows only sizes and counts. Below the attachment directory sits
+  one file per cached chunk.
 - **Per-chunk** files (not one big concatenated blob). This lets
   eviction work at chunk granularity and makes resumed downloads
   trivial.
-- **`.meta` sidecar** stores chunk size and the bitmap of locally-held
-  chunks for quick listing without a full directory walk.
 
-The cache is namespaced per community (`<app_data>/file_cache/<community_id>`)
-so that leaving a community cleanly removes all its cached cargo.
+The cache is namespaced per scope (a community's directory is
+`state/{pk}.files/<scope name>`). Leaving a community does not remove
+its scope directory today: its cached chunks stay until eviction or
+identity delete, and no plan step owns the removal yet. Identity delete
+removes `state/{pk}.files/`.
+The old `data/file_cache/` layout is removed by a schema/layout reset, and
+the desktop removes it at every start (`rekindle_db::reset::prune_file_cache`):
+nothing writes it since plan step E3.1 moved the community pictures into
+`state/{pk}.files/`.
 
 ## LRU eviction with pinned-skip
 
-```
+```text
 ChunkCache {
     config:      CacheConfig { root_dir, byte_budget: 1 GiB default },
     lru:         LruCache<(attachment_id, chunk_index), bytes_on_disk>,
@@ -170,7 +187,7 @@ chunks themselves are durable.
 
 ## Swarm fetch protocol
 
-```
+```text
 Requester                                                   Holders
    │                                                         │
    │── gossip: AttachmentBitmap interest ───────────────▶    │
@@ -225,7 +242,8 @@ attachment by `(community, channel, attachment id)`; Rust does the rest.
 | Attach | `upload_attachment` | Native file picker (parented to the window), `tokio::fs::read`, chunk + encrypt + announce. Returns the attachment id, or `null` on cancel. |
 | Download | `download_attachment` | Native save dialog with the uploader's filename passed through `rekindle_files::sanitize_filename` (OWASP rules: last path component, no controls/bidi/reserved characters, no leading `.`/`-`, Windows device stems prefixed, ≤ 255 bytes). Then `fetch_attachment_to_cache` → `assemble_attachment` → write, and the path is stored on the message row. |
 | Show in folder | `reveal_downloaded_attachment` | Looks the stored path up in `messages.attachment_json` and calls the opener's `reveal_item_in_dir`. Nothing is ever opened or executed. |
-| Play a voice message | `get_voice_message_audio` | `fetch_attachment_to_cache` + `assemble_attachment`, returned as a binary IPC response; the player wraps it in a `Blob` and plays a `blob:` URL (CSP `media-src 'self' blob: data:`). Nothing is written outside the chunk cache. |
+| Send a voice message | `send_voice_message` | The webview decodes its own recording (WebM, MP4 or Ogg) to mono f32 PCM at 16 kHz and hands it over; the Host encodes Ogg Opus (`rekindle_files::voice_note::encode`: 24 kbps, 20 ms frames, an empty `OpusTags`) and uploads it as `audio/ogg`. The message carries no duration or waveform (plan E5.1). |
+| Play a voice message | `get_voice_message_audio` | `fetch_attachment_to_cache` + `assemble_attachment`, then `voice_note::analyze`: a file that is not one mono Ogg Opus stream with an empty `OpusTags` is refused, and the duration (from the last granule position) and the 64-peak waveform (from the decoded samples) are computed here, never taken from the sender. The answer is a `VoiceMessageAudioView`; the player wraps the audio in a `Blob` and plays a `blob:` URL (CSP `media-src 'self' blob: data:`). Nothing is written outside the chunk cache. |
 
 The webview learns only `downloaded: bool` (`MessageAttachmentDto`,
 `attachmentDownloaded` event): an absolute path carries the OS user

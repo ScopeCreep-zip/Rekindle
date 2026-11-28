@@ -1,9 +1,10 @@
 @layer components {
   .add-friend-copy-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
   }
 
-  .add-friend-invite-actions {
+  .add-friend-invite-actions,
+  .intent-dialog-actions {
     display: flex;
     gap: 6px;
     justify-content: flex-end;
@@ -11,16 +12,16 @@
 
   .add-friend-cancel-btn {
     padding: 4px 12px;
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
     border: none;
     border-radius: 3px;
-    color: white;
+    color: var(--color-xfire-danger-fg);
     font-size: 11px;
     cursor: pointer;
   }
 
   .add-friend-cancel-btn:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .add-friend-invite-list {
@@ -33,7 +34,7 @@
   .add-friend-invite-list-header {
     font-size: 10px;
     font-weight: 600;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding-bottom: 2px;
@@ -51,18 +52,18 @@
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--color-xfire-offline) 30%, transparent);
-    color: var(--color-xfire-offline);
+    background: color-mix(in srgb, var(--color-xfire-offline) 12%, transparent);
+    color: var(--color-xfire-offline-text);
   }
 
   .invite-status-badge.responded {
-    background: color-mix(in srgb, #22c55e 30%, transparent);
-    color: #4ade80;
+    background: color-mix(in srgb, var(--color-xfire-success) 30%, transparent);
+    color: var(--color-xfire-success);
   }
 
   .invite-time {
     font-size: 10px;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
   }
 
   .invite-url-masked {
@@ -74,7 +75,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 140px;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
+    text-align: left;
   }
 
   .invite-url-masked:hover {
@@ -89,13 +91,13 @@
     border-radius: 3px;
     cursor: pointer;
     background: var(--color-xfire-accent);
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-family: var(--font-family-xfire);
     flex-shrink: 0;
   }
 
   .invite-copy-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
   }
 
   .invite-cancel-btn {
@@ -106,18 +108,18 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
+    color: var(--color-xfire-danger-fg);
     font-family: var(--font-family-xfire);
   }
 
   .invite-cancel-btn:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .add-friend-divider {
     text-align: center;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     font-size: 11px;
     padding: 4px 0;
   }
@@ -134,14 +136,14 @@
   .action-bar-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 3px;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .action-bar-btn:hover {
@@ -167,24 +169,31 @@
     background: transparent;
     color: var(--color-xfire-text-dim);
     cursor: pointer;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .notification-bell:hover {
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
+  /* The count overlays the bell's top-right corner inside its 24 px box, so
+   * nothing spills from the button or its header row; "99+" is the widest
+   * count and fits (E7.12 layout suite). */
   .notification-badge {
     position: absolute;
-    top: -2px;
-    right: -4px;
+    top: 0;
+    right: 0;
+    box-sizing: border-box;
     min-width: 14px;
+    max-width: 100%;
     height: 14px;
-    padding: 0 3px;
+    padding: 0 2px;
+    overflow: hidden;
+    white-space: nowrap;
     border-radius: 7px;
-    background: var(--color-xfire-busy);
-    color: white;
+    background: var(--color-xfire-danger);
+    color: var(--color-xfire-danger-fg);
     font-size: 9px;
     font-weight: 700;
     line-height: 14px;
@@ -202,7 +211,7 @@
     background: var(--color-xfire-bg-panel);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 6px;
-    box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.5);
+    box-shadow: 0 10px 25px -5px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
     display: flex;
     flex-direction: column;
     margin-top: 4px;
@@ -236,11 +245,11 @@
     gap: 8px;
     padding: 8px 10px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 10%, transparent);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .notification-item:hover {
-    background: color-mix(in srgb, white 4%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
   }
 
   .notification-item:last-child {
@@ -248,7 +257,7 @@
   }
 
   .notification-item-read {
-    opacity: 0.5;
+    opacity: 0.8;
   }
 
 
@@ -280,29 +289,29 @@
     cursor: pointer;
     flex-shrink: 0;
     margin-top: 2px;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .notification-mark-read:hover {
-    color: var(--color-xfire-online);
+    color: var(--color-xfire-online-text);
     background: color-mix(in srgb, var(--color-xfire-online) 15%, transparent);
   }
 
   .notification-mark-all {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 10px;
     font-weight: 600;
     cursor: pointer;
     padding: 2px 6px;
     border-radius: 3px;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .notification-mark-all:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
   }
 
   .notification-empty {
@@ -311,25 +320,6 @@
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     font-style: italic;
-  }
-
-  /* Logout button */
-  .logout-btn {
-    background: transparent;
-    border: none;
-    color: var(--color-xfire-text-dim);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .logout-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
-    color: var(--color-xfire-busy);
   }
 
   /* Network status indicator */
@@ -366,6 +356,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .network-dot-connecting {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 1.5s ease-in-out infinite;
     }
   }
@@ -374,9 +365,34 @@
     background: var(--color-xfire-away);
   }
 
+  /* Attachment strength, five bars rising left to right (plan E7.2). */
+  .network-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 8px;
+  }
+
+  /* An unlit bar is its outline; a lit one is filled (no opacity, so
+     both keep the text colour's contrast on the status bar). */
+  .network-bar {
+    width: 3px;
+    box-shadow: inset 0 0 0 1px var(--color-xfire-text-dim);
+  }
+
+  .network-bar[data-level="1"] { height: 20%; }
+  .network-bar[data-level="2"] { height: 40%; }
+  .network-bar[data-level="3"] { height: 60%; }
+  .network-bar[data-level="4"] { height: 80%; }
+  .network-bar[data-level="5"] { height: 100%; }
+
+  .network-bar-on {
+    background: var(--color-xfire-text-dim);
+  }
+
   /* Media route not available: voice cannot connect (plan C7.9c). */
   .network-voice-note {
-    color: var(--color-xfire-away);
+    color: var(--color-xfire-away-text);
   }
 
   /* Community join "dial-in" stepper — per-phase backend join gates */
@@ -413,6 +429,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .join-step-dot-started {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 1.5s ease-in-out infinite;
     }
   }
@@ -446,12 +463,12 @@
     border-radius: 3px;
     font-family: var(--font-family-xfire);
     margin-left: auto;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast);
   }
 
   .community-leave-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Member context menu */
@@ -463,10 +480,5 @@
     color: var(--color-xfire-text-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-  }
-
-  /* Friend group management */
-  .group-submenu {
-    padding: 4px 0;
   }
 }

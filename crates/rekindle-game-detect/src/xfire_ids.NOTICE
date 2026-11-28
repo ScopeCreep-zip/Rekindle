@@ -1,0 +1,37 @@
+`xfire_ids.json`: Rekindle game database id -> Xfire game id (plan E7.2 "Game icons").
+
+Provenance
+  Imported by `cargo xtask import-xfire-data` (plan E7.7.3) from the project owner's
+  Xfire install tree, git commit ba066924 ("xfire re'd"; removed from the tree by
+  5a20b508), restored into the git-ignored `legacy/unpacked/`:
+    legacy/unpacked/xfire_games.ini  BLAKE3 e07ee92fc304a5947e10895b3e33f387737d7246dc89736584a5c4d72c2c5e90
+
+Licence
+  This is Xfire, Inc. content; Xfire is defunct. The project owner ruled on 2026-10-15
+  that Xfire's own assets may be used in Rekindle. Rekindle's MIT OR Apache-2.0 licence does not cover
+  it.
+
+How it was made
+  Each `default_games.json` game is matched by name and process: an Xfire game whose
+  `LongName` equals the game's name (letters and digits, case folded) and whose
+  `LauncherExe` or `DetectExe` is one of its process names. 15 of the database's games
+  match; the rest keep their slug icon.
+    4102 Dota 2 -> 6957
+    4180 Counter-Strike: Global Offensive -> 7186
+    4181 Counter-Strike 2 -> 8507
+    4300 Minecraft -> 6216
+    4400 Fortnite -> 8508
+    4500 Overwatch 2 -> 8546
+    4501 World of Warcraft -> 4216
+    5001 Stardew Valley -> 8587
+    5002 Terraria -> 6613
+    5100 The Elder Scrolls V: Skyrim -> 6984
+    5101 Starfield -> 8519
+    5400 Path of Exile -> 6885
+    5500 Cyberpunk 2077 -> 8548
+    5601 Warframe -> 7785
+    5701 Phasmophobia -> 8535
+  Games with Xfire's `LauncherNetworkArgs` (the launcher's `steam://run` arguments when
+  the game has a Steam app id and no connect template):
+    4102 Dota 2: +connect {addr}
+    4300 Minecraft: {addr}

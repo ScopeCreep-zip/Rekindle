@@ -1,12 +1,12 @@
 @layer components {
   .search-panel-hit-scope-channel {
-    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
-    color: var(--color-xfire-accent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    color: var(--color-xfire-accent-text);
   }
 
   .search-panel-hit-scope-thread {
-    background: color-mix(in srgb, #c4b06a 25%, transparent);
-    color: #ffd479;
+    background: color-mix(in srgb, var(--color-xfire-thread-tag) 25%, transparent);
+    color: var(--color-xfire-thread-tag);
   }
 
   .search-panel-hit-time {
@@ -123,13 +123,13 @@
 
 
   .mention-popover-tag-special {
-    background: color-mix(in srgb, #f44336 25%, transparent);
-    color: #ff9c92;
+    background: color-mix(in srgb, var(--color-xfire-mention-everyone) 25%, transparent);
+    color: var(--color-xfire-mention-everyone);
   }
 
   .mention-popover-tag-role {
-    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
-    color: var(--color-xfire-accent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 13%, transparent);
+    color: var(--color-xfire-accent-text);
   }
 
 
@@ -166,6 +166,13 @@
     cursor: pointer;
   }
 
+  /* A topic we may not set: still drawn, in the theme's disabled text (never
+   * a fade, ST1), with the Host's reason as its title. */
+  .channel-topic-denied {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+
   .channel-topic-editable:hover {
     text-decoration: underline;
     text-decoration-style: dotted;
@@ -175,18 +182,6 @@
     width: 200px;
     padding: 2px 6px;
     font-size: 11px;
-    margin-left: 8px;
-  }
-
-  /* ─── Channel notification select (kept for reference, now in channel context menu) ─── */
-  .channel-notification-select {
-    font-size: 0.7rem;
-    padding: 1px 4px;
-    border-radius: 3px;
-    background: var(--bg-tertiary, var(--color-xfire-bg-input));
-    color: var(--text-secondary, var(--color-xfire-text-dim));
-    border: 1px solid var(--border-subtle, color-mix(in srgb, var(--color-xfire-offline) 20%, transparent));
-    cursor: pointer;
     margin-left: 8px;
   }
 
@@ -222,7 +217,7 @@
   .community-unread-badge {
     margin-left: auto;
     background: var(--color-xfire-accent);
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-size: 9px;
     font-weight: 700;
     padding: 1px 5px;
@@ -240,8 +235,8 @@
   }
 
   /* ─── Active header button ─── */
-  .header-btn-active {
-    color: var(--color-xfire-accent) !important;
+  .action-bar-btn.header-btn-active {
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Profile popup actions ─── */
@@ -272,7 +267,14 @@
   /* ─── Per-community profile (bio / pronouns / badges / theme) ─── */
   .profile-popup-pronouns {
     font-size: 10px;
-    color: var(--profile-accent, var(--color-xfire-accent));
+    color: var(--profile-accent, var(--color-xfire-accent-text));
+    padding: 0 8px 4px;
+  }
+
+  /* The member's custom status from their card (plan E3.4 S6). */
+  .profile-popup-custom-status {
+    font-size: 11px;
+    color: var(--color-xfire-text);
     padding: 0 8px 4px;
   }
 
@@ -283,7 +285,8 @@
     padding: 4px 8px;
     line-height: 1.35;
     white-space: pre-wrap;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: anywhere;
   }
 
   .profile-popup-badges {
@@ -304,15 +307,7 @@
     letter-spacing: 0.5px;
   }
 
-  .profile-popup-edit-form {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px;
-    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-  }
-
-  .profile-popup-edit-label {
+  .profile-editor-label {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -320,8 +315,8 @@
     color: var(--color-xfire-text-dim);
   }
 
-  .profile-popup-edit-input,
-  .profile-popup-edit-textarea {
+  .profile-editor-input,
+  .profile-editor-textarea {
     background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
     color: var(--color-xfire-text);
@@ -332,13 +327,13 @@
     resize: vertical;
   }
 
-  .profile-popup-edit-input:focus,
-  .profile-popup-edit-textarea:focus {
+  .profile-editor-input:focus,
+  .profile-editor-textarea:focus {
     outline: none;
     border-color: var(--color-xfire-accent);
   }
 
-  .profile-popup-edit-color {
+  .profile-editor-color {
     width: 40px;
     height: 22px;
     padding: 0;
@@ -347,23 +342,23 @@
     cursor: pointer;
   }
 
-  .profile-popup-edit-actions {
+  .profile-editor-actions {
     display: flex;
     gap: 6px;
     margin-top: 2px;
   }
 
 
-  .profile-popup-edit-btn:hover:not(:disabled) {
+  .profile-editor-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
   }
 
-  .profile-popup-edit-btn:disabled {
+  .profile-editor-btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
   }
 
-  .profile-popup-edit-btn-secondary {
+  .profile-editor-btn-secondary {
     background: transparent;
     border-color: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
   }
@@ -428,18 +423,18 @@
   }
 
   .message-list-selection-btn-danger {
-    background: color-mix(in srgb, #c0392b 20%, transparent);
-    border-color: color-mix(in srgb, #c0392b 45%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) 20%, transparent);
+    border-color: color-mix(in srgb, var(--color-xfire-danger) 45%, transparent);
   }
 
   .message-list-selection-btn-danger:hover:not(:disabled) {
-    background: color-mix(in srgb, #c0392b 35%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) 35%, transparent);
   }
 
   .chat-message-selectable {
     cursor: pointer;
     padding-left: 28px;
     position: relative;
-    transition: background 0.1s;
+    transition: background var(--motion-duration-fast);
   }
 }

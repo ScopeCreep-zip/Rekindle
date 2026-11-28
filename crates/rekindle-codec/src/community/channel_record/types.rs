@@ -2,7 +2,6 @@
 //! their field attributes reference.
 
 use rekindle_types::base64_bytes;
-use rekindle_types::domains;
 use serde::{Deserialize, Serialize};
 
 /// A message entry written to a channel record subkey.
@@ -20,9 +19,16 @@ pub struct ChannelMessage {
     pub mek_generation: u64,
     /// Unix timestamp (milliseconds).
     pub timestamp: u64,
-    /// Optional reply-to sequence number.
+    /// The message id of the message this one replies to, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reply_to: Option<u64>,
+    pub reply_to: Option<String>,
+    /// A thread reply's revival of a manually archived thread: the hex op
+    /// hash of the `ThreadArchived` its author saw standing when it replied.
+    /// It revives exactly that archive, never a later one (plan E3.3;
+    /// architecture §4.6 "any new message ... implicitly unarchives it",
+    /// ordered causally since no cross-author clock exists, rule E1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revives: Option<String>,
     /// Lamport logical timestamp for causal ordering.
     #[serde(default)]
     pub lamport_ts: u64,
@@ -73,8 +79,10 @@ pub struct ChannelReaction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPollCreate {
-    /// Stable poll ID.
-    pub poll_id: [u8; 16],
+    /// The creator's nonce: the poll's id is derived from the creator's
+    /// pseudonym and it (`rekindle_channel::poll_id_of`), so a create by
+    /// any other member names another poll.
+    pub nonce: [u8; 16],
     /// Message the poll is attached to.
     pub message_id: String,
     pub question: String,
@@ -98,7 +106,14 @@ pub struct ChannelPollVote {
     pub lamport: u64,
 }
 
-/// A durable poll close entry written to a channel record subkey.
+/// A poll close entry on its author's channel outbox (plan E3.3). The
+/// close names, for each voter its author counted, the stream seq of that
+/// voter's vote, so readers count exactly those votes: a vote's validity
+/// against the close is the closer's view of each voter's stream, never a
+/// commit time (rule E1: no trusted clock; the departure-head pattern).
+/// A close names more voters than one entry holds (one sealed page, plan
+/// E3.3 `EntryTooLarge`), so it is `parts` entries sharing `close_id`, each
+/// naming its share of the voters; readers apply it once every part is read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPollClose {
@@ -106,6 +121,23 @@ pub struct ChannelPollClose {
     pub poll_id: [u8; 16],
     /// Lamport logical timestamp for close ordering.
     pub lamport: u64,
+    /// The close this part belongs to.
+    pub close_id: [u8; 16],
+    /// This part's index, below `parts`.
+    pub part: u16,
+    /// How many parts the close has (at least one).
+    pub parts: u16,
+    /// This part's share of the votes the close counts, one per voter.
+    pub counted: Vec<ChannelPollCounted>,
+}
+
+/// One voter's vote a poll close counts: the voter's pseudonym hex and the
+/// stream seq of the vote counted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelPollCounted {
+    pub voter: String,
+    pub stream_seq: u64,
 }
 
 /// A durable hand-raise entry written to a channel record subkey.
@@ -172,6 +204,41 @@ pub struct ChannelForward {
     pub message_id: Option<String>,
 }
 
+/// The author's edit of its own message `message_id` (plan E3.3, rule E1):
+/// valid only from the message's author, and the latest by the author's
+/// seq (`lamport_ts`, which only rises per author) wins. The body is sealed
+/// at the edit entry's own position, not the message's.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelEdit {
+    /// The edited message.
+    pub message_id: String,
+    /// The new body (sealed under the channel text key).
+    #[serde(with = "base64_bytes")]
+    pub ciphertext: Vec<u8>,
+    /// The text key generation `ciphertext` is sealed under.
+    pub mek_generation: u64,
+    /// When the author edited it, in seconds.
+    pub edited_at: u64,
+    /// The author's seq: the edit's place among the author's entries.
+    pub lamport_ts: u64,
+}
+
+/// The author's tombstone of its own message `message_id` (plan E3.3, rule
+/// E3): allowed at any time and final, it purges every revision and later
+/// edits are refused. The old ciphertext stays in the author's record and
+/// in peers' copies, so it is "deleted for members", never erased (E4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelDelete {
+    /// The deleted message.
+    pub message_id: String,
+    /// When the author deleted it, in seconds.
+    pub deleted_at: u64,
+    /// The author's seq.
+    pub lamport_ts: u64,
+}
+
 /// Any durable entry stored in a channel record page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
@@ -184,13 +251,8 @@ pub enum ChannelRecordEntry {
     PollVote(ChannelPollVote),
     PollClose(ChannelPollClose),
     HandRaise(ChannelHandRaise),
-}
-
-/// A decoded channel record entry together with the subkey it came from.
-#[derive(Debug, Clone)]
-pub struct ChannelRecordItem {
-    pub subkey_index: u32,
-    pub entry: ChannelRecordEntry,
+    Edit(ChannelEdit),
+    Delete(ChannelDelete),
 }
 
 impl ChannelRecordEntry {
@@ -204,40 +266,8 @@ impl ChannelRecordEntry {
             Self::PollVote(vote) => vote.lamport,
             Self::PollClose(close) => close.lamport,
             Self::HandRaise(hand_raise) => hand_raise.lamport,
+            Self::Edit(edit) => edit.lamport_ts,
+            Self::Delete(delete) => delete.lamport_ts,
         }
-    }
-}
-
-/// Architecture §26 W26 — wraps the per-subkey entry vec with the
-/// author's pseudonym + an Ed25519 signature. The SMPL slot keypair on
-/// `set_dht_value` is community-shared (every member knows the slot
-/// seed), so without this wrapper any member could forge entries
-/// claiming to be any other member. Receivers MUST verify the signature
-/// against `author_pseudonym` before treating the entries as authentic.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelSubkeyPayload {
-    pub author_pseudonym: rekindle_types::id::PseudonymKey,
-    pub entries: Vec<ChannelRecordEntry>,
-    /// 64-byte Ed25519 signature over [`ChannelSubkeyPayload::signing_bytes`]. Empty `Vec`
-    /// only on legacy/disk fixtures predating SCHEMA_VERSION 59.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub signature: Vec<u8>,
-}
-
-impl ChannelSubkeyPayload {
-    /// Canonical bytes the author signs. Includes a domain tag so the
-    /// signature can't be lifted into a different protocol context
-    /// (governance, presence, gossip). Includes the entry count so a
-    /// truncated re-write by a forger is rejected.
-    pub fn signing_bytes(&self) -> Vec<u8> {
-        let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
-        let mut out =
-            Vec::with_capacity(domains::CHANNEL_SUBKEY.len() + 32 + 8 + entries_json.len());
-        out.extend_from_slice(domains::CHANNEL_SUBKEY.as_bytes());
-        out.extend_from_slice(&self.author_pseudonym.0);
-        out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
-        out.extend_from_slice(&entries_json);
-        out
     }
 }

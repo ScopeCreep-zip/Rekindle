@@ -1,0 +1,109 @@
+import { type Component, createEffect, createSignal, For, onMount, Show } from "solid-js";
+import { sendSkinSelection } from "../../actions/skin.actions";
+import { loadTransfers } from "../../actions/transfer.actions";
+import type { TransferRow, TransferState } from "../../ipc/commands/dto_transfer";
+import { transfersState } from "../../stores/transfers.store";
+import { formatSize } from "../../utils/formatting";
+
+// The Downloads view (plan E7.2 G12, SK2-G §4): the Host's transfers as
+// Xfire's Downloads list. A row press makes it the window's selection
+// (`setSkinSelection`), which the pack's Start / Stop / Execute buttons act
+// on through the Host's table; a double click is Execute (a reveal in the
+// OS file manager, never an open). What a transfer may do is the Host's.
+
+const STATE_TEXT: Record<TransferState, string> = {
+  queued: "Queued",
+  active: "Downloading",
+  paused: "Stopped",
+  done: "Done",
+  failed: "Failed",
+};
+
+function statusText(row: TransferRow): string {
+  if (row.state !== "active" || row.total <= 0) return STATE_TEXT[row.state];
+  return `${STATE_TEXT.active} ${Math.floor((row.bytesDone * 100) / row.total)}%`;
+}
+
+/// `onExecute`: Execute for the selected row (a skin tree runs its pack's
+/// OpenDownload; the app's own layout calls the Host's `transfer_open`).
+/// `onSelect`: the row the user selected, or null once it is gone.
+const FilesView: Component<{
+  onExecute: (row: TransferRow) => void;
+  onSelect?: (row: TransferRow | null) => void;
+}> = (props) => {
+  const [selected, setSelected] = createSignal<string | null>(null);
+
+  onMount(() => {
+    if (!transfersState.loaded) void loadTransfers();
+  });
+
+  // A selected transfer the Host removed is no longer the selection.
+  createEffect(() => {
+    const id = selected();
+    if (id !== null && !transfersState.rows[id]) {
+      setSelected(null);
+      void sendSkinSelection(null);
+      props.onSelect?.(null);
+    }
+  });
+
+  // Execute runs on the selection, so the Host holds it before the press.
+  const select = (row: TransferRow): Promise<void> => {
+    setSelected(row.attachmentId);
+    props.onSelect?.(row);
+    return sendSkinSelection({
+      kind: "transfer",
+      arg: { attachmentId: row.attachmentId, target: row.target },
+    });
+  };
+
+  return (
+    <div class="files-view" role="listbox" aria-label="Downloads">
+      <div class="files-view-head" aria-hidden="true">
+        <span>Name</span>
+        <span>Size</span>
+        <span>Status</span>
+      </div>
+      <Show when={transfersState.loaded && transfersState.order.length === 0}>
+        <div class="files-view-empty">No downloads</div>
+      </Show>
+      <div class="files-view-rows">
+        <For each={transfersState.order}>
+          {(id) => {
+            const row = (): TransferRow | undefined => transfersState.rows[id];
+            return (
+              <Show when={row()}>
+                {(r) => (
+                  <div
+                    class="files-view-row"
+                    role="option"
+                    tabIndex={0}
+                    aria-selected={selected() === id}
+                    data-state={r().state}
+                    onClick={() => void select(r())}
+                    onDblClick={() => void select(r()).then(() => props.onExecute(r()))}
+                    onKeyDown={(e) => {
+                      if (e.key === " ") {
+                        e.preventDefault();
+                        void select(r());
+                      } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        void select(r()).then(() => props.onExecute(r()));
+                      }
+                    }}
+                  >
+                    <span class="files-view-name">{r().destName}</span>
+                    <span class="files-view-size">{formatSize(r().total)}</span>
+                    <span class="files-view-status">{statusText(r())}</span>
+                  </div>
+                )}
+              </Show>
+            );
+          }}
+        </For>
+      </div>
+    </div>
+  );
+};
+
+export default FilesView;

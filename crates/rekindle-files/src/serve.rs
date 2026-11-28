@@ -12,6 +12,7 @@
 //! delegates here.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
@@ -31,6 +32,7 @@ pub fn serve_attachment_request(
     let attachment_uuid = Uuid::from_bytes(attachment_id);
 
     let mut delivered: Vec<ControlPayload> = Vec::new();
+    let mut reply: Option<Vec<u8>> = None;
     for &idx in requested_chunks {
         match cache.get(attachment_uuid, idx) {
             Ok(Some(ciphertext)) => {
@@ -43,6 +45,13 @@ pub fn serve_attachment_request(
                     data: ciphertext,
                     plaintext_hash: [0u8; 32],
                 });
+                // The reply is one app-call answer, bounded by Veilid's
+                // message limit: it carries the chunks that fit, and the
+                // requester asks again for the rest.
+                match encode(&delivered) {
+                    Some(bytes) if bytes.len() <= MAX_APP_MESSAGE_LEN => reply = Some(bytes),
+                    _ => break,
+                }
             }
             Ok(None) => {}
             Err(e) => {
@@ -55,111 +64,19 @@ pub fn serve_attachment_request(
         }
     }
 
-    if delivered.is_empty() {
-        return None;
-    }
-    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
-        ControlPayload::MultiAttachmentChunk { chunks: delivered },
+    reply
+}
+
+/// The `MultiAttachmentChunk` envelope carrying `chunks`.
+fn encode(chunks: &[ControlPayload]) -> Option<Vec<u8>> {
+    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::control(
+        ControlPayload::MultiAttachmentChunk {
+            chunks: chunks.to_vec(),
+        },
     ))
     .ok()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cache::{CacheConfig, ChunkCache};
-    use crate::pinned::PinnedSet;
-    use tempfile::TempDir;
-
-    fn open_cache(dir: &TempDir) -> ChunkCache {
-        ChunkCache::open(CacheConfig {
-            root_dir: dir.path().to_path_buf(),
-            byte_budget: 1024 * 1024,
-        })
-        .unwrap()
-    }
-
-    fn parse_reply(bytes: &[u8]) -> Vec<(u32, Vec<u8>)> {
-        let env =
-            rekindle_codec::capnp_envelope::decode_community_envelope(bytes).expect("decode reply");
-        let CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) = env
-        else {
-            panic!("unexpected reply variant");
-        };
-        chunks
-            .into_iter()
-            .filter_map(|p| match p {
-                ControlPayload::AttachmentChunk {
-                    chunk_index, data, ..
-                } => Some((chunk_index, data)),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn returns_none_when_cache_has_no_matching_chunks() {
-        let temp = TempDir::new().unwrap();
-        let mut cache = open_cache(&temp);
-        let aid = [7u8; 16];
-        let reply = serve_attachment_request(&mut cache, aid, &[0, 1, 2]);
-        assert!(reply.is_none(), "empty cache should yield no reply");
-    }
-
-    #[test]
-    fn returns_subset_when_cache_holds_some_chunks() {
-        let temp = TempDir::new().unwrap();
-        let mut cache = open_cache(&temp);
-        let aid = [9u8; 16];
-        let attachment_uuid = Uuid::from_bytes(aid);
-        let pinned = PinnedSet::new();
-        cache
-            .insert(attachment_uuid, 0, b"chunk0", &pinned)
-            .unwrap();
-        cache
-            .insert(attachment_uuid, 2, b"chunk2", &pinned)
-            .unwrap();
-
-        let reply = serve_attachment_request(&mut cache, aid, &[0, 1, 2, 3])
-            .expect("should reply with held chunks");
-        let parsed = parse_reply(&reply);
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0], (0, b"chunk0".to_vec()));
-        assert_eq!(parsed[1], (2, b"chunk2".to_vec()));
-    }
-
-    #[test]
-    fn returns_full_set_when_all_chunks_present() {
-        let temp = TempDir::new().unwrap();
-        let mut cache = open_cache(&temp);
-        let aid = [42u8; 16];
-        let attachment_uuid = Uuid::from_bytes(aid);
-        let pinned = PinnedSet::new();
-        for i in 0..3u32 {
-            cache
-                .insert(attachment_uuid, i, format!("chunk{i}").as_bytes(), &pinned)
-                .unwrap();
-        }
-
-        let reply = serve_attachment_request(&mut cache, aid, &[0, 1, 2]).expect("full reply");
-        let parsed = parse_reply(&reply);
-        assert_eq!(parsed.len(), 3);
-        assert_eq!(parsed[0].0, 0);
-        assert_eq!(parsed[1].0, 1);
-        assert_eq!(parsed[2].0, 2);
-    }
-
-    #[test]
-    fn returns_none_when_requested_attachment_id_differs() {
-        let temp = TempDir::new().unwrap();
-        let mut cache = open_cache(&temp);
-        let pinned = PinnedSet::new();
-        let stored_aid = [1u8; 16];
-        let stored_uuid = Uuid::from_bytes(stored_aid);
-        cache.insert(stored_uuid, 0, b"data", &pinned).unwrap();
-
-        let other_aid = [2u8; 16];
-        let reply = serve_attachment_request(&mut cache, other_aid, &[0, 1]);
-        assert!(reply.is_none());
-    }
-}
+#[path = "serve_tests.rs"]
+mod tests;

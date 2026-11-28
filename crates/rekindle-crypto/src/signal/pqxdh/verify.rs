@@ -1,69 +1,127 @@
-//! Ed25519 signature verification for prekey bundle fields.
+//! The prekey signatures (plan E2.4): each covers the prekey's id and its
+//! `EncodeEC`/`EncodeKEM` encoding (PQXDH rev. 3 §2.3) under its own
+//! registered domain (`rekindle_types::domains`), so a signature binds one
+//! key to one id in one role, and no other identity-key signature can be
+//! presented as one:
+//! - signed prekey: `PREKEY_SPK_SIG ‖ u32be(spk_id) ‖ i64be(issued_at) ‖
+//!   EncodeEC(spk)`;
+//! - ML-KEM last-resort prekey: `PREKEY_PQ_LR_SIG ‖ u32be(id) ‖
+//!   i64be(issued_at) ‖ EncodeKEM(pqpk)`;
+//! - one-time ML-KEM prekey: `PREKEY_PQ_OT_SIG ‖ u32be(id) ‖ EncodeKEM(pqpk)`;
+//! - one-time curve prekey: `PREKEY_OPK_SIG ‖ u32be(opk_id) ‖ EncodeEC(opk)`.
+//!
+//! The head's two keys sign its `issued_at`, so a reader can enforce the
+//! head's age (`prekey_record::SIGNED_MAX_AGE_MS`) on a value only the
+//! identity could have written.
 
 use ed25519_dalek::{Signature, VerifyingKey};
+use rekindle_secrets::pq_keys::MlKemPublic;
+use rekindle_types::domains;
+use x25519_dalek::PublicKey as X25519Public;
 
+use super::encode::{encode_ec, encode_kem};
+use super::keys::{ml_kem_public_from_bytes, x25519_from_bytes};
 use super::PqxdhError;
 
-const SPK_DOMAIN_TAG: u8 = 0x01;
-const PQ_DOMAIN_TAG: u8 = 0x02;
+/// The role of an ML-KEM prekey, which its signature binds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PqRole {
+    /// The last-resort key, signed with the head's `issued_at`.
+    LastResort { issued_at_ms: i64 },
+    /// A one-time key.
+    OneTime,
+}
 
-/// Verify the signed-prekey signature: `Ed25519(IK_B, 0x01 || SPK_B)`.
+/// The bytes the signed prekey's signature covers.
+#[must_use]
+pub fn spk_signing_payload(spk_id: u32, issued_at_ms: i64, spk: &X25519Public) -> Vec<u8> {
+    payload(
+        domains::PREKEY_SPK_SIG,
+        spk_id,
+        Some(issued_at_ms),
+        &encode_ec(spk),
+    )
+}
+
+/// The bytes an ML-KEM prekey's signature covers.
+#[must_use]
+pub fn pq_signing_payload(role: PqRole, id: u32, pqpk: &MlKemPublic) -> Vec<u8> {
+    let kem = encode_kem(pqpk);
+    match role {
+        PqRole::LastResort { issued_at_ms } => {
+            payload(domains::PREKEY_PQ_LR_SIG, id, Some(issued_at_ms), &kem)
+        }
+        PqRole::OneTime => payload(domains::PREKEY_PQ_OT_SIG, id, None, &kem),
+    }
+}
+
+/// The bytes a one-time curve prekey's signature covers.
+#[must_use]
+pub fn opk_signing_payload(opk_id: u32, opk: &X25519Public) -> Vec<u8> {
+    payload(domains::PREKEY_OPK_SIG, opk_id, None, &encode_ec(opk))
+}
+
+/// Verify the signed prekey's signature under `identity_key`.
 pub fn verify_spk(
     identity_key: &VerifyingKey,
+    spk_id: u32,
+    issued_at_ms: i64,
     spk_bytes: &[u8],
     signature_bytes: &[u8],
 ) -> Result<(), PqxdhError> {
-    let sig = parse_signature(signature_bytes)?;
-    let mut payload = Vec::with_capacity(1 + spk_bytes.len());
-    payload.push(SPK_DOMAIN_TAG);
-    payload.extend_from_slice(spk_bytes);
-    identity_key
-        .verify_strict(&payload, &sig)
-        .map_err(|e| PqxdhError::SignatureVerify(format!("SPK: {e}")))
+    let payload = spk_signing_payload(spk_id, issued_at_ms, &x25519_from_bytes(spk_bytes)?);
+    verify(identity_key, &payload, signature_bytes, "SPK")
 }
 
-/// Verify a PQ prekey signature: `Ed25519(IK_B, 0x02 || domain_subtag || pqpk)`.
-///
-/// `domain_subtag` is `b"LR"` for the last-resort key and `b"OT"` for the
-/// one-time key. The domain separation prevents an attacker from binding
-/// a one-time signature to a last-resort context (or vice versa).
+/// Verify an ML-KEM prekey's signature under `identity_key`. The role is
+/// bound, so a last-resort signature never verifies as a one-time one.
 pub fn verify_pq(
     identity_key: &VerifyingKey,
-    domain_subtag: &[u8],
+    role: PqRole,
+    id: u32,
     pqpk_bytes: &[u8],
     signature_bytes: &[u8],
 ) -> Result<(), PqxdhError> {
+    let payload = pq_signing_payload(role, id, &ml_kem_public_from_bytes(pqpk_bytes)?);
+    let what = match role {
+        PqRole::LastResort { .. } => "PQ LR",
+        PqRole::OneTime => "PQ OT",
+    };
+    verify(identity_key, &payload, signature_bytes, what)
+}
+
+/// Verify a one-time curve prekey's signature under `identity_key`.
+pub fn verify_opk(
+    identity_key: &VerifyingKey,
+    opk_id: u32,
+    opk_bytes: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), PqxdhError> {
+    let payload = opk_signing_payload(opk_id, &x25519_from_bytes(opk_bytes)?);
+    verify(identity_key, &payload, signature_bytes, "OPK")
+}
+
+fn payload(domain: &str, id: u32, issued_at_ms: Option<i64>, encoded: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(domain.len() + 4 + 8 + encoded.len());
+    payload.extend_from_slice(domain.as_bytes());
+    payload.extend_from_slice(&id.to_be_bytes());
+    if let Some(at) = issued_at_ms {
+        payload.extend_from_slice(&at.to_be_bytes());
+    }
+    payload.extend_from_slice(encoded);
+    payload
+}
+
+fn verify(
+    identity_key: &VerifyingKey,
+    payload: &[u8],
+    signature_bytes: &[u8],
+    what: &str,
+) -> Result<(), PqxdhError> {
     let sig = parse_signature(signature_bytes)?;
-    let mut payload = Vec::with_capacity(1 + domain_subtag.len() + pqpk_bytes.len());
-    payload.push(PQ_DOMAIN_TAG);
-    payload.extend_from_slice(domain_subtag);
-    payload.extend_from_slice(pqpk_bytes);
-    identity_key.verify_strict(&payload, &sig).map_err(|e| {
-        PqxdhError::SignatureVerify(format!(
-            "PQ {}: {e}",
-            String::from_utf8_lossy(domain_subtag)
-        ))
-    })
-}
-
-/// Produce the bytes that `verify_spk` checks against — used by the
-/// signer side to construct signatures with the same domain separation.
-#[must_use]
-pub fn spk_signing_payload(spk_bytes: &[u8]) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(1 + spk_bytes.len());
-    payload.push(SPK_DOMAIN_TAG);
-    payload.extend_from_slice(spk_bytes);
-    payload
-}
-
-/// Produce the bytes `verify_pq` checks against — used by the signer side.
-#[must_use]
-pub fn pq_signing_payload(domain_subtag: &[u8], pqpk_bytes: &[u8]) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(1 + domain_subtag.len() + pqpk_bytes.len());
-    payload.push(PQ_DOMAIN_TAG);
-    payload.extend_from_slice(domain_subtag);
-    payload.extend_from_slice(pqpk_bytes);
-    payload
+    identity_key
+        .verify_strict(payload, &sig)
+        .map_err(|e| PqxdhError::SignatureVerify(format!("{what}: {e}")))
 }
 
 fn parse_signature(bytes: &[u8]) -> Result<Signature, PqxdhError> {
@@ -80,45 +138,5 @@ fn parse_signature(bytes: &[u8]) -> Result<Signature, PqxdhError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ed25519_dalek::{Signer, SigningKey};
-    use rand::rngs::OsRng;
-
-    #[test]
-    fn spk_signature_round_trips() {
-        let signing = SigningKey::generate(&mut OsRng);
-        let verifying = signing.verifying_key();
-        let spk = [42u8; 32];
-        let sig = signing.sign(&spk_signing_payload(&spk));
-        verify_spk(&verifying, &spk, &sig.to_bytes()).expect("valid SPK signature");
-    }
-
-    #[test]
-    fn pq_signature_round_trips() {
-        let signing = SigningKey::generate(&mut OsRng);
-        let verifying = signing.verifying_key();
-        let pqpk = vec![7u8; 1184];
-        let sig = signing.sign(&pq_signing_payload(b"LR", &pqpk));
-        verify_pq(&verifying, b"LR", &pqpk, &sig.to_bytes()).expect("valid PQ-LR signature");
-    }
-
-    #[test]
-    fn pq_lr_signature_does_not_verify_as_ot() {
-        // Domain separation: an LR signature must NOT verify as an OT signature.
-        let signing = SigningKey::generate(&mut OsRng);
-        let verifying = signing.verifying_key();
-        let pqpk = vec![7u8; 1184];
-        let sig = signing.sign(&pq_signing_payload(b"LR", &pqpk));
-        assert!(verify_pq(&verifying, b"OT", &pqpk, &sig.to_bytes()).is_err());
-    }
-
-    #[test]
-    fn wrong_key_rejects_signature() {
-        let signing_a = SigningKey::generate(&mut OsRng);
-        let verifying_b = SigningKey::generate(&mut OsRng).verifying_key();
-        let spk = [0u8; 32];
-        let sig = signing_a.sign(&spk_signing_payload(&spk));
-        assert!(verify_spk(&verifying_b, &spk, &sig.to_bytes()).is_err());
-    }
-}
+#[path = "verify_tests.rs"]
+mod tests;

@@ -1,12 +1,14 @@
-import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { Dialog } from "@kobalte/core/dialog";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   commands,
+  type HasFilter,
   type SearchHit,
   type SearchResult,
   type SearchSort,
-  type HasFilter,
 } from "../../ipc/commands";
 import { communityState } from "../../stores/community.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { formatTimestamp } from "../../utils/formatting";
 
 // Architecture §23 — local FTS5 search across messages, threads, DMs.
@@ -57,8 +59,6 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
   const [queryMs, setQueryMs] = createSignal<number | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
-  onMount(() => queryRef?.focus());
-
   const community = createMemo(() => {
     if (!props.communityId) return undefined;
     return communityState.communities[props.communityId];
@@ -69,7 +69,7 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
 
   function toggleHas(value: HasFilter): void {
     setHasFilters((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
     );
   }
 
@@ -91,9 +91,9 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
     try {
       const activeScope = scope();
       const inCommunityFilter =
-        activeScope === "global" ? undefined : props.communityId ?? undefined;
+        activeScope === "global" ? undefined : (props.communityId ?? undefined);
       const inChannelFilter =
-        activeScope === "channel" ? (inChannel() || props.channelId) ?? undefined : undefined;
+        activeScope === "channel" ? ((inChannel() || props.channelId) ?? undefined) : undefined;
       const result: SearchResult = await commands.searchMessages({
         query: q,
         filters: {
@@ -119,11 +119,6 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
   }
 
   function onKeyDown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      props.onClose();
-      return;
-    }
     if (e.key === "Enter") {
       e.preventDefault();
       void runSearch();
@@ -131,165 +126,181 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
   }
 
   return (
-    <div class="search-panel-overlay" onClick={props.onClose}>
-      <div class="search-panel" onClick={(e) => e.stopPropagation()}>
-        <div class="search-panel-header">
-          <h3>Search messages</h3>
-          <button
-            class="search-panel-close"
-            onClick={props.onClose}
-            title="Close (Esc)"
-            aria-label="Close search panel"
-          >×</button>
-        </div>
-
-        <div class="search-panel-input-row">
-          <input
-            ref={queryRef}
-            class="form-input search-panel-query"
-            type="text"
-            placeholder="Search…"
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            onKeyDown={onKeyDown}
-          />
-          <select
-            class="form-select"
-            value={scope()}
-            onChange={(e) => setScope(e.currentTarget.value as SearchScopeMode)}
-            aria-label="Search scope"
+    // Wiring guide §13c: a modal dialog traps focus, Esc and an outside
+    // click close it, and focus goes back to the control that opened it.
+    <Dialog open={true} onOpenChange={(open) => !open && props.onClose()} modal={true}>
+      <Dialog.Portal>
+        <div class="search-panel-overlay">
+          <Dialog.Content
+            class="search-panel"
+            {...returnFocusToOpener((e) => {
+              e.preventDefault();
+              queryRef?.focus();
+            })}
           >
-            <option value="channel" disabled={!props.channelId}>This channel</option>
-            <option value="community" disabled={!props.communityId}>This community</option>
-            <option value="global">All communities</option>
-          </select>
-          <select
-            class="form-select"
-            value={sort()}
-            onChange={(e) => setSort(e.currentTarget.value as SearchSort)}
-            aria-label="Sort order"
-          >
-            <option value="relevance">Relevance</option>
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-          </select>
-          <button
-            class="form-btn-primary"
-            onClick={() => void runSearch()}
-            disabled={searching() || query().trim().length === 0}
-          >
-            {searching() ? "…" : "Search"}
-          </button>
-        </div>
-        <div class="settings-hint">
-          FTS5 query syntax — phrase, AND, OR, prefix*. Regex is not
-          supported. Searches are local-only; only messages stored on
-          this device can match.
-        </div>
-
-        <div class="search-panel-filters">
-          <Show when={community()}>
-            <select
-              class="form-select"
-              value={from()}
-              onChange={(e) => setFrom(e.currentTarget.value)}
-            >
-              <option value="">From: anyone</option>
-              <For each={members()}>
-                {(member) => (
-                  <option value={member.pseudonymKey}>From: {member.displayName}</option>
-                )}
-              </For>
-            </select>
-            <select
-              class="form-select"
-              value={inChannel()}
-              onChange={(e) => setInChannel(e.currentTarget.value)}
-            >
-              <option value="">In: any channel</option>
-              <For each={channels()}>
-                {(channel) => (
-                  <option value={channel.id}>In: #{channel.name}</option>
-                )}
-              </For>
-            </select>
-          </Show>
-          <input
-            class="form-input"
-            type="date"
-            value={after()}
-            onInput={(e) => setAfter(e.currentTarget.value)}
-            title="After date"
-          />
-          <input
-            class="form-input"
-            type="date"
-            value={before()}
-            onInput={(e) => setBefore(e.currentTarget.value)}
-            title="Before date"
-          />
-          <label class="search-panel-pinned">
-            <input
-              type="checkbox"
-              checked={pinnedOnly()}
-              onChange={(e) => setPinnedOnly(e.currentTarget.checked)}
-            />
-            <span>Pinned only</span>
-          </label>
-        </div>
-
-        <div class="search-panel-has">
-          <For each={HAS_OPTIONS}>
-            {(opt) => (
-              <button
-                class={`search-panel-chip ${hasFilters().includes(opt.value) ? "search-panel-chip-active" : ""}`}
-                onClick={() => toggleHas(opt.value)}
+            <div class="search-panel-header">
+              <Dialog.Title as="h3">Search messages</Dialog.Title>
+              <Dialog.CloseButton
+                class="search-panel-close"
+                title="Close (Esc)"
+                aria-label="Close search panel"
               >
-                {opt.label}
+                ×
+              </Dialog.CloseButton>
+            </div>
+
+            <div class="search-panel-input-row">
+              <input
+                ref={queryRef}
+                class="form-input search-panel-query"
+                type="text"
+                placeholder="Search…"
+                value={query()}
+                onInput={(e) => setQuery(e.currentTarget.value)}
+                onKeyDown={onKeyDown}
+              />
+              <select
+                class="form-select"
+                value={scope()}
+                onChange={(e) => setScope(e.currentTarget.value as SearchScopeMode)}
+                aria-label="Search scope"
+              >
+                <option value="channel" disabled={!props.channelId}>
+                  This channel
+                </option>
+                <option value="community" disabled={!props.communityId}>
+                  This community
+                </option>
+                <option value="global">All communities</option>
+              </select>
+              <select
+                class="form-select"
+                value={sort()}
+                onChange={(e) => setSort(e.currentTarget.value as SearchSort)}
+                aria-label="Sort order"
+              >
+                <option value="relevance">Relevance</option>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+              </select>
+              <button
+                type="button"
+                class="form-btn-primary"
+                onClick={() => void runSearch()}
+                disabled={searching() || query().trim().length === 0}
+              >
+                {searching() ? "…" : "Search"}
               </button>
-            )}
-          </For>
-        </div>
+            </div>
+            <div class="settings-hint">
+              FTS5 query syntax — phrase, AND, OR, prefix*. Regex is not supported. Searches are
+              local-only; only messages stored on this device can match.
+            </div>
 
-        <Show when={error()}>
-          <div class="search-panel-error">{error()}</div>
-        </Show>
+            <div class="search-panel-filters">
+              <Show when={community()}>
+                <select
+                  class="form-select"
+                  value={from()}
+                  onChange={(e) => setFrom(e.currentTarget.value)}
+                >
+                  <option value="">From: anyone</option>
+                  <For each={members()}>
+                    {(member) => (
+                      <option value={member.pseudonymKey}>From: {member.displayName}</option>
+                    )}
+                  </For>
+                </select>
+                <select
+                  class="form-select"
+                  value={inChannel()}
+                  onChange={(e) => setInChannel(e.currentTarget.value)}
+                >
+                  <option value="">In: any channel</option>
+                  <For each={channels()}>
+                    {(channel) => <option value={channel.id}>In: #{channel.name}</option>}
+                  </For>
+                </select>
+              </Show>
+              <input
+                class="form-input"
+                type="date"
+                value={after()}
+                onInput={(e) => setAfter(e.currentTarget.value)}
+                title="After date"
+              />
+              <input
+                class="form-input"
+                type="date"
+                value={before()}
+                onInput={(e) => setBefore(e.currentTarget.value)}
+                title="Before date"
+              />
+              <label class="search-panel-pinned">
+                <input
+                  type="checkbox"
+                  checked={pinnedOnly()}
+                  onChange={(e) => setPinnedOnly(e.currentTarget.checked)}
+                />
+                <span>Pinned only</span>
+              </label>
+            </div>
 
-        <Show when={queryMs() !== null && hits().length === 0 && !searching()}>
-          <div class="search-panel-empty">No results.</div>
-        </Show>
+            <div class="search-panel-has">
+              <For each={HAS_OPTIONS}>
+                {(opt) => (
+                  <button
+                    type="button"
+                    class={`search-panel-chip ${hasFilters().includes(opt.value) ? "search-panel-chip-active" : ""}`}
+                    onClick={() => toggleHas(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                )}
+              </For>
+            </div>
 
-        <div class="search-panel-results">
-          <For each={hits()}>
-            {(hit) => (
-              <div class="search-panel-hit">
-                <div class="search-panel-hit-meta">
-                  <span class={`search-panel-hit-scope search-panel-hit-scope-${hit.scope}`}>
-                    {hit.scope}
-                  </span>
-                  <span class="search-panel-hit-time">{formatTimestamp(hit.timestamp)}</span>
-                </div>
-                <div class="search-panel-hit-body">
-                  <Show when={hit.beforeBody}>
-                    <div class="search-panel-hit-context">{hit.beforeBody}</div>
-                  </Show>
-                  <div class="search-panel-hit-match">{hit.body}</div>
-                  <Show when={hit.afterBody}>
-                    <div class="search-panel-hit-context">{hit.afterBody}</div>
-                  </Show>
-                </div>
+            <Show when={error()}>
+              <div class="search-panel-error">{error()}</div>
+            </Show>
+
+            <Show when={queryMs() !== null && hits().length === 0 && !searching()}>
+              <div class="search-panel-empty">No results.</div>
+            </Show>
+
+            <div class="search-panel-results">
+              <For each={hits()}>
+                {(hit) => (
+                  <div class="search-panel-hit">
+                    <div class="search-panel-hit-meta">
+                      <span class={`search-panel-hit-scope search-panel-hit-scope-${hit.scope}`}>
+                        {hit.scope}
+                      </span>
+                      <span class="search-panel-hit-time">{formatTimestamp(hit.timestamp)}</span>
+                    </div>
+                    <div class="search-panel-hit-body">
+                      <Show when={hit.beforeBody}>
+                        <div class="search-panel-hit-context">{hit.beforeBody}</div>
+                      </Show>
+                      <div class="search-panel-hit-match">{hit.body}</div>
+                      <Show when={hit.afterBody}>
+                        <div class="search-panel-hit-context">{hit.afterBody}</div>
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+
+            <Show when={queryMs() !== null}>
+              <div class="search-panel-footer">
+                {hits().length} result{hits().length === 1 ? "" : "s"} · {queryMs()} ms
               </div>
-            )}
-          </For>
+            </Show>
+          </Dialog.Content>
         </div>
-
-        <Show when={queryMs() !== null}>
-          <div class="search-panel-footer">
-            {hits().length} result{hits().length === 1 ? "" : "s"} · {queryMs()} ms
-          </div>
-        </Show>
-      </div>
-    </div>
+      </Dialog.Portal>
+    </Dialog>
   );
 };
 

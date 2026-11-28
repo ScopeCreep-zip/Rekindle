@@ -20,22 +20,168 @@ pub struct GameServerInfo {
     pub created_at: u64,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Longest DNS name a server address may carry (RFC 1035 §2.3.4).
+const MAX_HOST_LEN: usize = 253;
+/// Longest DNS label (RFC 1035 §2.3.4).
+const MAX_LABEL_LEN: usize = 63;
 
-    #[test]
-    fn game_server_info_roundtrip() {
-        let g = GameServerInfo {
-            id: "gs_01".into(),
-            game_id: "halo".into(),
-            label: "Friday CTF".into(),
-            address: "10.0.0.1:27015".into(),
-            added_by: "abcd".into(),
-            created_at: 42,
+/// A game server's `host:port`, parsed (plan E1.1): the only form a launcher
+/// substitutes into the URI it hands the OS. A peer supplies the address
+/// (presence, a community's server list), so anything that could change
+/// the URI's meaning — a path, query, fragment, percent escape, whitespace,
+/// a `+` argument, quotes or a scheme — is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ServerAddress(String);
+
+/// Why a server address was refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ServerAddressError {
+    #[error("a server address is host:port")]
+    Shape,
+    #[error("the host is not an IPv4 address, a bracketed IPv6 address or a DNS name")]
+    Host,
+    #[error("the port is not 1 to 65535")]
+    Port,
+}
+
+impl ServerAddress {
+    /// Parse `host:port`: an IPv4 literal, a bracketed IPv6 literal or an
+    /// LDH DNS name (labels `[A-Za-z0-9-]{1,63}`, at most 253 characters),
+    /// and a port from 1 to 65535.
+    ///
+    /// # Errors
+    /// Any other form.
+    pub fn parse(text: &str) -> Result<Self, ServerAddressError> {
+        let (host, port) = if let Some(rest) = text.strip_prefix('[') {
+            let (v6, port) = rest.split_once("]:").ok_or(ServerAddressError::Shape)?;
+            v6.parse::<std::net::Ipv6Addr>()
+                .map_err(|_| ServerAddressError::Host)?;
+            (None, port)
+        } else {
+            let (host, port) = text.rsplit_once(':').ok_or(ServerAddressError::Shape)?;
+            (Some(host), port)
         };
-        let json = serde_json::to_string(&g).unwrap();
-        let back: GameServerInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(g, back);
+        if let Some(host) = host {
+            if host.parse::<std::net::Ipv4Addr>().is_err() && !is_dns_name(host) {
+                return Err(ServerAddressError::Host);
+            }
+        }
+        if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(ServerAddressError::Port);
+        }
+        match port.parse::<u16>() {
+            Ok(p) if p > 0 => Ok(Self(text.to_owned())),
+            _ => Err(ServerAddressError::Port),
+        }
+    }
+
+    /// The address as `host:port`.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// An LDH DNS name: dot-separated labels of letters, digits and hyphens.
+fn is_dns_name(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= MAX_HOST_LEN
+        && host.split('.').all(|label| {
+            (1..=MAX_LABEL_LEN).contains(&label.len())
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+}
+
+impl std::fmt::Display for ServerAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for ServerAddress {
+    type Error = ServerAddressError;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        Self::parse(&text)
+    }
+}
+
+impl From<ServerAddress> for String {
+    fn from(address: ServerAddress) -> Self {
+        address.0
+    }
+}
+
+/// Longest label a game server carries (plan E3.1 H1).
+pub const MAX_GAME_SERVER_LABEL_LEN: usize = 100;
+/// Longest label on one of our favourite servers (plan E7.2,
+/// `favourite_servers.label`'s CHECK).
+pub const MAX_FAVOURITE_LABEL_LEN: usize = 64;
+/// Longest game identifier a game server carries (plan E3.1 H1).
+pub const MAX_GAME_ID_LEN: usize = 64;
+/// Random bytes in a game server's id.
+pub const GAME_SERVER_ID_BYTES: usize = 8;
+
+/// Whether `id` is a game server id: `gs_` and 16 lowercase hex digits.
+#[must_use]
+pub fn is_server_id(id: &str) -> bool {
+    id.strip_prefix("gs_").is_some_and(|hex| {
+        hex.len() == GAME_SERVER_ID_BYTES * 2
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
+#[cfg(test)]
+#[path = "game_server_tests.rs"]
+mod tests;
+
+/// Where a launch's server address came from (plan E7.2, lead decision
+/// (50)); it decides the launch's intent class (ADR 0019). For
+/// `FriendPresence`, `Invite` and `Community` a peer chose the address, so
+/// the launch sends our IP address to a host someone else picked
+/// (threat model I10): TrustChanging, the address named in the review.
+/// `Installed` (no server) and `Favourite` (a server we stored) are ours:
+/// Routine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JoinSource {
+    /// A game we have installed or played, launched without a server.
+    Installed,
+    /// One of our own favourite servers (`favourite_servers`).
+    Favourite,
+    /// A server we ourselves played on or launched to (`recent_servers`,
+    /// plan E7.2 G3): our IP address already went there, so it is ours.
+    Recent,
+    /// A friend's or community member's presence: the server they play on.
+    FriendPresence,
+    /// A friend's game invite.
+    Invite,
+    /// A community's game-server list.
+    Community,
+    /// A group DM's game lobby its host launched (plan E7.2 G6, SK2-G §5):
+    /// the host chose the address.
+    Lobby,
+}
+
+impl JoinSource {
+    /// Whether a peer chose the server address (TrustChanging).
+    #[must_use]
+    pub const fn peer_supplied(self) -> bool {
+        matches!(
+            self,
+            Self::FriendPresence | Self::Invite | Self::Community | Self::Lobby
+        )
+    }
+
+    /// Whether a launch from this source names a server: every source but
+    /// `Installed`, which never does.
+    #[must_use]
+    pub const fn names_server(self) -> bool {
+        !matches!(self, Self::Installed)
     }
 }

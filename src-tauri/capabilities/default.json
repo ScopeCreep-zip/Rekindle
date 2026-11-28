@@ -6,11 +6,11 @@
     "login",
     "buddy-list",
     "chat-*",
-    "dm-*",
     "community-*",
     "settings",
     "profile-*",
-    "call-*"
+    "call-*",
+    "popup-*"
   ],
   "permissions": [
     "core:window:allow-start-dragging",

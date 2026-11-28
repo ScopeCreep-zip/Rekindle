@@ -60,9 +60,17 @@ pub enum TransportError {
     #[error("send to {target} failed: {reason}")]
     SendFailed { target: String, reason: String },
 
-    /// An RPC call (app_call) timed out waiting for a response.
-    #[error("{operation} timed out after {duration_ms}ms")]
-    Timeout { operation: String, duration_ms: u64 },
+    /// The target route has no connection or is invalid: the route port
+    /// forgets it, and the next send imports the peer's current blob.
+    #[error("route to {target} unusable: {reason}")]
+    RouteUnusable { target: String, reason: String },
+
+    /// An `app_call` to the target timed out waiting for its answer
+    /// (`PortError::Timeout`): the outcome is unknown, and a call into a
+    /// route its owner released ends this way (Veilid 0.5.8 never tells
+    /// an importer of the release).
+    #[error("call to {target} timed out: {reason}")]
+    Timeout { target: String, reason: String },
 
     // ── Receive ──────────────────────────────────────────────────────
     /// The inbound frame header is invalid (too short, corrupt).
@@ -158,22 +166,14 @@ pub enum TransportError {
     #[error("serialization failed: {reason}")]
     SerializationFailed { reason: String },
 
-    // ── Operations (high-level orchestrators) ─────────────────────────
-    /// Identity creation ceremony failed at a named step.
-    #[error("identity creation failed at '{step}': {reason}")]
-    IdentityCreationFailed { step: String, reason: String },
+    /// A value exceeds the serializer's representable range.
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
 
+    // ── Operations (high-level orchestrators) ─────────────────────────
     /// Community creation failed.
     #[error("community creation failed: {reason}")]
     CommunityCreationFailed { reason: String },
-
-    /// Community join request was explicitly rejected by the community.
-    #[error("join rejected by '{community}': {reason}")]
-    JoinRejected { community: String, reason: String },
-
-    /// Join timed out waiting for acceptance from community peers.
-    #[error("join timed out after {timeout_secs}s — no response from community peers")]
-    JoinTimeout { timeout_secs: u64 },
 
     /// MEK not available for the requested channel and generation.
     #[error("MEK generation {generation} not cached for {community}/{channel}")]
@@ -249,11 +249,14 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
             // two impls used to carry the same seven-arm mapping.
             C::Core(core) => core.into(),
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
-            other @ (C::SessionError(_) | C::VaultLocked | C::WrongPassphrase) => {
-                Self::SignalProtocol {
-                    reason: other.to_string(),
-                }
-            }
+            other @ (C::SessionError(_)
+            | C::VaultLocked
+            | C::WrongPassphrase
+            | C::IdentityAddressMismatch { .. }
+            | C::StalePrekeys { .. }
+            | C::DuplicateMessage) => Self::SignalProtocol {
+                reason: other.to_string(),
+            },
         }
     }
 }
@@ -261,9 +264,9 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
 /// Converts `rekindle-protocol` failures into their transport
 /// counterparts.
 ///
-/// The two tracks share the low-level DHT primitives (`DHTShortArray`,
-/// `DHTLog`) rather than each carrying a copy, so this crate's `?`
-/// operator needs to lift `ProtocolError`. As with `CryptoError` above,
+/// The transport calls `rekindle-protocol`'s record and profile helpers
+/// (the record pool, profile reads), so this crate's `?` operator needs to
+/// lift `ProtocolError`. As with `CryptoError` above,
 /// each variant maps to its specific counterpart — `Internal` is
 /// reserved for genuine invariant violations, not used as a dumping
 /// ground.
@@ -274,6 +277,7 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
             P::DhtError(reason) => Self::DhtError { reason },
             P::DhtRecordUnreachable(key) => Self::RecordNotOpen { key },
             P::Serialization(reason) => Self::SerializationFailed { reason },
+            P::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             P::Deserialization(reason) => Self::DeserializationFailed {
                 // The protocol layer reports failures on already-framed
                 // bytes, so there is no payload type tag to carry.
@@ -289,7 +293,11 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
             P::CryptoError(reason) => Self::DecryptionFailed { reason },
             P::Verification(sender) => Self::SignatureVerificationFailed { sender },
             P::UnknownVariant(reason) => Self::InvalidFrame { reason },
-            P::SendFailed(reason) | P::RouteUnusable(reason) => Self::SendFailed {
+            P::SendFailed(reason) => Self::SendFailed {
+                target: "<protocol>".into(),
+                reason,
+            },
+            P::RouteUnusable(reason) => Self::RouteUnusable {
                 target: "<protocol>".into(),
                 reason,
             },
@@ -308,9 +316,61 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
                 size: len,
                 max: cap,
             },
+            P::MessageTooLarge { len, max } => Self::PayloadTooLarge { size: len, max },
             P::LeaseNotHeld(lease) => Self::RecordNotOpen {
                 key: format!("<lease {lease}>"),
             },
+        }
+    }
+}
+
+/// Converts the record, route and message ports' failures (plan C9.1) into
+/// their transport counterparts, each to its specific variant.
+impl From<rekindle_records::port::PortError> for TransportError {
+    fn from(e: rekindle_records::port::PortError) -> Self {
+        use rekindle_records::port::PortError as P;
+        match e {
+            P::Dht(reason)
+            | P::NotStored {
+                outcome: reason, ..
+            } => Self::DhtError { reason },
+            P::NotWritable(key) => Self::DhtError {
+                reason: format!("record {key} is not held writable"),
+            },
+            P::Unreachable(key) => Self::RecordNotOpen { key },
+            P::LeaseNotHeld(lease) => Self::RecordNotOpen {
+                key: format!("<lease {lease}>"),
+            },
+            P::Routing(reason) => Self::RouteImportFailed {
+                peer: "<port>".into(),
+                reason,
+            },
+            P::Send(reason) => Self::SendFailed {
+                target: "<port>".into(),
+                reason,
+            },
+            P::RouteUnusable(reason) => Self::RouteUnusable {
+                target: "<port>".into(),
+                reason,
+            },
+            P::Timeout(reason) => Self::Timeout {
+                target: "<port>".into(),
+                reason,
+            },
+            P::MessageTooLarge { len, max } => Self::PayloadTooLarge { size: len, max },
+            P::SubkeyTooLarge { subkey, len, cap } => Self::SubkeyTooLarge {
+                subkey,
+                size: len,
+                max: cap,
+            },
+            P::Closed => Self::NotStarted,
+            P::KeyText(reason) => Self::DhtError {
+                reason: format!("bad key text: {reason}"),
+            },
+            P::Node(reason) => Self::AttachFailed { reason },
+            P::Codec(reason) => Self::DeserializationFailed { type_id: 0, reason },
+            P::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
+            P::Crypto(reason) => Self::SignalProtocol { reason },
         }
     }
 }

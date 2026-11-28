@@ -1,0 +1,6 @@
+<Tile Name="IngameAlertWindow" ResizeX="100" ResizeY="100" Component="MainIGAWindow">
+    <Tile Name="MainBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="MainBackground" />
+    <Tile Name="MainBackgroundCol" X="0" Y="0" IndentLeft="24" IndentTop="33" IndentRight="23" IndentBottom="33" ResizeX="100" ResizeY="100" Component="MainBackgroundCol" />
+
+    <Tile Name="TextTile" X="26" Y="35" ResizeX="100" ResizeY="100" IndentBottom="34" IndentRight="25" Z="100" Component="InGameTextTile" />
+</Tile>

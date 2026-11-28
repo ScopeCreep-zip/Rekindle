@@ -1,18 +1,21 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { Channel } from "@tauri-apps/api/core";
-import { commands } from "../../../ipc/commands";
+import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
+import {
+  subscribeCommunityEvents,
+  subscribeVoiceEvents,
+  type UnlistenFn,
+} from "../../../ipc/channels";
+import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
 import type {
   CommunityVideoFrameMsg,
   DmVideoFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
-import { subscribeCommunityEvents, subscribeVoiceEvents } from "../../../ipc/channels";
-import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { setVoiceState, voiceState } from "../../../stores/voice.store";
-import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
+import { commands } from "../../../ipc/commands";
+import { Channel } from "../../../ipc/invoke";
 import { setDmPeerDecodeCodecs, videoSessionConfigFor } from "../../../stores/video.store";
-import type { RemoteStream } from "./codec_utils";
+import { setVoiceState, voiceState } from "../../../stores/voice.store";
+import { type RemoteStream, releaseRemoteStream } from "./codec_utils";
 import { createCaptureController } from "./panel_capture";
 import type { PanelCtx, Ref } from "./panel_ctx";
 import { createDecodePipeline } from "./panel_decode";
@@ -24,6 +27,7 @@ import { createVideoSender, type SenderRoute } from "./video_sender";
 // modules that consume it (panel_capture / panel_decode / panel_pip),
 // so declaring the type here closed four module cycles.
 export type { VideoCallPanelProps } from "./panel_ctx";
+
 import type { VideoCallPanelProps } from "./panel_ctx";
 
 export function useVideoCallPanel(props: VideoCallPanelProps) {
@@ -141,7 +145,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   };
   const decode = createDecodePipeline(ctx);
   const capture = createCaptureController(ctx);
-  const togglePictureInPicture = createPipToggle(ctx);
+  const pip = createPipToggle(ctx);
+  const togglePictureInPicture = pip.toggle;
 
   // The pipeline now lives in a headless host (CallPipelineHost) so the
   // call survives navigating between channels. The local-preview <video>
@@ -161,30 +166,24 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // Architecture §10.6 / Phase 11 Tier 1 — receiver pipeline. Reassembled
   // video frames flow over a dedicated per-stream `ipc::Channel`; community
   // control events (acks, keyframe/topology) still ride `community-event`.
-  // E2E mode skips Channel registration — channels can't serialize over the
-  // HTTP invoke bridge — leaving the rest of the panel inert there.
   onMount(() => {
-    const isE2E = import.meta.env.VITE_E2E === "true";
     // Idempotent WebCodecs probe (no-op if handleJoinVoice already ran
     // it). Guarantees the media stack is warm before this panel's
     // first `new VideoDecoder` — a cold WebCodecs call aborts the web
     // process on WebKitGTK 2.52.3 + GStreamer 1.24 (Ubuntu/Pop!_OS
     // 24.04); see handlers/video.handlers.ts.
-    if (!isE2E) {
-      probeAndReportLocalVideoCapabilities().catch((e) => {
-        console.error("WebCodecs capability probe failed:", e);
+    probeAndReportLocalVideoCapabilities().catch((e) => {
+      console.error("WebCodecs capability probe failed:", e);
+    });
+    commands
+      .nativeVideoCaptureAvailable()
+      .then((available) => {
+        setNativeCaptureAvailable(available);
+      })
+      .catch(() => {
+        // Probe failure = webview path; same as off-Linux.
       });
-      commands
-        .nativeVideoCaptureAvailable()
-        .then((available) => {
-          setNativeCaptureAvailable(available);
-        })
-        .catch(() => {
-          // Probe failure = webview path; same as off-Linux.
-        });
-    }
-    // One clock paces playout for all remotes. E2E has no decoders/frames,
-    // so the loop is harmless there (remotes() stays empty).
+    // One clock paces playout for all remotes.
     schedulePlayout();
     document.addEventListener("visibilitychange", onPlayoutVisibilityChange);
     if (props.mode === "community") {
@@ -200,15 +199,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           setRemotes((prev) =>
             prev.filter((r) => {
               if (r.streamId === streamId) {
-                try {
-                  r.decoder.close();
-                } catch (e) {
-                  console.error("decoder close failed:", e);
-                }
+                releaseRemoteStream(r);
                 return false;
               }
               return true;
-            }),
+            })
           );
         } else if (event.type === "videoKeyframeRequest") {
           sender.forceKeyframe(event.data.streamId);
@@ -251,23 +246,21 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           sender.forceKeyframeAll();
         }
       });
-      if (!isE2E) {
-        const ch = new Channel<CommunityVideoFrameMsg>();
-        ch.onmessage = (msg) => {
-          decode.ingestRemoteFrame(
-            msg.senderPseudonym,
-            msg.streamId,
-            msg.frameSeq,
-            msg.keyframe,
-            msg.codec,
-            msg.timestamp,
-            msg.payloadB64,
-          );
-        };
-        communityFrameChannel = ch;
-        void commands.registerCommunityVideoChannel(communityIdLocal, ch);
-      }
-    } else if (!isE2E) {
+      const ch = new Channel<CommunityVideoFrameMsg>();
+      ch.onmessage = (msg) => {
+        decode.ingestRemoteFrame(
+          msg.senderPseudonym,
+          msg.streamId,
+          msg.frameSeq,
+          msg.keyframe,
+          msg.codec,
+          msg.timestamp,
+          msg.payloadB64
+        );
+      };
+      communityFrameChannel = ch;
+      void commands.registerCommunityVideoChannel(communityIdLocal, ch);
+    } else {
       const ch = new Channel<DmVideoFrameMsg>();
       ch.onmessage = (msg) => {
         decode.ingestRemoteFrame(
@@ -277,7 +270,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           msg.keyframe,
           msg.codec,
           msg.timestamp,
-          msg.encodedPayloadB64,
+          msg.encodedPayloadB64
         );
       };
       dmFrameChannel = ch;
@@ -310,13 +303,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     if (dmFrameChannel && props.mode === "dm") {
       void commands.unregisterDmVideoChannel(props.peerId);
     }
-    for (const r of remotes()) {
-      try {
-        r.decoder.close();
-      } catch (e) {
-        console.error("decoder close failed:", e);
-      }
-    }
+    pip.release();
+    for (const r of remotes()) releaseRemoteStream(r);
+    setRemotes(() => []);
   });
 
   // Phase C — when the backend re-negotiates the session config (a
@@ -354,13 +343,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     // inbound keyframe re-seeds a fresh RemoteStream with the new
     // decoder constraints from the store.
     setRemotes((prev) => {
-      for (const r of prev) {
-        try {
-          r.decoder.close();
-        } catch (e) {
-          console.error("decoder close on config change failed:", e);
-        }
-      }
+      for (const r of prev) releaseRemoteStream(r);
       return [];
     });
   });

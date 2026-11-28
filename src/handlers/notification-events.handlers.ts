@@ -1,18 +1,14 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeNotificationEvents } from "../ipc/channels";
+import { subscribeNotificationEvents, type UnlistenFn } from "../ipc/channels";
+import { callsState } from "../stores/calls.store";
+import { communityState } from "../stores/community.store";
 import { setNotificationState } from "../stores/notification.store";
 import { settingsState } from "../stores/settings.store";
-import { communityState } from "../stores/community.store";
-import { callsState } from "../stores/calls.store";
-import { queueSessionReset } from "../stores/session-reset.store";
 
 // Wave 12 W12.2 — true when an in-call DND auto-suppression should
 // short-circuit message OS notifications / sounds. The user-facing
 // modal still surfaces; only the noisy ambient channels are gated.
 function inCallSuppress(): boolean {
-  return (
-    settingsState.inCallDndAutoEnable && callsState.activeCall != null
-  );
+  return settingsState.inCallDndAutoEnable && callsState.activeCall != null;
 }
 
 // Architecture §32 Phase 5 W18 + Phase 7 W25 — when a community-defined
@@ -21,14 +17,17 @@ function inCallSuppress(): boolean {
 // DND, quiet hours and rate limiting; this layer is purely "play the
 // resolved sound asset, if any". Falls back silently to the bundled
 // default sound when the asset isn't cached locally.
-function playNotificationSound(communityId: string | undefined, soundRef: string | null | undefined): void {
+function playNotificationSound(
+  communityId: string | undefined,
+  soundRef: string | null | undefined
+): void {
   if (!settingsState.soundEnabled) return;
   if (inCallSuppress()) return;
   if (!soundRef || !communityId) return;
   const community = communityState.communities[communityId];
   if (!community) return;
   const asset = (community.expressions ?? []).find(
-    (expr) => expr.kind === "soundboard" && expr.contentHash === soundRef,
+    (expr) => expr.kind === "soundboard" && expr.contentHash === soundRef
   );
   const dataUrl = asset?.inlineDataUrl;
   if (!dataUrl) return;
@@ -70,7 +69,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           read: false,
         },
       ]);
-      setNotificationState("unreadCount", (c) => c + 1);
     } else if ("systemAlert" in event) {
       const data = event.systemAlert;
       setNotificationState("notifications", (prev) => [
@@ -84,28 +82,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           read: false,
         },
       ]);
-      setNotificationState("unreadCount", (c) => c + 1);
-    } else if ("sessionResetRequested" in event) {
-      // P3.3 — peer wants to re-establish the Signal session. The
-      // buddy list's SessionResetDialog asks the user to compare the
-      // safety number out-of-band and decide explicitly; it cannot be
-      // dismissed, so closing it never counts as an answer.
-      const { peerPublicKey, peerDisplayName, safetyNumber } =
-        event.sessionResetRequested;
-      queueSessionReset({ peerPublicKey, peerDisplayName, safetyNumber });
-      // Also persist to the notification list.
-      setNotificationState("notifications", (prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: "system",
-          title: "Session Reset Request",
-          body: `${peerDisplayName} requested a session reset (safety number: ${safetyNumber})`,
-          timestamp: Date.now(),
-          read: false,
-        },
-      ]);
-      setNotificationState("unreadCount", (c) => c + 1);
     } else if ("updateAvailable" in event) {
       const { version } = event.updateAvailable;
       setNotificationState("notifications", (prev) => [
@@ -119,7 +95,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           read: false,
         },
       ]);
-      setNotificationState("unreadCount", (c) => c + 1);
     }
     // `callIncoming` needs nothing here: the backend shows the OS
     // notification, and the call handler drives the ring and modal.

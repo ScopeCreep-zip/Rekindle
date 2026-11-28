@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-crypto"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Ed25519 identity, Signal Protocol sessions, and group encryption for Rekindle"
 
 [lints]
@@ -10,28 +12,38 @@ workspace = true
 [dependencies]
 # Tier 1 owns the primitive crypto error taxonomy; this crate wraps it
 # rather than restating it (see src/error.rs).
-aes-gcm = "0.10"
-blake3 = "1"
+# The Double Ratchet's ENCRYPT (`signal::dr::kdf`): AES-256-CBC with
+# PKCS#7, DR rev. 4 §7.2's recipe; `zeroize` wipes the key schedules.
+aes = { version = "0.8", features = [ "zeroize" ] }
+base64 = "0.22"
+cbc = { version = "0.1", features = [ "alloc", "zeroize" ] }
 chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hex = "0.4"
 hkdf = "0.12"
-parking_lot = "0.12"
-postcard = { version = "1", features = [ "use-std" ] }
+# KDF_CK and ENCRYPT's tag of the spec Double Ratchet (`signal::dr`):
+# HMAC-SHA256, DR rev. 4 §7.2.
+hmac = "0.12"
 rand = "0.8"
+# The prekey record values (`PrekeyRecordHead`, `OpkSlot`) are the codec's
+# Cap'n Proto DTOs (plan E2.4).
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
+# `RandomSource` (plan C9.2): the ratchet and PQXDH keys the pure session
+# API mints come from the caller's generator.
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 sha2 = "0.10"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
-# Phase 6 — SessionCache infrastructure
-async-trait = "0.1"
-dashmap = "6"
-lru = "0.12"
-tokio = { workspace = true, features = [ "sync" ] }
+# Identifier hashing under a derive-key context (`prekey_record::base_key_hash`,
+# crypto-primitives §7); also the test generator's seed (`signal::test_support`).
+blake3 = "1"
 
 [dev-dependencies]
-tokio = { workspace = true, features = [ "sync", "rt", "rt-multi-thread", "macros", "time" ] }
+parking_lot = "0.12"
+proptest = "1"
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }

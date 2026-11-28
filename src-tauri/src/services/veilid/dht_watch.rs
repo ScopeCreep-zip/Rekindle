@@ -1,42 +1,27 @@
 use std::sync::Arc;
 
-use tauri::AppHandle;
-
-use crate::services::presence_service;
 use crate::state::AppState;
 
-pub async fn handle_value_change(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    change: veilid_core::VeilidValueChange,
-) {
-    let key = change.key.to_string();
+pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::VeilidValueChange) {
+    // The port's form of the change (plan C9.1): keys as text, seqs whole.
+    handle_port_value_change(state, rekindle_protocol::dht::pool::value_change(&change)).await;
+}
 
-    // Phase 7 — watch-tier trigger. If the ValueChange is on the
-    // local user's mailbox key (where peers write friend requests),
-    // wake the friendship coordinator so it scans within ~500 ms
-    // instead of waiting for the 30 s poll backstop. The helper
-    // honours the watch trigger's dev-disable deadline (kill-switch)
-    // and is a no-op when no coordinator is running.
-    let own_mailbox_key = state
-        .node
-        .read()
-        .as_ref()
-        .and_then(|nh| nh.mailbox_dht_key.clone());
-    if own_mailbox_key.as_deref() == Some(key.as_str()) {
-        state.friendship_handle.fire_watch_trigger();
-    }
+/// A value change in the port's form: a watch report, or one the record
+/// pool's own read found (its `ChangeSink`, lead decision 57).
+pub async fn handle_port_value_change(
+    state: &Arc<AppState>,
+    change: rekindle_records::port::ValueChange,
+) {
+    let key = change.key.clone();
 
     // The pool is the one owner of watch death (plan C7.8): it re-arms the
     // watch of a record it holds, which stays in the watched set meanwhile
     // (so the inspect tick does not take it over). A record it does not
     // hold was released (a left community, a removed friend), so its watch
     // ends by design.
-    let held = state
-        .record_pool
-        .read()
-        .clone()
-        .is_some_and(|pool| pool.on_value_change(&change).held);
+    let held = crate::state_helpers::record_pool(state)
+        .is_ok_and(|pool| pool.on_value_change(&change).held);
 
     if change.subkeys.is_empty() {
         if !held {
@@ -49,9 +34,9 @@ pub async fn handle_value_change(
         crate::services::community::mark_watch_inactive(state, &key);
     }
 
-    let subkeys: Vec<u32> = change.subkeys.iter().collect();
+    let subkeys: Vec<u32> = change.subkeys.clone();
     let first_subkey = subkeys.first().copied();
-    let inline_value = change.value.as_ref().map(|v| v.data().to_vec());
+    let inline_value = change.value.as_ref().map(|v| v.data.clone());
     let Ok(pool) = state.db.current() else {
         tracing::debug!("DHT value change: no identity database — dropped");
         return;
@@ -68,9 +53,18 @@ pub async fn handle_value_change(
     // were never opened (V19).
     let record_pool = crate::state_helpers::record_pool(state).ok();
 
-    if crate::services::sync_communities::handle_community_record_change(state, &pool, &key).await {
-        tracing::debug!(key = %key, "handled community DHT change via sync service");
-        return;
+    match crate::services::sync_communities::handle_community_record_change(state, &key, &subkeys)
+        .await
+    {
+        Ok(true) => {
+            tracing::debug!(key = %key, "handled community DHT change via sync service");
+            return;
+        }
+        Ok(false) => {}
+        Err(e) => {
+            tracing::debug!(key = %key, error = %e, "DHT change while locked — not routed");
+            return;
+        }
     }
 
     // Personal cross-device sync record (architecture §28.4).
@@ -86,95 +80,61 @@ pub async fn handle_value_change(
         return;
     }
 
-    // DM SMPL records: try the DM dispatcher first. Returns true when the
-    // key matches a row in `dms`. (Architecture §27 — DMs reuse the SMPL
-    // schema universally; the watch goes through the same plumbing as
-    // community records.)
-    if try_handle_dm_change(state, &pool, &key, &subkeys, record_pool.as_deref()).await {
-        return;
-    }
-
-    for &subkey in &subkeys {
-        let use_inline = Some(subkey) == first_subkey;
-        let value = if use_inline && inline_value.is_some() {
-            inline_value.clone().unwrap_or_default()
-        } else if let Some(ref record_pool) = record_pool {
-            match record_pool.read_once(&change.key, subkey, true).await {
-                Ok(Some(v)) => v.data().to_vec(),
-                Ok(None) => {
-                    tracing::debug!(subkey, key = %key, "subkey has no value");
-                    continue;
-                }
-                Err(e) => {
-                    tracing::warn!(subkey, key = %key, error = %e, "failed to fetch subkey");
-                    continue;
-                }
-            }
-        } else {
-            tracing::debug!(subkey, "no routing context to fetch subkey value");
-            continue;
-        };
-        presence_service::handle_value_change(app_handle, state, &key, &[subkey], &value);
-        // Mutual Aid (architecture §14.3): we hold a watch slot for this
-        // record, so gossip-relay the notification to community peers
-        // who may not — the receivers fetch the new value themselves
-        // via `get_dht_value` (no ciphertext crosses gossip).
-        relay_watch_change(state, &key, subkey, &value);
-    }
-}
-
-async fn try_handle_dm_change(
-    state: &Arc<AppState>,
-    pool: &rekindle_db::Db,
-    record_key: &str,
-    subkeys: &[u32],
-    record_pool: Option<&rekindle_protocol::dht::pool::RecordPool>,
-) -> bool {
-    use crate::db_helpers::db_call_or_default;
-    use crate::state_helpers;
-
-    let owner_key = state_helpers::owner_key_or_default(state);
-    if owner_key.is_empty() {
-        return false;
-    }
-    let owner = owner_key;
-    let record = record_key.to_string();
-    let exists: bool = db_call_or_default(pool, move |conn| {
-        Ok(conn
-            .query_row(
-                "SELECT 1 FROM dms WHERE owner_key = ?1 AND record_key = ?2 LIMIT 1",
-                rusqlite::params![owner, record],
-                |_| Ok(()),
-            )
-            .is_ok())
-    })
-    .await;
-    if !exists {
-        return false;
-    }
-
-    let Some(record_pool) = record_pool else {
-        return true;
-    };
-    let Ok(parsed) = record_key.parse::<veilid_core::RecordKey>() else {
-        return true;
-    };
-    for &subkey in subkeys {
-        if let Ok(Some(value)) = record_pool.read_once(&parsed, subkey, true).await {
-            if let Err(e) = crate::services::dm::handle_dm_subkey_change(
-                state,
-                pool,
-                record_key,
-                subkey,
-                value.data(),
-            )
+    // An invite's inbox, a friend's participant record or a friend's
+    // profile: the Host reads every changed subkey (plan E2.5).
+    if let Some(host) = state.host.current() {
+        if host
+            .friend_presence()
+            .on_watched_change(&key, &subkeys, inline_value.as_deref())
             .await
-            {
-                tracing::debug!(record_key, subkey, error = %e, "dm subkey handler dropped");
-            }
+        {
+            return;
         }
     }
-    true
+
+    // The carried value relays at once; then every hinted subkey, that one
+    // too, is read from the network, which clears Veilid's report mark so
+    // its next change is reported even in a coalesced push (the
+    // `ValueChange` contract, plan VU3).
+    let inline = first_subkey.zip(inline_value);
+    if let Some((subkey, value)) = &inline {
+        relay_watch_change(state, &key, *subkey, value);
+    }
+    let Some(record_pool) = record_pool else {
+        tracing::debug!(key = %key, "no record pool to read the hinted subkeys");
+        return;
+    };
+    let lease = match record_pool
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Check)
+        .await
+    {
+        Ok(lease) => lease,
+        Err(e) => {
+            tracing::warn!(key = %key, error = %e, "hinted record not opened");
+            return;
+        }
+    };
+    let read = record_pool.read_hinted(lease, &subkeys).await;
+    record_pool.release(lease).await;
+    match read {
+        Ok(values) => {
+            for (subkey, value) in values {
+                if inline
+                    .as_ref()
+                    .is_some_and(|(s, v)| *s == subkey && *v == value.data)
+                {
+                    continue;
+                }
+                // Mutual Aid (architecture §14.3): we hold a watch slot for
+                // this record, so gossip-relay the notification to community
+                // peers who may not; the receivers fetch the new value
+                // themselves via `get_dht_value` (no ciphertext crosses
+                // gossip).
+                relay_watch_change(state, &key, subkey, &value.data);
+            }
+        }
+        Err(e) => tracing::warn!(key = %key, error = %e, "hinted subkeys not read"),
+    }
 }
 
 fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, value: &[u8]) {
@@ -182,18 +142,14 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
 
     let community_id_and_pseudonym = {
         let communities = state.communities.read();
+        // The anchor is never watched (`watch_community_records`): it is
+        // immutable, so no change of it reaches here.
         communities.values().find_map(|cs| {
-            let matched = cs.governance_key.as_deref() == Some(record_key)
-                || cs.member_registry_key.as_deref() == Some(record_key)
-                || cs.channel_log_keys.values().any(|k| k == record_key)
+            let matched = cs.member_registry_key.as_deref() == Some(record_key)
                 || cs.governance_state.as_ref().is_some_and(|gov| {
                     gov.segments
                         .iter()
-                        .any(|s| s.governance_key == record_key || s.registry_key == record_key)
-                        || gov
-                            .channel_segment_records
-                            .values()
-                            .any(|csr| csr.record_key == record_key)
+                        .any(|s| s.anchor == record_key || s.registry_key == record_key)
                 });
             matched.then(|| {
                 (
@@ -215,8 +171,9 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
         content_hash: blake3::hash(value).to_hex().to_string(),
         observer_pseudonym: observer,
     };
-    if let Err(e) =
-        crate::services::community::gossip::send_to_mesh(state, &community_id, &envelope)
+    if let Err(e) = crate::state_helpers::host_governance(state)
+        .map(|host| host.send_to_mesh_impl(&community_id, &envelope))
+        .map_err(|e| e.to_string())
     {
         tracing::debug!(community = %community_id, error = %e, "watch relay gossip failed");
     }

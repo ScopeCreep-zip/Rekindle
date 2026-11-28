@@ -56,66 +56,27 @@ impl RekindleNode {
     /// 3. Create a `RoutingContext` for DHT / messaging
     /// 4. Return the node together with a `VeilidUpdate` receiver
     pub async fn start(config: NodeConfig) -> Result<Self, ProtocolError> {
-        info!(
-            namespace = %config.app_namespace,
-            "starting rekindle node"
-        );
-
-        // 1. Build VeilidConfig via the shared builder — the single
-        // translation of tuning knobs into `VeilidConfig` for both
-        // node-startup tracks. Knob rationale (UPnP history, route-hop
-        // policy, ProtectedStore workaround) lives on
-        // `VeilidStartupOptions` and in `crate::veilid_config`.
-        let veilid_config = build_veilid_config(
-            &config.app_namespace,
-            &config.qualifier,
-            &config.storage_dir,
-            &config.veilid,
-        );
-
-        // 2. Create an mpsc channel for VeilidUpdate events
-        let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
-
-        // 3. Build the update callback that forwards events into the channel
-        let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {
-            // Non-blocking send — if the channel is full we drop the event
-            // rather than blocking the Veilid core thread.
-            if let Err(e) = update_tx.try_send(update) {
-                let dropped = match &e {
-                    mpsc::error::TrySendError::Full(u) | mpsc::error::TrySendError::Closed(u) => u,
-                };
-                // During shutdown Veilid emits many "Other" events which are
-                // safe to drop — log those at debug, everything else at warn.
-                if veilid_update_name(dropped) == "Other" {
-                    tracing::debug!(
-                        event = "Other",
-                        "Veilid update channel full — dropped non-critical event"
-                    );
-                } else {
-                    tracing::warn!(
-                        event = veilid_update_name(dropped),
-                        "Veilid update channel full — dropped event"
-                    );
+        let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(UPDATE_QUEUE);
+        let api = startup(
+            &config,
+            Arc::new(move |update| {
+                // Non-blocking send: a full channel drops the event rather
+                // than block the Veilid core thread.
+                if let Err(e) = update_tx.try_send(update) {
+                    let dropped = match &e {
+                        mpsc::error::TrySendError::Full(u)
+                        | mpsc::error::TrySendError::Closed(u) => u,
+                    };
+                    log_dropped(veilid_update_name(dropped));
                 }
-            }
-        });
+            }),
+        )
+        .await?;
 
-        // 4. Start the Veilid core
-        let api = veilid_core::api_startup(update_callback, veilid_config)
-            .await
-            .map_err(|e| ProtocolError::NodeStartup(e.to_string()))?;
-
-        // 5. Attach to the P2P network
-        api.attach()
-            .await
-            .map_err(|e| ProtocolError::AttachFailed(e.to_string()))?;
-
-        // 6. Obtain a default RoutingContext (safety routing enabled)
+        // A default RoutingContext (safety routing enabled).
         let routing_context = api
             .routing_context()
             .map_err(|e| ProtocolError::NodeStartup(format!("routing context: {e}")))?;
-
-        info!("rekindle node started and attached");
 
         Ok(Self {
             config,
@@ -159,6 +120,51 @@ impl RekindleNode {
     pub fn take_update_receiver(&mut self) -> mpsc::Receiver<VeilidUpdate> {
         let (_, dummy_rx) = mpsc::channel(1);
         std::mem::replace(&mut self.update_rx, dummy_rx)
+    }
+}
+
+/// How many updates wait for the dispatch loop before new ones drop.
+pub(crate) const UPDATE_QUEUE: usize = 4096;
+
+/// Start the Veilid core with `callback` and attach: the one Veilid startup
+/// of every host (`RekindleNode::start` for the desktop's own dispatch,
+/// `ports::VeilidPorts::start` for the transport's). The callback must not
+/// block the core thread.
+pub(crate) async fn startup(
+    config: &NodeConfig,
+    callback: veilid_core::UpdateCallback,
+) -> Result<VeilidAPI, ProtocolError> {
+    info!(namespace = %config.app_namespace, "starting rekindle node");
+    // The shared builder is the single translation of tuning knobs into
+    // `VeilidConfig`; knob rationale (UPnP history, route-hop policy,
+    // ProtectedStore workaround) lives on `VeilidStartupOptions` and in
+    // `crate::veilid_config`.
+    let veilid_config = build_veilid_config(
+        &config.app_namespace,
+        &config.qualifier,
+        &config.storage_dir,
+        &config.veilid,
+    );
+    let api = veilid_core::api_startup(callback, veilid_config)
+        .await
+        .map_err(|e| ProtocolError::NodeStartup(e.to_string()))?;
+    api.attach()
+        .await
+        .map_err(|e| ProtocolError::AttachFailed(e.to_string()))?;
+    info!("rekindle node started and attached");
+    Ok(api)
+}
+
+/// Log an update the full channel dropped. During shutdown Veilid emits
+/// many "Other" events, which are safe to drop, so those log at debug.
+pub(crate) fn log_dropped(label: &str) {
+    if label == "Other" {
+        tracing::debug!(
+            event = label,
+            "Veilid update channel full — dropped non-critical event"
+        );
+    } else {
+        tracing::warn!(event = label, "Veilid update channel full — dropped event");
     }
 }
 

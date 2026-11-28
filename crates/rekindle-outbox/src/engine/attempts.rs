@@ -1,0 +1,305 @@
+//! Stream attempts off the pump (plan E2.5j). Each stream's run of due rows
+//! is attempted as a future of its own: [`Outbox::run`]'s pump polls the
+//! running ones beside its timer and its wake, so one stream's unanswered
+//! call (a `friend_handshake` `app_call` to a peer whose replies are lost)
+//! never holds another stream's send, and an enqueue's wake starts a pass
+//! at once. A stream has at most one attempt running: a pass skips a
+//! stream already in flight, so the rows of one stream are still attempted
+//! in `stream_seq` order and [`crate::holds_back`] still stops only the
+//! rows behind a stalled head of that stream. A finished attempt settles
+//! its rows (`Outbox::settle_attempt`, the appender hand-off unchanged),
+//! releases its stream and wakes the pump.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use futures::future::join_all;
+use parking_lot::Mutex;
+
+use rekindle_types::message::SendState;
+
+use super::{Outbox, DEADLINE_REASON, KEY_DID_NOT_ARRIVE};
+use crate::deps::{AttemptOutcome, OutboxDeps, OutboxError, OutboxRow, RowUpdate};
+use crate::stream::StreamKind;
+
+/// The streams with an attempt running.
+#[derive(Default)]
+pub(crate) struct Attempting(Mutex<BTreeSet<String>>);
+
+impl Attempting {
+    pub(crate) fn streams(&self) -> BTreeSet<String> {
+        self.0.lock().clone()
+    }
+
+    fn release(&self, stream: &str) {
+        self.0.lock().remove(stream);
+    }
+}
+
+/// One stream's due rows, claimed, in `stream_seq` order. Its stream is
+/// released when the run ends or is cut off (the pump's scope ended).
+pub(crate) struct Run<'a> {
+    stream: String,
+    rows: Vec<OutboxRow>,
+    attempting: &'a Attempting,
+}
+
+impl Drop for Run<'_> {
+    fn drop(&mut self) {
+        self.attempting.release(&self.stream);
+    }
+}
+
+impl<D: OutboxDeps> Outbox<D> {
+    /// Claim the rows due at `at` (of `kind` only, when given), selected
+    /// under the appenders' gate, as one run per stream not already in
+    /// flight.
+    pub(crate) async fn claim_due(
+        &self,
+        at: i64,
+        kind: Option<StreamKind>,
+    ) -> Result<Vec<Run<'_>>, OutboxError> {
+        let _gate = self.appends.gate.lock().await;
+        let mut due = self.deps.due(at).await?;
+        due.retain(|row| kind.is_none_or(|k| row.kind == k));
+        let mut streams: BTreeMap<String, Vec<OutboxRow>> = BTreeMap::new();
+        for row in self.select_due(due, self.now()).await? {
+            streams.entry(row.stream.clone()).or_default().push(row);
+        }
+        let mut claimed = self.attempting.0.lock();
+        Ok(streams
+            .into_iter()
+            .filter(|(stream, _)| claimed.insert(stream.clone()))
+            .map(|(stream, mut rows)| {
+                rows.sort_by_key(|row| row.stream_seq);
+                Run {
+                    stream,
+                    rows,
+                    attempting: &self.attempting,
+                }
+            })
+            .collect())
+    }
+
+    /// Attempt the rows due at `at` (of `kind` only, when given), each
+    /// stream's run on its own, and wait for every run; how many rows.
+    pub(crate) async fn attempt_due(
+        &self,
+        at: i64,
+        kind: Option<StreamKind>,
+    ) -> Result<usize, OutboxError> {
+        let runs = self.claim_due(at, kind).await?;
+        let attempted = runs.iter().map(|run| run.rows.len()).sum();
+        for result in join_all(runs.into_iter().map(|run| self.attempt_run(run))).await {
+            result?;
+        }
+        Ok(attempted)
+    }
+
+    /// Attempt `run`: its rows go to the host together, in `stream_seq`
+    /// order, so a send that carries several (the `dm` chain's page) makes
+    /// one write for them (E2.B F2); its chain appends go to its stream's
+    /// appender, together. Then its stream is released and the pump woken.
+    pub(crate) async fn attempt_run(&self, run: Run<'_>) -> Result<(), OutboxError> {
+        // A prefix: the rows past the first that stayed behind were not
+        // attempted and keep their schedule.
+        let outcomes = self.deps.attempt_stream(&run.rows).await;
+        // Read once the hints left: a cold route fetch or a run of hints
+        // inside the attempt must not shrink the ack's window.
+        let sent_at = self.now();
+        let mut jobs = Vec::new();
+        let mut calls = Vec::new();
+        for (row, outcome) in run.rows.iter().zip(outcomes) {
+            // Each attempt's outcome, by stream kind only (no identifier
+            // leaves through a log, B19): what a scenario's `RUST_LOG`
+            // shows of a row retried until it lands.
+            tracing::debug!(
+                stream = row.stream.split(':').next().unwrap_or_default(),
+                attempts = row.attempts,
+                outcome = outcome_label(&outcome),
+                "outbox attempt"
+            );
+            if let AttemptOutcome::Appending(frame) = outcome {
+                self.hand_off(row).await?;
+                // Its append is still running past its deadline: the
+                // attempt resent the hint, and no second append starts.
+                if self.appends.in_flight(&row.client_id) {
+                    continue;
+                }
+                jobs.push(crate::appender::Job {
+                    row: row.clone(),
+                    frame,
+                    sent_at,
+                });
+                continue;
+            }
+            // The appender's own design (its module doc): the call runs
+            // there and the pass returns without awaiting it, so the
+            // stream's later rows are attempted meanwhile; its answer
+            // settles the row. One call per row is in flight.
+            if let AttemptOutcome::Calling(frame) = outcome {
+                self.hand_off_call(row).await?;
+                if !self.appends.in_flight(&row.client_id) {
+                    calls.push(crate::appender::Job {
+                        row: row.clone(),
+                        frame,
+                        sent_at,
+                    });
+                }
+                continue;
+            }
+            self.settle_attempt(row, outcome, sent_at).await?;
+        }
+        self.appends.hand(jobs, sent_at);
+        self.appends.call(calls, sent_at);
+        drop(run);
+        self.wake();
+        Ok(())
+    }
+
+    /// Fail the rows past their deadline at `now` (a post that waited for
+    /// its key with [`KEY_DID_NOT_ARRIVE`]), but a stream's whose
+    /// attempt is running: its rows fail on the pass its end wakes, so an
+    /// attempt never settles a row failed under it.
+    pub(crate) async fn expire(&self, now: i64) -> Result<(), OutboxError> {
+        let attempting = self.attempting.streams();
+        for row in self.deps.expired(now).await? {
+            if !attempting.contains(&row.stream) {
+                let reason = if row.state == SendState::AwaitingKey {
+                    KEY_DID_NOT_ARRIVE
+                } else {
+                    DEADLINE_REASON
+                };
+                self.fail(&row, reason.to_owned()).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// When the next pass is due (ms), `None` when nothing waits. The
+    /// store's `next_wake` cannot see the streams in flight: a row of one
+    /// that is due now would wake a pass that skips it, over and over, so
+    /// while it is past due the wake is read again without those streams,
+    /// and only from rows the store's `due` gives now (lead decision 51).
+    pub(crate) async fn pass_wake(&self) -> Result<Option<i64>, OutboxError> {
+        let attempting = self.attempting.streams();
+        let stored = match self.deps.next_wake().await? {
+            Some(at) if at <= self.now() => self.wake_past(&attempting).await?,
+            stored => stored,
+        };
+        let busy = self.busy_wake().await?;
+        Ok(stored.into_iter().chain(busy).min())
+    }
+
+    /// The earliest time a row of a stream neither in `attempting` nor in
+    /// an appender is due (by `due`'s rule: a row waits for every `queued`
+    /// row ahead of it in its stream), or a row out of `attempting`
+    /// reaches its deadline.
+    async fn wake_past(&self, attempting: &BTreeSet<String>) -> Result<Option<i64>, OutboxError> {
+        let appending = self.appends.walked();
+        let skip =
+            |row: &OutboxRow| attempting.contains(&row.stream) || appending.contains(&row.stream);
+        let mut streams: BTreeMap<String, Vec<OutboxRow>> = BTreeMap::new();
+        for row in self.deps.due(i64::MAX).await? {
+            if !skip(&row) {
+                streams.entry(row.stream.clone()).or_default().push(row);
+            }
+        }
+        let mut candidates = Vec::new();
+        for mut rows in streams.into_values() {
+            rows.sort_by_key(|row| row.stream_seq);
+            let mut ahead = i64::MIN;
+            for row in rows {
+                candidates.push((row.next_at.max(ahead), row.kind, row.client_id.clone()));
+                if row.kind.ordered() && row.state == rekindle_types::message::SendState::Queued {
+                    ahead = ahead.max(row.next_at);
+                }
+            }
+        }
+        let wake = self.honoured(candidates).await?;
+        let ends = self.deps.expired(i64::MAX).await?;
+        let ends = ends
+            .iter()
+            .filter(|row| !attempting.contains(&row.stream))
+            .map(|row| row.deadline);
+        Ok(wake.into_iter().chain(ends).min())
+    }
+}
+
+impl<D: OutboxDeps> Outbox<D> {
+    /// `row`'s call is handed off ([`AttemptOutcome::Calling`]): a `queued`
+    /// row is scheduled as an append's hand-off is ([`Self::hand_off`]);
+    /// one already `sent` (a `StreamRecord` called again until the peer's
+    /// ack) moves to its next re-ask, so a pass never spins on it while the
+    /// call is in flight. Its state is left as it is: only the call's
+    /// answer moves it.
+    pub(crate) async fn hand_off_call(&self, row: &OutboxRow) -> Result<(), OutboxError> {
+        if row.state == SendState::Queued {
+            return self.hand_off(row).await;
+        }
+        let attempts = row.attempts.saturating_add(1);
+        let update = RowUpdate {
+            state: row.state,
+            attempts,
+            next_at: self.next_after(row, row.state, attempts, self.now()),
+            deadline: row.deadline,
+            wedge_reason: None,
+            retry: false,
+        };
+        self.deps.update(&row.client_id, &update).await.map(|_| ())
+    }
+
+    /// The earliest of `candidates` (when, kind, client id) that a pass
+    /// would attempt: one past due counts only if the store's `due` gives
+    /// it now. One it withholds would wake a pass that claims nothing, over
+    /// and over (HOL1e: the store and [`StreamKind::ordered`] disagreed), so
+    /// it is reported once and left to the event that frees it.
+    async fn honoured(
+        &self,
+        candidates: Vec<(i64, StreamKind, String)>,
+    ) -> Result<Option<i64>, OutboxError> {
+        let now = self.now();
+        let mut due_now: Option<BTreeSet<String>> = None;
+        let mut wake: Option<i64> = None;
+        for (at, kind, client_id) in candidates {
+            if at <= now {
+                if due_now.is_none() {
+                    let rows = self.deps.due(now).await?;
+                    due_now = Some(rows.into_iter().map(|row| row.client_id).collect());
+                }
+                if !due_now.as_ref().is_some_and(|due| due.contains(&client_id)) {
+                    self.report_unhonoured(kind);
+                    continue;
+                }
+            }
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        Ok(wake)
+    }
+
+    /// Log, once per outbox, a past-due wake the store withholds (by
+    /// stream kind only: no identifier leaves through a log, B19).
+    fn report_unhonoured(&self, kind: StreamKind) {
+        use std::sync::atomic::Ordering;
+        if !self.unhonoured_wake.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                stream = kind.as_str(),
+                "outbox wake past due for a row the store's due withholds: not looped on"
+            );
+        }
+    }
+}
+
+/// An attempt outcome's name for a log line, without its payload.
+fn outcome_label(outcome: &AttemptOutcome) -> &'static str {
+    match outcome {
+        AttemptOutcome::Appending(_) => "appending",
+        AttemptOutcome::Calling(_) => "calling",
+        AttemptOutcome::Sent => "sent",
+        AttemptOutcome::Awaiting => "awaiting",
+        AttemptOutcome::Receipted => "receipted",
+        AttemptOutcome::Unanswered => "unanswered",
+        AttemptOutcome::Deferred => "deferred",
+        AttemptOutcome::Wedged(_) => "wedged",
+        AttemptOutcome::Superseded(_) => "superseded",
+    }
+}

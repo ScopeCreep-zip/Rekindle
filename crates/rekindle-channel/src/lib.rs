@@ -15,12 +15,20 @@
 #![forbid(unsafe_code)]
 
 pub mod automod;
+pub mod awaiting_key;
+pub mod changes;
 pub mod deps;
 pub mod error;
 pub mod event;
 pub mod expressions;
+pub mod held;
+pub mod history;
+pub mod ingest;
 pub mod mentions;
 pub mod notifications;
+pub mod outbox_chain;
+pub mod outbox_seal;
+pub mod outbox_send;
 pub mod pipeline;
 pub mod polls;
 pub mod reactions;
@@ -31,20 +39,20 @@ mod text_keys;
 pub mod threads;
 
 pub use automod::{
-    evaluate_message as evaluate_automod, get_rule as get_automod_rule,
-    list_rules as list_automod_rules, AutoModAction, AutoModCompiledCache, AutoModRuleInfo,
-    CompiledAutoModRule,
+    compiled_rules as compiled_automod_rules, get_rule as get_automod_rule,
+    list_rules as list_automod_rules, AutoModCompiledCache, AutoModRuleInfo, CompiledAutoModRule,
 };
 pub use deps::{ChannelInfoSnapshot, ChannelMessagingDeps, ChannelSendOutcome};
 pub use error::ChannelError;
 pub use event::ChannelEvent;
 pub use expressions::{
-    delete_expression, detect_audio_kind, detect_image_media_type, list_expressions,
-    normalize_tags, play_soundboard, upload_emoji, upload_soundboard_sound, upload_sticker,
-    validate_emoji_bytes, validate_expression_name, validate_soundboard_bytes,
-    validate_sticker_bytes, UploadSoundboardSoundParams, MAX_ANIMATED_EMOJI_BYTES,
-    MAX_ANIMATED_EMOJI_COUNT, MAX_SOUNDBOARD_BYTES, MAX_SOUNDBOARD_COUNT, MAX_STATIC_EMOJI_BYTES,
-    MAX_STATIC_EMOJI_COUNT, MAX_STICKER_BYTES, MAX_STICKER_COUNT,
+    delete_expression, detect_audio_kind, list_expressions, normalize_tags, play_soundboard,
+    prepare_upload, published_media_type, upload_emoji, upload_soundboard_sound, upload_sticker,
+    validate_expression_name, validate_soundboard_bytes, ExpressionPicture, PreparedPicture,
+    UploadSoundboardSoundParams, EMOJI_MAX_SIDE, MAX_ANIMATED_EMOJI_BYTES,
+    MAX_ANIMATED_EMOJI_COUNT, MAX_EXPRESSION_FRAMES, MAX_SOUNDBOARD_BYTES, MAX_SOUNDBOARD_COUNT,
+    MAX_STATIC_EMOJI_BYTES, MAX_STATIC_EMOJI_COUNT, MAX_STICKER_BYTES, MAX_STICKER_COUNT,
+    STICKER_MAX_SIDE,
 };
 pub use mentions::{
     has_perm, local_member_is_mentioned, matches_from_cleartext, parse_mentions,
@@ -52,15 +60,15 @@ pub use mentions::{
     MentionMatches,
 };
 pub use notifications::{
-    blake3_hex as notification_content_hash, parse_notification_level, verify_message_content_hash,
-    NotificationDecision, NotificationLevel, NotificationThrottle,
+    parse_notification_level, NotificationDecision, NotificationLevel, NotificationThrottle,
 };
 pub use pipeline::{
-    enforce_slowmode_with_bypass, forward_channel_message, on_write_settled, send_channel_message,
-    ChannelSendResult, ForwardChannelMessageParams,
+    enforce_slowmode_with_bypass, forward_channel_message, send_channel_message, ChannelSendResult,
+    ForwardChannelMessageParams,
 };
 pub use polls::{
-    get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote, PollSnapshot,
+    get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote, poll_id_of,
+    validate_poll_create, PollSnapshot,
 };
 pub use reactions::{build_reaction, build_reaction_envelope, persist_reaction};
 pub use receive::{extract_mention_signals, MentionSignals};
@@ -71,6 +79,7 @@ pub use send::{
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use threads::{
     archive_thread, create_thread, default_auto_archive_seconds, is_thread_archived,
-    list_active_threads, list_threads, load_thread_messages, send_thread_message,
-    validate_auto_archive_seconds, ThreadMessageView,
+    is_thread_reply_id, list_active_threads, list_threads, load_thread_messages,
+    prepare_forum_post, send_prepared_reply, send_thread_message, unarchive_thread,
+    validate_auto_archive_seconds, ForumPost, ThreadMessageView, ThreadReplySent,
 };

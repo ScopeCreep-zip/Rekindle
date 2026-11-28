@@ -6,7 +6,6 @@
 //! `spawn_voice_loops`). Each is a free fn taking explicit
 //! references so the deps_impl method bodies stay short.
 
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -60,20 +59,36 @@ pub(super) fn init_voice_session_impl(
     let engine = rekindle_voice::VoiceEngine::new(config)
         .map_err(|e| VoiceError::Session(format!("failed to create voice engine: {e}")))?;
 
-    // First install the engine handle on AppState so
-    // start_audio_devices + create_transport (both AppState-coupled)
-    // can find it.
+    // Build the session transport with full signing-key + AEAD wiring
+    // (Veilid routing context init, ed25519 signing key for
+    // packet signatures, call_key for 1:1 AEAD). The sender_key we
+    // stamp on packets must be our voice self-identity (the community
+    // pseudonym, or owner key for 1:1) so it matches the signing key
+    // installed below and remote peers can verify our signature.
+    let self_voice_id = state_helpers::voice_self_identity(state, community_id);
+    if self_voice_id.is_empty() {
+        return Err(VoiceError::IdentityNotLoaded);
+    }
+    let (transport, egress) = create_transport_impl(
+        state,
+        &self_voice_id,
+        channel_id,
+        community_id,
+        peer_route_blob,
+    );
+    let media = transport.media();
+    let session_state = transport.session_state();
+    let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
+
     *state.voice_engine.lock() = Some(VoiceEngineHandle {
         engine,
-        // Placeholder transport — overwritten below once we've
-        // built the real one with signing key + AEAD installed.
-        transport: Arc::new(tokio::sync::Mutex::new(
-            rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
-        )),
-        media: Arc::default(),
+        transport: Arc::clone(&shared_transport),
+        session_state,
+        media,
         loops: None,
         monitor: None,
         mcu: None,
+        egress,
         channel_id: channel_id.to_string(),
         community_id: community_id.map(String::from),
         muted_flag: Arc::clone(&muted_flag),
@@ -109,35 +124,6 @@ pub(super) fn init_voice_session_impl(
         }
     }
 
-    // Build the real transport with full signing-key + AEAD wiring
-    // (Veilid routing context init, ed25519 signing key for
-    // packet signatures, call_key for 1:1 AEAD). The sender_key we
-    // stamp on packets must be our voice self-identity (the community
-    // pseudonym, or owner key for 1:1) so it matches the signing key
-    // installed below and remote peers can verify our signature.
-    let self_voice_id = state_helpers::voice_self_identity(state, community_id);
-    if self_voice_id.is_empty() {
-        return Err(VoiceError::IdentityNotLoaded);
-    }
-    let transport = create_transport_impl(
-        state,
-        &self_voice_id,
-        channel_id,
-        community_id,
-        peer_route_blob,
-    );
-    let media = transport.media();
-    let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
-
-    // Install the real transport on the handle (overwrite the placeholder).
-    {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.transport = Arc::clone(&shared_transport);
-            handle.media = media;
-        }
-    }
-
     Ok(VoiceSessionStartup {
         muted_flag,
         deafened_flag,
@@ -155,6 +141,7 @@ pub(super) fn take_loop_scopes_impl(state: &AppState, opts: VoiceShutdownOpts) -
             loops: None,
             monitor: None,
             mcu: None,
+            egress: None,
         };
     };
     VoiceLoopScopes {
@@ -173,19 +160,29 @@ pub(super) fn take_loop_scopes_impl(state: &AppState, opts: VoiceShutdownOpts) -
         } else {
             None
         },
+        // The transport lives as long as the engine: its drivers end
+        // with the session, not with a restart.
+        egress: if opts.stop_devices {
+            handle.egress.take()
+        } else {
+            None
+        },
     }
 }
 
 /// Build the shared VoiceTransport with full Veilid api init +
-/// signing key + (for 1:1) AEAD call_key install. Relocated verbatim
-/// from the deleted `services::voice::session::create_transport`.
+/// signing key + (for 1:1) AEAD call_key install, and the scope its
+/// egress drivers run in (`None` without a frame sender: no drivers).
 fn create_transport_impl(
     state: &Arc<AppState>,
     self_voice_id: &str,
     channel_id: &str,
     community_id: Option<&str>,
     resolved_peer_route: Option<&[u8]>,
-) -> rekindle_voice::transport::VoiceTransport {
+) -> (
+    rekindle_voice::transport::VoiceTransport,
+    Option<Arc<rekindle_lifecycle::SessionScope>>,
+) {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
     let api = state_helpers::veilid_api(state);
     let sender_key = hex::decode(self_voice_id).unwrap_or_default();
@@ -203,20 +200,21 @@ fn create_transport_impl(
         }
         _ => None,
     };
-    if let Some(sender) = sender {
-        // Each roster peer's egress driver runs here, ending with the
-        // login at the latest; leaving the call stops them one by one.
+    let egress = sender.map(|sender| {
+        // Each roster peer's egress driver runs here; the session's
+        // teardown shuts the scope down (`take_loop_scopes_impl`).
         let egress = state_helpers::login_scope_or_closed(state).child("voice media egress");
         if community_id.is_some() {
-            transport.init(sender, sender_key, egress);
+            transport.init(sender, sender_key, Arc::clone(&egress));
         } else if let Some(blob) = resolved_peer_route {
             // For a DM call the channel id *is* the peer's public key,
             // so the roster is keyed by the peer's real identity.
-            transport.connect(sender, blob, sender_key, channel_id, egress);
+            transport.connect(sender, blob, sender_key, channel_id, Arc::clone(&egress));
         } else {
-            transport.init(sender, sender_key, egress);
+            transport.init(sender, sender_key, Arc::clone(&egress));
         }
-    }
+        egress
+    });
 
     if let Some(cid) = community_id {
         if let Ok((_, signing_key)) = state_helpers::pseudonym_credentials(state, cid) {
@@ -226,7 +224,7 @@ fn create_transport_impl(
                 "voice transport: pseudonym credentials unavailable, packets cannot be signed");
         }
     } else {
-        let secret_bytes = *state.identity_secret.lock();
+        let secret_bytes = crate::state_helpers::identity_secret(state);
         if let Some(bytes) = secret_bytes {
             let signing_key = ed25519_dalek::SigningKey::from_bytes(&bytes);
             transport.set_signing_key(signing_key);
@@ -236,7 +234,7 @@ fn create_transport_impl(
         }
     }
 
-    transport
+    (transport, egress)
 }
 
 fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {
@@ -267,7 +265,6 @@ pub(super) fn spawn_voice_loops_impl(
     transport: &Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     muted_flag: &Arc<AtomicBool>,
     deafened_flag: &Arc<AtomicBool>,
-    member_names: HashMap<String, String>,
 ) -> Result<(), String> {
     use tokio::sync::{broadcast, mpsc};
 
@@ -338,7 +335,7 @@ pub(super) fn spawn_voice_loops_impl(
             .ok()
             .map(|(_, signing_key)| signing_key)
     } else {
-        let secret = *state.identity_secret.lock();
+        let secret = crate::state_helpers::identity_secret(state);
         secret.map(|bytes| ed25519_dalek::SigningKey::from_bytes(&bytes))
     };
     if report_signing_key.is_none() {
@@ -407,7 +404,6 @@ pub(super) fn spawn_voice_loops_impl(
         } else {
             Some(voice_channel_id)
         },
-        member_names,
         jitter_base_ms: bundle.jitter_base_ms,
         report_signing_key,
         media_liveness,

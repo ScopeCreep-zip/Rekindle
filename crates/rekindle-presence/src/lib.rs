@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod activity;
 pub mod community;
 pub mod deps;
 pub mod friend;
@@ -17,28 +18,27 @@ pub mod idle;
 pub mod poll_buckets;
 pub mod status;
 
+pub use activity::{favourite_added, friend_entries, joined_community, FriendActivitySnapshot};
 pub use community::{
-    compute_merged_roles, compute_profile_diff, compute_rebuild_plan, explain_route_for_peer,
-    gossip_degree, parse_and_classify_row, persist_discovered_registry_members, presence_poll_tick,
-    presence_poll_tick_public, random_peer_sample, role_ids_from_governance, route_for_peer,
-    run_initial_sync, start_presence_poll, steady_poll_duration, write_our_presence, ClassifiedRow,
-    DiscoveredRow, GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome,
-    MemberProfileSnapshot, PresenceWrite, ProfileDiffOutcome, RouteRefusal, MAX_SYNC_ATTEMPTS,
-    RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,
-    STEADY_TICK_INTERVAL_SECS, SUBKEYS_PER_SEGMENT,
+    compute_profile_diff, discovered_member_row, gossip_degree, parse_and_classify_row,
+    persist_discovered_registry_members, presence_poll_tick, presence_poll_tick_public,
+    presence_refresh, start_presence_poll, steady_poll_duration, write_our_presence, ClassifiedRow,
+    DiscoveredRow, MemberProfileSnapshot, PresenceWrite, ProfileDiffOutcome, RAPID_TICKS,
+    RAPID_TICK_INTERVAL_SECS, STALE_HEARTBEAT_SECS, STEADY_TICK_INTERVAL_SECS, SUBKEYS_PER_SEGMENT,
 };
 pub use deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, FriendPresenceDeps, FriendPresenceEvent,
     GameInfoSnapshot, OnlineMember, PresenceCredentials, PresenceError, RowWrite,
-    SegmentDescriptor, SelfPresenceSnapshot, SetFriendStatusOutcome, StatusPublisherDeps,
-    VoicePresenceRow,
+    SegmentDescriptor, SelfPresenceSnapshot, SessionPresence, SetFriendStatusOutcome,
+    StatusPublisherDeps, VoicePresenceRow,
 };
 pub use friend::{
-    handle_value_change, parse_status, parse_status_timestamp, publish_status, status_to_wire_byte,
-    watch_friend, FRIEND_WATCH_SUBKEYS, PROFILE_STATUS_SUBKEY, STALE_PRESENCE_THRESHOLD_MS,
+    handle_value_change, parse_status, parse_status_timestamp, publish_status,
+    read_sealed_presence, status_to_wire_byte, watch_friend, PresenceRead, FRIEND_WATCH_SUBKEYS,
+    PROFILE_STATUS_SUBKEY, STALE_PRESENCE_THRESHOLD_MS,
 };
-pub use friend_sync::{check_stale_friend_presences, sync_friends};
-pub use heartbeat::{run_status_publisher, HEARTBEAT_INTERVAL_SECS};
+pub use friend_sync::check_stale_friend_presences;
+pub use heartbeat::{hides_presence, run_status_publisher, HEARTBEAT_INTERVAL_SECS};
 pub use idle::{decide_status_after_idle, IDLE_THRESHOLD_MS};
 pub use poll_buckets::{is_member_stale, presence_poll_interval_ms, STALE_MEMBER_TTL_MS};
 pub use status::{UserStatusKind, INVISIBLE_WIRE_VALUE};

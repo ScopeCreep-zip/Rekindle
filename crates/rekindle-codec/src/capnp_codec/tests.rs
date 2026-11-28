@@ -1,46 +1,8 @@
-use super::{account, conversation, friend, identity, message, presence, voice};
-
-#[test]
-fn round_trip_message_envelope() {
-    use crate::message::envelope::MessageEnvelope;
-
-    let env = MessageEnvelope {
-        sender_key: vec![1u8; 32],
-        timestamp: 1_234_567_890,
-        nonce: vec![42u8; 16],
-        payload: b"encrypted content".to_vec(),
-        signature: vec![99u8; 64],
-    };
-
-    let encoded = message::encode_envelope(&env);
-    let decoded = message::decode_envelope(&encoded).unwrap();
-
-    assert_eq!(env.sender_key, decoded.sender_key);
-    assert_eq!(env.timestamp, decoded.timestamp);
-    assert_eq!(env.nonce, decoded.nonce);
-    assert_eq!(env.payload, decoded.payload);
-    assert_eq!(env.signature, decoded.signature);
-}
-
-#[test]
-fn round_trip_chat_message() {
-    let (body, reply) = message::decode_chat_message(&message::encode_chat_message(
-        "hello world",
-        Some(&[1, 2, 3]),
-    ))
-    .unwrap();
-    assert_eq!(body, "hello world");
-    assert_eq!(reply, Some(vec![1, 2, 3]));
-
-    let (body2, reply2) =
-        message::decode_chat_message(&message::encode_chat_message("no reply", None)).unwrap();
-    assert_eq!(body2, "no reply");
-    assert_eq!(reply2, None);
-}
+use super::{account, friend, identity, presence, voice};
 
 #[test]
 fn round_trip_presence_update() {
-    use crate::message::envelope::GameInfo;
+    use super::presence::GameInfo;
 
     let game = GameInfo {
         game_id: 42,
@@ -50,8 +12,8 @@ fn round_trip_presence_update() {
         server_address: Some("192.168.1.1:27015".to_string()),
     };
 
-    let encoded = presence::encode_update(1, Some(&game));
-    let (status, game_opt) = presence::decode_update(&encoded).unwrap();
+    let encoded = presence::encode_update(1, Some(&game), 1_700_000_000_000);
+    let (status, game_opt) = presence::decode_update(&encoded.unwrap()).unwrap();
     assert_eq!(status, 1);
     let g = game_opt.unwrap();
     assert_eq!(g.game_id, 42);
@@ -64,90 +26,10 @@ fn round_trip_presence_update() {
     assert_eq!(g.server_address, Some("192.168.1.1:27015".to_string()));
 
     // Without game
-    let encoded2 = presence::encode_update(3, None);
-    let (status2, game2) = presence::decode_update(&encoded2).unwrap();
+    let encoded2 = presence::encode_update(3, None, 1_700_000_000_000);
+    let (status2, game2) = presence::decode_update(&encoded2.unwrap()).unwrap();
     assert_eq!(status2, 3);
     assert!(game2.is_none());
-}
-
-#[test]
-fn round_trip_user_profile() {
-    use crate::message::envelope::GameInfo;
-
-    let profile = identity::UserProfile {
-        display_name: "xXGamerXx".to_string(),
-        status_message: "Playing games".to_string(),
-        status: 0,
-        avatar_hash: vec![0xDE, 0xAD],
-        game_status: Some(GameInfo {
-            game_id: 1,
-            game_name: "Halo".to_string(),
-            server_info: None,
-            elapsed_seconds: 120,
-            server_address: None,
-        }),
-    };
-
-    let encoded = identity::encode_profile(&profile);
-    let decoded = identity::decode_profile(&encoded).unwrap();
-
-    assert_eq!(decoded.display_name, "xXGamerXx");
-    assert_eq!(decoded.status_message, "Playing games");
-    assert_eq!(decoded.status, 0);
-    assert_eq!(decoded.avatar_hash, vec![0xDE, 0xAD]);
-    let g = decoded.game_status.unwrap();
-    assert_eq!(g.game_name, "Halo");
-    assert_eq!(g.elapsed_seconds, 120);
-}
-
-#[test]
-fn round_trip_prekey_bundle() {
-    let bundle = identity::PreKeyBundle {
-        identity_key: vec![1u8; 32],
-        signed_pre_key: vec![2u8; 32],
-        signed_pre_key_sig: vec![3u8; 64],
-        one_time_pre_key: vec![4u8; 32],
-        one_time_pre_key_id: 7,
-        registration_id: 12345,
-        pqpk_lr: vec![5u8; 1184],
-        pqpk_lr_sig: vec![6u8; 64],
-        pqpk_ot: vec![8u8; 1184],
-        pqpk_ot_sig: vec![9u8; 64],
-        pqpk_ot_id: 99,
-    };
-
-    let encoded = identity::encode_prekey_bundle(&bundle);
-    let decoded = identity::decode_prekey_bundle(&encoded).unwrap();
-
-    assert_eq!(decoded.identity_key, bundle.identity_key);
-    assert_eq!(decoded.signed_pre_key, bundle.signed_pre_key);
-    assert_eq!(decoded.signed_pre_key_sig, bundle.signed_pre_key_sig);
-    assert_eq!(decoded.one_time_pre_key, bundle.one_time_pre_key);
-    assert_eq!(decoded.one_time_pre_key_id, 7);
-    assert_eq!(decoded.registration_id, 12345);
-    assert_eq!(decoded.pqpk_lr, bundle.pqpk_lr);
-    assert_eq!(decoded.pqpk_lr_sig, bundle.pqpk_lr_sig);
-    assert_eq!(decoded.pqpk_ot, bundle.pqpk_ot);
-    assert_eq!(decoded.pqpk_ot_sig, bundle.pqpk_ot_sig);
-    assert_eq!(decoded.pqpk_ot_id, 99);
-}
-
-#[test]
-fn round_trip_friend_request() {
-    let req = friend::FriendRequest {
-        sender_key: vec![0xAA; 32],
-        display_name: "FriendlyUser".to_string(),
-        message: "Let's be friends!".to_string(),
-        prekey_bundle: vec![0xBB; 128],
-    };
-
-    let encoded = friend::encode_request(&req);
-    let decoded = friend::decode_request(&encoded).unwrap();
-
-    assert_eq!(decoded.sender_key, req.sender_key);
-    assert_eq!(decoded.display_name, "FriendlyUser");
-    assert_eq!(decoded.message, "Let's be friends!");
-    assert_eq!(decoded.prekey_bundle, req.prekey_bundle);
 }
 
 #[test]
@@ -161,7 +43,6 @@ fn round_trip_friend_list() {
             group: Some("Gaming".to_string()),
             added_at: 1000,
             profile_dht_key: Some("dht_key_1".to_string()),
-            dm_log_key: Some("VLD0:dmlog".to_string()),
         },
         FriendEntry {
             public_key: "def456".to_string(),
@@ -169,31 +50,25 @@ fn round_trip_friend_list() {
             group: None,
             added_at: 2000,
             profile_dht_key: None,
-            dm_log_key: None,
         },
     ];
 
     let encoded = friend::encode_friend_list(&entries);
-    let decoded = friend::decode_friend_list(&encoded).unwrap();
+    let decoded = friend::decode_friend_list(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].public_key, "abc123");
     assert_eq!(decoded[0].nickname, Some("Buddy".to_string()));
     assert_eq!(decoded[0].group, Some("Gaming".to_string()));
     assert_eq!(decoded[0].added_at, 1000);
-    // Both of these used to be dropped by the encoder: the schema had
-    // four fields while the struct had five, so `profile_dht_key` went
-    // out and came back `None` — and this test asserted that loss
-    // rather than catching it. `dm_log_key` existed only on the
-    // daemon's parallel copy of the struct.
+    // The encoder once dropped this: the schema had four fields while the
+    // struct had five, so `profile_dht_key` came back `None`.
     assert_eq!(decoded[0].profile_dht_key, Some("dht_key_1".to_string()));
-    assert_eq!(decoded[0].dm_log_key, Some("VLD0:dmlog".to_string()));
 
     assert_eq!(decoded[1].public_key, "def456");
     assert_eq!(decoded[1].nickname, None);
     assert_eq!(decoded[1].group, None);
     assert_eq!(decoded[1].profile_dht_key, None);
-    assert_eq!(decoded[1].dm_log_key, None);
 }
 
 #[test]
@@ -206,7 +81,7 @@ fn round_trip_voice_signaling() {
     };
 
     let encoded = voice::encode_signaling(&sig);
-    let decoded = voice::decode_signaling(&encoded).unwrap();
+    let decoded = voice::decode_signaling(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.signal_type, voice::SignalType::Offer);
     assert_eq!(decoded.channel_id, "voice-room-1");
@@ -216,7 +91,7 @@ fn round_trip_voice_signaling() {
 
 #[test]
 fn round_trip_game_status() {
-    use crate::message::envelope::GameInfo;
+    use super::presence::GameInfo;
 
     let info = GameInfo {
         game_id: 7,
@@ -227,7 +102,7 @@ fn round_trip_game_status() {
     };
 
     let encoded = presence::encode_game_status(&info);
-    let decoded = presence::decode_game_status(&encoded).unwrap();
+    let decoded = presence::decode_game_status(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.game_id, 7);
     assert_eq!(decoded.game_name, "Team Fortress 2");
@@ -250,7 +125,7 @@ fn round_trip_account_header() {
     };
 
     let encoded = account::encode_account_header(&header);
-    let decoded = account::decode_account_header(&encoded).unwrap();
+    let decoded = account::decode_account_header(&encoded.unwrap()).unwrap();
 
     assert_eq!(decoded.display_name, "xXGamerXx");
     assert_eq!(decoded.status_message, "Playing games");
@@ -274,107 +149,139 @@ fn account_header_without_avatar() {
         updated_at: 7,
     };
 
-    let decoded = account::decode_account_header(&account::encode_account_header(&header)).unwrap();
+    let decoded = account::decode_account_header(&account::encode_account_header(&header).unwrap()).unwrap();
 
     assert_eq!(decoded.display_name, "no_avatar");
     assert!(decoded.status_message.is_empty());
     assert!(decoded.avatar_hash.is_empty());
 }
 
+/// A head at its worst case: maximal ids, a full ML-KEM-768 key.
+fn full_head() -> identity::PrekeyRecordHead {
+    identity::PrekeyRecordHead {
+        spk_id: 0x7FFF_FFFF,
+        spk: [1; 32],
+        spk_sig: [2; 64],
+        pq_lr_id: 0x7FFF_FFFF,
+        pq_lr: vec![3; 1_184],
+        pq_lr_sig: [4; 64],
+        issued_at: i64::MAX,
+    }
+}
+
+/// A slot at its worst case.
+fn full_slot() -> identity::OpkSlot {
+    identity::OpkSlot {
+        opk_id: 0x7FFF_FFFF,
+        opk: [5; 32],
+        opk_sig: [6; 64],
+        pq_opk_id: 0x7FFF_FFFF,
+        pq_opk: vec![7; 1_184],
+        pq_opk_sig: [8; 64],
+    }
+}
+
 #[test]
-fn round_trip_conversation_header() {
-    use crate::message::envelope::GameInfo;
-
-    let header = conversation::ConversationHeader {
-        identity_public_key: vec![0xCC; 32],
-        profile: identity::UserProfile {
-            display_name: "Alice".to_string(),
-            status_message: "In a meeting".to_string(),
-            status: 2, // busy
-            avatar_hash: vec![0x01, 0x02],
-            game_status: Some(GameInfo {
-                game_id: 42,
-                game_name: "Portal 2".to_string(),
-                server_info: None,
-                elapsed_seconds: 600,
-                server_address: None,
-            }),
-        },
-        message_log_key: "VLD0:msglog123".to_string(),
-        route_blob: vec![0xDD; 64],
-        prekey_bundle: identity::PreKeyBundle {
-            identity_key: vec![1u8; 32],
-            signed_pre_key: vec![2u8; 32],
-            signed_pre_key_sig: vec![3u8; 64],
-            one_time_pre_key: vec![4u8; 32],
-            one_time_pre_key_id: 3,
-            registration_id: 42,
-            pqpk_lr: vec![5u8; 1184],
-            pqpk_lr_sig: vec![6u8; 64],
-            pqpk_ot: vec![7u8; 1184],
-            pqpk_ot_sig: vec![8u8; 64],
-            pqpk_ot_id: 11,
-        },
-        created_at: 5000,
-        updated_at: 6000,
+fn the_prekey_record_round_trips() {
+    let head = full_head();
+    assert_eq!(
+        identity::decode_prekey_head(&identity::encode_prekey_head(&head).unwrap()).unwrap(),
+        head
+    );
+    let slot = full_slot();
+    assert_eq!(
+        identity::decode_opk_slot(&identity::encode_opk_slot(&slot).unwrap()).unwrap(),
+        slot
+    );
+    let list = identity::PrekeyRecordList {
+        devices: vec![identity::PrekeyDevice {
+            device_id: [9; 16],
+            record_key: format!("VLD0:{}", "A".repeat(43)),
+        }],
     };
+    assert_eq!(
+        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&list).unwrap()).unwrap(),
+        list
+    );
+    let empty = identity::PrekeyRecordList::default();
+    assert_eq!(
+        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&empty).unwrap()).unwrap(),
+        empty
+    );
+}
 
-    let encoded = conversation::encode_conversation_header(&header);
-    let decoded = conversation::decode_conversation_header(&encoded).unwrap();
+/// Each subkey value fits the DFLT(101) record's per-subkey cap.
+#[test]
+fn every_prekey_record_value_fits_its_subkey() {
+    use rekindle_types::dht_layout::prekeys::MAX_SUBKEY_VALUE_LEN;
+    let head = identity::encode_prekey_head(&full_head()).unwrap().len();
+    let slot = identity::encode_opk_slot(&full_slot()).unwrap().len();
+    let list = identity::encode_prekey_record_list(&identity::PrekeyRecordList {
+        devices: vec![identity::PrekeyDevice {
+            device_id: [0xFF; 16],
+            record_key: format!("VLD0:{}", "A".repeat(43)),
+        }],
+    })
+    .unwrap().len();
+    for (what, len) in [("head", head), ("slot", slot), ("device list", list)] {
+        assert!(len <= MAX_SUBKEY_VALUE_LEN, "{what} {len} B");
+    }
+}
 
-    assert_eq!(decoded.identity_public_key, vec![0xCC; 32]);
-    assert_eq!(decoded.profile.display_name, "Alice");
-    assert_eq!(decoded.profile.status_message, "In a meeting");
-    assert_eq!(decoded.profile.status, 2);
-    assert_eq!(decoded.profile.avatar_hash, vec![0x01, 0x02]);
-    let g = decoded.profile.game_status.unwrap();
-    assert_eq!(g.game_name, "Portal 2");
-    assert_eq!(g.elapsed_seconds, 600);
-    assert_eq!(decoded.message_log_key, "VLD0:msglog123");
-    assert_eq!(decoded.route_blob, vec![0xDD; 64]);
-    // Full-struct comparison, not spot fields — this is exactly the test
-    // shape that let the embedded `PreKeyBundle` silently drop its 6
-    // PQXDH fields on every encode (two spot-checked fields kept
-    // passing while the other nine, unchecked, round-tripped as zeroed
-    // defaults).
-    assert_eq!(
-        decoded.prekey_bundle.identity_key,
-        header.prekey_bundle.identity_key
-    );
-    assert_eq!(
-        decoded.prekey_bundle.signed_pre_key,
-        header.prekey_bundle.signed_pre_key
-    );
-    assert_eq!(
-        decoded.prekey_bundle.signed_pre_key_sig,
-        header.prekey_bundle.signed_pre_key_sig
-    );
-    assert_eq!(
-        decoded.prekey_bundle.one_time_pre_key,
-        header.prekey_bundle.one_time_pre_key
-    );
-    assert_eq!(
-        decoded.prekey_bundle.one_time_pre_key_id,
-        header.prekey_bundle.one_time_pre_key_id
-    );
-    assert_eq!(
-        decoded.prekey_bundle.registration_id,
-        header.prekey_bundle.registration_id
-    );
-    assert_eq!(decoded.prekey_bundle.pqpk_lr, header.prekey_bundle.pqpk_lr);
-    assert_eq!(
-        decoded.prekey_bundle.pqpk_lr_sig,
-        header.prekey_bundle.pqpk_lr_sig
-    );
-    assert_eq!(decoded.prekey_bundle.pqpk_ot, header.prekey_bundle.pqpk_ot);
-    assert_eq!(
-        decoded.prekey_bundle.pqpk_ot_sig,
-        header.prekey_bundle.pqpk_ot_sig
-    );
-    assert_eq!(
-        decoded.prekey_bundle.pqpk_ot_id,
-        header.prekey_bundle.pqpk_ot_id
-    );
-    assert_eq!(decoded.created_at, 5000);
-    assert_eq!(decoded.updated_at, 6000);
+#[test]
+fn a_short_prekey_or_signature_is_refused() {
+    let mut builder = capnp::message::Builder::new_default();
+    {
+        let mut root = builder.init_root::<crate::identity_capnp::opk_slot::Builder<'_>>();
+        root.set_opk(&[1; 31]);
+        root.set_opk_sig(&[2; 64]);
+        root.set_pq_opk_sig(&[3; 64]);
+    }
+    assert!(identity::decode_opk_slot(&super::pack(&builder).unwrap()).is_err());
+    assert!(identity::decode_prekey_head(b"not a head").is_err());
+}
+
+/// Packed bytes of a chain of `depth` structs, each holding one pointer to
+/// the next, written as raw words (no schema nests this deep).
+fn nested_chain(depth: usize) -> Vec<u8> {
+    // A struct pointer at offset 0 with no data words and one pointer.
+    const NEXT: u64 = 1 << 48;
+    let words = depth + 1;
+    let mut raw = Vec::with_capacity(8 * (words + 1));
+    raw.extend_from_slice(&0u32.to_le_bytes());
+    raw.extend_from_slice(&u32::try_from(words).expect("small").to_le_bytes());
+    for _ in 0..depth {
+        raw.extend_from_slice(&NEXT.to_le_bytes());
+    }
+    raw.extend_from_slice(&0u64.to_le_bytes());
+    let reader = capnp::serialize::read_message(&raw[..], capnp::message::ReaderOptions::new())
+        .expect("raw message");
+    let mut builder = capnp::message::Builder::new_default();
+    builder
+        .set_root(
+            reader
+                .get_root::<capnp::any_pointer::Reader<'_>>()
+                .expect("root"),
+        )
+        .expect("copy");
+    super::pack(&builder).unwrap()
+}
+
+#[test]
+fn a_message_nested_deeper_than_the_limit_is_refused() {
+    let bound = super::bounds::Bound {
+        max_bytes: 4096,
+        max_words: 4096,
+    };
+    let walk = |depth: usize| {
+        let message = super::unpack_bounded(&nested_chain(depth), bound).expect("unpack");
+        message
+            .get_root::<capnp::any_pointer::Reader<'_>>()
+            .and_then(|root| root.target_size())
+            .map(|_| ())
+    };
+    let limit = usize::try_from(super::NESTING_LIMIT).expect("positive");
+    assert!(walk(limit - 1).is_ok(), "a chain inside the limit reads");
+    let err = walk(limit + 4).expect_err("a deeper chain is refused");
+    assert!(err.to_string().contains("nested"), "{err}");
 }

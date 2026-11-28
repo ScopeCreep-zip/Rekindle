@@ -9,9 +9,14 @@ use crate::test_support::open_seeded_db;
 #[test]
 fn identity_table_has_personal_sync_columns() {
     let conn = open_seeded_db();
-    rekindle_db::repo::identity::set_personal_sync(&conn, "owner_pk", "rk", "kp", "d1")
-        .expect("update");
-    let (record_key, _, _) = rekindle_db::repo::identity::personal_sync(&conn, "owner_pk")
+    rekindle_db::repo::identity::set_personal_sync(
+        &conn,
+        "owner_pk",
+        "rk",
+        "0123456789abcdef0123456789abcdef",
+    )
+    .expect("update");
+    let (record_key, _) = rekindle_db::repo::identity::personal_sync(&conn, "owner_pk")
         .unwrap()
         .unwrap();
     assert_eq!(record_key, "rk");
@@ -34,26 +39,6 @@ fn paired_devices_table_round_trips() {
         )
         .unwrap();
     assert_eq!(count, 1);
-}
-
-#[test]
-fn channel_read_state_row_writes_and_reads() {
-    let conn = open_seeded_db();
-    conn.execute(
-        "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
-         VALUES ('owner_pk', 'c1', 'ch1', 42, 100)",
-        [],
-    )
-    .expect("insert");
-    let lamport: i64 = conn
-        .query_row(
-            "SELECT last_read_lamport FROM channel_read_state \
-              WHERE owner_key = 'owner_pk' AND community_id = 'c1' AND channel_id = 'ch1'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(lamport, 42);
 }
 
 #[test]

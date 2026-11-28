@@ -12,14 +12,20 @@
 //! The allowlist names a function, not a line, so it does not go stale
 //! when the file around it changes; an entry that no longer matches any
 //! spawn fails the gate too, so the list cannot rot. Test code (`#[cfg(test)]` modules,
-//! `#[test]`/`#[tokio::test]` functions, `tests/` and `*_tests.rs` files)
+//! `#[test]`/`#[tokio::test]` functions, and the files [`crate::test_code`] knows as test code by declaration)
 //! is not scanned.
+//!
+//! In the Host's trees ([`HOST`]) blocking work goes through
+//! `rekindle_lifecycle::run_blocking` too: a bare `spawn_blocking` or
+//! `thread::spawn` there would finish in wall time, which the network
+//! simulator cannot order (plan E2.B F11).
 
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use syn::visit::Visit;
 
+use crate::test_code::is_test_attr;
 use crate::walk_source_files;
 
 /// The trees whose tasks belong to a session.
@@ -34,14 +40,40 @@ const SCANNED: &[&str] = &[
     "crates/rekindle-calls/src",
     "crates/rekindle-video/src",
     "crates/rekindle-game-detect/src",
+    "crates/rekindle-outbox/src",
 ];
 
 /// `(file, function, why it outlives every session)`.
 const ALLOWED: &[(&str, &str, &str)] = &[
     (
+        "src-tauri/src/skin_scheme.rs",
+        "handle",
+        "one skin:// request's answer, before unlock too (the login skin); it holds no session \
+         state and ends when the Host answers, which refuses library bytes once locked",
+    ),
+    (
+        "src-tauri/src/windows/shape/macos.rs",
+        "start",
+        "one window's cursor tracker (plan SK0 S3): owned by the window, not a session; it reads \
+         only the cursor and the window's silhouette, and stops on the window's Destroyed event",
+    ),
+    (
+        "src-tauri/src/windows/shape/skin.rs",
+        "refresh",
+        "one SkinFrames answer for the window shaper (plan SK0 S3), before unlock too: owned by \
+         the windows, not a session; it holds only the shown skin's validated frames and ends \
+         when the Host answers",
+    ),
+    (
         "src-tauri/src/setup.rs",
         "*",
         "app-lifetime boot: node start, dispatch loop, deep links",
+    ),
+    (
+        "src-tauri/src/stop_signals.rs",
+        "install",
+        "the process's stop-signal reader, installed before unlock: it turns SIGTERM/SIGINT into \
+         the graceful quit that ends every session, so no session can own it",
     ),
     (
         "src-tauri/src/event_dispatch.rs",
@@ -49,30 +81,40 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "app-lifetime webview event queue",
     ),
     (
-        "src-tauri/src/services/session.rs",
-        "begin",
-        "the panic hook ends the login scope itself, so it cannot run in it",
-    ),
-    (
         "src-tauri/src/services/veilid/lifecycle/dispatch.rs",
         "start_dispatch_loop",
         "the app-lifetime dispatch loop's ingress workers; joined when the loop stops",
     ),
     (
-        "crates/rekindle-node/src/host/mod.rs",
+        "crates/rekindle-node/src/host/serve.rs",
         "spawn_bus_subscriber",
-        "process-lifetime bus subscriber; its handle is joined at exit",
+        "host-lifetime bus subscriber; Host::shutdown joins its handle",
+    ),
+    (
+        "crates/rekindle-node/src/host/serve.rs",
+        "spawn_accept",
+        "host-lifetime accept loop; Host::shutdown stops the server and ends it",
     ),
     (
         "crates/rekindle-transport/src/broadcast/node/lifecycle.rs",
         "*",
         "the TransportNode outlives every unlock; TransportNode::shutdown joins its loops",
     ),
-    (
-        "crates/rekindle-transport/src/operations/calls/mod.rs",
-        "spawn_timeout",
-        "per-call timer whose handle the timers map owns and aborts on replace or drop",
-    ),
+];
+
+/// The trees of the Host, whose blocking work runs through
+/// `rekindle_lifecycle::run_blocking`.
+const HOST: &[&str] = &[
+    "crates/rekindle-node/src/",
+    "crates/rekindle-transport/src/",
+];
+
+/// The free functions that start blocking work outside `run_blocking`.
+const BLOCKING: &[&[&str]] = &[
+    &["tokio", "task", "spawn_blocking"],
+    &["tokio", "spawn_blocking"],
+    &["task", "spawn_blocking"],
+    &["thread", "spawn"],
 ];
 
 /// The free functions that spawn an unowned task.
@@ -97,17 +139,6 @@ struct Finder<'a> {
     used: std::collections::BTreeSet<usize>,
 }
 
-fn is_test_attr(attr: &syn::Attribute) -> bool {
-    let path = attr.path();
-    if path.is_ident("test") || path.segments.last().is_some_and(|s| s.ident == "test") {
-        return true;
-    }
-    path.is_ident("cfg")
-        && attr
-            .parse_args::<syn::Meta>()
-            .is_ok_and(|meta| meta.path().is_ident("test"))
-}
-
 impl Finder<'_> {
     fn allowed(&mut self) -> bool {
         let function = self.fns.last().map_or("", String::as_str);
@@ -120,7 +151,7 @@ impl Finder<'_> {
         entry.is_some()
     }
 
-    fn hit(&mut self, needle: &str) {
+    fn hit(&mut self, needle: &str, fix: &str) {
         let line = match self.src[self.cursor..].find(needle) {
             Some(at) => {
                 let abs = self.cursor + at;
@@ -131,7 +162,7 @@ impl Finder<'_> {
         };
         let function = self.fns.last().map_or("<top>", String::as_str);
         self.hits.push(format!(
-            "{}:{line}  {needle}(…) in `{function}` — spawn on a SessionScope",
+            "{}:{line}  {needle}(…) in `{function}` — {fix}",
             self.rel
         ));
     }
@@ -174,7 +205,16 @@ impl<'ast> Visit<'ast> for Finder<'_> {
                 .iter()
                 .any(|b| segments.len() >= b.len() && segments[segments.len() - b.len()..] == **b);
             if bare && !self.allowed() {
-                self.hit(&segments.join("::"));
+                self.hit(&segments.join("::"), "spawn on a SessionScope");
+            }
+            let ends_with = |b: &&[&str]| {
+                segments.len() >= b.len() && segments[segments.len() - b.len()..] == **b
+            };
+            if HOST.iter().any(|h| self.rel.starts_with(h)) && BLOCKING.iter().any(ends_with) {
+                self.hit(
+                    &segments.join("::"),
+                    "run it through rekindle_lifecycle::run_blocking",
+                );
             }
         }
         syn::visit::visit_expr_call(self, call);
@@ -199,11 +239,8 @@ fn scan(rel: &str, src: &str) -> (Vec<String>, std::collections::BTreeSet<usize>
     (finder.hits, finder.used)
 }
 
-fn is_test_file(rel: &str) -> bool {
-    rel.contains("/tests/") || rel.ends_with("_tests.rs") || rel.ends_with("/tests.rs")
-}
-
 pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut hits = Vec::new();
     let mut used = std::collections::BTreeSet::new();
     for dir in SCANNED {
@@ -213,7 +250,7 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if is_test_file(&rel) {
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {
@@ -238,42 +275,11 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
         eprintln!("    {h}");
     }
     Err(anyhow!(
-        "{} bare spawn(s) outside a SessionScope (plan C4, rule B20)",
+        "{} bare spawn(s) outside a SessionScope or run_blocking (plan C4, rule B20; F11)",
         hits.len()
     ))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn flags_bare_spawns_and_names_the_function() {
-        let src = "fn work() { tokio::spawn(async {}); tauri::async_runtime::spawn(async {}); }";
-        let (hits, _) = scan("src-tauri/src/x.rs", src);
-        assert_eq!(hits.len(), 2, "{hits:?}");
-        assert!(hits[0].contains("x.rs:1") && hits[0].contains("`work`"));
-    }
-
-    #[test]
-    fn ignores_owned_spawns_and_test_code() {
-        let src = r"
-            fn owned(set: &mut tokio::task::JoinSet<()>) { set.spawn(async {}); }
-            #[cfg(test)]
-            mod tests { fn t() { tokio::spawn(async {}); } }
-            #[tokio::test]
-            async fn t2() { tokio::spawn(async {}); }
-        ";
-        assert!(scan("src-tauri/src/x.rs", src).0.is_empty());
-    }
-
-    #[test]
-    fn allowlist_is_per_function() {
-        let src = "fn begin() { tauri::async_runtime::spawn(async {}); }
-                   fn other() { tauri::async_runtime::spawn(async {}); }";
-        let (hits, used) = scan("src-tauri/src/services/session.rs", src);
-        assert_eq!(hits.len(), 1);
-        assert_eq!(used.len(), 1);
-        assert!(hits[0].contains("`other`"));
-    }
-}
+#[path = "bare_spawn_tests.rs"]
+mod tests;

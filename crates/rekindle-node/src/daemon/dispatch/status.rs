@@ -14,7 +14,61 @@ use super::DaemonContext;
 ///
 /// Returns the complete `StatusSnapshot` — compact status, subscription system
 /// health, and full diagnostic checks. Renderers (CLI/TUI) decide display depth.
-pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    let prekeys = prekey_check(ctx).await;
+    let unread = unread_scopes(ctx).await;
+    status_response(ctx, state, prekeys, unread)
+}
+
+/// How many channels and DMs have an unread message, derived from the read
+/// markers (plan E3.1, D25); none while locked.
+async fn unread_scopes(ctx: &DaemonContext) -> (usize, usize) {
+    let Some(owner) = (ctx.session.read().as_ref()).map(|s| s.identity.public_key_hex.clone())
+    else {
+        return (0, 0);
+    };
+    let Ok(db) = ctx.db.current() else {
+        return (0, 0);
+    };
+    db.call(move |conn| rekindle_db::repo::read_markers::unread_scopes(conn, &owner))
+        .await
+        .inspect_err(|e| tracing::warn!(error = %e, "unread scopes unreadable"))
+        .unwrap_or_default()
+}
+
+/// `crypto.prekeys` (plan E2.4): the prekey maintenance keeps fresh slots
+/// and a head younger than 14 days; anything else means it is failing.
+/// `None` while no identity is unlocked.
+async fn prekey_check(ctx: &DaemonContext) -> Option<Check> {
+    use rekindle_transport::operations::prekeys;
+    ctx.db.current().ok()?;
+    let host = crate::host::adapters::friends::HostFriends::of(ctx);
+    Some(match prekeys::status(&host).await {
+        Ok(status) => match rekindle_crypto::signal::prekey_record::prekey_problem(&status) {
+            None => Check::pass(
+                "crypto.prekeys",
+                "crypto",
+                format!(
+                    "{}/{} fresh slots",
+                    status.fresh_slots,
+                    rekindle_types::dht_layout::prekeys::SLOT_COUNT
+                ),
+            ),
+            Some(problem) => Check::warn("crypto.prekeys", "crypto", problem)
+                .with_description("prekey maintenance is failing"),
+        },
+        Err(e) => {
+            Check::warn("crypto.prekeys", "crypto", "unreadable").with_description(e.to_string())
+        }
+    })
+}
+
+fn status_response(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    prekeys: Option<Check>,
+    (unread_channels, unread_dms): (usize, usize),
+) -> IpcResponse {
     use rekindle_types::display::{CircuitSummary, StatusSnapshot};
 
     let session_guard = ctx.session.read();
@@ -26,33 +80,19 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
 
     // Subscription system stats
     let sub_guard = ctx.subscriptions.read();
-    let (
-        active_watches,
-        gossip_meshes,
-        gossip_mesh_peers,
-        unread_channels,
-        unread_dms,
-        unread_friend_requests,
-        dedup_entries,
-        dedup_suppressed,
-        poll_loop_active,
-    ) = if let Some(ref sub_mgr) = *sub_guard {
-        let meshes = sub_mgr.meshes().read();
-        let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
-        (
-            sub_mgr.watch_count(),
-            meshes.len(),
-            mesh_peers,
-            sub_mgr.unread_channels().len(),
-            sub_mgr.unread_dms().len(),
-            sub_mgr.unread_friend_requests(),
-            sub_mgr.dedup_entries(),
-            sub_mgr.dedup_suppressed(),
-            true,
-        )
-    } else {
-        (0, 0, 0, 0, 0, 0, 0, 0, false)
-    };
+    let (gossip_meshes, gossip_mesh_peers, unread_friend_requests, dedup_entries, dedup_suppressed) =
+        if let Some(ref sub_mgr) = *sub_guard {
+            let meshes = sub_mgr.meshes().read().len();
+            (
+                meshes,
+                host_mesh_peers(ctx),
+                sub_mgr.unread_friend_requests(),
+                sub_mgr.dedup_entries(),
+                sub_mgr.dedup_suppressed(),
+            )
+        } else {
+            (0, 0, 0, 0, 0)
+        };
     drop(sub_guard);
 
     // Network detail
@@ -71,11 +111,12 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
     );
 
     // Diagnostic checks
-    let checks = build_checks(ctx, state, transport, session);
+    let mut checks = build_checks(ctx, state, transport, session);
+    checks.extend(prekeys);
 
     let snapshot = StatusSnapshot {
         state: state.as_str().to_string(),
-        has_identity: session.is_some(),
+        has_identity: crate::host::identity::list(&ctx.root).is_ok_and(|e| !e.is_empty()),
         identity_public_key: session.map(|s| s.identity.public_key_hex.clone()),
         identity_display_name: session.map(|s| s.identity.display_name.clone()),
         attachment: snap
@@ -87,7 +128,15 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
         peer_count: snap.as_ref().map_or(0, |s| s.peer_count),
         route_allocated: snap.as_ref().is_some_and(|s| s.route_allocated),
         route_age_secs: snap.as_ref().and_then(|s| s.route_age_secs),
-        active_watches,
+        general_route: snap.as_ref().map_or(
+            rekindle_types::subscription_events::RouteAvailability::Idle,
+            |s| s.general_route,
+        ),
+        route_paused: snap.as_ref().and_then(|s| s.route_paused),
+        own_route_down: snap
+            .as_ref()
+            .map(|s| s.own_route_down.clone())
+            .unwrap_or_default(),
         gossip_meshes,
         gossip_mesh_peers,
         unread_channels,
@@ -95,9 +144,13 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
         unread_friend_requests,
         dedup_entries,
         dedup_suppressed,
-        poll_loop_active,
         community_count: session.map_or(0, |s| s.communities.len()),
-        friend_count: session.map_or(0, |s| s.pending_friend_requests.len()),
+        friend_count: session.map_or(0, |s| {
+            s.friends
+                .values()
+                .filter(|f| f.friendship_state == rekindle_types::friend::FriendshipState::Accepted)
+                .count()
+        }),
         circuit_summary,
         checks,
     };
@@ -143,11 +196,11 @@ fn build_checks(
         ));
     }
 
-    checks.push(if ctx.audit.lock().is_some() {
-        Check::pass("node.audit_logger", "node", "active")
+    checks.push(if ctx.audit_chain.lock().is_some() {
+        Check::pass("node.audit_chain", "node", "open")
     } else {
-        Check::warn("node.audit_logger", "node", "inactive")
-            .with_description("audit logging disabled — destructive operations not recorded")
+        Check::warn("node.audit_chain", "node", "closed")
+            .with_description("no identity is unlocked: nothing is recorded")
     });
 
     // ── TRANSPORT — Veilid network health ───────────────────────────
@@ -217,17 +270,23 @@ fn build_checks(
     ));
 
     // ── STORAGE — persistence health ────────────────────────────────
-    checks.push(if ctx.session_path.exists() {
-        Check::pass("storage.session_file", "storage", "exists")
-    } else {
-        Check::warn("storage.session_file", "storage", "missing")
-            .with_description("no session file — identity not initialized")
+    checks.push(match crate::host::identity::list(&ctx.root) {
+        Ok(entries) if !entries.is_empty() => Check::pass(
+            "storage.identities",
+            "storage",
+            format!("{} on this device", entries.len()),
+        ),
+        Ok(_) => Check::warn("storage.identities", "storage", "none")
+            .with_description("no identity yet — create one with `rekindle init`"),
+        Err(e) => Check::fail("storage.identities", "storage", e.to_string())
+            .with_description("the identity registry cannot be read"),
     });
 
-    checks.push(if ctx.session.read().is_some() {
-        Check::pass("storage.session_loaded", "storage", "yes")
+    checks.push(if ctx.db.current().is_ok() {
+        Check::pass("storage.identity_db", "storage", "open")
     } else {
-        Check::warn("storage.session_loaded", "storage", "no")
+        Check::warn("storage.identity_db", "storage", "closed")
+            .with_description("no identity is unlocked")
     });
 
     let config_path = ctx.config_dir.display().to_string();
@@ -304,11 +363,14 @@ fn build_checks(
         let has_profile = !session.identity.profile_dht_key.is_empty();
         let has_mailbox = !session.identity.mailbox_dht_key.is_empty();
         let has_friends = !session.identity.friend_list_dht_key.is_empty();
+        // Only the own-records stage names a key, once its record is held
+        // (live finding 24): an unnamed one is not yet held.
+        let held = |has: bool| if has { "ok" } else { "not yet held" };
         let dht_value = format!(
             "profile:{} mailbox:{} friends:{}",
-            if has_profile { "ok" } else { "missing" },
-            if has_mailbox { "ok" } else { "missing" },
-            if has_friends { "ok" } else { "missing" },
+            held(has_profile),
+            held(has_mailbox),
+            held(has_friends),
         );
         checks.push(if has_profile && has_mailbox && has_friends {
             Check::pass("identity.dht_records", "identity", dht_value)
@@ -325,17 +387,11 @@ fn build_checks(
     // ── SUBSCRIPTIONS — event system health ─────────────────────────
     let sub_guard = ctx.subscriptions.read();
     if let Some(ref sub_mgr) = *sub_guard {
-        checks.push(Check::pass(
-            "subscriptions.watches",
-            "subscriptions",
-            sub_mgr.watch_count().to_string(),
-        ));
-        let meshes = sub_mgr.meshes().read();
-        let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
+        let meshes = sub_mgr.meshes().read().len();
         checks.push(Check::pass(
             "subscriptions.gossip_meshes",
             "subscriptions",
-            format!("{} meshes, {} peers", meshes.len(), mesh_peers),
+            format!("{meshes} meshes, {} peers", host_mesh_peers(ctx)),
         ));
         checks.push(Check::pass(
             "subscriptions.poll_loop",
@@ -353,6 +409,20 @@ fn build_checks(
 }
 
 /// Format seconds as human-readable uptime.
+/// The fan-out targets across our communities: the Host's mesh (plan E3.4
+/// S5), the roster's live members by their `M`/6 routes.
+fn host_mesh_peers(ctx: &DaemonContext) -> usize {
+    let Some(ctx) = ctx.this.upgrade() else {
+        return 0;
+    };
+    let communities: Vec<String> = ctx.communities.map().read().keys().cloned().collect();
+    let governance = crate::host::adapters::governance::HostGovernance::new(ctx);
+    communities
+        .iter()
+        .map(|c| governance.mesh_peers(c).len())
+        .sum()
+}
+
 fn fmt_uptime(secs: u64) -> String {
     if secs < 60 {
         return format!("{secs}s");

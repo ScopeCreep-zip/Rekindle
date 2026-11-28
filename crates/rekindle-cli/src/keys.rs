@@ -1,8 +1,10 @@
-//! Key management commands: MEK list/rotate/request, prekey status/replenish, inspect.
+//! Key management commands: MEK list/rotate/request, prekey status, inspect.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::ChannelMessageRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::cli::KeyCmd;
+use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
@@ -11,61 +13,61 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
     match cmd {
         KeyCmd::Mek(sub) => match sub {
             crate::cli::MekCmd::List { community } => {
-                let value = client
-                    .request_ok(IpcRequest::MekList {
-                        community: community.clone(),
-                    })
-                    .await?;
+                let value = helpers::send(
+                    client,
+                    IpcRequest::Community(CommunityRequest::Messages(
+                        ChannelMessageRequest::MekList {
+                            community: community.clone(),
+                        },
+                    )),
+                )
+                .await?;
                 format::print_structured(&value, mode)
             }
             crate::cli::MekCmd::Rotate { community, channel } => {
-                let value = client
-                    .request_ok(IpcRequest::MekRotate {
-                        community: community.clone(),
-                        channel: channel.clone(),
-                    })
-                    .await?;
+                let value = helpers::send(
+                    client,
+                    IpcRequest::Community(CommunityRequest::Messages(
+                        ChannelMessageRequest::MekRotate {
+                            community: community.clone(),
+                            channel: channel.clone(),
+                        },
+                    )),
+                )
+                .await?;
                 format::print_structured(&value, mode)
             }
             crate::cli::MekCmd::Request { community, channel } => {
-                let value = client
-                    .request_ok(IpcRequest::MekRequest {
-                        community: community.clone(),
-                        channel: channel.clone(),
-                        generation: 0, // daemon resolves latest needed generation
-                    })
-                    .await?;
+                let value = helpers::send(
+                    client,
+                    IpcRequest::Community(CommunityRequest::Messages(
+                        ChannelMessageRequest::MekRequest {
+                            community: community.clone(),
+                            channel: channel.clone(),
+                            generation: 0, // daemon resolves latest needed generation
+                        },
+                    )),
+                )
+                .await?;
                 format::print_structured(&value, mode)
             }
         },
         KeyCmd::Prekeys(sub) => match sub {
             crate::cli::PrekeyCmd::Status => {
-                let value = client.request_ok(IpcRequest::Status).await?;
-                // Extract crypto checks from the full status snapshot
-                if let Ok(snapshot) =
-                    serde_json::from_value::<rekindle_types::display::StatusSnapshot>(value.clone())
-                {
-                    let crypto_checks: Vec<_> = snapshot
-                        .checks
-                        .into_iter()
-                        .filter(|c| c.category == "crypto")
-                        .collect();
-                    format::print_doctor_checks(&crypto_checks, mode, false)
-                } else {
-                    format::print_structured(&value, mode)
-                }
-            }
-            crate::cli::PrekeyCmd::Replenish => {
-                let value = client.request_ok(IpcRequest::PrekeyReplenish).await?;
+                // The prekey record and its upkeep (plan E2.4): the same
+                // `PrekeyStatus` the GUI's debug `pqxdh_bundle_info` shows.
+                let value = helpers::send(client, IpcRequest::PrekeyStatus).await?;
                 format::print_structured(&value, mode)
             }
         },
         KeyCmd::Inspect { community } => {
-            let value = client
-                .request_ok(IpcRequest::MekList {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Messages(ChannelMessageRequest::MekList {
                     community: community.clone(),
-                })
-                .await?;
+                })),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
     }

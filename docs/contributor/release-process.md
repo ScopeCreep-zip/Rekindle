@@ -31,7 +31,7 @@ Before tagging:
 - [ ] `cargo test --workspace` is green.
 - [ ] `cargo clippy --workspace -- -D warnings` is clean.
 - [ ] `cargo fmt --all -- --check` is clean.
-- [ ] `pnpm test:all` is green (E2E + mock-IPC suites).
+- [ ] `pnpm test:app` is green on macOS and Linux (the real-app suite: one-user and two-user specs).
 - [ ] `CHANGELOG.md`'s `[Unreleased]` section is moved into a new
       versioned heading.
 - [ ] `Cargo.toml` workspace `version` is bumped.
@@ -44,6 +44,8 @@ Before tagging:
       relevant ADR is added or updated under [`../decisions/`](../decisions/).
 - [ ] If a security-relevant change landed, [`../security/threat-model.md`](../security/threat-model.md)
       is updated.
+- [ ] The macOS floor still matches the oldest macOS Apple patches
+      (see [Platform floor](#platform-floor)).
 
 ## Tagging
 
@@ -63,8 +65,21 @@ Artifacts are built per-OS via the Tauri bundler:
 ```sh
 # Inside `nix develop .#frontend` on Linux,
 # or with all prerequisites manually installed otherwise:
-pnpm tauri build
+pnpm bundle
 ```
+
+`pnpm bundle` is `tauri build --config src-tauri/tauri.release.conf.json`.
+The overlay's `beforeBuildCommand` builds the frontend and then runs
+`cargo xtask stage-sidecar`, which builds `rekindle-skin-helper` for the
+target Tauri names (`TAURI_ENV_TARGET_TRIPLE`) and stages it as
+`src-tauri/binaries/rekindle-skin-helper-<target triple>[.exe]`. Its
+`bundle.externalBin` ships it beside the app binary in every format
+(`Contents/MacOS` in the `.app`, `usr/bin` in the `.deb` and AppImage, the
+install directory in NSIS), where the Host starts it for skin import. The
+entry is not in `tauri.conf.json` because `tauri-build` needs every
+`externalBin` file on each cargo build of the GUI. `cargo xtask
+check-sidecars` fails if the overlay, the release workflow, this page or
+`scripts/build.sh` drops a link of that chain.
 
 This produces:
 
@@ -77,6 +92,46 @@ This produces:
 Per-OS builds happen on per-OS runners; cross-compilation is not
 the supported path. The release workflow at
 `.github/workflows/release.yml` orchestrates this.
+
+## Platform floor
+
+The minimum supported OS versions are set by the webview each
+platform renders in:
+
+| Platform | Floor | Where it is set |
+|----------|-------|-----------------|
+| macOS | 14 Sonoma (system WebKit, Safari 16.4 or later) | `src-tauri/tauri.conf.json` `bundle.macOS.minimumSystemVersion` (`LSMinimumSystemVersion` in the bundle's `Info.plist`) |
+| Linux | WebKitGTK 4.1, version 2.40 or later | `src-tauri/tauri.conf.json` `bundle.linux.deb.depends` (`libwebkit2gtk-4.1-0 (>= 2.40)`) and `bundle.linux.rpm.depends` (`webkit2gtk4.1 >= 2.40`) |
+| Windows | Evergreen WebView2 (Chromium 111 or later; the Evergreen runtime updates itself) | `vite.config.ts` `build.target` |
+
+The frontend build target follows the floor: `vite.config.ts` uses
+`safari16.4` for macOS and Linux and `chrome111` for Windows. Tailwind 4
+requires Safari 16.4 and Chrome 111 (`color-mix()` is Chromium 111), and the UI depends on `@layer` (Safari 15.4,
+WebKitGTK 2.36, Chromium 99) and `@property` (Safari 16.4, WebKitGTK
+2.40, Chromium 85). Neither esbuild nor Lightning CSS lowers them, so
+on an older engine every layered rule is dropped and the app renders
+unstyled.
+
+**macOS policy: the floor tracks the oldest macOS release Apple still
+patches.** On macOS the webview is the system WebKit, which is updated
+only with the OS, and Rekindle renders content from peers in it, so a
+release Apple no longer patches is a release we do not support. When
+Apple stops patching the oldest supported release (it drops out of
+Apple's security-release index at
+<https://support.apple.com/en-us/100100>), raise
+`minimumSystemVersion` to the next release in the same change that
+updates [`../user/install.md`](../user/install.md). As of 2026-10,
+Ventura's last update was 13.7.8 (2025-08-20), and Sonoma, Sequoia and
+Tahoe are patched, so the floor is 14.0.
+
+The Linux floor is the first WebKitGTK release that enables
+`@property` by default (2.40). Raise it when the UI starts to depend on
+a feature a newer WebKitGTK introduces.
+
+Check the floor as part of every release: the built `Info.plist`
+carries `LSMinimumSystemVersion` 14.0 (or the current floor),
+`dpkg-deb -I` on the `.deb` and `rpm -qpR` on the `.rpm` show the WebKitGTK depend, and the built
+CSS still contains its `@layer` statements.
 
 ## Signing
 

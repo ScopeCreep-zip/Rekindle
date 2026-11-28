@@ -37,16 +37,16 @@ src-tauri/target/
 # Bundle output (installers, DMGs, AppImages)
 src-tauri/bundles/
 
-# Sidecar binaries (built by copy-sidecar.mjs, included via externalBin)
+# Sidecar binaries (staged by `cargo xtask stage-sidecar`, shipped via externalBin)
 src-tauri/binaries/
 
 # ------------------------------------------------------------
 # Testing
 # ------------------------------------------------------------
-# Playwright
-/playwright-report/
-/test-results/
-/blob-report/
+# WebdriverIO whole-app walk output (plan E7.13)
+e2e/walk/out/
+e2e/walk/failed/
+e2e/app/out/
 
 # ------------------------------------------------------------
 # AI tooling config (local only)
@@ -106,9 +106,17 @@ Desktop.ini
 ehthumbs.db
 
 # ------------------------------------------------------------
-# Legacy RE artifacts (large binaries, unpacked installer)
+# Legacy RE artifacts (large binaries, unpacked installer). The built-in
+# skin packs' verified source trees under legacy/skins/ are kept: they are
+# the importer's inputs (legacy/skins/README.md), stored byte-for-byte.
+# So are the original download archives of every surviving Xfire skin under
+# legacy/skins-src/ (legacy/skins-src/README.md).
 # ------------------------------------------------------------
-/legacy/
+/legacy/*
+!/legacy/skins/
+!/legacy/skins/**
+!/legacy/skins-src/
+!/legacy/skins-src/**
 
 # ------------------------------------------------------------
 # Misc
@@ -123,3 +131,6 @@ ehthumbs.db
 
 # TypeScript project-references build cache (tsconfig.node.json is composite)
 *.tsbuildinfo
+
+# Docker harness per-node passphrases (plan V.4): never committed.
+.config/docker/nodes/*/passphrase

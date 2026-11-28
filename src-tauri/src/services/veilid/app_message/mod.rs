@@ -4,25 +4,24 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::services::message_service;
-use crate::state::{AppState, OnlineMember};
+use super::ingest_outcome::{IngestOutcome, ShellFollowUp};
+use crate::event_dispatch::WebviewEvent;
+use crate::state::AppState;
 use crate::state_helpers;
 
-use rekindle_codec::capnp_envelope::{
-    decode_signed_envelope, encode_signed_envelope, try_decode_community_envelope,
-};
-use rekindle_codec::community::envelope::{
-    verify_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
-};
+use rekindle_codec::capnp_envelope::{decode_signed_envelope, try_decode_community_envelope};
+use rekindle_codec::community::envelope::{verify_envelope, CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::ingress::{classify, Ingress};
 
-// `_app_handle` kept for dispatch-callback signature symmetry — the
-// gossip/legacy processing that used it now runs in the ingress worker
-// (`process_ingress_item`).
-// Now fully synchronous: the voice fast path is a `try_send` and
+// Fully synchronous: the voice fast path is a `try_send` and
 // everything else is a queue push — the dispatch loop never blocks on
 // an app_message again.
-pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
+pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     let message = msg.message().to_vec();
+    // Arrival over our route proves its inbound path (plan RH1r-c O1).
+    if let Some(live) = super::network::route_liveness(state) {
+        live.heard_over(msg.route_id().map(ToString::to_string).as_deref());
+    }
     // Trace, not info: this runs for every media packet (50+/s per peer)
     // on the serial dispatch loop the audio fast path shares (plan C7.23).
     tracing::trace!(msg_len = message.len(), "app_message received");
@@ -40,46 +39,70 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
     // is slow enough that a fragment burst would stall this serial
     // dispatch path and starve the voice fast path above. The worker
     // spawned by `lifecycle::dispatch` drains the queue in FIFO order.
+    //
+    // Routed by the ingress tag (§6), so nothing here trial-decodes: a
+    // datagram that is neither media, `'D'` nor `'G'` is dropped (plan E2.3).
     use crate::services::veilid::ingress_queue::IngressItem;
-    if let Ok(signed) = decode_signed_envelope(&message) {
-        let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
-        state
-            .gossip_ingress
-            .push(IngressItem::Gossip { signed, is_video });
-        return;
+    match classify(&message) {
+        Ingress::Direct(_) => state.gossip_ingress.push(IngressItem::Direct(message)),
+        Ingress::Gossip(bytes) => match decode_signed_envelope(bytes) {
+            Ok(signed) => {
+                let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
+                state
+                    .gossip_ingress
+                    .push(IngressItem::Gossip { signed, is_video });
+            }
+            Err(e) => tracing::debug!(error = %e, "malformed gossip datagram dropped"),
+        },
+        Ingress::Untagged => {
+            tracing::debug!(msg_len = message.len(), "untagged app_message dropped");
+        }
     }
-
-    state.gossip_ingress.push(IngressItem::Legacy(message));
 }
 
-/// Worker-side processing of one queued ingress item. Lives here so the
-/// gossip pipeline (`handle_gossip_envelope`) stays private to this
-/// module; the dispatch-loop worker only sees this entry point.
+/// Worker-side processing of one queued ingress item: the state-only core
+/// (`ingest_item`, plan GI4), then its delivery. The dispatch-loop worker
+/// only sees this entry point.
 pub(crate) async fn process_ingress_item(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
     item: crate::services::veilid::ingress_queue::IngressItem,
 ) {
+    ingest_item(state, item)
+        .await
+        .deliver(app_handle, state)
+        .await;
+}
+
+/// One queued ingress item, ingested with the state alone: the events to
+/// show and the follow-ups that need the Tauri handle (plan GI4).
+pub(crate) async fn ingest_item(
+    state: &Arc<AppState>,
+    item: crate::services::veilid::ingress_queue::IngressItem,
+) -> IngestOutcome {
     use crate::services::veilid::ingress_queue::IngressItem;
     match item {
-        IngressItem::Gossip { signed, .. } => {
-            handle_gossip_envelope(app_handle, state, signed).await;
-        }
-        IngressItem::Legacy(message) => {
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("inbound message: no identity database — dropped");
-                return;
+        IngressItem::Gossip { signed, .. } => gossip_core(state, signed).await,
+        IngressItem::Direct(message) => {
+            let Some(host) = state.host.current() else {
+                tracing::debug!("1:1 message before the host started — dropped");
+                return IngestOutcome::default();
             };
-            message_service::handle_incoming_message(app_handle, state, &pool, &message).await;
+            let rekindle_transport::operations::direct::Routed::Unported(opened) =
+                host.receive_direct(&message).await
+            else {
+                return IngestOutcome::default();
+            };
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("unported 1:1 message: no identity database — dropped");
+                return IngestOutcome::default();
+            };
+            IngestOutcome::follow_up(ShellFollowUp::Unported { pool, opened })
         }
     }
 }
 
-async fn handle_gossip_envelope(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    signed: SignedEnvelope,
-) {
+async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOutcome {
     let community_id = &signed.community_id;
 
     // Signature verification BEFORE any state mutation (audit P7-W26).
@@ -108,22 +131,24 @@ async fn handle_gossip_envelope(
         if video_payload_channel_from_bytes(&signed.envelope_bytes)
             .is_some_and(|ch| local_in_channel(state, community_id, &ch))
         {
-            crate::services::video_adapter::VideoAdapter::new(state.clone(), app_handle.clone())
-                .emit_video_envelope_rejected(
+            return IngestOutcome::event(WebviewEvent::Community(
+                crate::services::video_adapter::rejection_event(
                     community_id.clone(),
                     signed.sender_pseudonym.clone(),
                     reason,
-                );
+                ),
+            ));
         }
-        return;
+        return IngestOutcome::default();
     }
 
-    let dedup_key = extract_dedup_key(&signed);
+    let kind = encoded_envelope_kind(&signed.envelope_bytes);
+    let dedup_key = gossip_dedup_key(&signed);
     {
         let mut cache = state.dedup_cache.lock();
         if cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key) {
-            tracing::trace!(dedup_key = %dedup_key, "gossip dedup: dropping duplicate");
-            return;
+            tracing::debug!(kind, outcome = "duplicate", "gossip received");
+            return IngestOutcome::default();
         }
     }
 
@@ -151,12 +176,9 @@ async fn handle_gossip_envelope(
             &signed.sender_pseudonym,
         )
     {
-        tracing::trace!(
-            community = %community_id,
-            sender = %signed.sender_pseudonym,
-            "gossip rate floor exceeded — dropping silently"
-        );
-        return;
+        // Trace: a flood must not become a log storm (M10.4 above).
+        tracing::trace!(kind, outcome = "rate_limited", "gossip received");
+        return IngestOutcome::default();
     }
 
     {
@@ -175,13 +197,31 @@ async fn handle_gossip_envelope(
         }
     }
 
+    // A ring watcher's hint (plan E3.2 S7, GI3) passes the Host's one ingest
+    // (the community gate, the member gate, its signature; this ingress
+    // metered it above) before it is relayed, never relayed first (register
+    // S7l), as the daemon's `dispatch_gossip` orders it.
+    if let Ok(Some(CommunityEnvelope::Control(payload))) =
+        try_decode_community_envelope(&signed.envelope_bytes)
+    {
+        if let rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { hint } = *payload
+        {
+            let passed = state_helpers::host_governance(state).is_ok_and(|host| {
+                host.ingest_head_advanced(community_id, &signed.sender_pseudonym, &hint)
+            });
+            if passed && signed.ttl > 0 {
+                gossip_forward(state, &signed);
+            }
+            return IngestOutcome::default();
+        }
+    }
+
     // §10.6 — channel media is directed, never epidemic: video
     // payloads are excluded from gossip forwarding even if a
     // non-compliant sender ships them with ttl > 0, so honest nodes
     // never amplify channel media beyond the roster it was sent to.
-    let is_private = is_private_control_payload(&signed.envelope_bytes);
-    if signed.ttl > 0 && !is_private && video_channel.is_none() {
-        gossip_forward(state, community_id, &signed);
+    if signed.ttl > 0 && video_channel.is_none() {
+        gossip_forward(state, &signed);
     }
 
     let is_from_self = {
@@ -191,50 +231,56 @@ async fn handle_gossip_envelope(
             .and_then(|c| c.my_pseudonym_key.as_ref())
             .is_some_and(|pk| pk == &signed.sender_pseudonym)
     };
-    if !is_from_self {
-        handle_relayed_envelope(app_handle, state, signed).await;
-    }
-}
-
-fn extract_dedup_key(signed: &SignedEnvelope) -> String {
-    // Forward-compat: `try_decode_community_envelope` returns `Ok(None)`
-    // for unknown union variants. Hash the opaque bytes in that case so
-    // dedup still suppresses replays without rejecting unknown messages.
-    if let Ok(Some(env)) = try_decode_community_envelope(&signed.envelope_bytes) {
-        match env {
-            CommunityEnvelope::MessageNotification { ref message_id, .. } => message_id.clone(),
-            CommunityEnvelope::TypingIndicator {
-                ref channel_id,
-                ref pseudonym_key,
-            } => {
-                let bucket = rekindle_utils::timestamp_secs() / 5;
-                format!("typing:{channel_id}:{pseudonym_key}:{bucket}")
-            }
-            CommunityEnvelope::PresenceUpdate {
-                ref pseudonym_key, ..
-            } => {
-                let bucket = rekindle_utils::timestamp_secs() / 30;
-                format!("presence:{pseudonym_key}:{bucket}")
-            }
-            CommunityEnvelope::Control(_) => envelope_hash(&signed.envelope_bytes),
-            CommunityEnvelope::WatchRelay {
-                ref record_key,
-                subkey,
-                ref content_hash,
-                ..
-            } => format!("watch:{record_key}:{subkey}:{content_hash}"),
-        }
+    if is_from_self {
+        tracing::debug!(kind, outcome = "own", "gossip received");
+        IngestOutcome::default()
     } else {
-        envelope_hash(&signed.envelope_bytes)
+        tracing::debug!(
+            kind,
+            outcome = "accepted",
+            ttl = signed.ttl,
+            "gossip received"
+        );
+        relayed_core(state, signed).await
     }
 }
 
-fn envelope_hash(envelope_bytes: &[u8]) -> String {
-    use blake2::{digest::consts::U16, Blake2b, Digest};
+/// The receiver's dedup key: the sender's per-send `message_id` (gossip
+/// design, architecture §1171; the daemon's `dispatch_bare_gossip` keys
+/// the same way). Relayed copies of one send share it; a deliberate
+/// re-send of byte-identical content does not, so a `VoiceLeave` after
+/// a rejoin is never dropped as the first leave's duplicate.
+fn gossip_dedup_key(signed: &SignedEnvelope) -> String {
+    rekindle_codec::dedup::message_dedup_key(signed)
+}
 
-    let mut h = Blake2b::<U16>::new();
-    h.update(envelope_bytes);
-    hex::encode(h.finalize())
+/// The encoded envelope's kind for the receive log.
+fn encoded_envelope_kind(envelope_bytes: &[u8]) -> &'static str {
+    match try_decode_community_envelope(envelope_bytes) {
+        Ok(Some(envelope)) => envelope_kind(&envelope),
+        Ok(None) => "unknown",
+        Err(_) => "undecodable",
+    }
+}
+
+/// An envelope's kind for the send and receive logs: a variant name,
+/// never an id.
+pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
+    use rekindle_codec::community::envelope::ControlPayload as C;
+    match envelope {
+        CommunityEnvelope::TypingIndicator { .. } => "typing",
+        CommunityEnvelope::WatchRelay { .. } => "watch_relay",
+        CommunityEnvelope::Control(payload) => match &**payload {
+            C::VoiceJoin { .. } => "voice_join",
+            C::VoiceJoinAck { .. } => "voice_join_ack",
+            C::VoiceJoinConfirmed { .. } => "voice_join_confirmed",
+            C::VoiceLeave { .. } => "voice_leave",
+            C::VoiceRoster { .. } => "voice_roster",
+            C::VoiceModeSwitch { .. } => "voice_mode_switch",
+            C::VoiceMute { .. } | C::VoiceDeafen { .. } => "voice_mute_state",
+            _ => "control",
+        },
+    }
 }
 
 /// Phase F + §10.6 — if the decoded envelope carries a video control
@@ -250,12 +296,11 @@ fn envelope_hash(envelope_bytes: &[u8]) -> String {
 /// conservatively return `None` — the rejection is logged via tracing
 /// and a video-specific UI toast would be a guess.
 fn video_payload_channel_from_bytes(envelope_bytes: &[u8]) -> Option<String> {
-    let Ok(Some(CommunityEnvelope::Control(ref payload))) =
-        try_decode_community_envelope(envelope_bytes)
-    else {
-        return None;
-    };
-    rekindle_video::video_payload_channel(payload).map(str::to_string)
+    let payload = try_decode_community_envelope(envelope_bytes)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)?;
+    rekindle_video::video_payload_channel(&payload).map(str::to_string)
 }
 
 /// True when the local user's active voice/video session is bound to
@@ -267,221 +312,102 @@ fn local_in_channel(state: &Arc<AppState>, community_id: &str, channel_id: &str)
     })
 }
 
-pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
-    if let Ok(Some(CommunityEnvelope::Control(ref payload))) =
-        try_decode_community_envelope(envelope_bytes)
-    {
-        matches!(
-            payload,
-            ControlPayload::JoinAccepted { .. }
-                | ControlPayload::SlotKeypairGrant { .. }
-                | ControlPayload::AdminKeypairGrant { .. }
-                | ControlPayload::SyncResponse { .. }
-        )
-    } else {
-        false
-    }
-}
-
-fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnvelope) {
+/// Relay `signed` one hop further through the Host's mesh (plan E3.4 S5),
+/// the one fan-out on both modes: the roster's live members by their `M`/6
+/// routes. Only the TTL changes; the author's signature and id stay.
+fn gossip_forward(state: &Arc<AppState>, signed: &SignedEnvelope) {
     let mut forward = signed.clone();
     forward.ttl = forward.ttl.saturating_sub(1);
-    let signed_bytes = encode_signed_envelope(&forward);
-
-    let peers: Vec<Vec<u8>> = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else {
-            return;
-        };
-        let Some(ref gossip) = cs.gossip else {
-            return;
-        };
-        gossip
-            .peers
-            .iter()
-            .filter(|(pk, _)| *pk != &signed.sender_pseudonym)
-            .map(|(_, m)| m.route_blob.clone())
-            .collect()
-    };
-
-    if peers.is_empty() {
-        return;
-    }
-
-    for route_blob in peers {
-        let data = signed_bytes.clone();
-        let forward_state = Arc::clone(state);
-        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
-            "gossip forward",
-            async move {
-                if let Err(e) =
-                    crate::state_helpers::message_route_blob(&forward_state, &route_blob, data)
-                        .await
-                {
-                    tracing::trace!(error = %e, "gossip forward failed");
-                }
-            },
-        );
+    if let Ok(host) = crate::state_helpers::host_governance(state) {
+        host.forward_signed(forward);
+    } else {
+        tracing::trace!("gossip forward before the host started — dropped");
     }
 }
 
-async fn handle_relayed_envelope(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    signed: SignedEnvelope,
-) {
-    // Forward-compat: `try_decode_community_envelope` returns `Ok(None)`
-    // for unknown union variants. The signature has already been
-    // verified and the envelope already forwarded by `gossip_forward`,
-    // so we simply skip local dispatch in that case.
-    let envelope: CommunityEnvelope = match try_decode_community_envelope(&signed.envelope_bytes) {
-        Ok(Some(e)) => e,
+/// The relayed envelope local dispatch may act on, or `None`. First the
+/// Host's one community gate (`HostGovernance::takes_traffic_from`, the
+/// daemon's `takes_traffic`): nothing once we were removed, nothing from a
+/// departed author, for every arm; a relay keeps its author's signature, so
+/// the author is who is judged. Before the Host is up nothing is taken.
+///
+/// Forward-compat: `try_decode_community_envelope` returns `Ok(None)` for
+/// unknown union variants. The signature has already been verified and the
+/// envelope already forwarded by `gossip_forward`, so local dispatch skips
+/// it.
+fn admitted_relay(state: &AppState, signed: &SignedEnvelope) -> Option<CommunityEnvelope> {
+    let author = rekindle_types::id::PseudonymKey::from_hex_lossy(&signed.sender_pseudonym);
+    let taken = state_helpers::host_governance(state)
+        .is_ok_and(|host| host.takes_traffic_from(&signed.community_id, &author));
+    if !taken {
+        tracing::debug!(
+            community = %signed.community_id,
+            "relayed envelope from traffic we do not take — dropped"
+        );
+        return None;
+    }
+    match try_decode_community_envelope(&signed.envelope_bytes) {
+        Ok(Some(envelope)) => Some(envelope),
         Ok(None) => {
             tracing::debug!(
                 community = %signed.community_id,
                 "relayed envelope has unknown variant — forwarded only"
             );
-            return;
+            None
         }
         Err(e) => {
             tracing::warn!(error = %e, "invalid relayed envelope");
-            return;
+            None
         }
-    };
+    }
+}
 
+/// A relayed envelope from another member, after the gossip checks: what
+/// the Host ingests itself returns nothing; an admitted Control returns
+/// `relayed_control_core`'s outcome (plan GI4).
+async fn relayed_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOutcome {
+    let Some(envelope) = admitted_relay(state, &signed) else {
+        return IngestOutcome::default();
+    };
     let community_id = signed.community_id.clone();
 
     match envelope {
-        CommunityEnvelope::MessageNotification {
-            channel_id,
-            message_id,
-            sequence,
-            subkey_index,
-            content_hash,
-            ..
-        } => {
-            let pending = crate::services::community::message_notifications::PendingMessageFetch {
-                community_id: community_id.clone(),
-                channel_id,
-                message_id,
-                subkey_index,
-                sequence,
-                content_hash,
-                attempt: 0,
-            };
-            if let Err(e) =
-                crate::services::community::handle_message_notification(app_handle, state, pending)
-                    .await
-            {
-                tracing::debug!(
-                    community = %community_id,
-                    error = %e,
-                    "message notification handling failed"
-                );
-            }
-        }
+        // Channel typing is the Host's (plan E3.4 S9): the frame names its
+        // channel by a tag under the text key only the Host holds, and the
+        // Host gates and lapses the start, through the one ingest the
+        // daemon's gossip path calls. The envelope carries no Lamport
+        // stamp; the transport's gossip dispatch passes 0 as well.
         CommunityEnvelope::TypingIndicator {
-            channel_id,
+            channel_tag,
+            ttl_ms,
             pseudonym_key,
         } => {
-            // Only `Started`: the protocol sends a keystroke ping with
-            // no explicit stop, and the frontend expires it on a 5 s
-            // timer. Synthesising a `Stopped` here would be inventing
-            // an event the peer never sent.
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Typing(
-                    rekindle_types::subscription_events::TypingEvent::Started {
-                        context: rekindle_types::subscription_events::TypingContext::Channel {
-                            community: community_id,
-                            channel: channel_id,
-                        },
-                        who: pseudonym_key,
-                    },
-                ),
-            );
-        }
-        CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            route_blob,
-        } => {
-            {
-                let mut communities = state.communities.write();
-                if let Some(cs) = communities.get_mut(&community_id) {
-                    cs.known_members.insert(pseudonym_key.clone());
-                    if let Some(ref mut gossip) = cs.gossip {
-                        if status == "offline" {
-                            gossip.online_members.remove(&pseudonym_key);
-                            gossip.peers.remove(&pseudonym_key);
-                        } else if let Some(ref blob) = route_blob {
-                            if !blob.is_empty() {
-                                let member = OnlineMember {
-                                    route_blob: blob.clone(),
-                                    status: status.clone(),
-                                    last_seen: rekindle_utils::timestamp_secs(),
-                                    ..Default::default()
-                                };
-                                gossip
-                                    .online_members
-                                    .insert(pseudonym_key.clone(), member.clone());
-                                gossip.peers.insert(pseudonym_key.clone(), member);
-                            }
-                        }
-                    }
-                }
-            }
-
-            let (game_name, game_id, elapsed_seconds, server_address) = if let Some(gi) = game_info
-            {
-                (
-                    Some(gi.game_name),
-                    gi.game_id,
-                    gi.elapsed_seconds,
-                    gi.server_address,
-                )
+            if let Ok(host) = state_helpers::host_governance(state) {
+                host.ingest_typing(
+                    &community_id,
+                    &signed.sender_pseudonym,
+                    0,
+                    &pseudonym_key,
+                    &channel_tag,
+                    ttl_ms,
+                );
             } else {
-                (None, None, None, None)
-            };
-
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Presence(
-                    rekindle_types::subscription_events::PresenceEvent::CommunityMemberChanged {
-                        community: community_id,
-                        pseudonym: pseudonym_key,
-                        // A gossip presence row states both the status
-                        // and the game, so both are observed here.
-                        snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(
-                            status,
-                        )
-                        .with_game(
-                            rekindle_types::subscription_events::GameActivity::from_parts(
-                                game_name,
-                                game_id,
-                                elapsed_seconds,
-                                server_address,
-                            ),
-                        ),
-                    },
-                ),
-            );
+                tracing::trace!("typing frame before the host started — dropped");
+            }
+            IngestOutcome::default()
         }
         CommunityEnvelope::Control(payload) => {
-            let Ok(pool) = state.db.current() else {
+            if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
-                return;
-            };
-            super::control::handle_relayed_control(
-                app_handle,
+                return IngestOutcome::default();
+            }
+            super::control::relayed_control_core(
                 state,
-                &pool,
                 &community_id,
                 &signed.sender_pseudonym,
-                payload,
+                *payload,
             )
-            .await;
+            .await
         }
         CommunityEnvelope::WatchRelay {
             record_key,
@@ -489,57 +415,21 @@ async fn handle_relayed_envelope(
             content_hash,
             observer_pseudonym,
         } => {
-            // Mutual Aid (architecture §14.3 / §11.7): a peer with a live
-            // watch slot is telling us a record's subkey changed. Fetch
-            // the new value via the existing presence/value pipeline so
-            // we don't depend on holding a DHT watch slot ourselves.
-            let _ = observer_pseudonym;
-
-            // W11.1 — if we have our OWN active watch on this record, our
-            // direct value-change callback will fire (or has already
-            // fired) for the same change. Skipping the relay fetch here
-            // saves a redundant `get_dht_value` round-trip per gossip
-            // notice in the steady state where most members hold their
-            // own watch slots. Members who couldn't get a slot still
-            // fall through to the fetch path below.
-            let we_already_watch = {
-                let communities = state.communities.read();
-                communities
-                    .values()
-                    .any(|cs| cs.watched_records.contains(&record_key))
-            };
-            if we_already_watch {
-                tracing::trace!(
-                    record_key = %record_key,
-                    subkey,
-                    "WatchRelay: skipping fetch — own watch covers this record"
-                );
-                return;
+            // Mutual Aid §14.3: the Host's one ingest (plan GI3, the
+            // daemon's `ingest_gossip` calls it too) reads the record,
+            // checks the hash and applies the value.
+            if let Ok(host) = state_helpers::host_governance(state) {
+                host.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
+                    .await;
             }
-
-            if let Ok(pool) = state_helpers::record_pool(state) {
-                let parsed = record_key.parse::<veilid_core::RecordKey>();
-                if let Ok(parsed) = parsed {
-                    if let Ok(Some(value)) = pool.read_once(&parsed, subkey, true).await {
-                        let actual = blake3::hash(value.data()).to_hex().to_string();
-                        if actual == content_hash {
-                            crate::services::presence_service::handle_value_change(
-                                app_handle,
-                                state,
-                                &record_key,
-                                &[subkey],
-                                value.data(),
-                            );
-                        } else {
-                            tracing::debug!(
-                                record_key = %record_key,
-                                subkey,
-                                "WatchRelay content hash mismatch — dropping"
-                            );
-                        }
-                    }
-                }
-            }
+            IngestOutcome::default()
         }
     }
 }
+
+#[cfg(test)]
+mod dedup_tests;
+#[cfg(test)]
+mod ingest_core_tests;
+#[cfg(test)]
+mod relay_gate_tests;

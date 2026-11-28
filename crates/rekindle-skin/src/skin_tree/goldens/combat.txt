@@ -1,0 +1,88 @@
+OuterFrame Decor
+CombatDragBar Drag
+  Minimizebox Button target [-6, -6, 24, 24] art [6, 6, 12, 12] Size
+FileMenuText MenuTitle label "Rekindle"
+  FileMenu Part target [0, -1, 58, 24] art [0, 1, 58, 22] Size
+ToolsMenuText MenuTitle label "Tools"
+  ToolsMenu Part target [0, -1, 42, 24] art [0, 1, 42, 22] Size
+HelpMenuText MenuTitle label "Help"
+  HelpMenu Part target [0, -1, 36, 24] art [0, 1, 36, 22] Size
+AdArea AdArea
+BackgroundArea Decor
+ResizeUlbr Button target [23, 23, 24, 24] art [-23, -23, 47, 47] Size
+CenterConsole Group
+  TabControl TabStrip
+    Knob01 Knob(Friends)
+    Knob02 Knob(Servers)
+    Knob03 Knob(Files)
+    Knob04 Knob(Servers)
+    Knob03.Communities Knob(Communities)
+  DownloadBlink Lamp(Files)
+    WhiteBlinkNoAnimation Part
+    RedBlinker Part
+  ConsoleText ConsoleLabel
+    BuddyText Part
+    ServerText Part
+    DownloadText Part
+MainTabbedArea Views
+  BuddyView View(Friends)
+  ServerView View(Servers)
+  DownloadView View(Files)
+  MainTabbedArea.Communities View(Communities)
+Title NameField target [0, -4, 214, 24] art [0, 4, 214, 15] Size
+StatusEdit StatusText target [0, -4, 219, 24] art [0, 4, 219, 15] Size
+DownArrow StatusList target [0, -2, 24, 24] art [0, 2, 20, 20] Size
+FriendsButtons ButtonRow(Friends)
+  FriendsButtons.JoinPlayTab Group
+    JoinButton@Friends Button
+  FriendsButtons.ProfileBrowseTab Group
+    ProfileButton@Friends Button
+  FriendsButtons.ChatRefreshStopTab Group
+    ChatButton Button
+  FriendsButtons.AddDownloadTab Group
+    AddFriendButton Button
+ServersButtons ButtonRow(Servers)
+  ServersButtons.JoinPlayTab Group
+    JoinButton@Servers Button
+  ServersButtons.ProfileBrowseTab Group
+    ProfileButton@Servers Button
+  ServersButtons.ChatRefreshStopTab Group
+    RefreshButton Button
+  ServersButtons.AddDownloadTab Group
+    AddServerButton Button
+FilesButtons ButtonRow(Files)
+  FilesButtons.JoinPlayTab Group
+    PlayButton Button
+  FilesButtons.ProfileBrowseTab Group
+    BrowseButton Button
+  FilesButtons.ChatRefreshStopTab Group
+    StopButton Button
+  FilesButtons.AddDownloadTab Group
+    StartDownloadButton Button
+FriendsButtons.Communities ButtonRow(Communities)
+  FriendsButtons.JoinPlayTab.Communities Group
+    CommunitiesOpen Button
+  FriendsButtons.ProfileBrowseTab.Communities Group
+    CommunitiesLeave Button
+  FriendsButtons.ChatRefreshStopTab.Communities Group
+    CommunitiesNew Button
+TopOuterEdge Decor target [0, 0, 340, 24] art [0, 0, 340, 5] Size
+LeftOuterEdge Decor target [0, 0, 24, 490] art [0, 0, 11, 490] Size
+BottomOuterEdge Decor target [0, -19, 340, 24] art [0, 19, 340, 5] Size
+RightOuterEdge Decor target [-13, 0, 24, 490] art [13, 0, 11, 490] Size
+XfireLogo Logo label "Rekindle" cover [0, 0, 92, 47] glyph Rekindle
+InfoViewSwitch Button
+  InfoViewSwitchIn Part
+  InfoviewSwitchOut Part
+SystemMenu Button target [0, 0, 24, 24] art [0, 0, 10, 10] Size
+popup CombatInfoSkin
+  XfireTopRow Decor
+  XfireBottomRow Decor
+  XfireMiddleRow Decor
+  BackDrop Decor
+  InfoView InfoView
+  InfoGripperTR Decor
+  InfoGripperBR Decor
+  ResizeRight Button target [-19, 0, 24, 370] art [19, 0, 5, 370] Size
+  JoinButton Button
+  JoinChatButton Button

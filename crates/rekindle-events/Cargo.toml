@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-events"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Reusable event primitives: BLAKE3 dedup, subscription state, state effects, monotonic journal — hoisted from rekindle-transport::subscriptions."
 
 [lints]
@@ -13,4 +15,8 @@ parking_lot = { workspace = true }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
+tokio = { workspace = true, features = [ "sync", "time" ] }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "macros", "rt", "test-util" ] }

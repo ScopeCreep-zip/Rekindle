@@ -14,6 +14,7 @@
 //! `rotate_text_mek_for_departure` does.
 
 use parking_lot::RwLock;
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 use tracing::info;
 
@@ -27,6 +28,7 @@ pub async fn leave_community(
     membership: &crate::session::CommunityMembership,
     mek_cache: &Arc<RwLock<MekCache>>,
     signing_key_bytes: &[u8; 32],
+    now_secs: u64,
 ) -> Result<LeaveResult> {
     info!(community = %membership.community_name, "leaving community via DHT");
 
@@ -48,7 +50,7 @@ pub async fn leave_community(
     // and a slot that fails to release is the status quo, not a
     // regression. `rekindle-mek-rotation` handles the half that does
     // need the remaining members — rotating the key we still hold.
-    if let Err(e) = release_registry_slot(node, membership, signing_key_bytes).await {
+    if let Err(e) = release_registry_slot(node, membership, signing_key_bytes, now_secs).await {
         tracing::warn!(
             community = %membership.community_name,
             error = %e,
@@ -56,12 +58,10 @@ pub async fn leave_community(
         );
     }
 
-    mek_cache
-        .write()
-        .remove_community(&membership.governance_key);
+    mek_cache.write().remove_community(&membership.anchor);
     info!(community = %membership.community_name, "community left");
     Ok(LeaveResult {
-        departure_notice: rekindle_codec::community::envelope::CommunityEnvelope::Control(
+        departure_notice: rekindle_codec::community::envelope::CommunityEnvelope::control(
             rekindle_codec::community::envelope::ControlPayload::MemberLeave {
                 pseudonym_key: membership.pseudonym_key.clone(),
             },
@@ -107,7 +107,7 @@ async fn write_tombstone(
                 None => Ok(()),
                 Some(again) => Err(TransportError::DhtError {
                     reason: format!(
-                        "departure tombstone superseded twice (seq {:?}, then {:?})",
+                        "departure tombstone superseded twice (seq {}, then {})",
                         newer.seq, again.seq
                     ),
                 }),
@@ -131,6 +131,7 @@ async fn release_registry_slot(
     node: &TransportNode,
     membership: &crate::session::CommunityMembership,
     signing_key_bytes: &[u8; 32],
+    now_secs: u64,
 ) -> Result<()> {
     let Some(slot_seed) = membership.slot_seed else {
         return Err(TransportError::Internal(
@@ -138,18 +139,16 @@ async fn release_registry_slot(
         ));
     };
 
-    let slot_kp = rekindle_protocol::dht::community::member_registry::derive_slot_veilid_keypair(
-        &slot_seed,
-        membership.slot_index,
-    )
-    .map_err(|e| TransportError::Internal(format!("slot keypair derivation failed: {e}")))?;
+    let slot_kp =
+        rekindle_crypto::keypair_text::slot_keypair_text(&slot_seed, membership.slot_index)
+            .map_err(|e| {
+                TransportError::Internal(format!("slot keypair derivation failed: {e}"))
+            })?;
 
-    let pseudonym = crate::crypto::pseudonym::derive_community_pseudonym(
-        signing_key_bytes,
-        &membership.governance_key,
-    );
-    let bytes =
-        rekindle_codec::presence_row::departure_row(&pseudonym, rekindle_utils::timestamp_secs());
+    let pseudonym =
+        crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, &membership.anchor);
+    let bytes = rekindle_codec::presence_row::departure_row(&pseudonym, now_secs)
+        .map_err(|e| TransportError::Internal(format!("departure row: {e}")))?;
     let my_pseudonym_hex = hex::encode(pseudonym.verifying_key().to_bytes());
 
     // A table hit while the community holds its registry (the slot writer
@@ -158,7 +157,8 @@ async fn release_registry_slot(
     let lease = crate::broadcast::dht_writes::acquire_str(
         node,
         &membership.registry_key,
-        Some(&slot_kp.to_string()),
+        Some(&slot_kp),
+        OpenIntent::Check,
     )
     .await?;
     let written = write_tombstone(
@@ -166,7 +166,7 @@ async fn release_registry_slot(
         lease,
         membership.slot_index,
         bytes,
-        &slot_kp.to_string(),
+        &slot_kp,
         &my_pseudonym_hex,
     )
     .await;

@@ -1,12 +1,10 @@
-//! `ControlPayload::into_event` — member lifecycle, moderation,
-//! messages, MEK management, roles, channel permissions, reactions and
+//! `ControlPayload::into_event` — messages, MEK management, roles, reactions and
 //! pins. The remaining categories (events, threads, game servers,
-//! governance, voice, admin delegation, bootstrap, sync, system) are
+//! voice, bootstrap, sync, system) are
 //! handled by `into_event_control_rest.rs`.
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, CryptoEvent, GovernanceEvent, MembershipEvent, SocialEvent,
-    SubscriptionEvent,
+    CryptoEvent, MembershipEvent, SocialEvent, SubscriptionEvent,
 };
 
 use rekindle_codec::community::envelope::ControlPayload;
@@ -22,7 +20,10 @@ use super::into_event_control_rest::control_into_event_rest;
 /// variants are media- or transport-plane traffic — voice signaling,
 /// video fragments and FEC, attachment chunks, bandwidth and topology
 /// reports — consumed by the subsystems that own them and never
-/// surfaced to a subscriber. Saying so in the return type is what stops
+/// surfaced to a subscriber — the three thread payloads, whose
+/// events the Host publishes once it has stored them, and the three
+/// membership notices, whose verdicts the Host publishes from the merged
+/// governance. Saying so in the return type is what stops
 /// them being given an invented event just to satisfy the match.
 pub fn control_into_event(
     payload: ControlPayload,
@@ -33,136 +34,7 @@ pub fn control_into_event(
     let s = || sender.to_string();
 
     Some(match payload {
-        // ── Member lifecycle ─────────────────────────────────
-        ControlPayload::MemberJoinRequest {
-            pseudonym_key,
-            display_name,
-            invite_code,
-            ..
-        } => SubscriptionEvent::Membership(MembershipEvent::JoinRequested {
-            community: c(),
-            pseudonym: pseudonym_key,
-            display_name,
-            has_invite: invite_code.is_some(),
-        }),
-        ControlPayload::MemberLeave { pseudonym_key } => {
-            SubscriptionEvent::Membership(MembershipEvent::Left {
-                community: c(),
-                pseudonym: pseudonym_key,
-            })
-        }
-        ControlPayload::JoinAccepted {
-            mek_generation,
-            slot_index,
-            ..
-        } => SubscriptionEvent::Membership(MembershipEvent::JoinAccepted {
-            community: c(),
-            // Gossip carries the generation; the desktop's governance
-            // runtime signals acceptance before it has read the MEK.
-            mek_generation: Some(mek_generation),
-            slot_index,
-        }),
-        ControlPayload::JoinRejected { reason } => {
-            SubscriptionEvent::Membership(MembershipEvent::JoinRejected {
-                community: c(),
-                reason,
-            })
-        }
-        ControlPayload::MemberJoined {
-            pseudonym_key,
-            display_name,
-            role_ids,
-            ..
-        } => SubscriptionEvent::Membership(MembershipEvent::Joined {
-            community: c(),
-            pseudonym: pseudonym_key,
-            display_name,
-            role_ids,
-        }),
-        ControlPayload::MemberRemoved { pseudonym_key } => {
-            SubscriptionEvent::Membership(MembershipEvent::Removed {
-                community: c(),
-                pseudonym: pseudonym_key,
-            })
-        }
-
-        // ── Moderation ──────────────────────────────────────
-        ControlPayload::Kick { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::Kicked {
-                community: c(),
-                target_pseudonym,
-            })
-        }
-        ControlPayload::Ban { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::Banned {
-                community: c(),
-                target_pseudonym,
-            })
-        }
-        ControlPayload::Unban { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::Unbanned {
-                community: c(),
-                target_pseudonym,
-            })
-        }
-        ControlPayload::TimeoutMember {
-            target_pseudonym,
-            duration_seconds,
-            reason,
-        } => SubscriptionEvent::Membership(MembershipEvent::TimedOut {
-            community: c(),
-            target_pseudonym,
-            duration_seconds,
-            reason,
-        }),
-        ControlPayload::RemoveTimeout { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::TimeoutRemoved {
-                community: c(),
-                target_pseudonym,
-            })
-        }
-        ControlPayload::MemberTimedOut {
-            pseudonym_key,
-            timeout_until,
-        } => SubscriptionEvent::Membership(MembershipEvent::TimeoutStatusChanged {
-            community: c(),
-            pseudonym: pseudonym_key,
-            timeout_until,
-        }),
-
-        // ── Messages ────────────────────────────────────────
-        ControlPayload::MessageEdited {
-            channel_id,
-            message_id,
-            edited_at,
-            ..
-        } => SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
-            community: c(),
-            channel: channel_id,
-            message_id,
-            edited_at,
-            body: None, // populated by enrichment stage
-        }),
-        ControlPayload::MessageDeleted {
-            channel_id,
-            message_id,
-        } => SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
-            community: c(),
-            channel: channel_id,
-            message_id,
-        }),
-
         // ── MEK management ──────────────────────────────────
-        ControlPayload::MEKRotated {
-            channel_id,
-            new_generation,
-            rotator_pseudonym,
-        } => SubscriptionEvent::Crypto(CryptoEvent::MekRotated {
-            community: c(),
-            channel: channel_id,
-            generation: new_generation,
-            rotator_pseudonym,
-        }),
         ControlPayload::RequestMEK {
             channel_id,
             needed_generation,
@@ -187,36 +59,12 @@ pub fn control_into_event(
             })
         }
 
-        // ── Roles ───────────────────────────────────────────
-        ControlPayload::MemberRolesChanged {
-            pseudonym_key,
-            role_ids,
-        } => SubscriptionEvent::Membership(MembershipEvent::RolesChanged {
-            community: c(),
-            pseudonym: pseudonym_key,
-            role_ids,
-        }),
-        ControlPayload::OnboardingComplete {
-            pseudonym_key,
-            role_ids,
-        } => SubscriptionEvent::Membership(MembershipEvent::OnboardingCompleted {
-            community: c(),
-            pseudonym: pseudonym_key,
-            role_ids,
-        }),
+        // ── Onboarding ──────────────────────────────────────
         ControlPayload::SubmitOnboardingAnswers { answers } => {
             SubscriptionEvent::Membership(MembershipEvent::OnboardingAnswersSubmitted {
                 community: c(),
                 sender_pseudonym: s(),
                 answer_count: answers.len(),
-            })
-        }
-
-        // ── Channel permissions ─────────────────────────────
-        ControlPayload::ChannelOverwriteChanged { channel_id } => {
-            SubscriptionEvent::Governance(GovernanceEvent::ChannelPermissionsChanged {
-                community: c(),
-                channel: channel_id,
             })
         }
 
@@ -264,8 +112,8 @@ pub fn control_into_event(
             message_id,
         }),
 
-        // The remaining categories (events, threads, game servers,
-        // governance, voice, admin delegation, bootstrap, sync, system)
+        // The remaining categories (events, game servers, voice,
+        // bootstrap, sync, system)
         // are mapped by `into_event_rest` to keep this method under the
         // clippy::too_many_lines limit. They are listed explicitly rather
         // than via `_` so that adding a `ControlPayload` variant remains a
@@ -274,29 +122,14 @@ pub fn control_into_event(
         | ControlPayload::EventUpdated { .. }
         | ControlPayload::EventDeleted { .. }
         | ControlPayload::EventRsvpChanged { .. }
-        | ControlPayload::EventReminder { .. }
-        | ControlPayload::ThreadCreated { .. }
-        | ControlPayload::ThreadMessageReceived { .. }
-        | ControlPayload::ThreadArchived { .. }
         | ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }
-        | ControlPayload::GovernanceUpdated { .. }
-        | ControlPayload::VoiceJoin { .. }
         | ControlPayload::VoiceLeave { .. }
         | ControlPayload::VoiceModeSwitch { .. }
         | ControlPayload::VoiceMute { .. }
         | ControlPayload::VoiceDeafen { .. }
-        | ControlPayload::VoiceRoster { .. }
-        | ControlPayload::AdminKeypairGrant { .. }
-        | ControlPayload::SlotKeypairGrant { .. }
         | ControlPayload::BootstrapRequest { .. }
-        | ControlPayload::BootstrapResponse { .. }
-        | ControlPayload::SyncRequest { .. }
-        | ControlPayload::SyncResponse { .. }
-        | ControlPayload::SystemMessage { .. }
-        | ControlPayload::RaidAlert { .. }
-        | ControlPayload::ChannelLockdown { .. }
-        | ControlPayload::KickedNotification
+        | ControlPayload::BootstrapResponseV2 { .. }
         // Stage signalling. These are gossiped decisions every member
         // observes, not local session state — the desktop surfaced them
         // and the daemon dropped them, so a TUI could not render a
@@ -316,13 +149,57 @@ pub fn control_into_event(
         // rotation ack path — and none has a meaning in a subscriber's
         // event stream. Listed by name rather than caught by `_` so a
         // new variant still has to be classified here.
-        ControlPayload::MekTransferAck(_)
+        //
+        // Threads (plan E3.1 E3f): the Host's channel adapter stores each
+        // one and publishes its event. A reply's notification carries the
+        // sealed body but not the subkey and Lamport position its AAD
+        // binds, so only the Host, reading the reply from the thread
+        // record, has the body the event carries; mapping them here as
+        // well would publish each twice, the reply once without its body.
+        //
+        // Membership verdicts (A/B F7b-1, F7b-2): who joined, left, was
+        // kicked, banned or unbanned is the merged governance's to say,
+        // and the Host publishes each from the merge, once, with the
+        // remover and the reason (`host/adapters/governance/member_events.rs`).
+        // A gossip notice is a hint that is not authenticated for policy
+        // and carries neither; mapping it too published every removal
+        // twice, first without its reason.
+        ControlPayload::MemberJoined { .. }
+        | ControlPayload::MemberLeave { .. }
+        | ControlPayload::Kick { .. }
+        // A key's arrival and an onboarding verdict are the Host's to say
+        // too: `MekRotated` when it installs the key (`mek_transfer.rs`) or
+        // mints it (`mek_rotation`), `OnboardingCompleted` from its own
+        // check of the answers (`membership_events/onboarding.rs`). The
+        // notice is unauthenticated as to either and is a hint only.
+        | ControlPayload::MEKRotated { .. }
+        | ControlPayload::OnboardingComplete { .. }
+        | ControlPayload::ThreadMessageReceived { .. }
+        | ControlPayload::MekTransferAck(_)
         | ControlPayload::RequestSegmentExpansion { .. }
+        // Named voice events are built by the Host from verified cards.
+        | ControlPayload::VoiceJoin { .. }
+        | ControlPayload::VoiceRoster { .. }
         | ControlPayload::VoiceJoinAck { .. }
         | ControlPayload::VoiceJoinConfirmed { .. }
         | ControlPayload::VoiceMediaKey { .. }
         | ControlPayload::VoiceMediaKeyRequest { .. }
         | ControlPayload::VoiceMediaKeyAck { .. }
+        // A governance op reaches the Host's op store, whose rebuild emits
+        // what changed (plan E3.2).
+        | ControlPayload::GovernanceOp { .. }
+        | ControlPayload::HeadAdvanced { .. }
+        // A snapshot request and its answer travel by app_call (S7c.3).
+        | ControlPayload::CheckpointStateRequest { .. }
+        | ControlPayload::CheckpointStateResponse { .. }
+        | ControlPayload::CheckpointHintRequest { .. }
+        | ControlPayload::CheckpointHintResponse { .. }
+        // A frontier request and its answer travel by app_call (S7d-keys.8).
+        | ControlPayload::FrontierRequest { .. }
+        | ControlPayload::FrontierResponse { .. }
+        // A partial responder's bootstrap answer, read by the joiner's call.
+        | ControlPayload::BootstrapPartial { .. }
+        | ControlPayload::BootstrapRefused { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

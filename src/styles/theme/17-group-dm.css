@@ -1,0 +1,203 @@
+@layer components {
+
+  /* Group DMs (plan E2.6): the buddy list's invites and groups, the
+   * "New group" picker, and the chat window's group header. */
+  .group-dm-section {
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    padding: 4px 0;
+  }
+
+  .group-dm-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 3px 12px;
+    gap: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--font-family-xfire);
+  }
+
+  .group-dm-row:hover,
+  .group-dm-row:focus-visible {
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
+  }
+
+  /* The name gives way; the member count never does. */
+  .group-dm-row .buddy-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .group-dm-count {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .group-dm-picker-hint {
+    margin: 8px 0 4px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .group-dm-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .group-dm-picker-option {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* The member list wraps onto its own line, the window's width, when the
+     controls beside it would leave it less than 14em (a narrow window). */
+  .group-chat-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 4px 8px;
+    background: var(--color-xfire-bg-dark);
+  }
+
+  /* The names comma-separated (plan E2.6 GC1), each ellipsised as the
+     header narrows; a name that would shrink past its floor moves to the
+     next line rather than hiding a member. The full list is the title. */
+  .group-chat-members {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: hidden;
+    gap: 0 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    flex: 1 1 14em;
+    min-width: 0;
+  }
+
+  /* A name shrinks no further than four wide letters, the ellipsis and its
+     comma (5.5em: "WWWW…," at 11px; 5ch, the width of five digits, showed
+     three), so every member stays identifiable (r24 layout-friends, Linux,
+     group chat at 380x400). */
+  .group-chat-member {
+    flex: 0 1 auto;
+    min-width: 5.5em;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .group-chat-member:not(:last-child)::after {
+    content: ",";
+  }
+
+  /* The skin's secondary button (`.form-btn-secondary`, slot
+     `button.secondary`: its colours, edge and button art), compact to the
+     header (plan E7.7.7 e777n). */
+  .group-chat-leave {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+
+  .group-chat-compose {
+    flex: 0 0 auto;
+  }
+
+  /* Rename and Invite (plan E7.2 G7/G8): compact like Leave. A refused one
+     stays focusable (`aria-disabled`) so its Host reason reaches the title
+     and the screen reader; it looks like a disabled secondary button. */
+  .group-chat-action,
+  .downloads-tab-action {
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+
+  .group-chat-action[aria-disabled="true"],
+  .downloads-tab-action[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .group-chat-rename {
+    display: flex;
+    margin: 0;
+  }
+
+  .group-chat-rename-input {
+    width: 14ch;
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
+  .group-chat-error {
+    padding: 2px 8px;
+  }
+
+  /* A group's game lobby (plan E7.2 G6): the game and its host, the
+     members, then the four actions; a refused one is aria-disabled as
+     Rename and Invite are (their row, `.game-lobby-actions`, shares the
+     favourite-server row's rule in 19-game-invite.css). Once launched, a
+     member's one confirm. */
+  .game-lobby {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--color-xfire-bg-dark);
+    border-top: 1px solid var(--color-xfire-border);
+  }
+
+  .game-lobby-title,
+  .game-lobby-launched {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+  }
+
+  .game-lobby-game {
+    font-weight: 600;
+  }
+
+  .game-lobby-host,
+  .game-lobby-members {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .game-lobby-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 11px;
+  }
+
+  .game-lobby-server {
+    width: 18ch;
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
+  .game-lobby-error {
+    padding: 2px 0;
+  }
+}

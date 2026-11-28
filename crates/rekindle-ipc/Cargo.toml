@@ -1,20 +1,23 @@
 [package]
 name = "rekindle-ipc"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Rekindle IPC bus — wire protocol, Noise IK, framing, client, server, event router (Tier 3; no Veilid, no storage)"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
 blake3 = "1"
 dirs = "6"
 parking_lot = { workspace = true }
-postcard = { version = "1", features = [ "use-std" ] }
+postcard = { version = "1", default-features = false, features = [ "use-std" ] }
+rekindle-events = { path = "../rekindle-events" }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -43,6 +46,10 @@ interprocess = { version = "2.4", features = [ "tokio" ] }
 # The SDDL string `interprocess`'s `SecurityDescriptor::deserialize` takes.
 widestring = "1"
 
+[build-dependencies]
+blake3 = "1"
+
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

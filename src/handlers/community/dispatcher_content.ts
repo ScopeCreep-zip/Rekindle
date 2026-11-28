@@ -1,9 +1,8 @@
-import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import type { Message } from "../../stores/chat.store";
 import { transformEvent } from "../../actions/community/shared";
-
+import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
+import type { Message } from "../../stores/chat.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 
 // ── Daemon vocabulary ──────────────────────────────────────────────
 //
@@ -49,7 +48,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
     const { community, eventId } = s.eventDeleted;
     if (communityState.communities[community]) {
       setCommunityState("communities", community, "events", (prev) =>
-        (prev ?? []).filter((e) => e.id !== eventId),
+        (prev ?? []).filter((e) => e.id !== eventId)
       );
     }
     return;
@@ -66,7 +65,14 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
     const rsvpIdx = events[eventIdx].rsvps.findIndex((r) => r.pseudonymKey === pseudonym);
     if (rsvpIdx >= 0) {
       setCommunityState(
-        "communities", community, "events", eventIdx, "rsvps", rsvpIdx, "status", status,
+        "communities",
+        community,
+        "events",
+        eventIdx,
+        "rsvps",
+        rsvpIdx,
+        "status",
+        status
       );
     } else {
       setCommunityState("communities", community, "events", eventIdx, "rsvps", (prev) => [
@@ -80,7 +86,11 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
   if ("threadCreated" in s) {
     const { community, thread } = s.threadCreated;
     if (communityState.communities[community]) {
-      setCommunityState("channelThreads", thread.channelId, (prev) => [...(prev ?? []), thread]);
+      // The creator's own window may already hold it from its reload
+      // after create; the merged governance announces each thread once.
+      setCommunityState("channelThreads", thread.channelId, (prev) =>
+        prev?.some((t) => t.id === thread.id) ? prev : [...(prev ?? []), thread]
+      );
     }
     return;
   }
@@ -89,23 +99,29 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
     const { community, threadId, messageId, senderPseudonym, body, timestamp, replyToId } =
       s.threadMessagePosted;
     const c = communityState.communities[community];
-    const isOwn = c?.myPseudonymKey === senderPseudonym;
+    const existing = communityState.threadMessages[threadId] ?? [];
+    // A reply already shown (the event repeats, or a page read held it)
+    // neither shows nor counts twice.
+    if (existing.some((m) => m.serverMessageId === messageId)) return;
+    countThreadReply(threadId, timestamp);
 
-    if (isOwn) {
-      // Update optimistic entry instead of duplicating
-      setCommunityState("threadMessages", threadId, (prev) => {
-        const existing = prev ?? [];
-        const optimisticIdx = existing.findIndex((m) => m.status === "sending");
-        if (optimisticIdx >= 0) {
-          return existing.map((m, i) =>
-            i === optimisticIdx
-              ? { ...m, serverMessageId: messageId, status: "sent" as const }
-              : m,
-          );
-        }
-        return existing;
-      });
-      return;
+    if (c?.myPseudonymKey === senderPseudonym) {
+      // Our own reply, which the Host publishes since the mesh never
+      // echoes it (plan E7.13 M76), queued or sent alike (plan FT1): it
+      // names the bubble waiting for it, whose state stays the Host's
+      // send answer or ChannelSendStatus; shown anew when none waits
+      // (sent from another window, or the bubble was replaced).
+      const waiting = existing.findIndex(
+        (m) =>
+          m.isOwn &&
+          !m.serverMessageId &&
+          m.status === "sending" &&
+          (body === null || m.body === body)
+      );
+      if (waiting >= 0) {
+        setCommunityState("threadMessages", threadId, waiting, "serverMessageId", messageId);
+        return;
+      }
     }
 
     // `body` is null when the gossip decoder produced the event: it
@@ -117,7 +133,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
       senderId: senderPseudonym,
       body: body ?? "",
       timestamp,
-      isOwn: false,
+      isOwn: c?.myPseudonymKey === senderPseudonym,
       serverMessageId: messageId,
       replyToId: replyToId ?? undefined,
     };
@@ -132,13 +148,10 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
       if (!threads) continue;
       const idx = threads.findIndex((t) => t.id === threadId);
       if (idx < 0) continue;
-      if (archived) {
-        setCommunityState("channelThreads", channelId, (prev) =>
-          (prev ?? []).filter((thread) => thread.id !== threadId),
-        );
-      } else {
-        setCommunityState("channelThreads", channelId, idx, "archived", false);
-      }
+      // An archived thread stays listed, as archived (plan E7.13 walk
+      // 18 (b)): it can be read and reopened, as Discord's archived
+      // threads can.
+      setCommunityState("channelThreads", channelId, idx, "archived", archived);
       break;
     }
     return;
@@ -153,7 +166,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
   if ("gameServerRemoved" in s) {
     const { community, serverId } = s.gameServerRemoved;
     setCommunityState("gameServers", community, (prev) =>
-      (prev ?? []).filter((x) => x.id !== serverId),
+      (prev ?? []).filter((x) => x.id !== serverId)
     );
     return;
   }
@@ -161,5 +174,21 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
   if ("eventReminder" in s) {
     const { title, minutesUntilStart } = s.eventReminder;
     addToast(`Event "${title}" starts in ${minutesUntilStart} min`, "info");
+  }
+}
+
+/** Count a new reply on its thread, wherever the window lists it, so the
+ * open thread's header and the thread list show it (plan E7.13 M76). */
+function countThreadReply(threadId: string, timestamp: number): void {
+  for (const channelId of Object.keys(communityState.channelThreads)) {
+    const idx = (communityState.channelThreads[channelId] ?? []).findIndex(
+      (t) => t.id === threadId
+    );
+    if (idx < 0) continue;
+    setCommunityState("channelThreads", channelId, idx, (t) => ({
+      ...t,
+      messageCount: t.messageCount + 1,
+      lastMessageAt: Math.max(t.lastMessageAt, timestamp),
+    }));
   }
 }

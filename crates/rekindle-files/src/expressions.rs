@@ -1,6 +1,5 @@
 //! Phase 23.D.9 — Lost Cargo storage + retrieval for expression assets
-//! (custom emoji, stickers, soundboard sounds). Ported from
-//! `src-tauri/services/community/expression_assets.rs`. Architecture
+//! (custom emoji, stickers, soundboard sounds). Architecture
 //! §18.4 + §28.9 line 3286.
 //!
 //! Upload chunks bytes, encrypts each chunk under a fresh per-asset
@@ -17,7 +16,7 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use uuid::Uuid;
 
 use crate::chunker::Chunker;
-use crate::deps::FilesDeps;
+use crate::deps::{FileCacheDeps, FilesDeps};
 use crate::error::FilesError;
 use crate::manifest::AttachmentOffer;
 use crate::CHUNK_SIZE_BYTES;
@@ -40,10 +39,10 @@ pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
 
     let community_mek = crate::keys::current_community_key(deps, community_id)?;
 
-    let fek = MediaEncryptionKey::generate(0);
+    let fek = MediaEncryptionKey::generate_with(0, deps.rng().as_ref());
 
     deps.ensure_cache_open(community_id)?;
-    let chunked = Chunker::chunk(bytes)
+    let chunked = Chunker::chunk(bytes, expression_id)
         .map_err(|e| FilesError::InvalidInput(format!("chunker failed: {e}")))?;
     let chunk_count = u32::try_from(chunked.chunks.len())
         .map_err(|_| FilesError::InvalidInput("chunk count exceeds u32::MAX".to_string()))?;
@@ -93,7 +92,7 @@ pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
 ///
 /// The FEK is unwrapped under exactly the community key generation the
 /// offer names, current or historical.
-pub fn read_expression_bytes<D: FilesDeps + ?Sized>(
+pub fn read_expression_bytes<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     offer: &AttachmentOffer,

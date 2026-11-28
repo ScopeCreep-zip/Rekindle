@@ -1,7 +1,7 @@
-import { Component, For, Show, createSignal, createMemo } from "solid-js";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import type { Thread } from "../../stores/community.store";
-import { ICON_CLOSE, ICON_THREAD } from "../../icons";
-import { formatRelativeTime } from "../../utils/formatting";
+import { formatRelativeTime, messageCount } from "../../utils/formatting";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadListPanelProps {
   threads: Thread[];
@@ -15,7 +15,7 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
   const [sortMode, setSortMode] = createSignal<SortMode>("activity");
   const [searchQuery, setSearchQuery] = createSignal("");
 
-  const filteredThreads = createMemo(() => {
+  const sortedThreads = createMemo(() => {
     const q = searchQuery().toLowerCase();
     let threads = props.threads;
     if (q) threads = threads.filter((t) => t.name.toLowerCase().includes(q));
@@ -26,13 +26,35 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
     return [...threads].sort((a, b) => b.createdAt - a.createdAt);
   });
 
+  // Archived threads stay reachable, listed apart (Discord's "Archived
+  // threads"; plan E7.13 walk 18 (b)).
+  const active = createMemo(() => sortedThreads().filter((t) => !t.archived));
+  const archived = createMemo(() => sortedThreads().filter((t) => t.archived));
+  const item = (thread: Thread) => (
+    <button
+      type="button"
+      class={`thread-list-item${thread.archived ? " thread-archived" : ""}`}
+      onClick={() => props.onSelectThread(thread.id)}
+    >
+      <span class="thread-list-item-name">{thread.name}</span>
+      <span class="thread-list-item-meta">
+        {messageCount(thread.messageCount)} - {formatRelativeTime(thread.lastMessageAt * 1000)}
+      </span>
+    </button>
+  );
+
   return (
     <div class="thread-list-panel">
       <div class="thread-panel-header">
-        <span class="nf-icon" aria-hidden="true">{ICON_THREAD}</span>
+        <SkinGlyph name="thread" />
         Threads
-        <button class="modal-close-btn" onClick={props.onClose} aria-label="Close threads panel">
-          <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+        <button
+          type="button"
+          class="modal-close-btn"
+          onClick={props.onClose}
+          aria-label="Close threads panel"
+        >
+          <SkinGlyph name="close" />
         </button>
       </div>
       <div class="thread-list-controls">
@@ -45,12 +67,14 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
         />
         <div class="thread-list-sort-row">
           <button
+            type="button"
             class={`event-filter-btn ${sortMode() === "activity" ? "event-filter-active" : ""}`}
             onClick={() => setSortMode("activity")}
           >
             Recent
           </button>
           <button
+            type="button"
             class={`event-filter-btn ${sortMode() === "created" ? "event-filter-active" : ""}`}
             onClick={() => setSortMode("created")}
           >
@@ -59,19 +83,14 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
         </div>
       </div>
       <div class="thread-list-content">
-        <Show when={filteredThreads().length === 0}>
+        <Show when={sortedThreads().length === 0}>
           <div class="pin-panel-empty">No threads yet</div>
         </Show>
-        <For each={filteredThreads()}>
-          {(thread) => (
-            <div class="thread-list-item" onClick={() => props.onSelectThread(thread.id)}>
-              <div class="thread-list-item-name">{thread.name}</div>
-              <div class="thread-list-item-meta">
-                {thread.messageCount} messages - {formatRelativeTime(thread.lastMessageAt * 1000)}
-              </div>
-            </div>
-          )}
-        </For>
+        <For each={active()}>{item}</For>
+        <Show when={archived().length > 0}>
+          <div class="thread-list-section">Archived threads</div>
+          <For each={archived()}>{item}</For>
+        </Show>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 //! [`GovernanceEntry`] — the per-write governance CRDT entry enum, plus
-//! its Lamport-timestamp extraction.
+//! its admission mode. Ops carry the ordering (`super::op`).
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ use super::onboarding::{GuideStep, OnboardingQuestion, WelcomeChannel};
 /// A single governance entry written by a member to their SMPL subkey.
 ///
 /// The CRDT merge engine (`rekindle-governance`) processes all entries from
-/// all member subkeys, sorts by `(lamport, author_pseudonym)`, and applies
+/// all member subkeys, orders the ops carrying them (`super::op`, power-first), and applies
 /// deterministic merge rules to produce a `GovernanceState`.
 ///
 /// Permission enforcement is reader-side: each reader validates whether the
@@ -25,12 +25,12 @@ use super::onboarding::{GuideStep, OnboardingQuestion, WelcomeChannel};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AdmissionMode {
-    /// Anyone holding a valid invite joins without review. The default
-    /// when a community has no `AdmissionPolicy` genesis entry, which is
-    /// every community created before this existed.
+    /// Anyone holding a valid invite joins without review. The mode is
+    /// pinned by `GenesisCert.policy` (plan E3.2 decision (b)), so it is
+    /// immutable; there is no admission-policy entry.
     #[default]
     Open,
-    /// A `JoinRequested` must be matched by `MemberApproved` from a
+    /// A `MemberJoined` must be matched by `MemberApproved` from a
     /// holder of `KICK_MEMBERS` before honest peers count the member.
     ApprovalRequired,
 }
@@ -38,14 +38,13 @@ pub enum AdmissionMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GovernanceEntry {
-    /// Create a new channel. Creates an associated SMPL channel record.
+    /// Create a new channel. It has no record of its own: its posts ride
+    /// their authors' `M`/4 outboxes under its channel tag (plan E3.3).
     ChannelCreated {
         channel_id: ChannelId,
         name: String,
         /// "text", "voice", "announcement", "forum", "stage", "media"
         channel_type: String,
-        /// DHT key of the channel's SMPL record (same universal schema)
-        record_key: String,
         category_id: Option<CategoryId>,
         position: u32,
         /// Architecture §10.8 — text-in-voice. When set, this channel
@@ -57,11 +56,10 @@ pub enum GovernanceEntry {
         /// gating). `None` for normal channels.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent_voice_channel_id: Option<ChannelId>,
-        lamport: u64,
     },
 
     /// Archive (soft-delete) a channel. CRDT: removes from active set.
-    ChannelArchived { channel_id: ChannelId, lamport: u64 },
+    ChannelArchived { channel_id: ChannelId },
 
     /// Update channel metadata. CRDT: LWW per field per channel_id.
     ///
@@ -86,7 +84,6 @@ pub enum GovernanceEntry {
             reason = "unchanged / clear / set, encoded in a Cap'n Proto union arm; converging on an ExclusionGroupEdit-style enum is a schema change"
         )]
         category_id: Option<Option<CategoryId>>,
-        lamport: u64,
     },
 
     /// Define or redefine a role. CRDT: LWW per role_id (highest lamport wins).
@@ -111,44 +108,92 @@ pub enum GovernanceEntry {
         /// like `"pronouns"` or `"region"`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         exclusion_group: Option<String>,
-        lamport: u64,
     },
 
     /// Assign a role to a member. CRDT: LWW-Flag per (target, role_id).
     RoleAssignment {
         target: PseudonymKey,
         role_id: RoleId,
-        lamport: u64,
     },
 
     /// Remove a role from a member. CRDT: LWW-Flag per (target, role_id).
     RoleUnassignment {
         target: PseudonymKey,
         role_id: RoleId,
-        lamport: u64,
     },
 
     /// Ban a member. CRDT: LWW-Flag per target (UnbanEntry reverses).
+    ///
+    /// `target_seq_frontier` is the number of `target`'s ops in the ban's
+    /// causal past (its highest seq there plus one; 0 when none): every op
+    /// of `target` at a seq at or above it is masked, whatever deps it
+    /// cites (plan E3.2 S7c.3a, strong removal per author).
     BanEntry {
         target: PseudonymKey,
         reason: Option<String>,
-        lamport: u64,
+        target_seq_frontier: u64,
     },
 
     /// Unban a member. Must have higher lamport than the corresponding BanEntry.
-    UnbanEntry { target: PseudonymKey, lamport: u64 },
+    UnbanEntry { target: PseudonymKey },
 
-    /// A prospective member asking to be admitted.
+    /// A member joining: self-authored, op #0 of its own member record
+    /// (plan E3.2, absorbs the old `JoinRequested`). `invite_proof` is
+    /// `None` only for the `GenesisCert` creator. Under
+    /// `AdmissionMode::ApprovalRequired` the joiner is pending until a
+    /// `MemberApproved`.
+    MemberJoined {
+        /// DHT key of the joiner's DFLT(8) member record.
+        member_record: String,
+        /// The member record's owner public key, as `owner_of` names it
+        /// (`VLD0:<base64url>` text).
+        member_record_owner: String,
+        invite_proof: Option<super::op::InviteProof>,
+        /// `K_M`'s Ed25519 proof that it binds `member_record` to the
+        /// author (`MEMBER_RECORD_BINDING ‖ anchor ‖ author ‖
+        /// member_record`, `rekindle_secrets::member_record`); 64 bytes.
+        owner_proof: Vec<u8>,
+        /// The joiner's first device key, endorsed by the author (ADR 0022,
+        /// plan E3.2 S7d-keys.1); `None` until S7d-keys.6 mints one at join.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_device: Option<super::device::DeviceEndorsement>,
+    },
+
+    /// The author moved to a new member record (self-authored).
+    MemberRecordMoved {
+        member_record: String,
+        member_record_owner: String,
+        /// The new record owner's binding proof, as in `MemberJoined`.
+        owner_proof: Vec<u8>,
+    },
+
+    /// The author left the community (self-authored).
     ///
-    /// **Self-authored only** — `validate_write` requires
-    /// `author == requester`, mirroring Matrix's knock event where
-    /// `sender == state_key == the joiner` (unlike an invite, where they
-    /// differ). Requesting is not a permission: anyone reachable may ask.
-    /// CRDT: Grow-Only Set, cleared per target by an approve/reject.
-    JoinRequested {
-        requester: PseudonymKey,
-        display_name: String,
-        lamport: u64,
+    /// `heads` records, per channel record, the seq of the author's own
+    /// slot value as it held it when it left, signed by the author, the
+    /// one holder of the slot's keys: a departed author's post read from
+    /// history is kept only from a value at or below it, so a leaver
+    /// whose slot stays writable (a restored backup) cannot back-date a
+    /// post into members' history (A/B finding R3-8, as `MemberRemoved`).
+    MemberLeft { heads: Vec<SlotHead> },
+
+    /// A durable kick: removes `target` from the roster and drives MEK
+    /// rotation (E3.5). Requires `KICK_MEMBERS` and outranking the target.
+    ///
+    /// `heads` records, per channel record, the seq of the target's slot
+    /// value as the remover held it: a departed author's post read from
+    /// history is kept only from a value at or below it, so a removed
+    /// member writing its still-writable slot cannot back-date a post into
+    /// members' history (A/B finding R3-8; Matrix judges history at the
+    /// event's causal position, not by its author-asserted time).
+    MemberRemoved {
+        target: PseudonymKey,
+        reason: Option<String>,
+        #[serde(default)]
+        heads: Vec<SlotHead>,
+        /// The number of `target`'s ops in the removal's causal past, as
+        /// on `BanEntry` (plan E3.2 S7c.3a).
+        target_seq_frontier: u64,
     },
 
     /// Admit a pending member. Requires `KICK_MEMBERS`.
@@ -160,25 +205,14 @@ pub enum GovernanceEntry {
     /// member. Same mechanism as Jami, where a join commit missing its
     /// `/invited` precondition is rejected by every peer.
     /// CRDT: LWW-Flag per target.
-    MemberApproved { target: PseudonymKey, lamport: u64 },
+    MemberApproved { target: PseudonymKey },
 
     /// Refuse a pending member. Requires `KICK_MEMBERS`.
     /// CRDT: LWW-Flag per target, paired with `MemberApproved`.
     MemberRejected {
         target: PseudonymKey,
         reason: Option<String>,
-        lamport: u64,
     },
-
-    /// Whether the community admits members freely or by approval.
-    ///
-    /// **Honored only as the genesis entry.** A later one is ignored by
-    /// every honest peer, which is what makes the mode immutable — the
-    /// point of putting it here rather than on `CommunityPolicy`, whose
-    /// LWW semantics would let anyone holding `MANAGE_COMMUNITY`
-    /// silently flip a private community open. Jami fixes conversation
-    /// mode in the initial commit for the same reason.
-    AdmissionPolicy { mode: AdmissionMode, lamport: u64 },
 
     /// Timeout a member temporarily. Strips all permissions except view.
     TimeoutEntry {
@@ -186,11 +220,10 @@ pub enum GovernanceEntry {
         duration_seconds: u64,
         reason: Option<String>,
         started_at: u64,
-        lamport: u64,
     },
 
     /// Remove an active timeout from a member.
-    RemoveTimeoutEntry { target: PseudonymKey, lamport: u64 },
+    RemoveTimeoutEntry { target: PseudonymKey },
 
     /// Update community metadata. CRDT: LWW (highest lamport replaces all).
     CommunityMeta {
@@ -198,14 +231,13 @@ pub enum GovernanceEntry {
         description: Option<String>,
         icon_hash: Option<String>,
         banner_hash: Option<String>,
-        lamport: u64,
     },
 
     /// Community-wide default notification level (architecture §17.1
     /// three-tier cascade tier 1). The most-specific setting wins:
     /// per-channel local override > community default > implicit "all".
     /// `level` is one of "all" | "mentions" | "nothing". CRDT: LWW.
-    CommunityNotificationDefault { level: String, lamport: u64 },
+    CommunityNotificationDefault { level: String },
 
     /// Bump MEK generation. CRDT: Max-Register (highest generation wins).
     /// Written by the deterministic rotator after peer-to-peer MEK distribution.
@@ -221,7 +253,6 @@ pub enum GovernanceEntry {
         /// took over. Readers verify each was offline (no heartbeat in 30s window).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cascade_skipped: Vec<PseudonymKey>,
-        lamport: u64,
     },
 
     /// Create a category (display-only channel grouping).
@@ -229,14 +260,10 @@ pub enum GovernanceEntry {
         category_id: CategoryId,
         name: String,
         position: u32,
-        lamport: u64,
     },
 
     /// Archive a category.
-    CategoryArchived {
-        category_id: CategoryId,
-        lamport: u64,
-    },
+    CategoryArchived { category_id: CategoryId },
 
     /// Set per-channel permission overwrite. CRDT: LWW per (channel_id, target_id).
     PermissionOverwrite {
@@ -247,29 +274,30 @@ pub enum GovernanceEntry {
         target_id: String,
         allow: u64,
         deny: u64,
-        lamport: u64,
     },
 
-    /// Create a thread (lazy SMPL record creation).
+    /// Create a thread. Its replies ride their authors' channel outboxes
+    /// under the thread's derived tag (plan E3.3, T1).
     ThreadCreated {
         thread_id: ThreadId,
         parent_channel_id: ChannelId,
         name: String,
         /// "public" | "private" | "announcement" | "forum_post"
         thread_type: String,
-        /// DHT key — created lazily on first message, None initially.
-        record_key: Option<String>,
         /// Explicit invitees for private threads.
         invited: Vec<PseudonymKey>,
         /// Tag selected from the parent forum channel, when applicable.
         forum_tag: Option<String>,
         /// Auto-archive after this many seconds of inactivity.
         auto_archive_seconds: u64,
-        lamport: u64,
     },
 
     /// Archive a thread. CRDT: tombstone (archived threads excluded from merged state).
-    ThreadArchived { thread_id: ThreadId, lamport: u64 },
+    ThreadArchived { thread_id: ThreadId },
+
+    /// Reopen an archived thread. CRDT: LWW against `ThreadArchived` by
+    /// lamport, so the later of the two decides.
+    ThreadUnarchived { thread_id: ThreadId },
 
     /// Create or update a scheduled event (architecture §21).
     /// RSVPs are their own member-authored [`Self::EventRsvp`] entries.
@@ -304,7 +332,6 @@ pub enum GovernanceEntry {
         /// Cancelled. `None` decoded from legacy rows = Scheduled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         status: Option<crate::event::EventStatus>,
-        lamport: u64,
     },
 
     /// Add a custom expression asset. CRDT: OR-Set on expression_id.
@@ -347,17 +374,13 @@ pub enum GovernanceEntry {
         /// because the previous behaviour was effectively shareable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_to_peers: Option<bool>,
-        lamport: u64,
     },
 
     /// Remove a custom expression. CRDT: OR-Set tombstone by expression_id.
-    ExpressionRemoved {
-        expression_id: [u8; 16],
-        lamport: u64,
-    },
+    ExpressionRemoved { expression_id: [u8; 16] },
 
     /// Archive a scheduled event. CRDT: tombstone.
-    EventArchived { event_id: EventId, lamport: u64 },
+    EventArchived { event_id: EventId },
 
     /// The author's RSVP to a live event (plan C7.15). Member-authored,
     /// like Matrix's `m.calendar.rsvp` relation (MSC4496); readers
@@ -365,7 +388,16 @@ pub enum GovernanceEntry {
     EventRsvp {
         event_id: EventId,
         status: crate::event::RsvpStatus,
-        lamport: u64,
+    },
+
+    /// A report to the moderators (plan E3.1, D26): an automod
+    /// `alert_moderators` match or a member's report. Any member may write
+    /// one; readers holding `MANAGE_MESSAGES` see the queue. CRDT: G-Set
+    /// per `report_id`, the lowest `(lamport, author)` kept on a collision.
+    ModReport {
+        report_id: [u8; 16],
+        target: super::ModReportTarget,
+        reason: String,
     },
 
     /// Onboarding configuration. CRDT: LWW (latest lamport wins).
@@ -377,38 +409,25 @@ pub enum GovernanceEntry {
         questions: Vec<OnboardingQuestion>,
         welcome_message: Option<String>,
         guide_steps: Vec<GuideStep>,
-        lamport: u64,
     },
 
     /// Welcome screen shown after onboarding. CRDT: LWW (latest lamport wins).
     WelcomeScreen {
         description: String,
         channels: Vec<WelcomeChannel>,
-        lamport: u64,
     },
 
-    /// Admin delete a message (tombstone). Requires MANAGE_MESSAGES.
+    /// Admin delete a message (tombstone). Requires MANAGE_MESSAGES in the
+    /// channel and a role no lower than the post's author's (plan E3.3 M1),
+    /// so the op names the author: the validator judges the rank at the
+    /// op's causal position, and readers apply the delete only to a post
+    /// by that author.
     AdminDelete {
         message_id: [u8; 16],
         channel_id: ChannelId,
+        /// The removed post's author.
+        author: PseudonymKey,
         reason: Option<String>,
-        lamport: u64,
-    },
-
-    /// Plate Gate (architecture §15.4 lazy channel records) — announces
-    /// that a channel has acquired a segment-N SMPL record for messages
-    /// from members in segment N. Written by the first segment-N member
-    /// to send a message in `channel_id` (architecture §15.4 + DS-aligned
-    /// v2 plan line 993). Other members merge this entry, then
-    /// `open_record` + watch the new key so messages from segment-N peers
-    /// are discoverable. CRDT: LWW per `(channel_id, segment_index)`.
-    ChannelSegmentLinked {
-        channel_id: ChannelId,
-        segment_index: u32,
-        /// SMPL record key for messages from segment-N members in this
-        /// channel. The schema mirrors the segment-0 record (255 slots).
-        record_key: String,
-        lamport: u64,
     },
 
     /// Plate Gate (architecture §15) — adds a new registry + governance
@@ -434,10 +453,9 @@ pub enum GovernanceEntry {
     SegmentAdded {
         segment_index: u32,
         registry_key: String,
-        governance_key: String,
+        anchor: String,
         slot_range_start: u32,
         slot_range_end: u32,
-        lamport: u64,
     },
 
     /// AutoMod rule. CRDT: LWW per rule_id.
@@ -447,20 +465,17 @@ pub enum GovernanceEntry {
         enabled: bool,
         /// JSON-encoded trigger config (keyword list, regex patterns)
         trigger_json: String,
-        /// "block_locally", "blur_content", "alert_moderators"
-        action: String,
-        lamport: u64,
+        action: super::AutoModAction,
     },
 
     /// Remove a role definition. CRDT: tombstone (archived roles excluded from merged state).
-    RoleArchived { role_id: RoleId, lamport: u64 },
+    RoleArchived { role_id: RoleId },
 
     /// Update category metadata. CRDT: LWW per category_id.
     CategoryUpdated {
         category_id: CategoryId,
         name: Option<String>,
         position: Option<u32>,
-        lamport: u64,
     },
 
     /// Create an invite. In v2.0, invites are governance entries rather than
@@ -470,18 +485,19 @@ pub enum GovernanceEntry {
     /// the pointer so the entry stays within the SMPL per-subkey size cap.
     InviteCreated {
         invite_id: [u8; 16],
-        /// SHA-256 hash of the invite code (hex). The raw code is never stored.
+        /// The invite's public id and join-proof key (hex Ed25519 public key
+        /// seeded by BLAKE3 `derive_key` under `domains::INVITE_JOIN` over
+        /// the code, plan E3.2 S10). The raw code is never stored.
         code_hash: String,
         max_uses: u32,
         expires_at: Option<u64>,
         /// DHT record key of the DFLT record holding the encrypted
         /// `InviteSecrets` blob (decrypted with the out-of-band invite code).
         secrets_record_key: String,
-        lamport: u64,
     },
 
     /// Revoke an invite. CRDT: tombstone by invite_id.
-    InviteRevoked { invite_id: [u8; 16], lamport: u64 },
+    InviteRevoked { invite_id: [u8; 16] },
 
     /// Lost Cargo: admin pin/unpin of an attachment. Pinned files are
     /// exempt from local LRU cache eviction (architecture §28.9 line 3283).
@@ -491,7 +507,6 @@ pub enum GovernanceEntry {
         attachment_id: [u8; 16],
         /// True = pinned, false = unpinned.
         pinned: bool,
-        lamport: u64,
     },
 
     /// Architecture §10.7 + §20.6 — community-wide policy text plus
@@ -509,53 +524,46 @@ pub enum GovernanceEntry {
         max_joins_per_interval: u32,
         /// Window length for the rate detector. Default 600 s.
         join_interval_seconds: u32,
-        lamport: u64,
     },
+
+    /// A governance checkpoint (plan E3.2 S7c.3): an acceleration hint
+    /// over a causal cut, endorsed by the op's author. It changes no state.
+    Checkpoint(super::checkpoint::Checkpoint),
+
+    /// A successor community, a transfer offer or its acceptance (ADR 0011,
+    /// plan E3.2 S7s.3e): creator-signed, an acceptance by the offer's
+    /// `transferTo` only.
+    CommunitySuccessor(super::successor::CommunitySuccessor),
+
+    /// The author pseudonym endorses one of its device keys (ADR 0022, plan
+    /// E3.2 S7d-keys.1): valid from any carrier.
+    DeviceKey(super::device::DeviceEndorsement),
+
+    /// The author pseudonym retires one of its device keys above a seq
+    /// (ADR 0022 rules 4 and 5): valid from any carrier.
+    DeviceRetired(super::device::DeviceRetired),
+
+    /// A co-signed re-admission of a member's new device key after a fork
+    /// (ADR 0022 rules 7 and 8).
+    DeviceReadmit(super::device::DeviceReadmit),
+
+    /// A transfer recipient's link request to the offer's other creators
+    /// (lead decision (46)); by the offer's `transferTo` only.
+    SuccessorLinkRequest(super::successor::SuccessorLinkRequest),
+
+    /// A co-creator's creator link answering a request naming it (lead
+    /// decision (46)).
+    SuccessorLink(super::successor::SuccessorLink),
 }
 
-impl GovernanceEntry {
-    /// Extract the Lamport timestamp for CRDT ordering.
-    pub fn lamport(&self) -> u64 {
-        match self {
-            Self::ChannelCreated { lamport, .. }
-            | Self::ChannelArchived { lamport, .. }
-            | Self::ChannelUpdated { lamport, .. }
-            | Self::RoleDefinition { lamport, .. }
-            | Self::RoleAssignment { lamport, .. }
-            | Self::RoleUnassignment { lamport, .. }
-            | Self::BanEntry { lamport, .. }
-            | Self::UnbanEntry { lamport, .. }
-            | Self::JoinRequested { lamport, .. }
-            | Self::MemberApproved { lamport, .. }
-            | Self::MemberRejected { lamport, .. }
-            | Self::AdmissionPolicy { lamport, .. }
-            | Self::TimeoutEntry { lamport, .. }
-            | Self::RemoveTimeoutEntry { lamport, .. }
-            | Self::CommunityMeta { lamport, .. }
-            | Self::CommunityNotificationDefault { lamport, .. }
-            | Self::MEKGenerationBump { lamport, .. }
-            | Self::CategoryCreated { lamport, .. }
-            | Self::CategoryArchived { lamport, .. }
-            | Self::PermissionOverwrite { lamport, .. }
-            | Self::ThreadCreated { lamport, .. }
-            | Self::ThreadArchived { lamport, .. }
-            | Self::EventCreated { lamport, .. }
-            | Self::ExpressionAdded { lamport, .. }
-            | Self::ExpressionRemoved { lamport, .. }
-            | Self::EventArchived { lamport, .. }
-            | Self::EventRsvp { lamport, .. }
-            | Self::OnboardingConfig { lamport, .. }
-            | Self::WelcomeScreen { lamport, .. }
-            | Self::AdminDelete { lamport, .. }
-            | Self::SegmentAdded { lamport, .. }
-            | Self::AutoModRule { lamport, .. }
-            | Self::RoleArchived { lamport, .. }
-            | Self::CategoryUpdated { lamport, .. }
-            | Self::InviteCreated { lamport, .. }
-            | Self::InviteRevoked { lamport, .. }
-            | Self::AttachmentPinned { lamport, .. }
-            | Self::ChannelSegmentLinked { lamport, .. }
-            | Self::CommunityPolicy { lamport, .. } => *lamport,
-        }
-    }
+/// The exact value of a member's slot in one channel record, as a
+/// `MemberRemoved` or the member's own `MemberLeft` records it (A/B
+/// finding R3-8, plan S9): its seq and the digest of its decrypted page
+/// (`rekindle_secrets::slot_head_digest`). A reader keeps the departed
+/// member's backfilled posts only when read from exactly this value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SlotHead {
+    pub record_key: String,
+    pub seq: u32,
+    pub digest: [u8; 32],
 }

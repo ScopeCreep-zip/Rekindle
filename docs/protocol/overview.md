@@ -11,7 +11,7 @@ Each user's identity is an Ed25519 keypair generated locally on first run. The
 public key serves as the user's permanent address. There are no usernames,
 passwords, or email addresses. The private key never leaves the device.
 
-```
+```text
 Identity creation:
   1. Generate Ed25519 keypair
   2. Derive X25519 key for Diffie-Hellman
@@ -24,20 +24,22 @@ Identity creation:
 
 ## 1:1 Message Flow (Friends)
 
-```
+```text
 ┌───────────┐                                              ┌───────────┐
 │  Sender   │                                              │ Receiver  │
 │           │                                              │           │
-│ plaintext │                                              │ plaintext │
+│ DmContent │                                              │ DmContent │
 │     │     │                                              │     ▲     │
 │     ▼     │                                              │     │     │
-│  Signal   │                                              │  Signal   │
-│  encrypt  │                                              │  decrypt  │
+│ Carrier   │                                              │ Carrier   │
+│ encrypt   │                                              │ open      │
+│ (ratchet /│                                              │ (ratchet /│
+│ PreKeyInit│                                              │ PreKeyInit│
+│ / sealed) │                                              │ / sealed) │
 │     │     │                                              │     ▲     │
 │     ▼     │                                              │     │     │
-│ Envelope  │                                              │ Envelope  │
-│ + Ed25519 │                                              │ verify    │
-│ signature │                                              │ signature │
+│ 'D' ‖     │                                              │ 'D' ‖     │
+│ DmFrame   │                                              │ DmFrame   │
 │     │     │                                              │     ▲     │
 │     ▼     │                                              │     │     │
 │ Veilid    │    safety route    ┌─────────┐  private     │ Veilid    │
@@ -55,74 +57,93 @@ receiver's IP in the same manner.
 | Stage | Layer | Operation |
 |-------|-------|-----------|
 | 1. Compose | Frontend | User types message, invokes `send_message` command |
-| 2. Seal | rekindle-crypto | `payload.sealing()`: `Session` payloads are Signal Double Ratchet ciphertext; `Plain` payloads are signed only |
-| 3. Sign | rekindle-protocol | Build `MessageEnvelope`, sign `envelope_signing_bytes` (domain ‖ recipient ‖ timestamp ‖ length-prefixed nonce and payload) with Ed25519 |
-| 4. Serialize | rekindle-protocol | Cap'n Proto-encode the envelope (`capnp_codec::message`) |
-| 5. Send | rekindle-protocol | Look up peer's route blob, import route, `app_message()` |
-| 6. Receive | services/veilid::dispatch | `VeilidUpdate::AppMessage` callback dispatches to `message_service` |
-| 7. Verify & open | rekindle-protocol, rekindle-crypto | Verify the signature for our key, check freshness and replay, Signal-decrypt, require the sealing the payload type demands |
-| 8. Store & Display | src-tauri | Insert into SQLite, emit `ChatEvent::MessageReceived` |
+| 2. Encode | rekindle-codec | Build the kind's body (`DmText`, ...), wrap it in a `DmContent {contentHint, sentAtMs, payload}` (a `SealedContent` with a random nonce for pre-session kinds) |
+| 3. Seal | rekindle-crypto, rekindle-db, rekindle-secrets | By the kind's carrier (below): step the Double Ratchet in one DB transaction (`rekindle_db::ratchet`), open a session with a PreKeyInit, or HPKE-seal and Ed25519-sign |
+| 4. Serialize | rekindle-codec | Cap'n Proto-encode the `DmFrame` (`capnp_codec::direct`) and prefix the `'D'` tag |
+| 5. Send | rekindle-transport | Look up peer's route blob, import route, `app_message()` (`operations::dm::send`) |
+| 6. Receive | rekindle-transport | `rekindle_codec::ingress::classify` routes `'D'` to `operations::direct::frame`; an untagged datagram is dropped |
+| 7. Verify & open | rekindle-transport, rekindle-crypto | Block list, friend gate for the kind, then the carrier's checks: signature, freshness and replay guard for sealed; ratchet decrypt; PreKeyInit session open |
+| 8. Store & Display | rekindle-transport, host | The decrypted plaintext is written to `unprocessed` in the ratchet transaction, applied (insert into SQLite, emit `ChatEvent::MessageReceived`) and then deleted; rows left at a crash are replayed at unlock (D24) |
 
-## MessageEnvelope (Wire Format)
+## DmFrame (Wire Format)
 
-All friend-to-friend messages are wrapped in a `MessageEnvelope`:
+A 1:1 datagram is the ingress tag `'D'` followed by one packed Cap'n Proto
+`DmFrame` (`schemas/direct.capnp`; codec in
+`rekindle-codec::capnp_codec::direct`). Community gossip is tagged `'G'`
+(`rekindle-codec::ingress`). An untagged datagram is dropped.
 
-```rust
-pub struct MessageEnvelope {
-    pub sender_key: Vec<u8>,    // Ed25519 public key (32 bytes)
-    pub timestamp: u64,         // Unix milliseconds, set at each send attempt
-    pub nonce: Vec<u8>,         // Message identity, kept across retries
-    pub payload: Vec<u8>,       // Signal ciphertext, or plain JSON (see Sealing)
-    pub signature: Vec<u8>,     // Ed25519 over envelope_signing_bytes
+```text
+DmFrame {
+  typeId  :UInt16     // the kind (type_id.rs); decides the body
+  sender  :Data       // 32-byte Ed25519 identity (identity == address)
+  body    :union { ratchet | preKeyInit | sealed }
 }
 ```
 
-The signature covers `"rekindle-msg-envelope-v2" ‖ recipient identity key ‖
-timestamp LE ‖ u32 len(nonce) ‖ nonce ‖ u32 len(payload) ‖ payload`
-(`rekindle-protocol::messaging::signing`). Binding the recipient means a
-captured envelope verifies only for the identity it was sent to. The
-receiver rejects envelopes outside the freshness window (5 minutes old,
-60 seconds ahead, shared with the daemon track) and drops a second copy of
-a `(sender, nonce)` it already accepted (`messaging::replay`); the retry
-queue re-signs each attempt with a fresh timestamp and the same nonce.
+The typeId names the kind and its carrier (`DmTypeId::carrier()`):
 
-Every `MessagePayload` has a sealing class (`MessagePayload::sealing()`,
-exhaustive): `Session` payloads (DMs, typing, DM video, group-DM control)
-must arrive Signal-encrypted, `Plain` payloads (friend handshake, session
-reset, call signaling, relay, push and status probes) must arrive signed
-only. A payload that arrives in the other form is dropped.
+| Carrier | Body | Kinds |
+|---------|------|-------|
+| Ratchet | `{header {dh, pn, n}, ciphertext}` of a `DmContent` | DMs, edits, reactions, typing, unfriend, rotations, group DM, call signaling, DM video, Strand Relay, status |
+| PreKeyInit | PQXDH init (base key, prekey ids, ML-KEM ciphertext) plus the first ratchet message | opens a session; the first payload is a `FriendAccept` or `SessionResetAccept` (or any ratchet kind) |
+| Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `PreKeyRejected`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
 
-The daemon track's framed `SignedPayload` carries the same binding under
-`"rekindle-dm-frame-sig-v2"`, plus the frame `TypeId`, so signed bytes
-cannot be re-framed as another message type.
+**Ratchet.** The spec Double Ratchet (`rekindle-crypto::signal::{dr,record}`,
+`SessionRecord`) with one record per peer in `ratchet_sessions`. The send
+path steps it and commits in one DB transaction before the frame leaves.
+The associated data binds both identities and the typeId.
 
-Payload type discrimination uses an internally tagged serde enum
-(`#[serde(tag = "type")]`).
+**PreKeyInit.** Opens a session with PQXDH revision 3
+(`signal/pqxdh/agreement.rs`: X25519 plus ML-KEM-768) and carries its first
+payload encrypted under it. The initiator builds it from the responder's
+prekey record (see [Prekey Record](#prekey-record-dflt101)): a force-refreshed
+read of the device list and the record, every signature checked under the
+pinned identity, and a slot picked uniformly among those it has not used,
+or the head alone when none is left. The responder finds the named secrets
+in `signal_prekeys`; it consumes the one-time keys only after the first
+payload decrypts, in the transaction that stores the session and refills
+the slot. An init naming a consumed, unknown or archived prekey gets a
+`PreKeyRejected`, and a last-resort-only init whose `(lr_id, spk_id,
+base_key)` already opened a session is dropped silently.
 
-### MessagePayload Variants
+**Sealed.** HPKE Base (`rekindle-secrets::hpke`) to the recipient
+identity's X25519 key, plus the sender's Ed25519 signature over
+`DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`. Binding the
+recipient means a captured frame verifies only for the identity it was sent
+to. The receiver rejects frames outside the freshness window (5 minutes
+old, 60 seconds ahead) and drops a second copy of a `(sender, nonce)` it
+already accepted (`operations::direct::replay`); a retry keeps the nonce and
+re-seals with a fresh `sentAtMs`. Ratchet frames need no replay guard: a
+used `(dh, n)` has no key left.
 
-The `MessagePayload` enum (in `rekindle-protocol::messaging::envelope`)
-covers all 1:1 traffic between friends — DMs, friend-request handshakes,
-DM/group-DM invites, Strand Relay, Mobile Push Relay, presence cache, etc.
+The daemon's framed community RPCs (`SignedPayload`, `app_call`) carry
+the same recipient binding under `"rekindle-frame-sig-v3"`, plus the frame
+`TypeId`, so signed bytes cannot be re-framed as another message type. No
+1:1 message is framed that way: both tracks send 1:1 traffic as `'D'`
+frames (plan E2.1), and E2.3 deleted `MessagePayload`, `MessageEnvelope`
+and the framed DM kinds.
 
-| Variant | Purpose |
-|---------|---------|
-| `DirectMessage` | 1:1 encrypted chat message (with optional reply) |
-| `ChannelMessage` | Legacy community channel message (replaced by gossip) |
-| `TypingIndicator` | Ephemeral typing state |
-| `FriendRequest` | Initial friend contact (includes PreKeyBundle, profile/route/mailbox info, optional invite_id) |
-| `FriendAccept` | Accept with PreKeyBundle, ephemeral key, and prekey IDs |
-| `FriendReject` | Rejection notification |
-| `FriendRequestReceived` | Lightweight ACK confirming delivery (not acceptance) |
-| `ProfileKeyRotated` | Notify remaining friends of new DHT profile key after block/unfriend |
-| `PresenceUpdate` | Inline presence (status, optional GameInfo) — fallback when DHT watch fails |
-| `Unfriended` / `UnfriendedAck` | Notify peer of unfriending and confirm receipt |
-| `RelayOffer` / `RelayOfferAck` / `RelayWithdraw` | Strand Relay (§13.2): friend volunteers to forward |
-| `RelayEnvelope` | Strand Relay (§13.3): forwards an inner opaque envelope to a target |
-| `DmInvite` / `DmAccept` / `DmDecline` / `DmLeave` | 2-party DM lifecycle (§27.1) |
-| `GroupDmInvite` | Group DM with per-recipient X25519-wrapped MEK (§27.2) |
-| `RegisterPushRelay` / `UnregisterPushRelay` / `WakeNotify` | Mobile Push Relay (§17.3 Tier 3) |
-| `StatusRequest` / `StatusResponse` | Strand Relay presence cache (§13.5 — "social CDN") |
+### DmFrame Kinds
+
+| Kind (typeId) | Purpose |
+|---------------|---------|
+| `DmText` (0x0100), `DmEdit`/`DmDelete`/`DmReaction` (0x0110-0x0112) | 1:1 chat message (with optional reply and expiry), edits, deletes, reactions |
+| `Typing` (0x0401) | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`) |
+| `FriendRequest` (0x0002) | Initial friend contact, sealed, by `app_call` (or written into an invite's inbox); the reply is its receipt. Carries the requester's reply inbox (RV2) and its `chainRecordKey`, the requester's dm participant record to the addressee, whose `HEAD` is published before each attempt; the accepter adopts it only when it accepts (decision 67 item 2). Never a presence key |
+| `FriendAccept` (0x0101) | Accept; travels as the first payload of the PreKeyInit that opens the session, with a durable copy in the requester's reply inbox. Carries the accepter's `friendsKeyEpoch`/`friendsKey` (its presence key; no separate `FriendsKey` row follows) and its `chainRecordKey`, whose `HEAD` is published before each attempt (decision 67 item 2) |
+| (0x0102, retired) | Was `FriendReject`. A decline is silent to the requester (LV23 review L2; Signal's message-request delete syncs only to our own devices); the request expires unanswered. Never reused |
+| `ProfileKeyRotated` (0x0105) | Notify remaining friends of new DHT profile key after block/unfriend |
+| `IdentityRotated` (0x0108) | Identity moved to a new key; signed by both keys over `IDENTITY_ROTATED ‖ old ‖ new ‖ recipient`, sent over the old session (`operations::friend::identity_rotation`) |
+| `Unfriended` / `UnfriendedAck` (0x0103/0x0104) | Notify peer of unfriending and confirm receipt |
+| `SessionResetRequest` / `SessionResetAccept` / `SessionResetDecline` (0x0007-0x0009) | Start a new session; the accept is the first payload of the answering PreKeyInit |
+| `PreKeyRejected` (0x0005) | Sealed. The responder refused a PreKeyInit's prekeys (consumed, unknown or past the 30-day archive); names the ids and a hash of the initiator's base key. Sent only to a sender the friend gate admits for that init, after a random 2–10 s delay, at most one per base key and ten per sender per 3 h. The initiator accepts it only for its unanswered init, then resends the same first contact once from a fresh slot; a second rejection fails visibly |
+| `RetryRequest` (0x0006) | Allocated at E2.3; body and sends arrive with E2.5 |
+| `RelayOffer` / `RelayOfferAck` / `RelayWithdraw` (0x0130-0x0132), `RelayEnvelope` (0x0003) | Strand Relay (§13.2-13.3). The sender-side relay fallback was deleted at E2.3 and returns at E5.5 |
+| `GroupDmInvite` / `GroupDmAccept` / `GroupDmDecline` / `GroupDmLeave` (0x0120-0x0123) | Group DM lifecycle with per-recipient X25519-wrapped MEK (§27.2) |
+| `Call*` (0x0200-0x0206), `GroupCall*` (0x0210-0x0214) | Direct and group call signaling |
+| `DmVideoFragment` (0x0220) | DM video |
+| `RegisterPushRelay` / `UnregisterPushRelay` / `WakeNotify` (0x0310-0x0312) | Mobile Push Relay (§17.3 Tier 3), sealed |
+| `StatusRequest` / `StatusResponse` (0x0140/0x0141) | Strand Relay presence cache (§13.5 "social CDN") |
 
 ### Invite System
 
@@ -135,8 +156,8 @@ pub struct InviteBlob {
     pub mailbox_dht_key: String,
     pub profile_dht_key: String,
     pub route_blob: Vec<u8>,
-    pub prekey_bundle: Vec<u8>,
     pub invite_id: Option<String>,  // Correlation token for outgoing-invite tracking
+    pub issued_at: u64,             // Mint time; recipients enforce a max age
     pub signature: Vec<u8>,
 }
 ```
@@ -161,6 +182,20 @@ is pairwise.
 The `rekindle-dm` crate is pure logic. The `src-tauri/services/dm/` layer
 wires it to Veilid (record creation, app_message invitations) and SQLite
 (local message history).
+
+### Group first contact: the rendezvous record (decision 67)
+
+`GroupDmInvite` carries four rendezvous fields: `@7 rendezvousKey` (the
+group's rendezvous record), `@8 slot` and `@9 slotWriter` (the recipient's
+row and its one-time writer, so one invite frame per recipient, sealed by
+the pairwise session), and `@10 slots` (the creator's signed slot plan,
+one distinct slot `< 8` per member; `signing_bytes` covers the key and the
+plan). The record is `SMPL(o_cnt 1, members = 8 writers, m_cnt 8)` with 65
+subkeys: subkey 0 holds `OPENED` from the creator, subkey `1 + 8i + j` is
+member `i`'s first contact to member `j` (at most 16,131 B, which a group
+PreKeyInit fits). A member's first contact to a non-friend member is sent
+by `app_call` and written, the same datagram, to its row; the receiver
+watches its column and opens the entry as any inbound 1:1 frame.
 
 ## Community Architecture (v2.0 Flat Governance)
 
@@ -233,13 +268,12 @@ Full architecture: [`../architecture/communities.md`](../architecture/communitie
 
 | Schema File | Top-level structs |
 |-------------|-------------------|
-| `message.capnp` | `MessageEnvelope`, `ChatMessage`, `Attachment` |
-| `identity.capnp` | `UserProfile`, `PreKeyBundle` |
+| `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
+| `identity.capnp` | `PrekeyRecordHead`, `OpkSlot`, `PrekeyRecordList` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
 | `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |
 | `voice.capnp` | `VoiceSignaling` |
-| `conversation.capnp` | `ConversationHeader` |
 | `account.capnp` | `AccountHeader`, `ContactEntry`, `ChatEntry` |
 
 Generated Rust modules are included at the `rekindle-protocol` crate root via
@@ -250,17 +284,44 @@ paths resolve.
 
 | Primitive | Usage |
 |-----------|-------|
-| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`. Used for DMs, friend-add, call signaling (W13/W16), DM invites, and voice/video frames. Reliability for envelopes that need it (signaling, friend-add, DMs) is layered on top via the W16 `pending_envelopes` SQLite primitive: per-recipient seq_ack, receiver dedup, route-aware retry up to 5 min, crash-survives recovery. |
-| `app_call(target, data)` | Request-response delivery. Reserved for operations that genuinely need an inline reply: MEK delivery, file chunk transfer, bootstrap bundles. **Not used for call signaling or DM invites** — Wave 13/16 superseded those with `app_message + W16 reliability layer` to avoid `app_call`'s connection-table exhaustion under bootstrap, ~25 s collapse under network churn, and signaling-vs-DM traffic-shape leakage. See `docs/architecture/voice.md` and the `.claude/docs/rekindle-communities-architecture.md` §10.10 / §27 for the design rationale. |
-| DHT record calls (`create`/`open`/`close_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`) | Only through the record pool, `rekindle_protocol::dht::pool::RecordPool` (one per session, both tracks). It holds each record's lease, sticky writer and watch; serializes writes per subkey; re-pushes missed writes of records held writable and persists them to the `dht_outbox` table at logout; closes ended sessions' records through the node's `RecordCloser`, after their calls finish, never aborting one mid-commit; and rehydrates community records on a jittered keepalive. A multi-writer read consults an index (one inspect over the writer set) before fetching (plan C7.12). |
-| `new_private_route` / `new_custom_private_route` / `release_private_route` | Only through `rekindle_protocol::own_routes::OwnRoutes` (one per node): a General route and a Media route (LowLatency, PreferUnordered; never substituted by General). Allocated at network readiness, single-flight per class, `TryAgain` retried with backoff; a route Veilid reports dead is forgotten, never released, and reallocated; logout releases and renews, so no route is shared between identities. The relay feature owns its dedicated relay routes (`services/relay/offer.rs`). |
+| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`: 1:1 statements (`'D'` datagrams the DM chain and outbox acks back up, `rekindle-transport` `Sender::send_direct`), gossip, and voice/video frames (desktop `VeilidVoiceFrameSender`). Call signals still go this way today; D8 (plan E4.2) makes every call signal an `app_call` transaction (RFC 3261 §17 timers, the callee re-sends Accept until acknowledged), not built yet. |
+| `app_call(target, data)` | Request-response delivery: receipted 1:1 frames (`AppCaller::call_direct`: the outbox's `friend_handshake` rows such as `FriendsKey` and `GroupDmInvite`), signed RPCs (`AppCaller::call`), community envelopes (MEK delivery), bootstrap bundles, file chunks. The answer returns over a reply route Veilid picks from the caller's pool to match the question's safety spec (`rpc_processor/destination.rs:487-521`). |
+| DHT record calls (`create`/`open`/`close_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`) | Only through the record pool, `rekindle_protocol::dht::pool::RecordPool` (one per session, both tracks). It holds each record's lease, sticky writer and watch; serializes writes per subkey; re-pushes missed writes of records held writable and saves them as outbox `dht_write` rows at logout (plan E2.5); closes ended sessions' records through the node's `RecordCloser`, after their calls finish, never aborting one mid-commit; and rehydrates community records on a jittered keepalive. A multi-writer read consults an index (one inspect over the writer set) before fetching (plan C7.12). |
+| `new_private_route` / `new_custom_private_route` / `release_private_route` | Only through `rekindle_route::own_routes::OwnRoutes` (one per node, over `rekindle_protocol::own_routes::VeilidRouteAllocator`): a General route and a Media route (LowLatency, PreferUnordered; never substituted by General). Allocated at network readiness, single-flight per class, `TryAgain` retried with backoff; a route Veilid reports dead is forgotten, never released, and reallocated; logout releases and renews, so no route is shared between identities. The relay feature owns its dedicated relay routes (`services/relay/offer.rs`). |
 | `import_remote_private_route(blob)` | Only through `RouteImports` (one per node). A dead or failed peer route is forgotten, never released: Veilid releases a dead remote route itself. |
 | Node capabilities | App nodes disable `DHTV` (they do not store records for others; veilid #492). |
 | `RoutingContext` | Scoped handle for all DHT and message operations |
 
+### Sequencing: control ordered, media unordered
+
+Every send names a `MessageClass` and takes its profile from one table,
+`SafetyConfig` (`rekindle-types` `config`, looked up by `SafetyConfig::for_class`;
+`rekindle_route::profile::profile_for_class` is its default): **Text** (1:1
+control: DMs, receipts, friend handshakes, presence keys, group invites, call
+signals) Reliable / `PreferOrdered`; **Rpc** Reliable / `EnsureOrdered`; **Dht**
+Reliable / `PreferOrdered`; **Voice** (voice and video frames) LowLatency /
+`PreferUnordered`. This is plan VU decision 2 and Veilid's intended use:
+
+- `Sequencing` defaults to `PreferOrdered` (veilid-core 0.5.8 fork
+  `veilid_api/types/safety.rs:12-21`).
+- A routed operation carries the *sender's* sequencing and every hop filters
+  the next hop by it (`rpc_processor/rpc_route.rs:26-29` safety route,
+  `:87-90` private route). Veilid adapts a preference only to the sender's own
+  safety route (`route_spec_store/route_compile.rs:106-110`).
+- A private route's hops are chosen and proven on that route's one ordering
+  (`route_spec_store/route_allocate.rs:580-588`). Our General route is
+  Ordered (TCP/WS); the Media route is Unordered (UDP).
+
+So an unordered send to a General route crosses UDP hop pairs nobody proved.
+In the real app (DL1/DL2, 2026-11-25) unordered 1:1 calls to some routes
+arrived 8 in 48, losing group invites and new friends' presence keys, while
+ordered calls arrived 119 in 122. Media keeps UDP because a late frame is
+useless and the jitter buffer reorders. The netsim models the loss as
+`Fault::UnprovenUnorderedHops`.
+
 ## DHT Record Layouts
 
-### User Profile Record (DFLT, 8 subkeys)
+### User Profile Record (DFLT, 9 subkeys)
 
 | Subkey | Content |
 |--------|---------|
@@ -269,9 +330,10 @@ paths resolve.
 | 2 | Status enum: `online`, `away`, `busy`, `offline`, `invisible` |
 | 3 | Avatar (WebP, raw bytes) |
 | 4 | Game info (Cap'n Proto `GameStatus`) |
-| 5 | PreKeyBundle for Signal session establishment |
+| 5 | Prekey records: Cap'n Proto `PrekeyRecordList` (each device's id and prekey record key; one entry until E5.3) |
 | 6 | Private route blob (for receiving `app_message`) |
 | 7 | Metadata (reserved) |
+| 8 | Strand Relay pool (JSON list of opaque relay route blobs, padded) |
 
 Friends watch each other's DHT records via `watch_dht_values`. When a subkey
 changes, Veilid delivers a `VeilidUpdate::ValueChange` to the watcher, which
@@ -280,18 +342,25 @@ the `presence_service` processes into a `PresenceEvent`.
 When a watch fails to establish (Veilid GitLab #377), the friend is added to
 `AppState.unwatched_friends` and the sync service polls with `force_refresh=true`.
 
+### Prekey Record (DFLT(101))
+
+One per device, owned by a keypair of its own and named from profile
+subkey 5 (plan E2.4). Subkey 0 is the `PrekeyRecordHead` (signed prekey,
+ML-KEM-768 last-resort key, their ids and signatures, `issuedAt`); subkeys
+1..=100 are `OpkSlot`s, each a one-time X25519 and ML-KEM-768 key with ids
+and signatures. Each value is capped at 10,381 B. Ids are random non-zero
+u31; each signature is the identity's Ed25519 over `id ‖ key` under a
+domain tag (`0x01` signed prekey, `0x02 ‖ "LR"|"OT"` ML-KEM, `0x03`
+one-time curve key). The owner's "prekey maintenance" task refills consumed
+slots, tops up below 10 fresh slots, replaces slots older than 90 days and
+rotates the head every 2 days; an identity rotation publishes the new
+identity's full set into the same record.
+
 ### Mailbox DHT Record
 
 Each user publishes a mailbox DHT record created with their identity keypair
 (deterministic key). It contains only the user's current Veilid route blob,
 providing a fallback for peers when the profile record's subkey 6 is stale.
-
-### Conversation DHT Records (Per-Friend)
-
-Each friend pair maintains two DHT records — one owned by each side. Records
-are encrypted with `DhtRecordKey::derive_conversation_key()` using the X25519
-DH shared secret between the two parties. Each record contains a child
-`DHTLog` for append-only message history.
 
 ### Account Record (Cross-Device Recovery)
 
@@ -301,6 +370,13 @@ invitations. The cross-device sync layer (`rekindle-sync` +
 `services/cross_device_sync`) extends this with a personal sync record
 (`personal_sync_record_key` on the `identity` row) that holds device list,
 read state, preferences, and pairing state.
+
+### Group Rendezvous Record (SMPL, 65 subkeys)
+
+Minted by a group's creator, owner key discarded after `OPENED` is written
+to subkey 0; eight one-time member writers, one per slot of the signed plan;
+subkey `1 + 8i + j` = slot `i`'s first contact to slot `j`
+(`dht_layout::group_rendezvous`).
 
 ### Community Records (SMPL `o_cnt: 0`)
 
@@ -336,7 +412,7 @@ directly.
 When two friends cannot reach each other directly (NAT / route churn), a
 mutual friend can volunteer to forward. The relayer never sees plaintext —
 they receive a `RelayEnvelope` containing an opaque inner payload addressed
-to the target. The friend volunteers via `RelayOffer` (acknowledged with
+to the target (the sender-side fallback returns at E5.5). The friend volunteers via `RelayOffer` (acknowledged with
 `RelayOfferAck`) and can withdraw at any time with `RelayWithdraw`.
 `StatusRequest` / `StatusResponse` form a presence cache so the requester
 can short-circuit DHT route lookup as well (the "social CDN" pattern).

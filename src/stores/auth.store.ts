@@ -1,20 +1,20 @@
 import { createStore } from "solid-js/store";
 
-export type UserStatus = "online" | "away" | "busy" | "offline";
+/** Our status as the Host reports it; `invisible` appears offline to
+ *  peers (`SessionStatus`). */
+export type UserStatus = "online" | "away" | "busy" | "offline" | "invisible";
 
-// Declared once in the IPC layer. This copy was missing `serverInfo`,
-// so typed code here could not see a field the backend already sends.
-import type { GameStatus } from "../ipc/commands/types";
-export type { GameStatus };
+// Our own game, as the Host reports it (`dto::presence::OwnGame`).
+import type { OwnGame } from "../ipc/commands/dto";
 
-export interface AuthState {
+interface AuthState {
   isLoggedIn: boolean;
   publicKey: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   status: UserStatus;
   statusMessage: string | null;
-  gameInfo: GameStatus | null;
+  gameInfo: OwnGame | null;
 }
 
 const [authState, setAuthState] = createStore<AuthState>({

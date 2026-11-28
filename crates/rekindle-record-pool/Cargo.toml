@@ -1,0 +1,32 @@
+[package]
+name = "rekindle-record-pool"
+version = "0.1.0"
+publish = false
+edition = "2021"
+license.workspace = true
+description = "The session's DHT record pool over the Veilid-free DhtBackend port (ADR 0021)"
+
+[lints]
+workspace = true
+
+[features]
+# `test_support::MemDht`: other crates' tests drive their callers through a
+# real pool over it.
+test-support = [  ]
+
+[dependencies]
+async-trait = "0.1"
+futures = { workspace = true }
+parking_lot = { workspace = true }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-records = { path = "../rekindle-records" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-utils = { path = "../rekindle-utils" }
+tokio = { workspace = true }
+tokio-util = "0.7"
+tracing = { workspace = true }
+
+zeroize = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "test-util" ] }

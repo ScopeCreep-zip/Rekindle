@@ -3,20 +3,21 @@
 //! On Tier 3, a separate headless `veilid-server` (self-hosted or
 //! shared) watches DHT records on the device's behalf and forwards
 //! content-free wake signals via FCM/APNs. This module is the
-//! Rekindle-side client: persist registrations locally, send the
-//! `RegisterPushRelay` AppCall on register, send `UnregisterPushRelay`
-//! on logout. The relay daemon itself is out of scope for this crate
+//! Rekindle-side client: persist registrations locally, send
+//! `RegisterPushRelay` (0x0310) on register and `UnregisterPushRelay`
+//! (0x0311) on logout, each HPKE-sealed to the relay's identity and
+//! signed by ours (§6 `DmFrame` typeIds; E5.6 builds the relay). The relay daemon itself is out of scope for this crate
 //! — it ships as a separate `rekindle-push-relay` binary.
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, RegisterPushRelay, UnregisterPushRelay};
 
-use crate::db_helpers::{db_call, db_call_or_default};
-use crate::services::message_service;
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
+use rusqlite::OptionalExtension;
 
 pub async fn register_with_push_relay(
     state: &Arc<AppState>,
@@ -53,12 +54,18 @@ pub async fn register_with_push_relay(
     })
     .await?;
 
-    let payload = MessagePayload::RegisterPushRelay {
+    let body = DirectBody::RegisterPushRelay(RegisterPushRelay {
         device_push_token: device_push_token.to_string(),
         platform: platform.to_string(),
         record_keys: record_keys.to_vec(),
-    };
-    message_service::send_to_peer(state, pool, relay_pseudonym, &payload).await
+    });
+    rekindle_transport::operations::dm::send_to_peer(
+        state_helpers::friend_host(state)?.as_ref(),
+        relay_pseudonym,
+        &body,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 pub async fn unregister_with_push_relay(
@@ -82,7 +89,7 @@ pub async fn unregister_with_push_relay(
                     rusqlite::params![owner, pseudo],
                     |r| r.get::<_, String>(0),
                 )
-                .ok();
+                .optional()?;
             Ok(row)
         }
     })
@@ -101,20 +108,30 @@ pub async fn unregister_with_push_relay(
     .await?;
 
     if let Some(token) = token {
-        let payload = MessagePayload::UnregisterPushRelay {
+        let body = DirectBody::UnregisterPushRelay(UnregisterPushRelay {
             device_push_token: token,
-        };
-        let _ = message_service::send_to_peer(state, pool, &pseudonym, &payload).await;
+        });
+        if let Ok(host) = state_helpers::friend_host(state) {
+            if let Err(e) =
+                rekindle_transport::operations::dm::send_to_peer(host.as_ref(), &pseudonym, &body)
+                    .await
+            {
+                tracing::debug!(error = %e, "push relay unregister not sent");
+            }
+        }
     }
     Ok(())
 }
 
-pub async fn list_registrations(state: &Arc<AppState>, pool: &Db) -> Vec<(String, String, String)> {
+pub async fn list_registrations(
+    state: &Arc<AppState>,
+    pool: &Db,
+) -> Result<Vec<(String, String, String)>, String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT relay_pseudonym, platform, record_keys_json
              FROM push_relay_registrations WHERE owner_key = ?1",
@@ -138,7 +155,7 @@ pub async fn list_registrations(state: &Arc<AppState>, pool: &Db) -> Vec<(String
 /// background sync sweep of all active community records and friend
 /// presence so the user sees up-to-date state. Throttled to one sweep
 /// per `WAKE_NOTIFY_DEBOUNCE_SECS` because each call kicks off
-/// `governance_adapter::open_community_dht_records` + `governance_adapter::rebuild_governance_from_dht`,
+/// the Host's per-community login stage (`HostGovernance::heal_communities`),
 /// both of which spawn 30+ second DHT-bound work; back-to-back wakes
 /// without throttling would saturate the network and burn battery.
 pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
@@ -155,8 +172,14 @@ pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
     crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
         "wake sync sweep",
         async move {
-            crate::services::governance_adapter::open_community_dht_records(&state).await;
-            crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
+            let governance = match crate::state_helpers::host_governance(&state) {
+                Ok(governance) => governance,
+                Err(e) => {
+                    tracing::debug!(error = %e, "locked before the governance rebuild ran");
+                    return;
+                }
+            };
+            governance.heal_communities().await;
         },
     );
 }
@@ -212,32 +235,5 @@ fn validate_push_relay_inputs(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::validate_push_relay_inputs;
-
-    #[test]
-    fn validate_rejects_short_pseudonym() {
-        assert!(validate_push_relay_inputs("abc", "token", "self", &["VLD0:foo".into()]).is_err());
-    }
-
-    #[test]
-    fn validate_rejects_unknown_platform() {
-        let pseudonym = "a".repeat(64);
-        assert!(
-            validate_push_relay_inputs(&pseudonym, "token", "discord", &["VLD0:foo".into()])
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn validate_rejects_empty_record_keys() {
-        let pseudonym = "a".repeat(64);
-        assert!(validate_push_relay_inputs(&pseudonym, "token", "self", &[]).is_err());
-    }
-
-    #[test]
-    fn validate_rejects_empty_token() {
-        let pseudonym = "a".repeat(64);
-        assert!(validate_push_relay_inputs(&pseudonym, "", "self", &["VLD0:foo".into()]).is_err());
-    }
-}
+#[path = "push_relay_tests.rs"]
+mod tests;

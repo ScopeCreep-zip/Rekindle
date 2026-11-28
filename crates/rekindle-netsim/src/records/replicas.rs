@@ -1,0 +1,456 @@
+//! A record's replicas on the simulated DHT (plan E2.B slice S4, M6; plan
+//! VU2 items 2 and 9), after veilid-core 0.5.8 (Rekindle's fork, ADR 0017;
+//! `veilid-core/src`):
+//!
+//! - every record has [`CANDIDATES`] stores, the closest nodes a fanout
+//!   starts from (`max_find_node_count`, `veilid_config.rs:1003`;
+//!   `fanout_call.rs:641-684`); a call's window is the [`REPLICAS`]
+//!   (`consensus_width`, `veilid_config.rs:1013`) closest of them that did
+//!   not time out or disqualify (`fanout_call.rs:395-441`). A store the node
+//!   does not reach is a timeout, so it takes no slot and the next
+//!   candidate fills it ([`reachable`]); a set fills a slot freed during
+//!   its fanout from the farther candidates ([`super::fanout`]), and a
+//!   candidate that takes a set holds the value for later reads like any
+//!   replica. The nodes Veilid's answers add past the first
+//!   [`CANDIDATES`] (`fanout_queue.rs:363-410`) are not modeled: a
+//!   scenario never cuts more than [`CANDIDATES`] − [`REPLICAS`] closer
+//!   stores off;
+//! - **placement:** replica `r` sits beside simulated node
+//!   `(offset + r) % n`, where `n` is the node count when the record is
+//!   created and `offset` folds the record key's text (the key comes from
+//!   the creator's seeded generator, so one seed places every replica the
+//!   same way and no extra draw shifts the run's random stream). A node
+//!   reaches a replica unless a partition separates it from the replica's
+//!   node, so each side of a partition reaches the replicas beside its own
+//!   nodes; a node added later has no replica of an earlier record beside
+//!   it. A replica is a DHT store, not that node's storage: the node going
+//!   offline does not take it down. Replica index order is closeness to the
+//!   key, the order a [`Tally`] breaks ties by;
+//! - **a value is its ciphertext** ([`Cipher`]): every record is encrypted
+//!   (`storage_manager/create_record.rs:93`) under a fresh random nonce per
+//!   encryption (`record_encryption.rs:43`), and Veilid compares the
+//!   encrypted value data, nonce included (`value_tally.rs:84-88`,
+//!   `set_value.rs:836`). Two encryptions of one value at one seq are
+//!   rivals; a resend of the local copy keeps its bytes
+//!   (`set_value.rs:353-366`);
+//! - a set's fanout, and a replica's answer to it, are [`super::fanout`];
+//! - a get starts from the local value, which only sets the floor (no
+//!   node's answer stands behind it), takes a newer seq at once, and at the
+//!   newest seq settles a split by the tally (0.5.8 `get_value.rs:49-88`); it is
+//!   done at [`GET_COUNT`] holders of its value (`get_value_count`,
+//!   `veilid_config.rs:1008`). The settled value replaces the local copy
+//!   when its seq is newer, or at the same seq only on a forced refresh
+//!   with no write of ours waiting; otherwise the get returns the local copy
+//!   (`get_value.rs:600-649`).
+
+use rekindle_records::port::{RecordSchema, RecordValue};
+
+use crate::network::{pair, Faults, Inner};
+
+/// A call's window: Veilid's `consensus_width` (`veilid_config.rs:1013`).
+pub(crate) const REPLICAS: usize = 10;
+/// Stores per record, in closeness order: the closest nodes a fanout
+/// starts from, `max_find_node_count` (`veilid_config.rs:1003`,
+/// `fanout_call.rs:641-684`).
+pub(crate) const CANDIDATES: usize = 20;
+/// Accepts a set needs: Veilid's `set_value_count` (`veilid_config.rs:1011`),
+/// used by [`super::fanout`].
+pub(crate) const SET_COUNT: usize = 5;
+/// Holders a get stops at, and the holders a set that ends without
+/// consensus still lands at: `get_value_count` (`veilid_config.rs:1008`,
+/// `storage_manager/mod.rs:990-1030`).
+pub(crate) const GET_COUNT: usize = 3;
+
+/// A value as a store holds it: the value and the nonce of the encryption
+/// that made its bytes (see the module notes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Cipher {
+    pub value: RecordValue,
+    pub nonce: u64,
+}
+
+/// Which replicas hold which value at one seq (`value_tally.rs:13-107`):
+/// the value more replicas hold wins, and as many holders go to the one
+/// held closer to the key (the lower replica index).
+#[derive(Default)]
+pub(crate) struct Tally {
+    holders: Vec<(Cipher, Vec<usize>)>,
+}
+
+impl Tally {
+    /// Forget every holder, for a newer seq.
+    pub(crate) fn clear(&mut self) {
+        self.holders.clear();
+    }
+
+    /// Record that replica `r` holds `value`.
+    pub(crate) fn add(&mut self, value: &Cipher, r: usize) {
+        match self.holders.iter_mut().find(|(v, _)| v == value) {
+            Some((_, rs)) if rs.contains(&r) => {}
+            Some((_, rs)) => rs.push(r),
+            None => self.holders.push((value.clone(), vec![r])),
+        }
+    }
+
+    fn of(&self, value: &Cipher) -> Option<&[usize]> {
+        self.holders
+            .iter()
+            .find(|(v, _)| v == value)
+            .map(|(_, rs)| rs.as_slice())
+    }
+
+    /// How many replicas hold `value`.
+    pub(crate) fn holders(&self, value: &Cipher) -> usize {
+        self.of(value).map_or(0, <[usize]>::len)
+    }
+
+    /// Whether `rival` beats `current`: more holders, or as many with a
+    /// closer closest holder; a `current` nobody holds loses to any rival
+    /// (`value_tally.rs:90-106`).
+    pub(crate) fn beats(&self, rival: &Cipher, current: &Cipher) -> bool {
+        let Some(current) = self.of(current) else {
+            return true;
+        };
+        let rival = self.of(rival).unwrap_or(&[]);
+        match rival.len().cmp(&current.len()) {
+            std::cmp::Ordering::Greater => true,
+            std::cmp::Ordering::Less => false,
+            std::cmp::Ordering::Equal => rival.iter().min() < current.iter().min(),
+        }
+    }
+
+    /// Whether some replica holds another value than `current`
+    /// (`value_tally.rs:52-57`).
+    pub(crate) fn conflicted(&self, current: &Cipher) -> bool {
+        self.holders.iter().any(|(v, _)| v != current)
+    }
+}
+
+/// One replica's store of a record.
+#[derive(Debug, Clone)]
+pub(crate) struct Replica {
+    /// The simulated node this replica sits beside (for partitions).
+    pub home: usize,
+    /// The DHT store holding this replica (`home` is `store % nodes`):
+    /// each simulated node is beside [`REPLICAS`] stores, so the records of
+    /// one store are bounded ([`super::stores`]).
+    pub store: usize,
+    /// When the store last used this record (its LRU stamp).
+    pub used: u64,
+    pub values: Vec<Option<RecordValue>>,
+    /// The nonce of each value this replica took from a fanout, with that
+    /// value; a value set any other way (a scenario's injected write) has
+    /// nonce 0 ([`Replica::cipher`]).
+    pub nonces: Vec<Option<(RecordValue, u64)>>,
+    /// The watches this replica holds ([`super::watches`]).
+    pub watches: Vec<super::watches::ReplicaWatch>,
+    /// Anonymous transactions open on this record at this store
+    /// ([`super::dht`]'s `transaction` module).
+    pub open_reads: u32,
+}
+
+/// The replicas of a new record with `subkeys` subkeys, placed among
+/// `nodes` nodes from `key` (see the module notes).
+pub(crate) fn place(key: &str, nodes: usize, subkeys: usize) -> Vec<Replica> {
+    let offset = key.bytes().fold(0usize, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(usize::from(b))
+    });
+    let stores = nodes.max(1) * REPLICAS;
+    (0..CANDIDATES)
+        .map(|r| Replica {
+            home: offset.wrapping_add(r) % nodes.max(1),
+            store: offset.wrapping_add(r) % stores,
+            used: 0,
+            values: vec![None; subkeys],
+            nonces: vec![None; subkeys],
+            watches: Vec::new(),
+            open_reads: 0,
+        })
+        .collect()
+}
+
+/// Whether `node` reaches a replica beside `home`. `usize::MAX` is an
+/// outsider that reaches every replica (a scenario's modified client).
+///
+/// Rekindle opens every record `SafetySelection::Safe`
+/// (`rekindle-protocol` `dht/backend.rs`), and Veilid 0.5.8 sends each of
+/// the record's DHT questions over the opened record's safety selection:
+/// a set (`set_value.rs:186-206`), a get (`get_value.rs:147-153`), an
+/// inspect and the open of a record not held locally
+/// (`inspect_record.rs:212-217`, `:324-328`; `open_record.rs:95-105`), a
+/// watch (`watch_value.rs:302-311`), a rehydration (`rehydrate.rs:145-159`),
+/// an offline write's re-push (`offline_subkey_writes.rs:25-35`) and a
+/// transaction (`transaction_begin.rs:106`, `:177`). A safe question asks
+/// for its answer over a reply private route from the same pool, and a
+/// watch's `ValueChanged` pushes ride that reply route
+/// (`watch_value.rs:472-476`). So while the node's pool routes fail
+/// ([`crate::Fault::PoolRoutesFail`]) it reaches no replica, its own
+/// neighbour's included: each question times out unanswered.
+pub(crate) fn reaches(faults: &Faults, node: usize, home: usize) -> bool {
+    node == usize::MAX
+        || (!faults.pool_failing.contains(&node)
+            && (node == home || !faults.partitions.contains(&pair(node, home))))
+}
+
+/// Every candidate store `node` reaches, in placement order: a set's
+/// window then its reserve ([`super::fanout`]).
+pub(crate) fn candidates(replicas: &[Replica], faults: &Faults, node: usize) -> Vec<usize> {
+    replicas
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| reaches(faults, node, r.home))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The replicas in `node`'s window: the [`REPLICAS`] closest it reaches
+/// (an unreached store times out and takes no slot, `fanout_call.rs:399-405`).
+pub(crate) fn reachable(replicas: &[Replica], faults: &Faults, node: usize) -> Vec<usize> {
+    let mut reach = candidates(replicas, faults, node);
+    reach.truncate(REPLICAS);
+    reach
+}
+
+impl Replica {
+    /// The value this replica holds at `subkey`, as its ciphertext.
+    pub(crate) fn cipher(&self, subkey: usize) -> Option<Cipher> {
+        let value = self.values.get(subkey)?.clone()?;
+        let nonce = match self.nonces.get(subkey) {
+            Some(Some((v, nonce))) if *v == value => *nonce,
+            _ => 0,
+        };
+        Some(Cipher { value, nonce })
+    }
+
+    /// Store `value` at `subkey`.
+    pub(crate) fn put(&mut self, subkey: usize, value: &Cipher) {
+        if let (Some(slot), Some(nonce)) =
+            (self.values.get_mut(subkey), self.nonces.get_mut(subkey))
+        {
+            *slot = Some(value.value.clone());
+            *nonce = Some((value.value.clone(), value.nonce));
+        }
+    }
+}
+
+/// A get's settled value at `subkey` over the `reach` replicas, from
+/// `local` (see the module notes).
+pub(crate) fn settle(
+    schema: &RecordSchema,
+    replicas: &[Replica],
+    reach: &[usize],
+    subkey: usize,
+    local: Option<&Cipher>,
+) -> Option<Cipher> {
+    let mut current = local.cloned();
+    let mut tally = Tally::default();
+    for r in reach {
+        let Some(held) = replicas
+            .get(*r)
+            .and_then(|x| x.cipher(subkey))
+            // An answer past the size rule is invalid (`get_value.rs:438-470`).
+            .filter(|v| super::size::fits(schema, &v.value))
+        else {
+            continue;
+        };
+        tally.add(&held, *r);
+        match &current {
+            Some(c) if held.value.seq < c.value.seq => {}
+            Some(c) if held.value.seq == c.value.seq => {
+                if held != *c && tally.beats(&held, c) {
+                    current = Some(held);
+                }
+            }
+            _ => {
+                tally.clear();
+                tally.add(&held, *r);
+                current = Some(held);
+            }
+        }
+        if current
+            .as_ref()
+            .is_some_and(|c| tally.holders(c) >= GET_COUNT)
+        {
+            break;
+        }
+    }
+    current
+}
+
+/// A get's settled value at `subkey` over the `reach` replicas, from a
+/// `local` copy given as its value: its bytes are those of the closest
+/// replica holding it, if any.
+pub(crate) fn get(
+    schema: &RecordSchema,
+    replicas: &[Replica],
+    reach: &[usize],
+    subkey: usize,
+    local: Option<&RecordValue>,
+) -> Option<RecordValue> {
+    let local = local.map(|v| Cipher {
+        value: v.clone(),
+        nonce: nonce_of(replicas, subkey, v),
+    });
+    settle(schema, replicas, reach, subkey, local.as_ref()).map(|c| c.value)
+}
+
+/// The nonce of the closest replica holding `value` at `subkey`, else 0.
+fn nonce_of(replicas: &[Replica], subkey: usize, value: &RecordValue) -> u64 {
+    replicas
+        .iter()
+        .filter_map(|x| x.cipher(subkey))
+        .find(|c| c.value == *value)
+        .map_or(0, |c| c.nonce)
+}
+
+/// `node`'s local copy of `key`'s `subkey` as its ciphertext. A copy taken
+/// by a path that does not carry the nonce (a watch's value, a catch-up
+/// get) has the bytes of the closest replica holding it.
+pub(crate) fn local(inner: &Inner, node: usize, key: &str, subkey: u32) -> Option<Cipher> {
+    let at = (key.to_string(), subkey);
+    let slot = &inner.nodes[node];
+    let value = slot.local.get(&at)?.clone();
+    let nonce = match slot.nonces.get(&at) {
+        Some((v, nonce)) if *v == value => *nonce,
+        _ => inner
+            .records
+            .get(key)
+            .map_or(0, |r| nonce_of(&r.replicas, subkey as usize, &value)),
+    };
+    Some(Cipher { value, nonce })
+}
+
+/// Make `value` `node`'s local copy of `key`'s `subkey`.
+pub(crate) fn keep(inner: &mut Inner, node: usize, key: &str, subkey: u32, value: &Cipher) {
+    let at = (key.to_string(), subkey);
+    let slot = &mut inner.nodes[node];
+    slot.local.insert(at.clone(), value.value.clone());
+    slot.nonces.insert(at, (value.value.clone(), value.nonce));
+}
+
+/// A fresh encryption of `value` (`record_encryption.rs:43`).
+pub(crate) fn encrypt(inner: &mut Inner, value: RecordValue) -> Cipher {
+    inner.last_nonce += 1;
+    Cipher {
+        value,
+        nonce: inner.last_nonce,
+    }
+}
+
+/// A get over the network by `node`: the settled value of the replicas it
+/// reaches, stored locally when it replaces the local copy; the local copy
+/// otherwise (see the module notes). `force` is a forced refresh.
+pub(crate) fn refresh(
+    inner: &mut Inner,
+    node: usize,
+    key: &str,
+    subkey: u32,
+    force: bool,
+) -> Option<RecordValue> {
+    let local = local(inner, node, key, subkey);
+    let reach = inner
+        .records
+        .get(key)
+        .map_or_else(Vec::new, |r| reachable(&r.replicas, &inner.faults, node));
+    super::stores::touch(inner, key, &reach);
+    // A get that reached the network consumes its report mark
+    // (0.5.8 `get_value.rs:199-200`, [`super::outbound`]).
+    super::outbound::read_back(inner, node, key, subkey);
+    let found = inner.records.get(key).and_then(|r| {
+        settle(
+            &r.schema,
+            &r.replicas,
+            &reach,
+            subkey as usize,
+            local.as_ref(),
+        )
+    })?;
+    let replaces = local.as_ref().is_none_or(|l| {
+        if found.value.seq != l.value.seq {
+            return found.value.seq > l.value.seq;
+        }
+        // `get_result_replaces_local` (0.5.8 `get_value.rs:633-649`).
+        force
+            && found != *l
+            && !inner.nodes[node]
+                .pushes
+                .contains_key(&(key.to_string(), subkey))
+    });
+    if replaces {
+        keep(inner, node, key, subkey, &found);
+        Some(found.value)
+    } else {
+        local.map(|l| l.value)
+    }
+}
+
+/// The newest seq the `reach` replicas hold at `subkey`: a transaction
+/// begin's network seq, which keeps the newest of every accepter
+/// (0.5.8 `transaction_begin.rs:338-347`); an inspect stops at consensus
+/// instead ([`consensus`]).
+pub(crate) fn newest_seq(replicas: &[Replica], reach: &[usize], subkey: usize) -> Option<u32> {
+    reach
+        .iter()
+        .filter_map(|r| {
+            replicas
+                .get(*r)?
+                .values
+                .get(subkey)?
+                .as_ref()
+                .map(|v| v.seq)
+        })
+        .max()
+}
+
+/// An inspect fanout's seq at `subkey` over the `reach` replicas, from
+/// `start` (the local seq for the Update scopes, none for the Sync ones),
+/// asked in closeness order as a get is ([`settle`]): a newer seq is taken
+/// with its answering node as the only holder, an equal one adds a holder,
+/// and once `count` holders agree (`set_value_count` for the set scopes,
+/// `get_value_count` for the get scopes, 0.5.8 `inspect_record.rs:426-450`)
+/// a newer seq answered after is discarded (`:672-705`). A local start is
+/// no holder (`:478-485` seeds it with no consensus node, `:638-652` counts
+/// only a node's returned seq). Returns the seq and its holders (the
+/// subkey's `consensus_nodes`, at most `count`).
+pub(crate) fn consensus(
+    replicas: &[Replica],
+    reach: &[usize],
+    subkey: usize,
+    start: Option<u32>,
+    count: usize,
+) -> (Option<u32>, usize) {
+    let mut seq = start;
+    let mut holders = 0usize;
+    for r in reach {
+        if holders >= count {
+            break;
+        }
+        let Some(answer) = replicas
+            .get(*r)
+            .and_then(|x| x.values.get(subkey)?.as_ref().map(|v| v.seq))
+        else {
+            continue;
+        };
+        if seq.is_none_or(|s| answer > s) {
+            seq = Some(answer);
+            holders = 1;
+        } else if Some(answer) == seq {
+            holders += 1;
+        }
+    }
+    (seq, holders)
+}
+
+/// Whether any of the `reach` replicas holds a value at any of `subkeys`
+/// (all when `None`): the record's descriptor travels with its values.
+pub(crate) fn holds(replicas: &[Replica], reach: &[usize], subkeys: Option<&[u32]>) -> bool {
+    reach
+        .iter()
+        .filter_map(|r| replicas.get(*r))
+        .any(|r| match subkeys {
+            Some(s) => s
+                .iter()
+                .any(|s| r.values.get(*s as usize).is_some_and(Option::is_some)),
+            None => r.values.iter().any(Option::is_some),
+        })
+}

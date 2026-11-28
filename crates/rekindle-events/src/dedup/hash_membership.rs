@@ -14,10 +14,6 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(pseudonym.as_bytes());
         }
-        MembershipEvent::JoinAccepted { community, .. } => {
-            h.update(b"join_acc|");
-            h.update(community.as_bytes());
-        }
         MembershipEvent::MembersRefreshed { community } => {
             h.update(b"members_refresh|");
             h.update(community.as_bytes());
@@ -49,11 +45,14 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(status.as_bytes());
         }
-        MembershipEvent::JoinRejected { community, reason } => {
-            h.update(b"join_rej|");
+        MembershipEvent::Forgotten { community } => {
+            h.update(b"forgotten|");
             h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(reason.as_bytes());
+        }
+        MembershipEvent::SelfJoined { community, .. } => {
+            // One join of ours per community per session.
+            h.update(b"self_joined|");
+            h.update(community.as_bytes());
         }
         MembershipEvent::Joined {
             community,
@@ -65,6 +64,23 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(pseudonym.as_bytes());
         }
+        MembershipEvent::MemberCardChanged {
+            community,
+            pseudonym,
+            display_name,
+            custom_status,
+        } => {
+            // The name and status too: a rename or a new status is a new
+            // event, a repeat of the same card one.
+            h.update(b"card|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(display_name.as_bytes());
+            h.update(b"|");
+            h.update(custom_status.as_deref().unwrap_or_default().as_bytes());
+        }
         MembershipEvent::Left {
             community,
             pseudonym,
@@ -73,6 +89,14 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(community.as_bytes());
             h.update(b"|");
             h.update(pseudonym.as_bytes());
+        }
+        MembershipEvent::JoinWithdrawn {
+            community, reason, ..
+        } => {
+            h.update(b"join_withdrawn|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(reason.name().as_bytes());
         }
         MembershipEvent::Removed {
             community,
@@ -86,6 +110,7 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
         MembershipEvent::Kicked {
             community,
             target_pseudonym,
+            ..
         } => {
             h.update(b"kicked|");
             h.update(community.as_bytes());
@@ -95,6 +120,7 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
         MembershipEvent::Banned {
             community,
             target_pseudonym,
+            ..
         } => {
             h.update(b"banned|");
             h.update(community.as_bytes());
@@ -149,7 +175,7 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(pseudonym.as_bytes());
             for id in role_ids {
-                h.update(&id.to_le_bytes());
+                h.update(id.as_bytes());
             }
         }
         MembershipEvent::OnboardingCompleted {
@@ -214,11 +240,124 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"|");
             h.update(new_profile_dht_key.as_bytes());
         }
+        FriendEvent::BioChanged {
+            peer_key,
+            bio_digest,
+        } => {
+            h.update(b"bio|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(bio_digest.as_bytes());
+        }
+        FriendEvent::DisplayNameChanged {
+            peer_key,
+            display_name,
+        } => {
+            h.update(b"name|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(display_name.as_bytes());
+        }
         FriendEvent::NicknameChanged { peer_key, nickname } => {
             h.update(b"nick|");
             h.update(peer_key.as_bytes());
             h.update(b"|");
             h.update(nickname.as_deref().unwrap_or_default().as_bytes());
+        }
+        FriendEvent::GroupChanged {
+            peer_key, group, ..
+        } => {
+            h.update(b"group|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(group.as_deref().unwrap_or_default().as_bytes());
+        }
+        FriendEvent::KeyChanged { peer_key, new_key } => {
+            h.update(b"key|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(new_key.as_bytes());
+        }
+        FriendEvent::HandshakeFailed { peer_key, reason } => {
+            h.update(b"hs_fail|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(reason.as_bytes());
+        }
+        FriendEvent::HandshakeRetrying { peer_key } => {
+            h.update(b"hs_retry|");
+            h.update(peer_key.as_bytes());
+        }
+        FriendEvent::Reachability {
+            peer_key,
+            reachable,
+        } => {
+            h.update(b"reach|");
+            h.update(peer_key.as_bytes());
+            h.update(&[u8::from(*reachable)]);
+        }
+        FriendEvent::IdentityPinMismatch { peer_key, .. } => {
+            h.update(b"pin_mismatch|");
+            h.update(peer_key.as_bytes());
+        }
+        FriendEvent::IdentityPinRestored { peer_key } => {
+            h.update(b"pin_restored|");
+            h.update(peer_key.as_bytes());
+        }
+        FriendEvent::VerificationChanged { peer_key, verified } => {
+            h.update(b"verified|");
+            h.update(peer_key.as_bytes());
+            h.update(&[u8::from(*verified)]);
+        }
+        FriendEvent::GameInvite {
+            peer_key,
+            game_id,
+            server,
+        } => {
+            h.update(b"game_invite|");
+            h.update(peer_key.as_bytes());
+            h.update(&game_id.to_le_bytes());
+            h.update(server.as_str().as_bytes());
+        }
+        FriendEvent::CreatorInvited {
+            peer_key,
+            anchor,
+            community_name,
+        } => {
+            h.update(b"creator_invited|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(anchor.as_bytes());
+            h.update(b"|");
+            h.update(community_name.as_bytes());
+        }
+        FriendEvent::CreatorInviteWithdrawn { peer_key, anchor } => {
+            h.update(b"creator_withdrawn|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(anchor.as_bytes());
+        }
+        FriendEvent::CoCreatorStatus {
+            peer_key,
+            anchor,
+            status,
+        } => {
+            h.update(b"co_creator|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(anchor.as_bytes());
+            h.update(b"|");
+            h.update(status.as_bytes());
+        }
+        FriendEvent::CoCreationFinished { anchor, created } => {
+            h.update(b"co_creation_finished|");
+            h.update(anchor.as_bytes());
+            h.update(&[u8::from(*created)]);
+        }
+        FriendEvent::BlockChanged { peer_key, blocked } => {
+            h.update(b"blocked|");
+            h.update(peer_key.as_bytes());
+            h.update(&[u8::from(*blocked)]);
         }
     }
 }

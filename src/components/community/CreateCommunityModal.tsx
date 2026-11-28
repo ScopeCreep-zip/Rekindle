@@ -1,8 +1,22 @@
-import { Component, Show, createEffect, createSignal } from "solid-js";
-
-import Modal from "../common/Modal";
-import LoadingButton from "../common/LoadingButton";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
+import { handleCreateWithCoCreators, trackCoCreation } from "../../actions/community/co_create";
 import { handleCreateCommunity } from "../../actions/community.actions";
+import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
+import { friendsState } from "../../stores/friends.store";
+import {
+  CREATE_WAIT_REASON,
+  canCreateCommunity,
+  networkLabel,
+  trackNetworkStatus,
+} from "../../stores/network.store";
+import { errorMessage } from "../../utils/error";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
+import CoCreatorStatusView from "./CoCreatorStatusView";
+
+// The Host's cap on named co-creators (`MAX_ADDITIONAL_CREATORS`); the
+// picker stops there, and the Host still refuses anything past it.
+const MAX_CO_CREATORS = 8;
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -13,13 +27,32 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
   const [name, setName] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [picked, setPicked] = createSignal<string[]>([]);
+  // Only accepted friends can be named (plan E3.2 S7s.3, decision (16)).
+  const friends = () =>
+    Object.values(friendsState.friends).filter((f) => f.friendshipState === "accepted");
+  const full = () => picked().length >= MAX_CO_CREATORS;
+
+  function toggle(key: string): void {
+    setPicked((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
+  }
+  // Create waits for the network (plan E7.13, `canCreateCommunity`); the
+  // Host still refuses a create that races a drop, and that reason shows.
+  trackNetworkStatus();
+  // Held invites and pending creations from before this window opened.
+  trackCoCreation();
 
   // Reset on every open so a previous error / name doesn't carry over.
   createEffect(() => {
     if (props.isOpen) {
       setName("");
       setError("");
+      setPicked([]);
       setSubmitting(false);
+      // A watched creation that finished while the dialog was closed.
+      const watching = coCreatorState.watching;
+      if (watching && coCreatorState.finished[watching.anchor] !== undefined)
+        stopWatchingCreation();
     }
   });
 
@@ -30,13 +63,19 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
       setError("Community name is required");
       return;
     }
+    if (!canCreateCommunity()) return;
     setError("");
     setSubmitting(true);
     try {
-      await handleCreateCommunity(trimmed);
-      props.onClose();
+      if (picked().length > 0) {
+        // The status view takes over until the community is written.
+        await handleCreateWithCoCreators(trimmed, picked());
+      } else {
+        await handleCreateCommunity(trimmed);
+        props.onClose();
+      }
     } catch (err) {
-      setError(String(err));
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -44,37 +83,85 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
 
   return (
     <Modal isOpen={props.isOpen} title="Create Community" onClose={props.onClose}>
-      <form class="form-group" onSubmit={(e) => void handleSubmit(e)}>
-        <input
-          class="form-input"
-          type="text"
-          placeholder="Community name..."
-          value={name()}
-          onInput={(e) => setName(e.currentTarget.value)}
-          autofocus
-        />
-        <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
-        </Show>
-        <div class="form-field-row">
-          <button
-            type="button"
-            class="form-btn-secondary"
-            onClick={() => props.onClose()}
-            disabled={submitting()}
-          >
-            Cancel
-          </button>
-          <LoadingButton
-            type="submit"
-            loading={submitting()}
-            disabled={!name().trim()}
-            loadingLabel="Creating"
-          >
-            Create
-          </LoadingButton>
-        </div>
-      </form>
+      <Show
+        when={coCreatorState.watching}
+        fallback={
+          <form class="form-group" onSubmit={(e) => void handleSubmit(e)}>
+            <input
+              class="form-input"
+              type="text"
+              placeholder="Community name..."
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              autofocus
+            />
+            <div class="group-dm-picker-hint" id="co-creator-hint">
+              Co-creators (optional, friends only, up to {MAX_CO_CREATORS}): {picked().length}{" "}
+              chosen
+            </div>
+            <fieldset
+              class="group-dm-picker"
+              aria-label="Co-creators"
+              aria-describedby="co-creator-hint"
+            >
+              <Show
+                when={friends().length > 0}
+                fallback={<div class="empty-placeholder-subtitle">No friends to name</div>}
+              >
+                <For each={friends()}>
+                  {(friend) => (
+                    <label class="group-dm-picker-option">
+                      <input
+                        type="checkbox"
+                        checked={picked().includes(friend.publicKey)}
+                        disabled={full() && !picked().includes(friend.publicKey)}
+                        onChange={() => toggle(friend.publicKey)}
+                      />
+                      <span class="buddy-name">{friend.displayName}</span>
+                    </label>
+                  )}
+                </For>
+              </Show>
+            </fieldset>
+            <Show when={!canCreateCommunity()}>
+              <div class="form-hint" role="status">
+                Waiting for the network ({networkLabel()}): {CREATE_WAIT_REASON}.
+              </div>
+            </Show>
+            <Show when={error()}>
+              <div class="form-error" role="alert">
+                {error()}
+              </div>
+            </Show>
+            <div class="form-field-row">
+              <button
+                type="button"
+                class="form-btn-secondary"
+                onClick={() => props.onClose()}
+                disabled={submitting()}
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                type="submit"
+                loading={submitting()}
+                disabled={!name().trim() || !canCreateCommunity()}
+                loadingLabel="Creating"
+              >
+                Create
+              </LoadingButton>
+            </div>
+          </form>
+        }
+      >
+        {(watching) => (
+          <CoCreatorStatusView
+            anchor={watching().anchor}
+            name={watching().name}
+            onClose={props.onClose}
+          />
+        )}
+      </Show>
     </Modal>
   );
 };

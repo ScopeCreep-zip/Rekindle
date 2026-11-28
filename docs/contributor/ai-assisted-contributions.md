@@ -18,7 +18,7 @@ AI tool, the commit message **must** include an `Assisted-by:`
 trailer naming the tool and its version (the same place
 `Co-authored-by:` would go):
 
-```
+```text
 Subject line summarising the change
 
 Longer explanation if needed.
@@ -31,7 +31,7 @@ The attestation requirement is modelled on the
 [Linux kernel coding-assistants policy](https://docs.kernel.org/process/coding-assistants.html),
 the [Mozilla Firefox AI coding policy](https://firefox-source-docs.mozilla.org/contributing/ai-coding.html),
 the [OpenInfra Foundation policy](https://openinfra.org/legal/ai-policy/),
-and the [Drupal AI usage disclosure](https://www.drupal.org/about/governance/coding-standards/ai).
+and the [Drupal AI usage disclosure](https://www.drupal.org/docs/develop/issues/issue-procedures-and-etiquette/policy-on-the-use-of-ai-when-contributing-to-drupal).
 
 Why we require attestation rather than detection: **detection is not
 reliable**. Researchers cannot consistently distinguish AI-assisted
@@ -56,13 +56,13 @@ If you are unsure, **disclose**.
 
 The format is one line, the same as `Co-authored-by:`:
 
-```
+```text
 Assisted-by: <tool-name>:<version> [<harness>] [<flags>]
 ```
 
 Examples:
 
-```
+```text
 Assisted-by: claude-opus-4.7 (Claude Code 1.0)
 Assisted-by: github-copilot 1.241.0
 Assisted-by: cursor 0.50.0 (claude-sonnet-4)
@@ -89,7 +89,7 @@ an AI-assisted PR.
 
 ### Frontend tier (TypeScript / SolidJS)
 
-```
+```text
 src/components/  ← presentation only
 src/stores/       ← reactive signals + IPC calls; no business logic
 src/handlers/     ← event subscriptions; dispatch to stores
@@ -104,7 +104,7 @@ Forbidden patterns that AI tools love to suggest:
 | `import { invoke } from "@tauri-apps/api"` in a component | Direct Tauri import bypasses the typed wrapper layer | Use `src/ipc/commands.ts` |
 | Business logic in `*.tsx` (validation, encryption, parsing) | Frontend is presentation only | Add a Tauri command in Rust |
 | `class="flex bg-xfire-bg-panel p-2 ..."` inline | Project policy: global styles only | Add a semantic class in `src/styles/xfire-theme.css` |
-| `localStorage.getItem(...)` direct access | Bypasses vault + tauri-store integrity | Use `@tauri-apps/plugin-store` via `src/ipc/store.ts` |
+| `localStorage.getItem(...)` direct access | Bypasses the identity's stores | Persist through a backend command (preferences: `get_preferences`/`set_preferences`, in the identity's database) |
 | `crypto.subtle.*` calls | Frontend crypto breaks the Tier-2 sole-crypto-boundary | Add a Tauri command (`rekindle-secrets`) |
 | `console.log(secret)` / logging private keys | Devtools / observability sink | Never |
 | `<div innerHTML={x} />` for any peer-controlled content | DOM XSS | Read [`../security/frontend-rendering.md`](../security/frontend-rendering.md) |
@@ -116,7 +116,7 @@ rules in `.semgrep.yml` cover the literal-pattern cases.
 
 ### Backend tier (Rust workspace)
 
-```
+```text
 Tier 1 — types          (zero deps)
 Tier 2 — secrets         (sole crypto boundary)
 Tier 3 — codec, records  (DHT, signed envelopes)
@@ -172,12 +172,12 @@ register the names and wait — **slopsquatting**.
 5. **Run `cargo deny check`** locally before committing — it will
    catch any package that doesn't satisfy our `[sources]`
    allowlist or `[advisories]` checks.
-6. **Run `cargo audit`** — RustSec advisory database.
 
 ### What CI does
 
-The lint workflow runs `cargo audit`, `cargo deny`, and the
-weekly KEV cross-reference. Together they catch published
+The Audit workflow runs `cargo deny` (RustSec advisories, licenses,
+sources) and `pnpm audit`, and `kev-check.yml` runs the weekly KEV
+cross-reference. Together they catch published
 advisories, license violations, and fabricated git remotes.
 They do **not** catch a perfectly-named slopsquat that hasn't been
 flagged yet — the manual verification above is the only defence.
@@ -219,8 +219,9 @@ catches the tautology pattern by mutating the production code and
 seeing if any test fails. We don't run it in CI today; please apply
 manually before submitting test-heavy PRs.
 
-For E2E security tests, see
-[`../../e2e/security/README.md`](../../e2e/security/README.md).
+Runtime security tests (CSP, the isolation hook, XSS) run in the real
+app (`pnpm test:app`, plan E7.14 S6); see
+[`testing.md`](testing.md).
 
 ## 5. Pending enforcement being rolled out
 
@@ -268,7 +269,7 @@ patterns produce better PRs:
 
 - [Linux kernel — Coding-assistants policy](https://docs.kernel.org/process/coding-assistants.html)
 - [Mozilla Firefox — AI coding](https://firefox-source-docs.mozilla.org/contributing/ai-coding.html)
-- [Drupal — AI usage policy](https://www.drupal.org/about/governance/coding-standards/ai)
+- [Drupal — AI usage policy](https://www.drupal.org/docs/develop/issues/issue-procedures-and-etiquette/policy-on-the-use-of-ai-when-contributing-to-drupal)
 - [OpenInfra Foundation — AI policy](https://openinfra.org/legal/ai-policy/)
 - [OpenSSF — Security-focused guide for AI code-assistant instructions](https://best.openssf.org/Security-Focused-Guide-for-AI-Code-Assistant-Instructions)
 - [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)

@@ -54,6 +54,38 @@ pub enum GovernanceEvent {
         categories: Vec<CategoryDisplay>,
     },
 
+    /// Where one of our governance ops stands (`op` is its hash, hex), from
+    /// the backend: `Pending` while it is applied, gossiped and queued on
+    /// the governance-op stream (announced again at every unlock while its
+    /// row is queued), `Landed` once it is on our member record and the
+    /// converged op set applies it, `Failed` when the community refused or
+    /// quarantined it at convergence, or its row expired, wedged or was
+    /// discarded. The UI shows a pending op as pending, with no retry
+    /// (plan E3.2 S6b, review RV7 M2).
+    OpPublication {
+        community: String,
+        op: String,
+        state: OpPublicationState,
+    },
+
+    /// The unlock barrier (plan E3.2 S7d-keys.8): whether it is catching
+    /// up and every governance write it holds, in full on every change (no
+    /// deltas); cleared by one `catching_up: false, pending: []`, after
+    /// which each op's own events follow as usual.
+    CatchUp {
+        community: String,
+        catching_up: bool,
+        pending: Vec<crate::display_catch_up::PendingGovOp>,
+    },
+
+    /// Our community key's status changed (`CommunityView::key_status`):
+    /// `Pending` while the key governance names is missing or behind,
+    /// `Current` once a holder's answer installs it.
+    KeyStatus {
+        community: String,
+        status: crate::dto::community::KeyStatus,
+    },
+
     /// The role table changed — the full new table, not a delta.
     RolesChanged {
         community: String,
@@ -75,9 +107,12 @@ pub enum GovernanceEvent {
     /// An invite was created.
     InviteCreated {
         community: String,
+        /// The governance invite id, 32 lowercase hex: what a revoke names.
+        invite_id: String,
         code_hash: String,
         created_by: String,
-        max_uses: Option<u32>,
+        /// Redemptions allowed, `1..=100` (plan E3.2 (d)).
+        max_uses: u32,
         uses: u32,
         expires_at: Option<u64>,
         created_at: u64,
@@ -96,14 +131,31 @@ pub enum GovernanceEvent {
         code_hash: String,
     },
 
+    /// An invite we created reached its expiry (the Host's timer).
+    InviteExpired {
+        community: String,
+        code_hash: String,
+    },
+
     /// A channel's permission overwrites changed.
+    /// Triggered by: the Host, when the merged governance holds a
+    /// different overwrite set for the channel (`permission_events.rs`).
     ChannelPermissionsChanged { community: String, channel: String },
 
-    /// One governance subkey was written.
-    GovernanceSubkeyUpdated {
+    /// What `member` may do changed: a role, a role assignment, an
+    /// overwrite or a timeout moved its base or any channel's effective
+    /// permissions (plan E3.2 S9). A frontend re-reads its permission
+    /// flags when `member` is us, and re-renders the member otherwise.
+    /// Triggered by: the Host, from the merged governance
+    /// (`permission_events.rs`).
+    ///
+    /// `denied` is `member`'s capabilities it lacks now, each with the
+    /// Host's reason (`CommunityView::denied`): our window replaces its map
+    /// with it, so a grant or revoke enables or disables controls live.
+    EffectivePermissionsChanged {
         community: String,
-        subkey_index: u32,
-        lamport_ts: u64,
+        member: String,
+        denied: crate::dto::community_capability::DeniedCapabilities,
     },
 
     /// The CRDT governance state was rebuilt from the DHT.
@@ -112,6 +164,118 @@ pub enum GovernanceEvent {
     /// and permissions together, so re-reading is the correct response
     /// rather than shipping four lists.
     GovernanceRebuilt { community: String },
+
+    /// A governance op's fate moved to quarantined (plan E3.2 S7c.5): it is
+    /// held and shown, never applied. Published once per op, when the
+    /// merge first sets it aside.
+    GovernanceOpQuarantined {
+        community: String,
+        /// The op's hash, hex.
+        op: String,
+        /// Its author's community pseudonym, hex.
+        author: String,
+        reason: OpQuarantineReason,
+        /// The hash (hex) of the op that caused it: the removal, or the
+        /// other `Checkpoint` op; `None` for an op this reader cannot
+        /// interpret, which quarantines the community (D15), and for a
+        /// claim of a record another member holds.
+        cause: Option<String>,
+    },
+
+    /// A community joined from a checkpoint hint finished its backfill and
+    /// the full op set's state at the hint's cut is not the hinted
+    /// snapshot: a strict majority endorsed a false checkpoint (plan E3.2
+    /// S7c.8 (1), threat T8). The community stays on the backfilled state.
+    CheckpointSnapshotMismatch {
+        community: String,
+        /// The hint's checkpoint height.
+        height: u64,
+        /// The hint's checkpoint digest, hex.
+        digest: String,
+    },
+
+    /// A successor community both sides link (ADR 0011 "Successor
+    /// community", plan E3.2 S7s.3e): an applied `CommunitySuccessor` op in
+    /// this community names `new_anchor`, and that anchor's verified
+    /// `GenesisCert` names this community as its `predecessor` (for a
+    /// transfer, its creator set is the acceptance's links, each signed by
+    /// the creator's old pseudonym). Announced once per op; two valid
+    /// successors are both offered. `signer` is the op's author, hex;
+    /// `creators` the new community's creator set, hex.
+    CommunitySuccessorOffered {
+        community: String,
+        new_anchor: String,
+        signer: String,
+        reason: crate::governance::SuccessorReason,
+        creators: Vec<String>,
+    },
+
+    /// A transfer's link request asks us (lead decision (46), plan E3.2
+    /// S7s.4c): `recipient`, the offer's recipient, asks this member, a
+    /// creator of the offer's set, to link into its successor
+    /// `new_anchor`. Announced once per request while it is unanswered and
+    /// its offer stands; answered with intent `AnswerSuccessorLink`.
+    /// `request` is the request op's hash and `recipient` a pseudonym, hex.
+    SuccessorLinkRequested {
+        community: String,
+        request: String,
+        recipient: String,
+        new_anchor: String,
+    },
+}
+
+/// Why a governance op is quarantined
+/// ([`GovernanceEvent::GovernanceOpQuarantined`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OpQuarantineReason {
+    /// "after its author's removal".
+    AfterAuthorRemoval,
+    /// "two checkpoint endorsements in one round".
+    TwoCheckpointEndorsementsInOneRound,
+    /// "checkpoint equivocation".
+    CheckpointEquivocation,
+    /// "member record already claimed": a join or record move naming a
+    /// member record another member holds (ADR 0011, one member per
+    /// record); `cause` is `None`. The claimant's own refused join tells
+    /// it to enrol again with a record of its own.
+    RecordClaimed,
+    /// "quarantined because <cause> was": its authority (a role grant, an
+    /// invite, a channel or a ban it acts on) came from `cause`, an op
+    /// quarantined after its author's fork, and fails without it (ADR 0022
+    /// rule 5, plan E3.2 S7d-keys.2a).
+    AuthorityQuarantined,
+    /// "its device key was retired or forked before it" (ADR 0022 rules
+    /// 4, 5): its key is not effective for its author at its deps.
+    DeviceKeyRetired,
+    /// "its device key was endorsed past six devices" (rule 6).
+    DeviceKeyInert,
+    /// "its device key is not among its author's first six" (rule 6).
+    DeviceKeyOverCap,
+    /// "its device key answers a fork with no re-admission" (rules 7, 10).
+    DeviceKeyNeedsReadmit,
+    /// "its device key names another device's record" (rule 3).
+    DeviceKeyRecordTaken,
+    /// A validly signed op of a kind this reader's schema does not have
+    /// (D15): the community is quarantined, likely by a newer version's
+    /// op; `cause` is `None`.
+    UnknownOpKind,
+    /// A validly signed op carrying fields this reader's schema does not
+    /// have (D15): the community is quarantined as for
+    /// [`Self::UnknownOpKind`].
+    UnknownOpVersion,
+}
+
+/// An own governance op's publication state ([`GovernanceEvent::OpPublication`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "reason")]
+pub enum OpPublicationState {
+    /// Applied, gossiped and queued; the outbox lands it, never the user.
+    Pending,
+    /// On our member record, and the converged op set applies it.
+    Landed,
+    /// It will not stand, for the reason given.
+    Failed(String),
 }
 
 impl GovernanceEvent {
@@ -121,144 +285,27 @@ impl GovernanceEvent {
         match self {
             Self::MetadataChanged { community, .. }
             | Self::ChannelsChanged { community, .. }
+            | Self::OpPublication { community, .. }
+            | Self::CatchUp { community, .. }
+            | Self::KeyStatus { community, .. }
             | Self::RolesChanged { community, .. }
             | Self::SegmentsChanged { community, .. }
             | Self::BansChanged { community }
             | Self::InviteCreated { community, .. }
             | Self::InviteUsed { community, .. }
             | Self::InviteRevoked { community, .. }
+            | Self::InviteExpired { community, .. }
             | Self::ChannelPermissionsChanged { community, .. }
-            | Self::GovernanceSubkeyUpdated { community, .. }
-            | Self::GovernanceRebuilt { community } => community,
+            | Self::EffectivePermissionsChanged { community, .. }
+            | Self::GovernanceRebuilt { community }
+            | Self::GovernanceOpQuarantined { community, .. }
+            | Self::CheckpointSnapshotMismatch { community, .. }
+            | Self::CommunitySuccessorOffered { community, .. }
+            | Self::SuccessorLinkRequested { community, .. } => community,
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn role() -> RoleDisplay {
-        RoleDisplay {
-            id: 3,
-            name: "Mod".into(),
-            color: 0x00_FF_00,
-            permissions: crate::permissions::ALL,
-            position: 1,
-            hoist: true,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: Some("rank".into()),
-        }
-    }
-
-    #[test]
-    fn every_variant_names_its_community() {
-        assert_eq!(
-            GovernanceEvent::RolesChanged {
-                community: "c".into(),
-                roles: vec![role()],
-            }
-            .community(),
-            "c"
-        );
-        assert_eq!(
-            GovernanceEvent::GovernanceRebuilt {
-                community: "c".into()
-            }
-            .community(),
-            "c"
-        );
-        assert_eq!(
-            GovernanceEvent::SegmentsChanged {
-                community: "c".into(),
-                segments: Vec::new(),
-            }
-            .community(),
-            "c"
-        );
-    }
-
-    /// The daemon IPC is postcard: `flatten` and `tag = "..."` fail
-    /// there at runtime, so only a real round trip catches them. The
-    /// payloads make this more than a formality — `RoleDisplay` and
-    /// `ChannelOverviewDisplay` now ride inside these events.
-    #[test]
-    fn postcard_round_trips_payload_variants() {
-        let events = vec![
-            GovernanceEvent::MetadataChanged {
-                community: "c".into(),
-                name: Some("New".into()),
-                description: None,
-                icon_hash: None,
-                banner_hash: Some("bh".into()),
-            },
-            GovernanceEvent::RolesChanged {
-                community: "c".into(),
-                roles: vec![role()],
-            },
-            GovernanceEvent::ChannelsChanged {
-                community: "c".into(),
-                channels: vec![ChannelOverviewDisplay {
-                    id: "ch".into(),
-                    name: "general".into(),
-                    kind: "text".into(),
-                    category_id: None,
-                    topic: String::new(),
-                    mek_generation: 4,
-                    log_key: None,
-                    sort_order: 0,
-                    slowmode_seconds: Some(30),
-                }],
-                categories: vec![CategoryDisplay {
-                    id: "cat".into(),
-                    name: "Text".into(),
-                    sort_order: 0,
-                }],
-            },
-            GovernanceEvent::InviteCreated {
-                community: "c".into(),
-                code_hash: "hash".into(),
-                created_by: "pk".into(),
-                max_uses: Some(5),
-                uses: 0,
-                expires_at: None,
-                created_at: 1,
-            },
-            GovernanceEvent::SegmentsChanged {
-                community: "c".into(),
-                segments: vec![crate::presence::SegmentDescriptor {
-                    segment_index: 1,
-                    registry_key: "reg1".into(),
-                    governance_key: "gov1".into(),
-                    slot_range_start: 255,
-                    slot_range_end: 510,
-                }],
-            },
-        ];
-        for event in events {
-            let bytes = postcard::to_allocvec(&event).expect("postcard encode");
-            let back: GovernanceEvent = postcard::from_bytes(&bytes).expect("postcard decode");
-            assert_eq!(format!("{event:?}"), format!("{back:?}"));
-        }
-    }
-
-    /// `permissions::ALL` must stay inside JavaScript's safe-integer
-    /// range while `RoleDisplay.permissions` is a plain `u64` — see the
-    /// note on that field. Adding permission bit 53 breaks this.
-    #[test]
-    fn permissions_all_survives_a_json_round_trip() {
-        let json = serde_json::to_string(&role()).unwrap();
-        let back: RoleDisplay = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            back.permissions,
-            crate::permissions::ALL,
-            "ALL exceeded 2^53 — RoleDisplay.permissions needs a string encoding"
-        );
-        let js_max_safe_integer = (1u64 << 53) - 1;
-        assert!(
-            back.permissions <= js_max_safe_integer,
-            "permission bits grew past JavaScript's safe integer range"
-        );
-    }
-}
+#[path = "governance_tests.rs"]
+mod tests;

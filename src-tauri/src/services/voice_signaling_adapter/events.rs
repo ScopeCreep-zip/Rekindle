@@ -15,6 +15,38 @@ fn community_scope(community: String, channel: String) -> VoiceScope {
     VoiceScope::Community { community, channel }
 }
 
+/// The session-state key of the call's remote roster in the host's journal.
+pub(crate) const ROSTER_STATE: &str = "voice.roster";
+
+/// Publish the roster signaling now holds as the call's current state
+/// (plan C7.29; ADR 0013): every window gets it live, and a window that
+/// subscribes later is handed it before the live changes, so no window's
+/// list depends on having seen each add as it happened.
+fn publish_roster(
+    state: &Arc<AppState>,
+    community: String,
+    channel: String,
+    roster: Vec<rekindle_voice::signaling::VoiceRosterParticipant>,
+) {
+    let Some(host) = state.host.current() else {
+        tracing::warn!("voice roster not published: the host has not started");
+        return;
+    };
+    host.publish_state(ROSTER_STATE, roster_event(community, channel, roster));
+}
+
+/// The roster as the shared vocabulary's `RosterUpdated`.
+fn roster_event(
+    community: String,
+    channel: String,
+    roster: Vec<rekindle_voice::signaling::VoiceRosterParticipant>,
+) -> SubscriptionEvent {
+    SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
+        scope: community_scope(community, channel),
+        participants: roster,
+    })
+}
+
 /// Deliver one signaling event.
 pub(super) fn emit(
     state: &Arc<AppState>,
@@ -45,7 +77,7 @@ pub(super) fn emit(
             pseudonym_key,
             present,
             display_name: _,
-            remote_count,
+            roster,
         } => {
             // Session membership is SIGNALING-driven (the transport
             // roster), never media-driven — a VAD-silent peer sends
@@ -76,34 +108,30 @@ pub(super) fn emit(
                 state,
                 &community_id,
                 &channel_id,
-                |i| i.roster_non_empty = remote_count > 0,
+                |i| i.roster_non_empty = !roster.is_empty(),
             );
+            publish_roster(state, community_id, channel_id, roster);
         }
         CommunityVoiceEvent::VoiceJoinHandshake {
             community_id,
             channel_id,
             state: stage,
+            media_ready,
             peer,
             display_name,
         } => {
-            // Media-ready input: the three-way handshake stage.
-            let handshake = match stage.as_str() {
-                "seen" => Some(rekindle_voice::transport::JoinHandshake::Seen),
-                "connected" => Some(rekindle_voice::transport::JoinHandshake::Connected),
-                _ => None,
-            };
-            if let Some(hs) = handshake {
-                crate::services::community::media_ready_runtime::update_media_ready(
+            let scope = community_scope(community_id, channel_id);
+            if let Some(media_ready) = media_ready {
+                crate::services::community::media_ready_runtime::emit(
                     state,
-                    &community_id,
-                    &channel_id,
-                    |i| i.handshake = hs,
+                    scope.clone(),
+                    media_ready,
                 );
             }
             crate::event_dispatch::emit_voice(
                 app_handle,
-                rekindle_types::subscription_events::VoiceEvent::JoinHandshake {
-                    scope: community_scope(community_id, channel_id),
+                VoiceEvent::JoinHandshake {
+                    scope,
                     state: stage,
                     peer,
                     display_name,
@@ -141,18 +169,9 @@ pub(super) fn emit(
             channel_id,
             participants,
         } => {
-            crate::event_dispatch::emit_voice(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                rekindle_types::subscription_events::VoiceEvent::RosterUpdated {
-                    scope: community_scope(community_id, channel_id),
-                    participants: participants
-                        .into_iter()
-                        .map(|p| rekindle_types::subscription_events::VoiceParticipant {
-                            pseudonym_key: p.pseudonym_key,
-                            display_name: p.display_name,
-                        })
-                        .collect(),
-                },
+                &roster_event(community_id, channel_id, participants),
             );
         }
         CommunityVoiceEvent::VoiceModeSwitch {

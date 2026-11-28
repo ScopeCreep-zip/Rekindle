@@ -1,0 +1,154 @@
+@layer components {
+  /* The skin editor (plan E7.7.5), its own window opened from Settings. */
+  .skin-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .skin-editor-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+  }
+
+  /* Name, author, licence, description, web page, and the credits. */
+  .skin-editor-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 6px 12px;
+    min-width: 0;
+  }
+
+  /* The licence is often a full text: the whole row, six whole lines
+     (`rows`, at a set line height, so no line is cut at the bottom). */
+  .skin-editor-licence-field {
+    grid-column: 1 / -1;
+  }
+
+  .skin-editor-licence {
+    line-height: 18px;
+    resize: vertical;
+  }
+
+  .skin-editor-credits {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .skin-editor-credits ul,
+  .skin-regions {
+    margin: 0;
+    padding: 0 0 0 16px;
+  }
+
+  .skin-editor-original {
+    min-width: 0;
+  }
+
+  /* Region import: the region, its fit, the nine-slice insets. */
+  .skin-region-import {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .skin-region-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    min-width: 0;
+  }
+
+  .skin-region-row > select {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .skin-region-inset {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 60px;
+    min-width: 0;
+  }
+
+  .skin-editor-failures,
+  .skin-tokens,
+  .skin-pairs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .skin-token,
+  .game-time-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .skin-token-picker {
+    flex: none;
+    width: 28px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--color-xfire-border);
+    background: none;
+  }
+
+  .skin-token-id {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--color-xfire-text);
+  }
+
+  .skin-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    padding: 2px 4px;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  .skin-pair-fail {
+    border-left: 3px solid var(--color-xfire-danger);
+    font-weight: 700;
+  }
+
+  .skin-pair-name {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+
+  .skin-pair-rule,
+  .skin-pair-apca {
+    font-weight: 400;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .skin-suggest {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .skin-swatch {
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--color-xfire-border);
+  }
+}

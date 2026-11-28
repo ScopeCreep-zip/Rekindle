@@ -1,4 +1,4 @@
-import { Component, Match, Switch } from "solid-js";
+import { type Component, Match, Switch } from "solid-js";
 import type { UserStatus } from "../../stores/auth.store";
 
 interface StatusDotProps {
@@ -11,6 +11,21 @@ const statusClassMap: Record<string, string> = {
   busy: "status-dot status-dot-busy",
   ingame: "status-dot status-dot-ingame",
   offline: "status-dot status-dot-offline",
+  invisible: "status-dot status-dot-offline",
+};
+
+/** The shape each status draws. `invisible` ("Appear offline") is the
+ *  offline ring, as its class is, and so is any status this map does not
+ *  know (WCAG 1.4.1: the shape, not the colour, carries the state). */
+type DotShape = "filled" | "ring" | "crescent" | "bar" | "triangle";
+
+const statusShapeMap: Record<string, DotShape> = {
+  online: "filled",
+  away: "crescent",
+  busy: "bar",
+  ingame: "triangle",
+  offline: "ring",
+  invisible: "ring",
 };
 
 const statusLabels: Record<string, string> = {
@@ -19,6 +34,7 @@ const statusLabels: Record<string, string> = {
   busy: "Do not disturb",
   ingame: "In game",
   offline: "Offline",
+  invisible: "Appear offline",
 };
 
 /**
@@ -29,35 +45,50 @@ const statusLabels: Record<string, string> = {
  * is an open ring with no fill. Each variant is announced by screen
  * readers via `role="img"` + `aria-label`. The same color tokens
  * carry over from the previous color-only implementation so the
- * dense Xfire visual identity is unchanged for sighted users.
+ * dense Xfire visual identity is unchanged for sighted users. The
+ * cutouts paint with `.status-dot-cutout`, a fixed `@layer sec` token
+ * (plan E7.7.0), so no skin can erase the shape.
  */
 const StatusDot: Component<StatusDotProps> = (props) => {
   const status = (): string => props.status as string;
   const cls = (): string => statusClassMap[status()] ?? "status-dot status-dot-offline";
+  const shape = (): DotShape => statusShapeMap[status()] ?? "ring";
   const label = (): string => `Status: ${statusLabels[status()] ?? "Offline"}`;
 
+  const ring = (): boolean => shape() === "ring";
+  const iconClass = (): string => `status-icon-${statusShapeMap[status()] ? status() : "offline"}`;
+
   return (
-    <span class={cls()} role="img" aria-label={label()}>
+    <span class={`${cls()} ${iconClass()}`} role="img" aria-label={label()}>
+      {/* A skin's status icon (plan E7.7.7 S4), clipped to this shape. */}
+      <span
+        class={
+          ring() ? "status-dot-fill status-dot-fill-ring" : "status-dot-fill status-dot-fill-disc"
+        }
+      />
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-        <Switch fallback={<circle cx="6" cy="6" r="4.5" fill="currentColor" stroke="none" />}>
-          <Match when={status() === "offline"}>
+        <Switch>
+          <Match when={shape() === "filled"}>
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" stroke="none" />
+          </Match>
+          <Match when={shape() === "ring"}>
             {/* Open ring — no fill, distinguishable in grayscale. */}
-            <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <circle cx="6" cy="6" r="4" fill="none" class="status-dot-ring" stroke-width="1.5" />
           </Match>
-          <Match when={status() === "away"}>
+          <Match when={shape() === "crescent"}>
             {/* Filled circle with a crescent cutout (clock/moon glyph). */}
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" />
-            <circle cx="8" cy="5" r="3" fill="var(--color-xfire-bg-dark)" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" />
+            <circle cx="8" cy="5" r="3" class="status-dot-cutout" />
           </Match>
-          <Match when={status() === "busy"}>
+          <Match when={shape() === "bar"}>
             {/* Filled circle with a horizontal "do not enter" bar. */}
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" />
-            <rect x="2.5" y="5.25" width="7" height="1.5" fill="var(--color-xfire-bg-dark)" rx="0.5" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" />
+            <rect x="2.5" y="5.25" width="7" height="1.5" class="status-dot-cutout" rx="0.5" />
           </Match>
-          <Match when={status() === "ingame"}>
+          <Match when={shape() === "triangle"}>
             {/* Filled circle with a play-triangle glyph. */}
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" />
-            <polygon points="4.5,3.5 4.5,8.5 9,6" fill="var(--color-xfire-bg-dark)" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" />
+            <polygon points="4.5,3.5 4.5,8.5 9,6" class="status-dot-cutout" />
           </Match>
         </Switch>
       </svg>

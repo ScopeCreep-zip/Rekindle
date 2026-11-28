@@ -17,8 +17,11 @@ pub mod restart;
 pub mod shutdown;
 pub mod start;
 
+#[cfg(test)]
+mod rejoin_tests;
+
 pub use local_controls::{
-    change_audio_devices, join_voice_channel, leave_voice, reannounce_voice_route,
+    announce_leave, change_audio_devices, join_voice_channel, leave_voice, reannounce_voice_route,
     set_local_deafen, set_local_mute, set_voice_mode,
 };
 pub use mcu::{start_mcu_loop, stop_mcu_loop};

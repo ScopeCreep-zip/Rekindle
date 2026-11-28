@@ -22,7 +22,7 @@
 //! Truncation / malformed bytes in known variants → drop, do not
 //! forward.
 
-use crate::capnp_codec::{capnp_err, not_in_schema, pack, text_to_string, unpack};
+use crate::capnp_codec::{bounds, capnp_err, not_in_schema, pack, text_to_string, unpack_bounded};
 use crate::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use crate::error::CodecError;
 
@@ -30,15 +30,12 @@ mod control;
 mod governance;
 mod sub_types;
 
-/// Convert a `usize` length to a Cap'n Proto-friendly `u32`. Cap'n
-/// Proto lists are bounded by `u32::MAX`; any caller exceeding that is
-/// a real bug, not a silent truncation case.
-pub(super) fn len_u32(n: usize) -> u32 {
-    u32::try_from(n).expect("Cap'n Proto list length must fit in u32")
-}
+/// A list length as Cap'n Proto's `u32` ([`crate::capnp_codec::wire_len`]).
+pub(super) use crate::capnp_codec::wire_len as len_u32;
 
 pub use control::{decode_control_payload, encode_control_payload};
 pub use governance::{decode_governance_entry, encode_governance_entry};
+pub(crate) use governance::{read_governance_entry, write_governance_entry};
 
 /// Encode a `CommunityEnvelope` into packed Cap'n Proto bytes.
 pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, CodecError> {
@@ -46,7 +43,7 @@ pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, Cod
     let root =
         builder.init_root::<crate::community_envelope_capnp::community_envelope::Builder<'_>>();
     write_community_envelope(root, env)?;
-    Ok(pack(&builder))
+    pack(&builder)
 }
 
 /// Decode a `CommunityEnvelope` from packed Cap'n Proto bytes.
@@ -54,7 +51,7 @@ pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, Cod
 /// Errors on truncation / malformed bytes; for known schemas with
 /// unknown variants use `try_decode_community_envelope`.
 pub fn decode_community_envelope(bytes: &[u8]) -> Result<CommunityEnvelope, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::COMMUNITY_ENVELOPE_BOUND)?;
     let root = reader
         .get_root::<crate::community_envelope_capnp::community_envelope::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -79,7 +76,7 @@ pub fn try_decode_community_envelope(
 /// Encode a `SignedEnvelope` into packed Cap'n Proto bytes. The inner
 /// `payload` field is treated as opaque — callers must already have
 /// encoded the inner `CommunityEnvelope` via `encode_community_envelope`.
-pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Vec<u8> {
+pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let mut root =
         builder.init_root::<crate::community_envelope_capnp::signed_envelope::Builder<'_>>();
@@ -88,18 +85,28 @@ pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Vec<u8> {
     root.set_payload(&signed.envelope_bytes);
     root.set_signature(&signed.signature);
     root.set_ttl(signed.ttl);
+    root.set_message_id(&signed.message_id);
     pack(&builder)
 }
 
 /// Decode a `SignedEnvelope` from packed Cap'n Proto bytes.
 pub fn decode_signed_envelope(bytes: &[u8]) -> Result<SignedEnvelope, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::SIGNED_ENVELOPE_BOUND)?;
     let root = reader
         .get_root::<crate::community_envelope_capnp::signed_envelope::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
+    // A missing or wrong-length id is refused, never defaulted: a
+    // defaulted id would make every such envelope one message to the
+    // dedup cache.
+    let message_id: [u8; crate::envelope::MESSAGE_ID_LEN] = root
+        .get_message_id()
+        .map_err(|e| capnp_err(&e))?
+        .try_into()
+        .map_err(|_| CodecError::Deserialization("gossip message id must be 16 bytes".into()))?;
     Ok(SignedEnvelope {
         community_id: text_to_string(root.get_community_id().map_err(|e| capnp_err(&e))?)?,
         sender_pseudonym: text_to_string(root.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
+        message_id,
         envelope_bytes: root.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: root.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
         ttl: root.get_ttl(),
@@ -113,54 +120,18 @@ fn write_community_envelope(
     env: &CommunityEnvelope,
 ) -> Result<(), CodecError> {
     match env {
-        CommunityEnvelope::MessageNotification {
-            channel_id,
-            message_id,
-            author_pseudonym,
-            subkey_index,
-            lamport_ts,
-            sequence,
-            content_hash,
-            timestamp,
-        } => {
-            let mut m = builder.init_message_notification();
-            m.set_channel_id(channel_id);
-            m.set_message_id(message_id);
-            m.set_author_pseudonym(author_pseudonym);
-            m.set_subkey_index(*subkey_index);
-            m.set_lamport_ts(*lamport_ts);
-            m.set_sequence(*sequence);
-            m.set_content_hash(content_hash);
-            m.set_timestamp(*timestamp);
-        }
         CommunityEnvelope::Control(payload) => {
             let ctrl = builder.init_control();
             encode_control_payload(ctrl, payload)?;
         }
-        CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            route_blob,
-        } => {
-            let mut p = builder.init_presence_update();
-            p.set_pseudonym_key(pseudonym_key);
-            p.set_status(status);
-            p.set_has_game_info(game_info.is_some());
-            if let Some(gi) = game_info {
-                sub_types::write_presence_game_info(p.reborrow().init_game_info(), gi);
-            }
-            p.set_has_route_blob(route_blob.is_some());
-            if let Some(blob) = route_blob {
-                p.set_route_blob(blob);
-            }
-        }
         CommunityEnvelope::TypingIndicator {
-            channel_id,
+            channel_tag,
+            ttl_ms,
             pseudonym_key,
         } => {
             let mut t = builder.init_typing_indicator();
-            t.set_channel_id(channel_id);
+            t.set_channel_tag(channel_tag);
+            t.set_ttl_ms(*ttl_ms);
             t.set_pseudonym_key(pseudonym_key);
         }
         CommunityEnvelope::WatchRelay {
@@ -184,50 +155,26 @@ fn read_community_envelope(
 ) -> Result<CommunityEnvelope, CodecError> {
     use crate::community_envelope_capnp::community_envelope::Which;
     match reader.which().map_err(not_in_schema)? {
-        Which::MessageNotification(m) => {
-            let m = m.map_err(|e| capnp_err(&e))?;
-            Ok(CommunityEnvelope::MessageNotification {
-                channel_id: text_to_string(m.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-                message_id: text_to_string(m.get_message_id().map_err(|e| capnp_err(&e))?)?,
-                author_pseudonym: text_to_string(
-                    m.get_author_pseudonym().map_err(|e| capnp_err(&e))?,
-                )?,
-                subkey_index: m.get_subkey_index(),
-                lamport_ts: m.get_lamport_ts(),
-                sequence: m.get_sequence(),
-                content_hash: text_to_string(m.get_content_hash().map_err(|e| capnp_err(&e))?)?,
-                timestamp: m.get_timestamp(),
-            })
-        }
+        // @0 was `messageNotification` (plan E3.3 slice 8) and @2
+        // `presenceUpdate` (plan E3.4 S5): no member sends either, and both
+        // are skipped like an unknown arm, never acted on.
+        Which::Obsolete0(()) | Which::Obsolete2(()) => Err(CodecError::UnknownVariant(
+            "obsolete community envelope".to_string(),
+        )),
         Which::Control(c) => {
             let c = c.map_err(|e| capnp_err(&e))?;
-            Ok(CommunityEnvelope::Control(decode_control_payload(c)?))
-        }
-        Which::PresenceUpdate(p) => {
-            let p = p.map_err(|e| capnp_err(&e))?;
-            let game_info = if p.get_has_game_info() {
-                Some(sub_types::read_presence_game_info(
-                    p.get_game_info().map_err(|e| capnp_err(&e))?,
-                )?)
-            } else {
-                None
-            };
-            let route_blob = if p.get_has_route_blob() {
-                Some(p.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec())
-            } else {
-                None
-            };
-            Ok(CommunityEnvelope::PresenceUpdate {
-                pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
-                status: text_to_string(p.get_status().map_err(|e| capnp_err(&e))?)?,
-                game_info,
-                route_blob,
-            })
+            Ok(CommunityEnvelope::control(decode_control_payload(c)?))
         }
         Which::TypingIndicator(t) => {
             let t = t.map_err(|e| capnp_err(&e))?;
+            let channel_tag = (t.get_channel_tag().map_err(|e| capnp_err(&e))?)
+                .try_into()
+                .map_err(|_| {
+                    CodecError::Deserialization("typing channel tag is not 16 bytes".into())
+                })?;
             Ok(CommunityEnvelope::TypingIndicator {
-                channel_id: text_to_string(t.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+                channel_tag,
+                ttl_ms: t.get_ttl_ms(),
                 pseudonym_key: text_to_string(t.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
             })
         }
@@ -246,272 +193,9 @@ fn read_community_envelope(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::community::envelope::PresenceGameInfo;
+#[path = "retired_control_tests.rs"]
+mod retired_control_tests;
 
-    #[test]
-    fn signed_envelope_roundtrip() {
-        let signed = SignedEnvelope {
-            community_id: "VLD0:abc".into(),
-            sender_pseudonym: "deadbeef".into(),
-            envelope_bytes: vec![1, 2, 3, 4, 5],
-            signature: vec![0u8; 64],
-            ttl: 5,
-        };
-        let bytes = encode_signed_envelope(&signed);
-        let back = decode_signed_envelope(&bytes).unwrap();
-        assert_eq!(signed.community_id, back.community_id);
-        assert_eq!(signed.sender_pseudonym, back.sender_pseudonym);
-        assert_eq!(signed.envelope_bytes, back.envelope_bytes);
-        assert_eq!(signed.signature, back.signature);
-        assert_eq!(signed.ttl, back.ttl);
-    }
-
-    #[test]
-    fn typing_indicator_roundtrip() {
-        let env = CommunityEnvelope::TypingIndicator {
-            channel_id: "ch_01".into(),
-            pseudonym_key: "abcd".into(),
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = decode_community_envelope(&bytes).unwrap();
-        match back {
-            CommunityEnvelope::TypingIndicator {
-                channel_id,
-                pseudonym_key,
-            } => {
-                assert_eq!(channel_id, "ch_01");
-                assert_eq!(pseudonym_key, "abcd");
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn voice_join_handshake_roundtrip() {
-        use crate::community::envelope::ControlPayload;
-
-        // Leg 1 — VoiceJoin with carried display name.
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
-            channel_id: "ch_voice".into(),
-            route_blob: vec![9, 9, 9],
-            display_name: Some("FireStarter92".into()),
-        });
-        let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceJoin {
-                channel_id,
-                route_blob,
-                display_name,
-            }) => {
-                assert_eq!(channel_id, "ch_voice");
-                assert_eq!(route_blob, vec![9, 9, 9]);
-                assert_eq!(display_name.as_deref(), Some("FireStarter92"));
-            }
-            _ => panic!("wrong variant"),
-        }
-
-        // Leg 2 — VoiceJoinAck carries acker identity + route.
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
-            channel_id: "ch_voice".into(),
-            joiner_pseudonym: "joiner_hex".into(),
-            display_name: None,
-            route_blob: vec![4, 2],
-        });
-        let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
-                channel_id,
-                joiner_pseudonym,
-                display_name,
-                route_blob,
-            }) => {
-                assert_eq!(channel_id, "ch_voice");
-                assert_eq!(joiner_pseudonym, "joiner_hex");
-                assert_eq!(display_name, None, "empty wire text decodes to None");
-                assert_eq!(route_blob, vec![4, 2]);
-            }
-            _ => panic!("wrong variant"),
-        }
-
-        // Leg 3 — VoiceJoinConfirmed.
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed {
-            channel_id: "ch_voice".into(),
-        });
-        let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed { channel_id }) => {
-                assert_eq!(channel_id, "ch_voice");
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn voice_roster_entry_display_name_roundtrip() {
-        use crate::community::envelope::{ControlPayload, VoiceRosterEntry};
-
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
-            channel_id: "ch_voice".into(),
-            participants: vec![
-                VoiceRosterEntry {
-                    pseudonym_key: "alice_hex".into(),
-                    route_blob: vec![1],
-                    muted: true,
-                    deafened: false,
-                    display_name: Some("Alice".into()),
-                },
-                VoiceRosterEntry {
-                    pseudonym_key: "bob_hex".into(),
-                    route_blob: vec![2],
-                    muted: false,
-                    deafened: false,
-                    display_name: None,
-                },
-            ],
-        });
-        let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceRoster { participants, .. }) => {
-                assert_eq!(participants.len(), 2);
-                assert_eq!(participants[0].display_name.as_deref(), Some("Alice"));
-                assert!(participants[0].muted);
-                assert_eq!(participants[1].display_name, None);
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn message_notification_roundtrip() {
-        let env = CommunityEnvelope::MessageNotification {
-            channel_id: "ch_01".into(),
-            message_id: "msg_abc".into(),
-            author_pseudonym: "pseudo_123".into(),
-            subkey_index: 7,
-            lamport_ts: 42,
-            sequence: 3,
-            content_hash: "abc123".into(),
-            timestamp: 1_700_000_000,
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = decode_community_envelope(&bytes).unwrap();
-        match back {
-            CommunityEnvelope::MessageNotification {
-                channel_id,
-                message_id,
-                author_pseudonym,
-                subkey_index,
-                lamport_ts,
-                sequence,
-                content_hash,
-                timestamp,
-            } => {
-                assert_eq!(channel_id, "ch_01");
-                assert_eq!(message_id, "msg_abc");
-                assert_eq!(author_pseudonym, "pseudo_123");
-                assert_eq!(subkey_index, 7);
-                assert_eq!(lamport_ts, 42);
-                assert_eq!(sequence, 3);
-                assert_eq!(content_hash, "abc123");
-                assert_eq!(timestamp, 1_700_000_000);
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn watch_relay_roundtrip() {
-        let env = CommunityEnvelope::WatchRelay {
-            record_key: "VLD0:xyz".into(),
-            subkey: 12,
-            content_hash: "blake3:abc".into(),
-            observer_pseudonym: "obsvr".into(),
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = decode_community_envelope(&bytes).unwrap();
-        match back {
-            CommunityEnvelope::WatchRelay {
-                record_key,
-                subkey,
-                content_hash,
-                observer_pseudonym,
-            } => {
-                assert_eq!(record_key, "VLD0:xyz");
-                assert_eq!(subkey, 12);
-                assert_eq!(content_hash, "blake3:abc");
-                assert_eq!(observer_pseudonym, "obsvr");
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn presence_update_with_game_info_roundtrip() {
-        let env = CommunityEnvelope::PresenceUpdate {
-            pseudonym_key: "abcd".into(),
-            status: "online".into(),
-            game_info: Some(PresenceGameInfo {
-                game_name: "Halo".into(),
-                game_id: Some(42),
-                elapsed_seconds: Some(3600),
-                server_address: Some("10.0.0.1:27015".into()),
-            }),
-            route_blob: Some(vec![9, 8, 7]),
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = decode_community_envelope(&bytes).unwrap();
-        match back {
-            CommunityEnvelope::PresenceUpdate {
-                pseudonym_key,
-                status,
-                game_info,
-                route_blob,
-            } => {
-                assert_eq!(pseudonym_key, "abcd");
-                assert_eq!(status, "online");
-                let gi = game_info.expect("game info");
-                assert_eq!(gi.game_name, "Halo");
-                assert_eq!(gi.game_id, Some(42));
-                assert_eq!(gi.elapsed_seconds, Some(3600));
-                assert_eq!(gi.server_address.as_deref(), Some("10.0.0.1:27015"));
-                assert_eq!(route_blob, Some(vec![9, 8, 7]));
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn try_decode_returns_ok_for_known_variant() {
-        let env = CommunityEnvelope::TypingIndicator {
-            channel_id: "ch".into(),
-            pseudonym_key: "abc".into(),
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = try_decode_community_envelope(&bytes).unwrap();
-        assert!(back.is_some());
-    }
-
-    /// Forward-compat contract: malformed bytes return `Err`, distinct
-    /// from the `Ok(None)` returned by `try_decode_community_envelope`
-    /// when a known-schema reader sees an unknown union discriminant
-    /// (i.e. a peer running a newer build that added a future
-    /// variant). Gossip relays use the latter to forward bytes intact;
-    /// the former drops + does not forward. Synthesising an actual
-    /// unknown-discriminant message requires low-level Cap'n Proto
-    /// wire-format construction; that path is covered by the integration
-    /// path in `services/veilid/app_message.rs::handle_gossip_envelope`
-    /// (verifies signature → decrements TTL → forwards even on
-    /// `Ok(None)`).
-    #[test]
-    fn try_decode_distinguishes_malformed_from_unknown() {
-        let garbage = vec![0xff_u8; 128];
-        let result = try_decode_community_envelope(&garbage);
-        assert!(
-            matches!(result, Err(CodecError::Deserialization(_))),
-            "malformed bytes should return Err(Deserialization), not Ok(None) — \
-             that's reserved for known-schema-with-unknown-discriminant. Got: {result:?}"
-        );
-    }
-}
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

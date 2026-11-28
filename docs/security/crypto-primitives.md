@@ -18,14 +18,18 @@ which primitives address which threats.
 |---------|-----------|---------|
 | Identity / signing | **Ed25519** | `ed25519-dalek` |
 | Key agreement | **X25519** | `x25519-dalek` (with `static_secrets`) |
+| Post-quantum KEM (PQXDH hybrid) | **ML-KEM-768** (FIPS 203) | `libcrux-ml-kem` (in `rekindle-secrets`) |
 | Channel content AEAD | **AES-256-GCM** | `aes-gcm` |
 | Real-time voice frames | **SFrame** (RFC 9605, suite 0x0005 `AES_256_GCM_SHA512_128`, HKDF-SHA512) | `aes-gcm`, `hkdf`, `sha2` (in `rekindle-secrets::sframe`) |
 | At-rest / transport AEAD (Veilid layer; chunk FEK) | **XChaCha20-Poly1305** | `chacha20poly1305` (via Veilid + Rekindle file FEK) |
 | At-rest vault (entry seal) | **AES-256-GCM** + page-level **AES-256-CBC** via SQLCipher | `aes-gcm`, SQLCipher (via `rekindle-vault`) |
 | Tamper-evident audit MAC | **BLAKE3-keyed** | `blake3` (via `rekindle-audit`) |
-| 1:1 messaging | **Signal Protocol** (X3DH + Double Ratchet) | `libsignal-protocol`-derived (in `rekindle-crypto`) |
+| 1:1 messaging | **Signal Protocol** (PQXDH rev. 3 with X25519 + ML-KEM-768, + Double Ratchet) | spec implementation in `rekindle-crypto` (`signal/`) |
+| 1:1 message cipher (Double Ratchet `ENCRYPT`) | **AES-256-CBC + HMAC-SHA256** (DR rev. 4 §7.2, 128-bit tag) | `aes`, `cbc`, `hmac` (in `rekindle-crypto::signal::dr`) |
+| Safety numbers | **SHA-512**, 5200 iterations per side (Signal's safety-number scheme) | `sha2` (in `rekindle-crypto::fingerprint`) |
+| Pre-session 1:1 frames | **HPKE Base** (RFC 9180) + Ed25519 signature | `rekindle-secrets::hpke` |
 | Hash / KDF / dedup | **SHA-256** | `sha2` |
-| Hash (rotator selection, content addressing) | **BLAKE3** | `blake3` |
+| Hash (rotator selection, content addressing, replay ids, base-key hash, file-cache names, vault key split, governance fork evidence, restore evidence and device-set hashes) | **BLAKE3** | `blake3` |
 | Key derivation | **HKDF-SHA256** | `hkdf` |
 | Passphrase KDF | **Argon2id** | `argon2` (via `rekindle-vault`) |
 | IPC bus handshake | **Noise IK** (`Noise_IK_25519_ChaChaPoly_BLAKE2s`) | `snow` |
@@ -35,7 +39,22 @@ which primitives address which threats.
 
 **Where used.** Every long-term identity. Every per-community pseudonym.
 Every gossip envelope signature. Every governance entry signature.
-Every `MessagePayload` 1:1 envelope signature.
+Every sealed pre-session 1:1 frame signature (`DM_PRESESSION_SIG`) and `IdentityRotated` signature.
+Every prekey signature (`PREKEY_SPK_SIG`, `PREKEY_PQ_LR_SIG`, `PREKEY_PQ_OT_SIG`,
+`PREKEY_OPK_SIG`; the head's two keys sign its `issued_at` too) and every friend
+invite blob (`FRIEND_INVITE_SIG ‖` the JSON of every field but the signature).
+Every member record binding: a `MemberJoined` or `MemberRecordMoved` carries
+`ownerProof`, the record owner `K_M`'s signature over `MEMBER_RECORD_BINDING ‖
+anchor ‖ author pseudonym ‖ member record key`, and a reader accepts it only when
+the record key is the one Veilid derives from that owner key for a DFLT(8) record
+(BLAKE3 over `VLD0 ‖ owner ‖ DFLT ‖ o_cnt`), so only `K_M`'s holder can bind it
+(ADR 0011 "Binding").
+Per-community device keys (ADR 0022, Proposed; plan E3.2 S7d-keys) add the signature
+contexts `rekindle-gov-device-key-v1` (an endorsement, by the community pseudonym),
+`rekindle-gov-device-retired-v1` (a retirement, by the pseudonym),
+`rekindle-gov-device-readmit-v1` (a re-admission body, inside an op signed under
+`rekindle-gov-op-v1`) and `rekindle-gov-successor-v1` (a pseudonym-signed
+`CommunitySuccessor`); ADR 0022 rule 10 gives their layouts.
 
 **Why.**
 
@@ -71,8 +90,9 @@ Every `MessagePayload` 1:1 envelope signature.
 - Wrapping channel MEK per recipient during distribution (rotator
   encrypts new MEK to each remaining member with X25519 ECDH +
   XChaCha20-Poly1305).
-- Deriving the DM MEK directly from `X25519(alice_private,
-  bob_public)` — no separate key-exchange round-trip.
+- PQXDH session establishment, hybrid with ML-KEM-768 (§5), and every
+  Double Ratchet DH step.
+- HPKE Base sealing of pre-session 1:1 frames to the recipient's key.
 - Deriving the per-call `call_key` for direct calls
   (`rekindle-calls`).
 - Daemon ↔ client IPC bus key agreement (within Noise IK).
@@ -97,11 +117,12 @@ secrets need to survive multiple operations within a session.
 
 - **NIST P-256 ECDH.** Same arguments as for ECDSA — parameter baggage
   and weaker constant-time guarantees in default toolchains.
-- **Post-quantum hybrid (X25519+Kyber768 or similar).** Considered but
-  not yet adopted. The TLS ecosystem is still settling on which hybrid
-  to standardise. We will revisit once IETF and Signal take a
-  definitive position; jumping early would lock us into a hybrid that
-  may be deprecated. **Open work.**
+- **X25519 alone for 1:1 session establishment.** Not used: sessions
+  are established with PQXDH rev. 3, which adds ML-KEM-768 (FIPS 203)
+  to the X25519 agreements, so a recorded handshake stays confidential
+  against a later quantum adversary unless both X25519 and ML-KEM-768
+  are broken (§5). The KEM is `libcrux-ml-kem`, a formally verified
+  implementation, behind `rekindle-secrets`.
 
 ## 3. AES-256-GCM — channel content encryption
 
@@ -116,8 +137,36 @@ messages, encrypted under the channel's current MEK.
 - Universally supported, standardised in
   [NIST SP 800-38D](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf).
 - AEAD with associated data — we bind ciphertext to its context via
-  AAD: `channel_record_key ‖ subkey_index_le32 ‖ lamport_ts_le64`.
-  Replays across channels or out-of-position fail decryption.
+  AAD (plan E3.3, `rekindle_secrets::keys::ChannelAad`):
+  `rekindle-channel-body-aad-v1 ‖ u32be(len) anchor ‖ u32be(len)
+  channel_id ‖ author ‖ stream_seq_le64`, where `stream_seq` is the
+  author's per-stream counter, frozen when the entry is queued. A body
+  moved to another community, channel, author or stream position fails
+  decryption. Bodies on the channel SMPL records written before the
+  outbox keep the slot AAD `channel_record_key ‖ subkey_index_le32 ‖
+  lamport_ts_le64` (`SlotChannelAad`), deleted with the slot model.
+- An outbox entry carries its channel only as a tag,
+  `HKDF-SHA256(text key of the entry's generation, rekindle-channel-tag-v1
+  ‖ channel_id)[..16]` (`channel_body::channel_tag`), so only a holder of
+  that generation can link the entry to its channel. The entry is signed
+  by the author's pseudonym (Ed25519) under `rekindle-outbox-entry-v1`
+  over `anchor ‖ chain seq ‖` its fields, and each entry's `prev` is
+  BLAKE3 of the author's previous entry, a hash-linked feed over
+  ciphertext.
+- A presence beat (`M`/1, `rekindle_codec::member_record::beat`) is
+  signed by the member's pseudonym (Ed25519) under
+  `rekindle-presence-beat-v2` over `community ‖ memberRecord ‖ seq ‖
+  status ‖ voiceChannel ‖ beatNumber ‖ extras ‖ padding`. Its extras
+  (location, activity) are sealed under the community text key of the
+  stamped generation, AAD `community ‖ memberRecord`. Every beat packs to
+  exactly 512 B: random padding words sized after Cap'n Proto packing
+  (each word holds 1–6 nonzero random bytes, so it never joins a packing
+  run and its packed cost is exact) fill the rest, and a beat of any
+  other size is refused, so the size leaks nothing about the fields
+  (plan E3.4 Q2). `seq` is persisted before each write
+  (`communities.beat_seq`) and never reused; `beatNumber` is the writer's
+  5-minute period, and a reader shows the member live for 15 minutes from
+  the later of that period and the beat's local arrival (Q4).
 - Mature, audited implementations.
 
 Voice frames also use AES-256-GCM, through SFrame (RFC 9605 suite
@@ -180,9 +229,15 @@ rotation cadence.
 
 ## 5. Signal Protocol — 1:1 friend messaging
 
-**Where used.** Layer 4 for 1:1 friend messages. X3DH for session
-establishment over DHT-published prekey bundles; Double Ratchet for
-ongoing per-message forward and backward secrecy.
+**Where used.** Layer 4 for 1:1 friend messages. PQXDH (rev. 3) for session
+establishment over each device's published prekey record; Double Ratchet for
+ongoing per-message forward and backward secrecy. Pre-session kinds
+(friend request and reject, `PreKeyRejected`, session reset request and
+decline, push-relay kinds) use HPKE Base to the recipient's X25519 key plus an Ed25519
+signature over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`
+(`rekindle-secrets::hpke`). Safety numbers are Signal's 60-digit and
+scannable format: 5200 iterations of SHA-512 per side
+(`rekindle-crypto::fingerprint`).
 
 **Why.**
 
@@ -195,17 +250,68 @@ ongoing per-message forward and backward secrecy.
   messages.
 - Self-healing: a fresh DH on every send recovers from a compromised
   message key on the next round-trip.
-- No central server required. PQXDH operates against prekey bundles:
-  the long-lived bundle (signed prekey + PQ last-resort key, no
-  one-time keys) is published in the DHT under the user's profile
-  record; every bundle sent to a single peer carries a fresh one-time
-  X25519 and ML-KEM key that is used once (PQXDH §3.3).
+- No central server required. PQXDH operates against a prekey record
+  per device (plan E2.4): a DFLT(101) DHT record named from profile
+  subkey 5, whose subkey 0 holds the signed prekey and the ML-KEM
+  last-resort key and whose subkeys 1..=100 each hold one one-time
+  X25519 and ML-KEM key pair. The initiator picks an unused slot
+  uniformly, or the head alone when none is left (PQXDH §2.5, §3.3).
+  Every id is a random non-zero u31, and every signature is the
+  identity's Ed25519 over domain ‖ id ‖ key: `PREKEY_SPK_SIG` (signed
+  prekey), `PREKEY_PQ_LR_SIG` and `PREKEY_PQ_OT_SIG` (ML-KEM last-resort
+  and one-time), `PREKEY_OPK_SIG` (one-time curve key), so a signature
+  binds one key to one id in one role. The head's two signatures also
+  cover its `issued_at`, and a reader refuses a head dated more than
+  14 days from now either way (`SIGNED_MAX_AGE_MS`,
+  `CryptoError::StalePrekeys`) (`rekindle-crypto::signal::pqxdh::verify`).
 
-**Implementation.** `crates/rekindle-crypto/src/signal/` contains the
-session manager, with stores backed by the vault
-(`rekindle_vault::typed::signal` on top of `rekindle-vault`). Our types follow the
+**Implementation.** `crates/rekindle-crypto/src/signal/{dr,record,pqxdh}`
+hold the pure Double Ratchet, `SessionRecord` and PQXDH state machines; the
+sessions are stored per peer in `ratchet_sessions` and stepped in one DB
+transaction before any send (`crates/rekindle-db/src/ratchet/`), prekeys in
+`signal_prekeys`. The record's maintenance and pick are the pure
+`rekindle-crypto::signal::prekey_record::{plan_maintenance, pick_slot}`:
+the head rotates every 2 days, a consumed slot is refilled, and replaced
+keys stay usable for 30 days. A one-time key is consumed only after the
+init's first message decrypts, in the same transaction that stores the
+session and refills the slot; an init naming a consumed, unknown or
+archived key gets a sealed `PreKeyRejected` and the initiator retries once
+from another slot; a replayed last-resort-only init is dropped. The ratchet associated data binds both identities and the
+frame typeId. Skipped message keys age out at the 30-day
+`DELIVERY_HORIZON`. Our types follow the
 [libsignal-protocol](https://github.com/signalapp/libsignal) data
 shapes.
+
+**Message encryption.** `ENCRYPT` is DR rev. 4 §7.2's recommended
+construction (`rekindle-crypto::signal::dr::kdf`): HKDF-SHA256 of the
+message key (zero salt, info `rekindle-dr-msg-v2`) gives 80 bytes — an
+AES-256 key, an HMAC-SHA256 key and a 16-byte IV; the plaintext is
+AES-256-CBC with PKCS#7 padding, and the tag is HMAC-SHA256 over
+`AD ‖ ciphertext`, truncated to 128 bits (§8.6). The tag is checked in
+constant time before any decryption, and every failure (length, tag,
+padding) is the same error. The reason is misuse resistance under state
+rollback: a restored or cloned ratchet state (power loss, a backup, a VM
+snapshot, a copied data root) reuses message keys, and with them the
+IV. Under an AEAD over a counter mode, such as the AES-256-GCM this
+replaced (`rekindle-dr-msg-v1`, retired), one reuse gives the XOR of
+the two plaintexts and the authentication key; under CBC+HMAC it shows
+only whether the two plaintexts share leading blocks. MLS met the
+same problem with AES-GCM and had to add a per-message reuse guard
+(RFC 9420 §6.3.1). Considered and rejected: **AES-256-GCM-SIV** (it leaks
+only plaintext equality under reuse, but the RustCrypto `aes-gcm-siv`
+crate states it has never been audited, it is not the Double Ratchet
+spec's concrete recipe, and the spec gives a truncation analysis only for
+CBC+HMAC, §8.6) and **ChaCha20-Poly1305** (the same keystream-reuse failure
+as GCM). libsignal and Olm/vodozemac use this same construction, and its
+`aes` and `cbc` crates were already in the lock. The threat model's
+rollback row lists the other mitigations.
+
+**PQXDH `info`.** The PQXDH KDF's info is `rekindle-pqxdh-sk-v1`
+(`domains::PQXDH_SK`), not the `info_curve_hash_pqkem`-shaped string of
+PQXDH rev. 3 §2.2. Every label follows the registry's
+`rekindle-<purpose>-v<N>` naming rule, and the suite that string would
+name is fixed and recorded here: curve X25519, hash SHA-256, KEM
+ML-KEM-768. A different suite takes a new label.
 
 **Alternatives considered and rejected.**
 
@@ -242,6 +348,111 @@ SHA256(concatenated)` will move to a true binary Merkle tree
 
 - **Deterministic rotator selection.** `rotator =
   argmin_member(BLAKE3(departed_pseudonym ‖ own_pseudonym))`.
+- **Replay ids** of pre-session frames: `blake3::derive_key("rekindle-dm-replay-id-v1",
+  sender ‖ nonce)` (`rekindle-crypto::replay`).
+- **Base-key hash** a `PreKeyRejected` names: `derive_key` under
+  `rekindle-prekey-rejected-base-key-v1`.
+- **Invite join key and id** (plan E3.2 S10): the Ed25519 seed
+  `derive_key("rekindle-invite-join-v1", code)`; the hex of its public half
+  is the invite's `code_hash`, both the lookup id an invite entry is stored
+  under and the key a joiner's invite proof verifies under
+  (`rekindle_secrets::invite::{hash_invite_code, sign_invite_join,
+  invite_join_verifies}`). The proof in `MemberJoined.invite_proof` is that
+  key's Ed25519 signature over `rekindle-invite-proof-v2 ‖ lp(anchor) ‖
+  joiner pseudonym ‖ lp(member record) ‖ lp(code_hash)` (`lp` a `u32be`
+  length prefix; `rekindle_governance::op::invite_proof_bytes`), checked in
+  `check_invite_proof` before the merge. Readers hold only the op log, so
+  the proof must verify without the code (a keyed hash like the read tag
+  cannot) and only a holder of the code can make it (the former
+  `rekindle-invite-proof-v1`, the joiner's own signature over the public
+  `code_hash`, let any reader of the log join while the invite had uses
+  left). Naming the joiner and its record stops a seen proof being
+  replayed for another pseudonym; the use count (`live_invite`, the merge's
+  invite gate) is unchanged. Cost: one Ed25519 key derivation per invite
+  created or joined and one signature check per `MemberJoined`; the key is
+  never stored (re-derived from the code), and `code_hash` stays 64 hex
+  digits.
+- **Pre-join read tag** (plan E3.2 S7c.8 (2)): a joiner's checkpoint hint
+  and snapshot requests carry BLAKE3-keyed under `derive_key(
+  "rekindle-invite-read-tag-v1", code)` over the request's signed bytes
+  (`rekindle_secrets::invite::pre_join_read_tag`); the inviter compares it
+  in constant time under its own copy of the code, since the op log holds
+  only the code's lookup id.
+- **Departure slot heads** (plan E3.2 S9): a `MemberLeft` or `MemberRemoved`
+  commits to the exact value of the departed member's channel slot with
+  `derive_key("rekindle-departed-slot-head-v1", record key ‖ subkey ‖ seq ‖
+  page)` over the decrypted page bytes (the record key length-prefixed;
+  `rekindle_secrets::slot_head`). A reader keeps a departed member's
+  backfilled posts only from a value with that seq and digest, so a leaver
+  cannot fill a seq gap it reserved with posts written after it left.
+- **Governance op** (ADR 0011, plan E3.2; D15): the author signs
+  `rekindle-gov-op-v1 ‖ anchor ‖ unsigned` with Ed25519, and the op hash is
+  `derive_key("rekindle-gov-op-hash-v1", unsigned ‖ sig)`
+  (`rekindle_governance::op::{op_signing_bytes, op_hash}`). `unsigned` is the
+  op's Cap'n Proto canonical form (one segment, preorder, truncated) with
+  `sig` cleared (`rekindle_codec::governance_op::op_unsigned_bytes`). A reader
+  computes it from the received message itself (`read_op`: copied as it
+  came, `sig` cleared, canonicalized), so it checks the signature of an op
+  whose kind or fields it does not know without interpreting the body, and
+  holds such an op quarantined (D15). `seal_op` writes `unsigned` plus `sig`
+  as the wire form, the one sealing path.
+- **Checkpoint directory** (plan E3.2 S7c.2): one RFC 9162 §2.1.1 Merkle
+  tree over the `DirLeafV1` entries (member, record key and owner, join op,
+  join height), with `HASH` = `derive_key("rekindle-gov-directory-v1", ·)`
+  and CT's `0x00` leaf and `0x01` node prefixes, so a leaf can never pass
+  as an interior node. Pages of 128 leaves are complete subtrees; inclusion
+  and consistency proofs follow RFC 9162 §2.1.3–§2.1.4
+  (`rekindle_governance::checkpoint::directory`). A hash domain, not a
+  signature: a page is proven by its path to the endorsed `dirRoot`.
+- **Checkpoint op** (plan E3.2 S7c.3): a `Checkpoint` op is its author's
+  endorsement, signed under `rekindle-gov-op-v1` like every op; votes are
+  counted by its digest, `derive_key("rekindle-gov-checkpoint-v1", ·)` over
+  every body field but `pages` and `round`. `stateRoot` is
+  `derive_key("rekindle-gov-checkpoint-state-v1", canonical_state ‖
+  canonical_cut)`, sharing its first part with the `Frontier`'s roster
+  checksum (`rekindle-gov-roster-checksum-v1`); `frontierHash` is
+  `derive_key("rekindle-gov-checkpoint-frontier-v1", ·)` over the sorted
+  cut head hashes, and `eligibleSetHash` is
+  `derive_key("rekindle-gov-checkpoint-eligible-v1", ·)` over the count and
+  the sorted pseudonyms of the electorate (ADR 0018), so an endorsement made
+  for one electorate never counts toward another
+  (`rekindle_governance::checkpoint`).
+- **Checkpoint state snapshot** (plan E3.2 S7c.3): a member asks a ring
+  peer for a checkpoint's `canonical_state ‖ canonical_cut` bytes in
+  chunks of at most 30,000 B with a `CheckpointStateRequest` its pseudonym
+  signs under `rekindle-checkpoint-state-request-v1` over community ‖
+  height ‖ checkpoint digest ‖ offset ‖ requester (the community
+  length-prefixed), so the answering member serves admitted members only.
+  The answer is unsigned: the reader hashes the reassembled bytes under
+  `rekindle-gov-checkpoint-state-v1` and keeps them only when they equal
+  the endorsed `stateRoot`, asking the next ring peer otherwise
+  (`rekindle_codec::checkpoint_state`,
+  `rekindle_governance_runtime::checkpoint_state`).
+- **File-cache names**: every directory under `state/{pk}.files/` is a
+  keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
+  `FILE_CACHE_ATTACHMENT` prefixes) under a key
+  HKDF-derived from the identity secret (`FILE_CACHE_NAMES`), so names
+  are never ids and are unlinkable across identities (plan E3.0a).
+- **Key-confirmation tag of a `MekTransferAck`** (as RFC 9420 §12.4.3's
+  `confirmation_tag`): BLAKE3-keyed under `derive_key("rekindle-mek-ack-v1",
+  MEK_G)` over community ‖ scope ‖ G ‖ transfer id ‖ inviter ‖ joiner (each
+  variable field length-prefixed; `rekindle_secrets::mek_ack`). The sender
+  settles a key transfer only when the tag verifies under its own copy of the
+  key, so only a party that unwrapped exactly that key can confirm it; no
+  signature, so the joiner stays deniable.
+- **Vault key split**: `derive_key` of the Argon2id master under
+  `rekindle-vault-{sqlcipher,entry,app-db}-v1` (§9).
+- **Governance device keys** (ADR 0022, Proposed; plan E3.2 S7d-keys):
+  fork evidence under `rekindle-gov-fork-evidence-v1` over `community ‖
+  device key ‖ seq ‖` the two op hashes in byte order; the "retired by
+  restore" marker under `rekindle-gov-restore-evidence-v1` over `community
+  ‖ deviceKey ‖ incarnation ‖ lastSeq ‖` the published `GovHead` op hash;
+  the extended-set hash under `rekindle-gov-device-set-v1` over the sorted
+  ids `(kind, deviceKey, incarnation)` of the member's endorsement set.
+- **MekTransfer ack tag** (plan E3.5; prod research batch 11, decided 2026-10-24): `ack_tag` is keyed BLAKE3 under
+  `derive_key("rekindle-mek-ack-v1", MEK_G)` over `community ‖ scope ‖ generation ‖ transfer_id ‖ inviter ‖
+  joiner`, a key-confirmation MAC after MLS `confirmation_tag` (RFC 9420 §12.4.3), compared in constant time; no
+  signature, for deniability.
 - **Content addressing** in places where we want speed and a wider
   output range (32-byte BLAKE3 vs 32-byte SHA-256, but BLAKE3 is
   variable-length-output friendly without the truncation patterns
@@ -252,7 +463,7 @@ SHA256(concatenated)` will move to a true binary Merkle tree
 - 5× to 10× faster than SHA-256 on commodity hardware.
 - Tree-mode parallelism (irrelevant for our short inputs but available).
 - Modern, well-audited (BLAKE2/3 family, IETF
-  [draft-irtf-cfrg-blake3](https://datatracker.ietf.org/doc/draft-irtf-cfrg-blake3/)).
+  [draft-aumasson-blake3](https://datatracker.ietf.org/doc/draft-aumasson-blake3/)).
 - Distinct from SHA-256 — using both means a single hash-function
   weakness in either does not affect both code paths.
 
@@ -265,7 +476,8 @@ ecosystem.
 **Where used.**
 
 - **Per-community pseudonym derivation:**
-  ```
+
+  ```text
   pseudonym_seed = HKDF-SHA256(
       ikm:  master_secret,
       salt: "rekindle-community-pseudonym-v1",
@@ -273,26 +485,26 @@ ecosystem.
   )
   Ed25519::from_seed(pseudonym_seed)
   ```
+
 - **Slot keypair derivation** (`rekindle-secrets/src/derive.rs`):
-  ```
+
+  ```text
   slot_seed_per_subkey = HKDF-SHA256(
       ikm:  community_slot_seed,
       salt: none,
       info: "rekindle-slot-" ‖ decimal(slot_index),
   )
   ```
-- **DM MEK derivation:**
-  ```
-  dm_mek = HKDF-SHA256(
-      ikm:  X25519(alice_priv, bob_pub),
-      salt: SHA256(sorted(alice_pub ‖ bob_pub)),
-      info: "rekindle-dm-mek-v1",
-  )
-  ```
-- **DM MEK ratchet:**
-  ```
+
+- **Group DM MEK:** random, wrapped per recipient in the `GroupDmInvite`
+  (the 2-party ECDH MEK went with the 1:1 SMPL path, plan E2.3; 1:1 DMs
+  are the friend's ratchet stream). E2.6 replaces it with sender-owned keys.
+- **Group DM MEK ratchet:**
+
+  ```text
   mek_n+1 = HKDF-SHA256(mek_n, info="rekindle-dm-ratchet-v1")
   ```
+
 - **Direct call secret** (within `rekindle-calls`): the SFrame scope
   secret for the call.
 - **SFrame** (`rekindle-secrets::sframe`, RFC 9605 §4.4.2): HKDF-SHA512
@@ -314,9 +526,11 @@ literals anywhere else ([architecture rule B18](../contributor/architecture-rule
 ## 9. Argon2id — passphrase KDF
 
 **Where used.** `rekindle-vault` master-key derivation from the
-user's passphrase. The Argon2id output is then split into a
-SQLCipher page key and a per-entry GCM key via BLAKE3-keyed
-derivation.
+user's passphrase. The Argon2id output is then split with
+`blake3::derive_key` into the vault's SQLCipher page key
+(`rekindle-vault-sqlcipher-v1`), its per-entry GCM key
+(`rekindle-vault-entry-v1`) and the identity database's SQLCipher key
+(`rekindle-vault-app-db-v1`).
 
 **Why.**
 
@@ -352,8 +566,9 @@ opt-level = 3
 **Why.**
 
 - IK pattern matches the threat model perfectly: the daemon
-  (responder) has a long-term Ed25519 / X25519 key in the OS keyring
-  that the client knows in advance; the client (initiator) is
+  (responder) has a static X25519 key, generated at each start and held
+  only in memory, whose public half (`bus.pub`) the client reads in
+  advance; the client (initiator) is
   ephemeral and freshly generated.
 - 1-RTT handshake — minimal latency.
 - Forward secrecy (transport-phase ephemerals).

@@ -16,8 +16,10 @@
  * the daemon IPC as postcard, which cannot decode a tagged enum.
  */
 
+import type { NotJoinableReason } from "../commands/types";
+
 /** What a peer is playing, when the emitter actually looked. */
-export type GameActivity =
+type GameActivity =
   | "idle"
   | {
       playing: {
@@ -25,6 +27,12 @@ export type GameActivity =
         gameId: number | null;
         elapsedSeconds: number | null;
         serverAddress: string | null;
+        /** `src/assets/game-icons/<key>.png`, resolved by the backend (plan E7.2). */
+        iconKey: string | null;
+        /** Whether "Join Game" can start it, stated by the Host when it
+         *  journals the event (plan E7.15 IV3). */
+        joinable: boolean;
+        joinableReason: NotJoinableReason | null;
       };
     };
 
@@ -44,6 +52,8 @@ export interface PresenceSnapshot {
   status: string | null;
   statusMessage: string | null;
   game: GameActivity | null;
+  /** What the Host makes of our input activity (`selfChanged` only). */
+  idle: "unavailable" | "active" | "autoAway" | null;
 }
 
 export type PresenceEvent =
@@ -55,7 +65,14 @@ export type PresenceEvent =
       };
     }
   | { friendChanged: { peerKey: string; snapshot: PresenceSnapshot } }
-  | { selfChanged: { publicKey: string; snapshot: PresenceSnapshot } };
+  | { selfChanged: { publicKey: string; snapshot: PresenceSnapshot } }
+  | {
+      selfProfileChanged: {
+        publicKey: string;
+        displayName: string | null;
+        avatarChanged: boolean;
+      };
+    };
 
 /** The full subscription event as emitted on every channel. */
 export type PresenceSubscriptionEvent = { presence: PresenceEvent };
@@ -65,9 +82,4 @@ export function gameName(snapshot: PresenceSnapshot): string | null {
   const game = snapshot.game;
   if (game === null || game === "idle") return null;
   return game.playing.gameName;
-}
-
-/** Whether a game was observed at all (running or stopped). */
-export function gameObserved(snapshot: PresenceSnapshot): boolean {
-  return snapshot.game !== null;
 }

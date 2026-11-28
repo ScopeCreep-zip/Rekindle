@@ -14,34 +14,78 @@ use serde::{Deserialize, Serialize};
 
 /// Overview of a joined community for list display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommunityOverview {
-    pub governance_key: String,
+    pub anchor: String,
     pub name: String,
     pub description: String,
     pub member_count: u32,
     pub channel_count: u32,
     pub our_pseudonym: String,
+    /// Set when we were removed: the community is read-only history.
+    #[serde(default)]
+    pub removed: Option<CommunityRemovalDisplay>,
+}
+
+/// Our own removal from a community (plan E3.2 S9 own removal).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityRemovalDisplay {
+    /// Banned, not only kicked.
+    pub banned: bool,
+    /// The remover's pseudonym, when the merged op names one.
+    pub by: Option<String>,
+    /// The remover's display name as known when the removal was first
+    /// merged (its verified card or profile), when known.
+    pub by_name: Option<String>,
+    /// The reason the removal op gave (A/B R5-2; Element shows
+    /// "X removed you: reason").
+    pub reason: Option<String>,
 }
 
 /// Detailed community info for the info command and TUI view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommunityDetail {
-    pub governance_key: String,
+    pub anchor: String,
     pub name: String,
     pub description: String,
-    pub owner_pseudonym: String,
+    /// The community's creator set (hex pseudonyms, byte order).
+    pub creator_pseudonyms: Vec<String>,
     pub created_at: u64,
     pub member_count: u32,
     pub channels: Vec<ChannelOverviewDisplay>,
     pub roles: Vec<RoleDisplay>,
     pub our_pseudonym: String,
-    pub our_roles: Vec<u32>,
+    pub our_roles: Vec<String>,
+    /// Set when we were removed: the community is read-only history.
+    #[serde(default)]
+    pub removed: Option<CommunityRemovalDisplay>,
+    /// Set while the unlock barrier holds our governance writes (plan
+    /// E3.2 S7d-keys.8), so a window opened mid-barrier shows them; the
+    /// same view `GovernanceEvent::CatchUp` sends on every change.
+    #[serde(default)]
+    pub catch_up: Option<crate::display_catch_up::CatchUpView>,
+    /// Where each of our governance ops not yet landed stands, by op hash
+    /// (hex): the window view's `CommunityView::op_publications`, read from
+    /// the same Host function, so the CLI and TUI show what the window does.
+    #[serde(default)]
+    pub op_publications:
+        std::collections::BTreeMap<String, crate::subscription_events::OpPublicationState>,
+    /// The community key generation the Host holds now: the window view's
+    /// `CommunityView::mek_generation`, from the same state, so the CLI and
+    /// TUI show what the window does. It is the elected rotator's minted
+    /// generation until E3.5's ballots make it a confirmed one (ADR 0018).
+    #[serde(default)]
+    pub mek_generation: u64,
 }
 
 // ── Channel ─────────────────────────────────────────────────────────────
 
 /// Channel info for list and tree display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// camelCase: rides in `GovernanceEvent` to the webview, which reads
+// camelCase keys (plan C7.26).
+#[serde(rename_all = "camelCase")]
 pub struct ChannelOverviewDisplay {
     pub id: String,
     pub name: String,
@@ -57,6 +101,9 @@ pub struct ChannelOverviewDisplay {
 
 /// Channel category, for grouping the channel tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// camelCase: rides in `GovernanceEvent` to the webview, which reads
+// camelCase keys (plan C7.26).
+#[serde(rename_all = "camelCase")]
 pub struct CategoryDisplay {
     pub id: String,
     pub name: String,
@@ -72,28 +119,28 @@ pub struct DecryptedMessageDisplay {
     pub author_display_name: String,
     pub body: String,
     pub timestamp: u64,
-    pub reply_to_sequence: Option<u64>,
+    pub reply_to_message_id: Option<String>,
     pub mek_generation: u64,
     pub is_encrypted: bool,
     pub needs_mek: Option<u64>,
+    /// The D26 gate hid it (an automod `BlurContent` match): it renders
+    /// blurred.
+    pub automod_blurred: bool,
+    /// We sent it: only our own message is edited or deleted by us.
+    #[serde(default)]
+    pub is_own: bool,
+    /// Its author edited it (plan E3.3): it shows "(edited)".
+    #[serde(default)]
+    pub edited: bool,
+    /// The moderator who removed it (plan E3.3 M4): its body is gone and it
+    /// shows "Removed by <name>".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed_by: Option<String>,
 }
 
-// ── Friends / DMs ───────────────────────────────────────────────────────
+// ── DMs ─────────────────────────────────────────────────────────────────
 
-/// Friend with resolved display name and presence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendDisplay {
-    pub public_key: String,
-    pub display_name: String,
-    pub nickname: Option<String>,
-    pub status: String,
-    pub status_message: String,
-    pub last_seen_ms: Option<u64>,
-    pub profile_dht_key: Option<String>,
-    pub has_route: bool,
-}
-
-/// DM conversation thread for inbox display.
+/// DM conversation thread for the TUI inbox's display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DmThreadDisplay {
     pub peer_key: String,
@@ -111,6 +158,12 @@ pub struct DmMessageDisplay {
     pub body: String,
     pub timestamp: u64,
     pub is_self: bool,
+    /// Its client id, which `MessagesExpired` names (plan E7.1); `None`
+    /// when the source carried none.
+    pub client_id: Option<String>,
+    /// A timeline notice (a disappearing-timer change, plan E7.1) drawn
+    /// as a line of its own, not a message.
+    pub notice: bool,
 }
 
 // ── Roles ───────────────────────────────────────────────────────────────
@@ -129,12 +182,19 @@ pub struct DmMessageDisplay {
 /// headroom.** Whoever adds permission bit 53 has to solve the JSON
 /// encoding here without reaching for `untagged`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// camelCase: rides in `GovernanceEvent` to the webview, which reads
+// camelCase keys (plan C7.26).
+#[serde(rename_all = "camelCase")]
 pub struct RoleDisplay {
-    pub id: u32,
+    /// The full 16-byte role id, 32 hex characters.
+    pub id: String,
     pub name: String,
     pub color: u32,
+    /// The role name's text colour on each base, readable on the tag
+    /// (plan E7.3, SC 1.4.3); the Host works it out from `color`.
+    pub tag_colours: crate::dto::community::RoleTagColours,
     pub permissions: u64,
-    pub position: i32,
+    pub position: u32,
     /// Show members with this role in a separate sidebar group.
     pub hoist: bool,
     /// Whether `@role` pings everyone holding it.
@@ -162,6 +222,15 @@ pub struct TransportSnapshot {
     pub peer_count: usize,
     pub route_allocated: bool,
     pub route_age_secs: Option<u64>,
+    /// What the general-class route owner is doing (plan RV2): a held
+    /// route (`route_allocated`) can be `Allocating` its replacement, and
+    /// no route can be `Allocating`, `Unavailable` or `Failed`.
+    pub general_route: crate::subscription_events::RouteAvailability,
+    /// Why a route class is down with no new route (plan RV1), if one is:
+    /// the budget is spent or the stored budget is unreadable.
+    pub route_paused: Option<crate::subscription_events::RoutePauseCause>,
+    /// Which own route classes are down, and since when (plan RV1g).
+    pub own_route_down: crate::subscription_events::OwnRouteDownSet,
 }
 
 /// Complete daemon status — single response type for `IpcRequest::Status`.
@@ -190,9 +259,19 @@ pub struct StatusSnapshot {
     pub peer_count: usize,
     pub route_allocated: bool,
     pub route_age_secs: Option<u64>,
+    /// What the general-class route owner is doing (plan RV2): a held
+    /// route (`route_allocated`) can be `Allocating` its replacement, and
+    /// no route can be `Allocating`, `Unavailable` or `Failed`.
+    pub general_route: crate::subscription_events::RouteAvailability,
+    /// Why a route class is down with no new route (plan RV1), if one is:
+    /// the budget is spent or the stored budget is unreadable.
+    pub route_paused: Option<crate::subscription_events::RoutePauseCause>,
+    /// Which own route classes are down, and since when (plan RV1g): a
+    /// frontend opened mid-outage shows it; later changes arrive as
+    /// `NetworkEvent::OwnRouteDown` / `OwnRouteUp`.
+    pub own_route_down: crate::subscription_events::OwnRouteDownSet,
 
     // ── Subscription system ─────────────────────────────────
-    pub active_watches: usize,
     pub gossip_meshes: usize,
     pub gossip_mesh_peers: usize,
     pub unread_channels: usize,
@@ -200,7 +279,6 @@ pub struct StatusSnapshot {
     pub unread_friend_requests: u32,
     pub dedup_entries: usize,
     pub dedup_suppressed: u64,
-    pub poll_loop_active: bool,
 
     // ── Social ──────────────────────────────────────────────
     pub community_count: usize,

@@ -1,18 +1,19 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { computeDisplayRoleName } from "./shared";
 
 export async function handleAssignRole(
   communityId: string,
   pseudonymKey: string,
-  roleId: number,
+  roleId: string
 ): Promise<void> {
   try {
     await commands.assignRole(communityId, pseudonymKey, roleId);
     // Update local state — add roleId to member
     const community = communityState.communities[communityId];
-    const memberIdx = community?.members.findIndex((member) => member.pseudonymKey === pseudonymKey) ?? -1;
+    const memberIdx =
+      community?.members.findIndex((member) => member.pseudonymKey === pseudonymKey) ?? -1;
     if (community && memberIdx >= 0) {
       const nextRoleIds = community.members[memberIdx].roleIds.includes(roleId)
         ? community.members[memberIdx].roleIds
@@ -24,7 +25,7 @@ export async function handleAssignRole(
         "members",
         memberIdx,
         "displayRole",
-        computeDisplayRoleName(nextRoleIds, community.roles),
+        computeDisplayRoleName(nextRoleIds, community.roles)
       );
     }
   } catch (e) {
@@ -36,13 +37,14 @@ export async function handleAssignRole(
 export async function handleUnassignRole(
   communityId: string,
   pseudonymKey: string,
-  roleId: number,
+  roleId: string
 ): Promise<void> {
   try {
     await commands.unassignRole(communityId, pseudonymKey, roleId);
     // Update local state — remove roleId from member
     const community = communityState.communities[communityId];
-    const memberIdx = community?.members.findIndex((member) => member.pseudonymKey === pseudonymKey) ?? -1;
+    const memberIdx =
+      community?.members.findIndex((member) => member.pseudonymKey === pseudonymKey) ?? -1;
     if (community && memberIdx >= 0) {
       const nextRoleIds = community.members[memberIdx].roleIds.filter((id) => id !== roleId);
       setCommunityState("communities", communityId, "members", memberIdx, "roleIds", nextRoleIds);
@@ -52,7 +54,7 @@ export async function handleUnassignRole(
         "members",
         memberIdx,
         "displayRole",
-        computeDisplayRoleName(nextRoleIds, community.roles),
+        computeDisplayRoleName(nextRoleIds, community.roles)
       );
     }
   } catch (e) {
@@ -68,17 +70,20 @@ export async function handleCreateRole(
   permissions: string,
   hoist: boolean,
   mentionable: boolean,
-  selfAssignable: boolean,
-): Promise<number | null> {
+  selfAssignable: boolean
+): Promise<string | null> {
   try {
-    const roleId = await commands.createRole(communityId, name, color, permissions, hoist, mentionable, selfAssignable);
-    // Optimistic update — add the new role to the store
-    const community = communityState.communities[communityId];
-    if (community) {
-      const newRole = { id: roleId, name, color, permissions, position: 0, hoist, mentionable, selfAssignable };
-      setCommunityState("communities", communityId, "roles", [...community.roles, newRole]);
-    }
-    return roleId;
+    // The role reaches the store with the Host's `RolesChanged`, which
+    // carries what only the Host works out (its tag colours, plan E7.3).
+    return await commands.createRole(
+      communityId,
+      name,
+      color,
+      permissions,
+      hoist,
+      mentionable,
+      selfAssignable
+    );
   } catch (e) {
     console.error("Failed to create role:", e);
     addToast("Failed to create role", "error");
@@ -88,17 +93,27 @@ export async function handleCreateRole(
 
 export async function handleEditRole(
   communityId: string,
-  roleId: number,
+  roleId: string,
   name: string | null,
   color: number | null,
   permissions: string | null,
   position: number | null,
   hoist: boolean | null,
   mentionable: boolean | null,
-  selfAssignable: boolean | null,
+  selfAssignable: boolean | null
 ): Promise<void> {
   try {
-    await commands.editRole(communityId, roleId, name, color, permissions, position, hoist, mentionable, selfAssignable);
+    await commands.editRole(
+      communityId,
+      roleId,
+      name,
+      color,
+      permissions,
+      position,
+      hoist,
+      mentionable,
+      selfAssignable
+    );
     // Optimistic update — patch the role in the store
     const community = communityState.communities[communityId];
     if (community) {
@@ -121,30 +136,38 @@ export async function handleEditRole(
   }
 }
 
-export async function handleDeleteRole(
-  communityId: string,
-  roleId: number,
-): Promise<void> {
+export async function handleDeleteRole(communityId: string, roleId: string): Promise<void> {
   try {
     await commands.deleteRole(communityId, roleId);
     // Optimistic update — remove role from store and scrub from members
     const community = communityState.communities[communityId];
     if (community) {
-      setCommunityState("communities", communityId, "roles",
-        community.roles.filter((r) => r.id !== roleId),
+      setCommunityState(
+        "communities",
+        communityId,
+        "roles",
+        community.roles.filter((r) => r.id !== roleId)
       );
       // Scrub the deleted roleId from all members
       community.members.forEach((member, idx) => {
         if (member.roleIds.includes(roleId)) {
-          setCommunityState("communities", communityId, "members", idx, "roleIds",
-            member.roleIds.filter((id) => id !== roleId),
+          setCommunityState(
+            "communities",
+            communityId,
+            "members",
+            idx,
+            "roleIds",
+            member.roleIds.filter((id) => id !== roleId)
           );
         }
       });
       // Scrub from myRoleIds
       if (community.myRoleIds.includes(roleId)) {
-        setCommunityState("communities", communityId, "myRoleIds",
-          community.myRoleIds.filter((id) => id !== roleId),
+        setCommunityState(
+          "communities",
+          communityId,
+          "myRoleIds",
+          community.myRoleIds.filter((id) => id !== roleId)
         );
       }
     }
@@ -154,10 +177,7 @@ export async function handleDeleteRole(
   }
 }
 
-export async function handleSelfAssignRole(
-  communityId: string,
-  roleId: number,
-): Promise<void> {
+export async function handleSelfAssignRole(communityId: string, roleId: string): Promise<void> {
   try {
     await commands.selfAssignRole(communityId, roleId);
     const community = communityState.communities[communityId];
@@ -166,24 +186,19 @@ export async function handleSelfAssignRole(
     if (!community.myRoleIds.includes(roleId)) {
       setCommunityState("communities", communityId, "myRoleIds", [...community.myRoleIds, roleId]);
     }
-    const memberIdx = community.members.findIndex((member) => member.pseudonymKey === myPseudonymKey);
+    const memberIdx = community.members.findIndex(
+      (member) => member.pseudonymKey === myPseudonymKey
+    );
     if (memberIdx >= 0 && !community.members[memberIdx].roleIds.includes(roleId)) {
       const nextRoleIds = [...community.members[memberIdx].roleIds, roleId];
-      setCommunityState(
-        "communities",
-        communityId,
-        "members",
-        memberIdx,
-        "roleIds",
-        nextRoleIds,
-      );
+      setCommunityState("communities", communityId, "members", memberIdx, "roleIds", nextRoleIds);
       setCommunityState(
         "communities",
         communityId,
         "members",
         memberIdx,
         "displayRole",
-        computeDisplayRoleName(nextRoleIds, community.roles),
+        computeDisplayRoleName(nextRoleIds, community.roles)
       );
     }
   } catch (e) {
@@ -192,10 +207,7 @@ export async function handleSelfAssignRole(
   }
 }
 
-export async function handleSelfUnassignRole(
-  communityId: string,
-  roleId: number,
-): Promise<void> {
+export async function handleSelfUnassignRole(communityId: string, roleId: string): Promise<void> {
   try {
     await commands.selfUnassignRole(communityId, roleId);
     const community = communityState.communities[communityId];
@@ -205,26 +217,21 @@ export async function handleSelfUnassignRole(
       "communities",
       communityId,
       "myRoleIds",
-      community.myRoleIds.filter((id) => id !== roleId),
+      community.myRoleIds.filter((id) => id !== roleId)
     );
-    const memberIdx = community.members.findIndex((member) => member.pseudonymKey === myPseudonymKey);
+    const memberIdx = community.members.findIndex(
+      (member) => member.pseudonymKey === myPseudonymKey
+    );
     if (memberIdx >= 0) {
       const nextRoleIds = community.members[memberIdx].roleIds.filter((id) => id !== roleId);
-      setCommunityState(
-        "communities",
-        communityId,
-        "members",
-        memberIdx,
-        "roleIds",
-        nextRoleIds,
-      );
+      setCommunityState("communities", communityId, "members", memberIdx, "roleIds", nextRoleIds);
       setCommunityState(
         "communities",
         communityId,
         "members",
         memberIdx,
         "displayRole",
-        computeDisplayRoleName(nextRoleIds, community.roles),
+        computeDisplayRoleName(nextRoleIds, community.roles)
       );
     }
   } catch (e) {

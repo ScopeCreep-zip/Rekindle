@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use rekindle_types::subscription_events::VoiceScope;
 
-use crate::state::AppState;
+use crate::state::{AppState, VoiceEngineHandle};
 
 /// Mute or unmute the running voice engine, if one is running.
 ///
@@ -102,9 +102,7 @@ pub fn voice_media(
 /// feedback stays on the roster.
 pub fn note_media_live(state: &AppState, peer_hex: &str) {
     if let Some(handle) = state.voice_engine.lock().as_ref() {
-        handle
-            .media_liveness
-            .note(peer_hex, rekindle_utils::timestamp_ms());
+        handle.media_liveness.note(peer_hex, state.clock.now_ms());
     }
 }
 
@@ -116,10 +114,9 @@ pub fn media_roster_for(
     community_id: &str,
     channel_id: &str,
 ) -> Option<Arc<rekindle_voice::transport::roster::MediaRoster>> {
-    let engine = state.voice_engine.lock();
-    let handle = engine.as_ref()?;
-    (handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id)
-        .then(|| Arc::clone(&handle.media))
+    with_community_voice_engine(state, community_id, channel_id, |handle| {
+        Arc::clone(&handle.media)
+    })
 }
 
 /// The voice transport when the engine is bound to `community_id` /
@@ -131,8 +128,30 @@ pub fn voice_transport_for(
     community_id: &str,
     channel_id: &str,
 ) -> Option<Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>> {
+    with_community_voice_engine(state, community_id, channel_id, |handle| {
+        Arc::clone(&handle.transport)
+    })
+}
+
+/// The handshake and media readiness of the currently bound session.
+pub(crate) fn voice_session_state_for(
+    state: &AppState,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<Arc<rekindle_voice::session_state::VoiceSessionState>> {
+    with_community_voice_engine(state, community_id, channel_id, |handle| {
+        Arc::clone(&handle.session_state)
+    })
+}
+
+fn with_community_voice_engine<T>(
+    state: &AppState,
+    community_id: &str,
+    channel_id: &str,
+    get: impl FnOnce(&VoiceEngineHandle) -> T,
+) -> Option<T> {
     let engine = state.voice_engine.lock();
     let handle = engine.as_ref()?;
     (handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id)
-        .then(|| Arc::clone(&handle.transport))
+        .then(|| get(handle))
 }

@@ -57,7 +57,7 @@ pub struct MessageList {
     list_state: ListState,
     /// Whether new messages should auto-scroll to bottom.
     auto_scroll: bool,
-    /// Community governance key (for context display).
+    /// Community anchor key (for context display).
     community: String,
     /// Channel name or ID.
     channel: String,
@@ -67,6 +67,8 @@ pub struct MessageList {
     is_focused: bool,
     /// Last read message index (for unread separator).
     last_read_index: Option<usize>,
+    /// Members' names by pseudonym, for "Removed by <name>".
+    names: std::collections::HashMap<String, String>,
 }
 
 impl MessageList {
@@ -81,6 +83,7 @@ impl MessageList {
             generation: 0,
             is_focused: false,
             last_read_index: None,
+            names: std::collections::HashMap::new(),
         }
     }
 
@@ -149,6 +152,46 @@ impl MessageList {
             if sel >= self.len() && !self.is_empty() {
                 self.list_state.select(Some(self.len() - 1));
             }
+        }
+        self.generation += 1;
+    }
+
+    /// The community's member names, by pseudonym.
+    pub fn set_names(&mut self, names: std::collections::HashMap<String, String>) {
+        self.names = names;
+        self.generation += 1;
+    }
+
+    /// Its author's edit of `message_id`: the new body, marked edited. A
+    /// removed message stays removed (plan E3.3 M4, delete wins).
+    pub fn apply_edit(&mut self, message_id: &str, body: Option<&str>) {
+        if let Some(r) = self
+            .messages
+            .iter_mut()
+            .find(|r| r.msg.message_id == message_id)
+        {
+            if r.msg.removed_by.is_none() {
+                if let Some(body) = body {
+                    body.clone_into(&mut r.msg.body);
+                    r.msg.is_encrypted = false;
+                }
+                r.msg.edited = true;
+            }
+        }
+        self.generation += 1;
+    }
+
+    /// A moderator removed `message_id` (plan E3.3 M4): its body and every
+    /// revision go, a "Removed by" line stays in its place.
+    pub fn mark_removed(&mut self, message_id: &str, moderator: &str) {
+        if let Some(r) = self
+            .messages
+            .iter_mut()
+            .find(|r| r.msg.message_id == message_id)
+        {
+            r.msg.body.clear();
+            r.msg.edited = false;
+            r.msg.removed_by = Some(moderator.to_owned());
         }
         self.generation += 1;
     }
@@ -240,7 +283,18 @@ impl MessageList {
                 ]));
             }
 
-            if msg.is_encrypted {
+            if let Some(by) = &msg.removed_by {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "  {}",
+                        rekindle_client::fmt::removed_by(&rekindle_client::fmt::member_name(
+                            &self.names,
+                            by
+                        ))
+                    ),
+                    Style::new().dim().italic(),
+                )));
+            } else if msg.is_encrypted {
                 let hint = msg
                     .needs_mek
                     .map(|_gen| {
@@ -259,14 +313,27 @@ impl MessageList {
                     ),
                     Span::styled(hint, Style::new().dim()),
                 ]));
+            } else if msg.automod_blurred {
+                lines.push(Line::from(Span::styled(
+                    rekindle_client::fmt::AUTOMOD_BLURRED,
+                    Style::new().dim().italic(),
+                )));
             } else {
                 let body = helpers::sanitize_for_display(&msg.body);
-                for line in body.lines() {
-                    lines.push(Line::from(format!("  {line}")));
+                let last = body.lines().count().saturating_sub(1);
+                for (n, line) in body.lines().enumerate() {
+                    if msg.edited && n == last {
+                        lines.push(Line::from(vec![
+                            Span::raw(format!("  {line} ")),
+                            Span::styled(rekindle_client::fmt::EDITED, Style::new().dim()),
+                        ]));
+                    } else {
+                        lines.push(Line::from(format!("  {line}")));
+                    }
                 }
             }
 
-            if let Some(reply_seq) = msg.reply_to_sequence {
+            if let Some(reply_seq) = &msg.reply_to_message_id {
                 lines.push(Line::from(vec![
                     Span::styled("  ↳ reply to ", Style::new().dim()),
                     Span::styled(format!("#{reply_seq}"), Style::new().dim().italic()),
@@ -317,6 +384,7 @@ impl Component for MessageList {
             KeyCode::Char('i') => Some(Action::EnterInputMode),
             KeyCode::Char('r') => Some(Action::ReplyToSelected),
             KeyCode::Char('e') => Some(Action::EditSelected),
+            KeyCode::Char('d') => Some(Action::DeleteSelected),
             KeyCode::Char('y') => {
                 // Yank focused message body to clipboard
                 if let Some(idx) = self.selected_index() {
@@ -390,107 +458,5 @@ impl Component for MessageList {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_msg(author: &str, body: &str, ts: u64) -> DecryptedMessageDisplay {
-        DecryptedMessageDisplay {
-            message_id: format!("msg-{ts}"),
-            sequence: ts / 1000,
-            author_pseudonym: author.to_string(),
-            author_display_name: author.to_string(),
-            body: body.to_string(),
-            timestamp: ts,
-            reply_to_sequence: None,
-            mek_generation: 1,
-            is_encrypted: false,
-            needs_mek: None,
-        }
-    }
-
-    #[test]
-    fn auto_scroll_on_push_when_at_bottom() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        for i in 0..10 {
-            list.push(test_msg("alice", &format!("msg {i}"), i * 60_000));
-        }
-        assert_eq!(list.list_state.selected(), Some(9));
-        assert!(list.auto_scroll);
-    }
-
-    #[test]
-    fn auto_scroll_disengages_on_scroll_up() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        for i in 0..10 {
-            list.push(test_msg("alice", &format!("msg {i}"), i * 60_000));
-        }
-        list.scroll_up();
-        assert!(!list.auto_scroll);
-    }
-
-    #[test]
-    fn auto_scroll_reengages_on_scroll_to_bottom() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        for i in 0..10 {
-            list.push(test_msg("alice", &format!("msg {i}"), i * 60_000));
-        }
-        list.scroll_up();
-        assert!(!list.auto_scroll);
-
-        list.scroll_to_bottom();
-        assert!(list.auto_scroll);
-        assert_eq!(list.list_state.selected(), Some(9));
-    }
-
-    #[test]
-    fn message_grouping_same_author_within_window() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        list.push(test_msg("alice", "first", 0));
-        list.push(test_msg("alice", "second", 60_000)); // 1 min later
-        list.push(test_msg("alice", "third", 120_000)); // 2 min later
-
-        assert_eq!(list.messages[0].group, MessageGroup::Full);
-        assert_eq!(list.messages[1].group, MessageGroup::Compact);
-        assert_eq!(list.messages[2].group, MessageGroup::Compact);
-    }
-
-    #[test]
-    fn message_grouping_breaks_after_seven_minutes() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        list.push(test_msg("alice", "first", 0));
-        list.push(test_msg("alice", "second", 8 * 60 * 1000)); // 8 min later
-
-        assert_eq!(list.messages[0].group, MessageGroup::Full);
-        assert_eq!(list.messages[1].group, MessageGroup::Full); // breaks
-    }
-
-    #[test]
-    fn message_grouping_breaks_on_different_author() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        list.push(test_msg("alice", "hello", 0));
-        list.push(test_msg("bob", "hi", 60_000));
-
-        assert_eq!(list.messages[0].group, MessageGroup::Full);
-        assert_eq!(list.messages[1].group, MessageGroup::Full);
-    }
-
-    #[test]
-    fn set_messages_replaces_all() {
-        let mut list = MessageList::new("com".into(), "gen".into());
-        list.push(test_msg("alice", "old", 0));
-
-        let new_msgs = vec![test_msg("bob", "new1", 1000), test_msg("bob", "new2", 2000)];
-        list.set_messages(new_msgs);
-
-        assert_eq!(list.len(), 2);
-        assert!(list.auto_scroll);
-        assert_eq!(list.list_state.selected(), Some(1));
-    }
-
-    #[test]
-    fn empty_list_reports_correctly() {
-        let list = MessageList::new("com".into(), "gen".into());
-        assert!(list.is_empty());
-        assert_eq!(list.len(), 0);
-    }
-}
+#[path = "message_list_tests.rs"]
+mod tests;

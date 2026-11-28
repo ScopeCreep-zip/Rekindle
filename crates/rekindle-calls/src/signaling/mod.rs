@@ -7,7 +7,7 @@
 //! sends), voice session start/stop, persistence, frontend emit. The
 //! src-tauri adapter (`services/calls_adapter.rs`, lands in 14.h)
 //! implements them against `AppState` + `tauri::AppHandle` +
-//! `message_service::send_to_peer_raw` + `services::voice::*`.
+//! the transport's `operations::dm::send_to_peer` + `services::voice::*`.
 //!
 //! Why split CallRegistry + GroupCallRegistry out of CallSignalingDeps:
 //! - They're storage ports with concrete CRUD semantics (insert/get/
@@ -21,8 +21,11 @@ pub mod deps;
 pub mod event;
 pub mod group_handlers; // Phase 14.e — group call signaling handlers.
 pub mod handlers; // Phase 14.c — 1:1 call signaling handlers (invite/accept/decline/ringing).
+pub mod lifecycle; // Plan CE1 — local end first, durable CallEnd, consent.
+pub mod media_owner; // Plan CE2 — media is owned per call id.
 pub mod outbound; // Phase 14.n — caller-side entry points (start_dm_call, etc.).
 pub mod registry;
+mod trace; // Finding OBS1 — one info line per call operation.
 
 // Ring timers live on the deps trait:
 //   - Receiver-side: `CallSignalingDeps::spawn_incoming_call_timeout`
@@ -40,15 +43,20 @@ mod tests; // Phase 14.j — handler-level regression coverage for audit-fixed p
 pub use deps::CallSignalingDeps;
 pub use event::CallSignalEvent;
 pub use group_handlers::{
-    handle_group_accept_received, handle_group_call_payload, handle_group_decline_received,
-    handle_incoming_group_invite, GroupInvite,
+    check_group_scope, handle_group_accept_received, handle_group_call_payload,
+    handle_group_decline_received, handle_incoming_group_invite, GroupInvite,
 };
 pub use handlers::{
     handle_accept_received, handle_decline_received, handle_incoming_invite,
     handle_ringing_received, IncomingInvite,
 };
+pub use lifecycle::{
+    check_consent, ConsentCheck, CALL_END_DEADLINE_MS, CALL_SUPERSEDED, CONNECTION_LOST,
+    CONSENT_TIMEOUT_MS,
+};
+pub use media_owner::CallMediaOwner;
 pub use outbound::{
-    accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_dm_call,
-    end_group_call, start_dm_call, start_group_call,
+    accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_all_calls,
+    end_dm_call, end_group_call, start_dm_call, start_group_call,
 };
 pub use registry::{CallRegistry, GroupCallRegistry};

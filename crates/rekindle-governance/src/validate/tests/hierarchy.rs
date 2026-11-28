@@ -16,7 +16,7 @@ use super::*;
 /// - pseudo(6): mod (position 2)
 /// - pseudo(7): another admin (position 5)
 /// - pseudo(99): regular member (no roles → position 0)
-fn state_with_three_tier_hierarchy() -> GovernanceState {
+pub(super) fn state_with_three_tier_hierarchy() -> GovernanceState {
     let mut roles = HashMap::new();
     roles.insert(
         rid(0),
@@ -29,7 +29,7 @@ fn state_with_three_tier_hierarchy() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: crate::fixture::stamp(1),
         },
     );
     roles.insert(
@@ -43,7 +43,7 @@ fn state_with_three_tier_hierarchy() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 2,
+            stamp: crate::fixture::stamp(2),
         },
     );
     roles.insert(
@@ -57,7 +57,7 @@ fn state_with_three_tier_hierarchy() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 3,
+            stamp: crate::fixture::stamp(3),
         },
     );
 
@@ -75,7 +75,7 @@ fn state_with_three_tier_hierarchy() -> GovernanceState {
     assignments.insert(pseudo(6), mod_role);
 
     GovernanceState {
-        creator: Some(pseudo(1)),
+        creators: std::collections::BTreeSet::from([pseudo(1)]),
         roles,
         role_assignments: assignments,
         ..Default::default()
@@ -90,7 +90,7 @@ fn ban_admin_blocked_by_equal_rank_admin() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(7),
         reason: None,
-        lamport: 100,
+        target_seq_frontier: 0,
     };
     assert!(
         !validate_write(&pseudo(5), &entry, &state),
@@ -105,7 +105,7 @@ fn ban_mod_succeeds_from_admin() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(6),
         reason: None,
-        lamport: 100,
+        target_seq_frontier: 0,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -118,7 +118,7 @@ fn ban_admin_blocked_from_mod() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(5),
         reason: None,
-        lamport: 100,
+        target_seq_frontier: 0,
     };
     assert!(!validate_write(&pseudo(6), &entry, &state));
 }
@@ -131,7 +131,7 @@ fn ban_creator_blocked_from_admin() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(1),
         reason: None,
-        lamport: 100,
+        target_seq_frontier: 0,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -145,7 +145,6 @@ fn timeout_admin_blocked_by_equal_rank_admin() {
         duration_seconds: 3600,
         reason: None,
         started_at: 0,
-        lamport: 100,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -159,7 +158,6 @@ fn timeout_creator_blocked() {
         duration_seconds: 3600,
         reason: None,
         started_at: 0,
-        lamport: 100,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -172,7 +170,6 @@ fn unassign_admin_role_blocked_by_equal_rank_admin() {
     let entry = GovernanceEntry::RoleUnassignment {
         target: pseudo(7),
         role_id: rid(5),
-        lamport: 100,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -191,7 +188,6 @@ fn unassign_creator_role_blocked_from_anyone_else() {
     let entry = GovernanceEntry::RoleUnassignment {
         target: pseudo(1),
         role_id: rid(5),
-        lamport: 100,
     };
     // Even though pseudo(7) is also rank 5, they cannot touch creator.
     assert!(!validate_write(&pseudo(7), &entry, &state));
@@ -205,7 +201,6 @@ fn unassign_self_always_allowed() {
     let entry = GovernanceEntry::RoleUnassignment {
         target: pseudo(5),
         role_id: rid(5),
-        lamport: 100,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -222,7 +217,6 @@ fn unassign_self_creator_allowed() {
     let entry = GovernanceEntry::RoleUnassignment {
         target: pseudo(1),
         role_id: rid(5),
-        lamport: 100,
     };
     assert!(validate_write(&pseudo(1), &entry, &state));
 }
@@ -235,7 +229,6 @@ fn role_assignment_blocked_at_or_above_writer_rank() {
     let entry = GovernanceEntry::RoleAssignment {
         target: pseudo(99),
         role_id: rid(5),
-        lamport: 100,
     };
     assert!(!validate_write(&pseudo(6), &entry, &state));
 }
@@ -248,7 +241,6 @@ fn role_assignment_below_rank_succeeds() {
     let entry = GovernanceEntry::RoleAssignment {
         target: pseudo(99),
         role_id: rid(2),
-        lamport: 100,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -268,7 +260,6 @@ fn role_definition_blocked_at_or_above_writer_rank() {
         mentionable: false,
         self_assignable: false,
         exclusion_group: None,
-        lamport: 100,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -288,7 +279,6 @@ fn role_definition_below_rank_succeeds() {
         mentionable: false,
         self_assignable: false,
         exclusion_group: None,
-        lamport: 100,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -301,7 +291,7 @@ fn creator_can_act_at_any_rank() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(5),
         reason: None,
-        lamport: 100,
+        target_seq_frontier: 0,
     };
     assert!(validate_write(&pseudo(1), &entry, &state));
 }
@@ -321,7 +311,6 @@ fn welcome_screen_rejects_too_many_channels() {
     let entry = GovernanceEntry::WelcomeScreen {
         description: "d".into(),
         channels,
-        lamport: 11,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }

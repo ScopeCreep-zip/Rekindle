@@ -16,15 +16,15 @@
 //! [`read_governance_with_overflow`] does exactly that on the read path;
 //! [`read_my_chain`] does it on the write path before re-compaction.
 //!
-//! ## Overflow-record lifecycle (grounded in veilid-core 0.5.2)
+//! ## Overflow-record lifecycle (veilid-core 0.5.8)
 //!
 //! An overflow record is a single-owner `DFLT(1)` record whose owner keypair is
 //! **derived** from the identity secret
 //! ([`derive::derive_governance_overflow_keypair`]) — that grants write
 //! authority on any device with no persisted keypair. The record **key** is NOT
 //! re-derivable: `create_dht_record` always mixes in a random encryption key
-//! (`storage_manager/create_record.rs:87`) and *refuses to re-create* a record
-//! for an existing owner+schema (`routing_context.rs:360`). So the key is
+//! (`storage_manager/create_record.rs:92-93`) and *refuses to re-create* a record
+//! for an existing owner+schema (`routing_context.rs:440`). So the key is
 //! captured once at create and persisted in the DHT chain (`overflow_next`) +
 //! the local Veilid store. The write path anchors a freshly-created key by
 //! writing the primary subkey's pointer immediately, so a later device or retry
@@ -35,6 +35,7 @@
 //!
 //! Tier 7 helper — pure partitioning + deps-mediated DHT I/O, no Veilid types.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashSet;
 
 use rekindle_records::lease::LeaseId;
@@ -51,8 +52,9 @@ use crate::error::GovernanceRuntimeError;
 const SMPL_SUBKEY_MAX_BYTES: usize = 1_048_576 / 255; // 4112
 
 /// `DFLT(1)` per-subkey cap: `min(MAX_SUBKEY_SIZE 32768, MAX_RECORD_DATA_SIZE
-/// 1_048_576 / o_cnt 1)` = 32768 (veilid-core `storage_manager/schema.rs:59`,
-/// `EncryptedValueData::MAX_LEN`).
+/// 1_048_576 / o_cnt 1)` = 32768 (veilid-core 0.5.8
+/// `veilid_api/types/dht/derivation.rs:144-147`, `EncryptedValueData::MAX_LEN`
+/// at `storage_manager/types/encrypted_value_data.rs:12`).
 const DFLT_SUBKEY_MAX_BYTES: usize = 32_768;
 
 /// Entry-bytes budget for page 0 — the primary SMPL governance subkey. Headroom
@@ -79,7 +81,7 @@ pub const MAX_OVERFLOW_PAGES: usize = 64;
 /// a strict subset of [`GovernanceRuntimeDeps`], blanket-implemented for every
 /// deps impl so production callers pass their existing `deps` unchanged.
 /// Segregating it keeps these helpers (and their tests) decoupled from the
-/// 60-method composite trait: a test mock implements four methods, not sixty.
+/// 58-method composite trait: a test mock implements four methods, not 58.
 #[async_trait::async_trait]
 pub trait OverflowIo: Send + Sync {
     /// Borrow a record from the host's pool (see
@@ -88,6 +90,7 @@ pub trait OverflowIo: Send + Sync {
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError>;
     async fn release_record(&self, lease: LeaseId);
     async fn get_dht_value(
@@ -115,8 +118,9 @@ impl<D: GovernanceRuntimeDeps> OverflowIo for D {
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::acquire_record(self, record_key, writer).await
+        GovernanceRuntimeDeps::acquire_record(self, record_key, writer, intent).await
     }
     async fn release_record(&self, lease: LeaseId) {
         GovernanceRuntimeDeps::release_record(self, lease).await;
@@ -136,7 +140,14 @@ impl<D: GovernanceRuntimeDeps> OverflowIo for D {
         value: Vec<u8>,
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::set_dht_value(self, lease, subkey, value, writer).await
+        GovernanceRuntimeDeps::set_dht_value(
+            self,
+            lease,
+            subkey,
+            value,
+            writer.map(zeroize::Zeroizing::new),
+        )
+        .await
     }
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         GovernanceRuntimeDeps::format_writer_keypair(self, ed_public, ed_secret)
@@ -155,7 +166,9 @@ pub(crate) async fn read_subkey<D: OverflowIo + ?Sized>(
     subkey: u32,
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
+    let lease = deps
+        .acquire_record(record_key, None, OpenIntent::Check)
+        .await?;
     let value = deps.get_dht_value(lease, subkey, force_refresh).await;
     deps.release_record(lease).await;
     value
@@ -349,7 +362,7 @@ pub async fn write_overflow_page<D: OverflowIo>(
         });
     }
     let lease = deps
-        .acquire_record(record_key, Some(writer.clone()))
+        .acquire_record(record_key, Some(writer.clone()), OpenIntent::Hold)
         .await?;
     let written = write_and_read_back(deps, lease, &bytes, writer).await;
     deps.release_record(lease).await;

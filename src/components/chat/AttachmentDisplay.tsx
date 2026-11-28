@@ -1,20 +1,16 @@
-import { Component, Show, createMemo, createSignal } from "solid-js";
-import type { MessageAttachment } from "../../stores/chat.store";
+import { type Component, createMemo, createSignal, Show } from "solid-js";
 import {
   handleDownloadAttachment,
   handlePinAttachment,
   handleRevealAttachment,
 } from "../../actions/community.actions";
 import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
+import type { MessageAttachment } from "../../stores/chat.store";
 import { communityState } from "../../stores/community.store";
-import { calculateBasePermissions } from "../../utils/permissions";
-import {
-  ICON_DOWNLOAD,
-  ICON_FILE,
-  ICON_FILE_IMAGE,
-  ICON_FOLDER_OPEN,
-  ICON_PIN,
-} from "../../icons";
+import { formatSize } from "../../utils/formatting";
+import { servedPermissions } from "../../utils/permissions";
+import type { GlyphName } from "../common/glyph_art";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface AttachmentDisplayProps {
   communityId: string;
@@ -22,18 +18,9 @@ interface AttachmentDisplayProps {
   attachment: MessageAttachment;
 }
 
-const KB = 1024;
-const MB = 1024 * 1024;
-
-function formatSize(bytes: number): string {
-  if (bytes < KB) return `${bytes} B`;
-  if (bytes < MB) return `${(bytes / KB).toFixed(1)} KB`;
-  return `${(bytes / MB).toFixed(1)} MB`;
-}
-
-function pickIcon(mimeType: string): string {
-  if (mimeType.startsWith("image/")) return ICON_FILE_IMAGE;
-  return ICON_FILE;
+function pickIcon(mimeType: string): GlyphName {
+  if (mimeType.startsWith("image/")) return "file-image";
+  return "file";
 }
 
 const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
@@ -45,11 +32,10 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
     return community?.pinnedAttachments?.includes(props.attachment.attachmentId) ?? false;
   });
 
-  const myPerms = createMemo((): bigint => {
-    const community = communityState.communities[props.communityId];
-    if (!community) return 0n;
-    return calculateBasePermissions(community.myRoleIds, community.roles);
-  });
+  // Pinning is a community-wide setting: the backend's base flags.
+  const myPerms = createMemo((): bigint =>
+    servedPermissions(communityState.communities[props.communityId])
+  );
   const canPin = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
 
   async function handleDownloadClick(): Promise<void> {
@@ -59,7 +45,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
       await handleDownloadAttachment(
         props.communityId,
         props.channelId,
-        props.attachment.attachmentId,
+        props.attachment.attachmentId
       );
     } finally {
       setDownloading(false);
@@ -67,11 +53,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
   }
 
   async function handleRevealClick(): Promise<void> {
-    await handleRevealAttachment(
-      props.communityId,
-      props.channelId,
-      props.attachment.attachmentId,
-    );
+    await handleRevealAttachment(props.communityId, props.channelId, props.attachment.attachmentId);
   }
 
   async function handlePinClick(): Promise<void> {
@@ -80,9 +62,10 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
 
   return (
     <div class="attachment-card">
-      <span class={`nf-icon attachment-card-icon ${downloaded() ? "attachment-card-icon-ready" : ""}`}>
-        {pickIcon(props.attachment.mimeType)}
-      </span>
+      <SkinGlyph
+        name={pickIcon(props.attachment.mimeType)}
+        class={`attachment-card-icon ${downloaded() ? "attachment-card-icon-ready" : ""}`}
+      />
       <div class="attachment-card-meta">
         <div class="attachment-card-filename">{props.attachment.filename}</div>
         <div class="attachment-card-info">
@@ -93,32 +76,35 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         when={downloaded()}
         fallback={
           <button
+            type="button"
             class="attachment-card-btn"
             onClick={() => void handleDownloadClick()}
             disabled={downloading()}
             title="Download"
           >
-            <span class="nf-icon">{ICON_DOWNLOAD}</span>
+            <SkinGlyph name="download" />
             <span>{downloading() ? "Downloading…" : "Download"}</span>
           </button>
         }
       >
         <button
+          type="button"
           class="attachment-card-btn"
           onClick={() => void handleRevealClick()}
           title="Show in folder"
         >
-          <span class="nf-icon">{ICON_FOLDER_OPEN}</span>
+          <SkinGlyph name="folder-open" />
           <span>Show in folder</span>
         </button>
       </Show>
       <Show when={canPin()}>
         <button
+          type="button"
           class={`attachment-card-pin-btn ${pinned() ? "attachment-card-pin-btn-active" : ""}`}
           onClick={() => void handlePinClick()}
           title={pinned() ? "Unpin attachment" : "Pin attachment"}
         >
-          <span class="nf-icon">{ICON_PIN}</span>
+          <SkinGlyph name="pin" />
         </button>
       </Show>
     </div>

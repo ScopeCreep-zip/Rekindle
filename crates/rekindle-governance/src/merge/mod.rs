@@ -1,178 +1,445 @@
-//! CRDT merge engine — the core of flat governance.
+//! CRDT merge engine — the core of flat governance (plan E3.2).
 //!
-//! Takes all `GovernanceEntry` variants from all member subkeys,
-//! processes them in deterministic order, and produces a `GovernanceState`.
+//! Takes the community's verified op set and its pinned `GenesisCert` and
+//! produces a `GovernanceState`. **Convergence:** the same op set gives the
+//! same state on every reader, whatever order the ops arrived in.
 //!
-//! **Convergence guarantee:** Given the same set of entries (in any order),
-//! `merge()` always produces an identical `GovernanceState`. This is verified
-//! by property-based tests.
+//! **Resolution** follows Matrix state resolution v2: power ops
+//! ([`crate::power`]) are resolved first, in causal (stamp) order, each
+//! checked against the power state so far; every other op is then ordered
+//! by its mainline anchor (the latest resolved power op in its causal
+//! past), its `issued_at` and its hash, and folded in that order.
 //!
-//! **Genesis bypass:** The first entry (lowest lamport) is always accepted
-//! regardless of permissions — this bootstraps the community before any
-//! role structure exists.
+//! **Time-of-op judgement** (plan E3.2 S7c.3a): a non-power op is judged
+//! against the power state in its own causal past, the state after its
+//! anchor (genesis when it has none), never the final one, so a later
+//! power op never re-judges an earlier non-power op (Keybase's
+//! `AssertWasRoleOrAboveAt(seqno-1)`, p2panda's `state_at(dependencies)`).
 //!
-//! **Reader-validates:** After genesis, each entry is checked against the
-//! accumulated permission state. Entries from members without the required
-//! permission are silently excluded.
+//! **Strong removal** follows p2panda-auth, per author: a `MemberRemoved`
+//! or `BanEntry` carries its target's seq frontier, and every op of the
+//! target at or above it is masked and quarantined, whatever deps it
+//! cites, while every op below it stands, judged at its own position. A
+//! demotion masks the demoted member's ops concurrent with it or after
+//! it. Mutual removals both apply, a re-join after a removal is allowed
+//! (its concurrent ops stay masked), and masking is transitive —
+//! resolution reruns until the invalidated set is stable.
+//!
+//! **The creators** are the cert's creator set, `creator_pseudonym` and
+//! `additional_creators` (MSC4289, Q3): no op at any lamport adds or
+//! removes one. The primary creator is a member from the start,
+//! bound to the cert's `creator_member_record` and its owner: the cert, not
+//! a `MemberJoined`, carries the creator's binding (the genesis ops are
+//! meta, roles, the owner assignment and `#general`), so a `MemberLeft`
+//! still removes it like any member.
 
-use rekindle_types::governance::GovernanceEntry;
+use std::collections::{BTreeMap, HashSet};
+
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::lamport::LamportClock;
+use rekindle_types::join_refusal::JoinRefusal;
 
+use crate::checkpoint::{self, EndorsementFault, Hints};
+use crate::device_judge::KeyRefusal;
+use crate::op::{OpStamp, VerifiedOp};
+use crate::power::{class_of, OpClass};
 use crate::state::{
     AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
-    EventState, ExpressionState, GovernanceState, InviteState, MetadataState, OnboardingState,
-    OverwriteState, PendingMemberState, RoleState, SegmentState, ThreadState, TimeoutState,
+    EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
+    OnboardingState, OverwriteState, RoleState, SegmentState, ThreadState, TimeoutState,
     WelcomeScreenState,
 };
-use crate::validate::validate_write;
 
-/// A single entry tagged with its author's pseudonym.
-#[derive(Debug, Clone)]
-pub struct AuthoredEntry {
-    pub author: PseudonymKey,
-    pub entry: GovernanceEntry,
+/// What `merge` decided about each op, besides the state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeOutcome {
+    pub state: GovernanceState,
+    /// Applied ops, in the order they were applied.
+    pub applied: Vec<OpHash>,
+    /// Complete ops refused by validation or invalidated by resolution,
+    /// the quarantined ones aside.
+    pub refused: Vec<OpHash>,
+    /// Ops masked by their author's removal, in stamp order, then the
+    /// `Checkpoint` ops that count for nothing (S7c.4), with why (plan E3.2
+    /// S7c.3a): shown, never applied.
+    pub quarantined: Vec<(OpHash, QuarantineReason)>,
+    /// Ops whose deps are missing from the set.
+    pub pending: Vec<OpHash>,
+    /// Device keys caught signing two ops at one seq of their chain, each
+    /// with its author and its fork seq (the lowest seq it signed twice):
+    /// that key's ops from there on are dropped, its earlier ones merged as
+    /// any other (D15), and the author's other keys keep working (ADR 0022
+    /// rule 5).
+    pub equivocators: Vec<(PseudonymKey, [u8; 32], u64)>,
+    /// The checkpoint hints the applied `Checkpoint` ops carry (plan E3.2
+    /// S7c.4); the ones that count for nothing are quarantined above.
+    pub hints: Hints,
+    /// Why each refused `MemberJoined` the invite gate refused was refused
+    /// (plan E3.2 join step 5: the inviter answers it to the joiner).
+    pub join_refusals: BTreeMap<OpHash, JoinRefusal>,
 }
 
-/// Merge governance entries from all member subkeys into a canonical state.
-///
-/// # Arguments
-/// * `subkeys` — One vec of entries per member subkey. Each tuple is
-///   `(author_pseudonym, entries_from_that_subkey)`.
-///
-/// # Returns
-/// A deterministic `GovernanceState` that all peers agree on.
-pub fn merge(subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)]) -> GovernanceState {
-    merge_with_accepted(subkeys).0
+/// Why an op is quarantined rather than applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuarantineReason {
+    /// After its author's removal: its seq is at or above the target seq
+    /// frontier of `cause`, a `MemberRemoved` or `BanEntry` of its author.
+    AfterAuthorRemoval { cause: OpHash },
+    /// "two checkpoint endorsements in one round": a `Checkpoint` op whose
+    /// author signed another at the same (height, round) (plan E3.2 S7c.4);
+    /// `cause`: the lowest `(lamport, op_hash)` other one.
+    TwoCheckpointEndorsementsInOneRound { cause: OpHash },
+    /// "checkpoint equivocation": a `Checkpoint` op carrying one of two
+    /// digests that each have a strict majority for one cut and one
+    /// `prevCheckpoint` (plan E3.2 S7c.4); `cause`: the lowest
+    /// `(lamport, op_hash)` `Checkpoint` op of the other digest.
+    CheckpointEquivocation { cause: OpHash },
+    /// "member record already claimed": a `MemberJoined` or
+    /// `MemberRecordMoved` naming a member record `holder` holds (the
+    /// record gate, ADR 0011: one member per record). The claimant learns
+    /// why its join did not take (D15 "visible reason").
+    RecordClaimed { holder: PseudonymKey },
+    /// "quarantined because <cause> was": its authority (a role grant, an
+    /// invite, a channel or a ban it acts on) came from `cause`, an op
+    /// quarantined after its author's fork, and fails without it (ADR 0022
+    /// rule 5, plan E3.2 S7d-keys.2a); with several, the lowest
+    /// `(lamport, op_hash)`.
+    AuthorityQuarantined { cause: OpHash },
+    /// Its device key is not effective for its author at its deps, for
+    /// `refusal` (ADR 0022 rule 6, `judge`): kept as ancestry only.
+    DeviceKey { refusal: KeyRefusal },
 }
 
-/// [`merge`], plus the Lamport clock value the accepted entries justify:
-/// their timestamps folded in order through [`LamportClock::merge`].
-///
-/// An honest history climbs in small steps, so this is the highest
-/// accepted timestamp + 1 — the floor for our next entry, so it wins
-/// last-writer-wins against everything already accepted. Rejected entries
-/// never count, and an accepted entry that jumps far ahead (an authorised
-/// member writing `u64::MAX`) advances it by at most
-/// `MAX_LAMPORT_DRIFT + 1`, so no single entry can pin the clock.
-pub fn merge_with_accepted(
-    subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
-) -> (GovernanceState, u64) {
-    // 1. Collect all entries with their author
-    let mut all: Vec<AuthoredEntry> = Vec::new();
-    for (author, entries) in subkeys {
-        for entry in entries {
-            all.push(AuthoredEntry {
-                author: author.clone(),
-                entry: entry.clone(),
-            });
+impl QuarantineReason {
+    /// The op that caused the quarantine; none for a record claimed by
+    /// its holder (the cert's creator holds its record with no op).
+    #[must_use]
+    pub fn cause(&self) -> Option<OpHash> {
+        match self {
+            Self::AfterAuthorRemoval { cause }
+            | Self::TwoCheckpointEndorsementsInOneRound { cause }
+            | Self::CheckpointEquivocation { cause }
+            | Self::AuthorityQuarantined { cause } => Some(*cause),
+            Self::RecordClaimed { .. } | Self::DeviceKey { .. } => None,
         }
     }
+}
 
-    // 2. Sort by (lamport, author_pseudonym) for deterministic total order
-    all.sort_by(|a, b| {
-        a.entry
-            .lamport()
-            .cmp(&b.entry.lamport())
-            .then_with(|| a.author.0.cmp(&b.author.0))
+/// Merge `ops` under the pinned `cert` into a canonical state.
+#[must_use]
+pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
+    ancestry::prepare_settled(cert, ops).1.settled.0.state
+}
+
+/// [`merge`], with the fate of every op.
+#[must_use]
+pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
+    let (set, ancestry::Settlement { settled, cascade }) = ancestry::prepare_settled(cert, ops);
+    let (round, masked_by, invite_refusals, record_refusals) = settled;
+    // A forked op is reported once, by `equivocators` (D15); a cascade
+    // victim or a device-refused op once, quarantined with its cause.
+    let shown =
+        |i: usize| !set.forked[i] && !cascade.contains_key(&i) && set.device_refused[i].is_none();
+    let join_refusals = (invite_refusals.into_iter())
+        .filter(|&(i, _)| shown(i) && !round.applied[i] && masked_by[i].is_none())
+        .map(|(i, r)| (set.ops[i].hash(), r))
+        .collect();
+    let mut applied: Vec<OpHash> = round.order.iter().map(|&i| set.ops[i].hash()).collect();
+    let refused = (0..set.ops.len())
+        .filter(|&i| shown(i) && !round.applied[i] && masked_by[i].is_none())
+        .filter(|i| !record_refusals.contains_key(i))
+        .map(|i| set.ops[i].hash())
+        .collect();
+    let mut quarantined: Vec<(OpHash, QuarantineReason)> = (0..set.ops.len())
+        .filter(|&i| shown(i))
+        .filter_map(|i| {
+            let cause = set.ops[masked_by[i]?].hash();
+            Some((
+                set.ops[i].hash(),
+                QuarantineReason::AfterAuthorRemoval { cause },
+            ))
+        })
+        .collect();
+    quarantined.extend(
+        (record_refusals.iter())
+            .filter(|&(&i, _)| shown(i) && !round.applied[i] && masked_by[i].is_none())
+            .map(|(&i, holder)| {
+                (
+                    set.ops[i].hash(),
+                    QuarantineReason::RecordClaimed {
+                        holder: holder.clone(),
+                    },
+                )
+            }),
+    );
+    quarantined.extend(cascade.iter().map(|(&i, &q)| {
+        let cause = set.ops[q].hash();
+        (
+            set.ops[i].hash(),
+            QuarantineReason::AuthorityQuarantined { cause },
+        )
+    }));
+    quarantined.extend(
+        (set.device_refused.iter().enumerate()).filter_map(|(i, why)| {
+            let refusal = (*why)?;
+            (!set.forked[i]).then(|| (set.ops[i].hash(), QuarantineReason::DeviceKey { refusal }))
+        }),
+    );
+    let counted: HashSet<OpHash> = applied.iter().copied().collect();
+    let hints = checkpoint::hints(cert, ops, |h| counted.contains(h));
+    let faulted: HashSet<OpHash> = hints.faults.iter().map(|(h, _)| *h).collect();
+    applied.retain(|h| !faulted.contains(h));
+    quarantined.extend(hints.faults.iter().map(|&(hash, fault)| {
+        let reason = match fault {
+            EndorsementFault::TwoInOneRound { cause } => {
+                QuarantineReason::TwoCheckpointEndorsementsInOneRound { cause }
+            }
+            EndorsementFault::Equivocation { cause } => {
+                QuarantineReason::CheckpointEquivocation { cause }
+            }
+        };
+        (hash, reason)
+    }));
+    MergeOutcome {
+        state: round.state,
+        applied,
+        refused,
+        quarantined,
+        pending: set.pending,
+        equivocators: set.equivocators,
+        hints,
+        join_refusals,
+    }
+}
+
+/// Resolution rerun until the invalidated set is stable (`fixpoint`); the settled
+/// round's invites carry the joins `invite_gate` counted on them. Returns
+/// the round, per op the removal that masks it, and why the invite gate
+/// refused each join it refused, and the holder of each record a refused
+/// claim named.
+type Settled = (
+    Round,
+    Vec<Option<usize>>,
+    BTreeMap<usize, JoinRefusal>,
+    BTreeMap<usize, PseudonymKey>,
+);
+
+/// `exclude`: ops every round leaves out besides the gates' (the forked
+/// ops and the refusals kept, `ancestry`).
+fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>, exclude: &[bool]) -> Settled {
+    let skip = |invalid: &[bool]| -> Vec<bool> {
+        invalid.iter().zip(exclude).map(|(a, b)| *a || *b).collect()
+    };
+    let settled = fixpoint::settle(
+        set.ops.len(),
+        |invalid| resolve_round(cert, set, &skip(invalid)),
+        |round| Ok::<_, std::convert::Infallible>(gates::invalidated(cert, set, round)),
+        |gated| &gated.invalid,
+    );
+    let (mut round, gated) = match settled {
+        Ok(settled) => settled,
+        Err(never) => match never {},
+    };
+    for (id, invite) in &mut round.state.invites {
+        invite.uses = gated.uses.get(id).copied().unwrap_or(0);
+    }
+    (
+        round,
+        gated.masked_by,
+        gated.invite_refusals,
+        gated.record_refusals,
+    )
+}
+
+/// One resolution pass with the ops in `invalid` left out.
+pub(super) struct Round {
+    pub state: GovernanceState,
+    pub applied: Vec<bool>,
+    /// Applied ops in judgement order (power ops first).
+    pub order: Vec<usize>,
+    /// The applied power ops, in their order.
+    pub power_order: Vec<usize>,
+    /// Each op's anchor: the position in `power_order` of the latest
+    /// applied power op in its causal past.
+    pub anchor: Vec<Option<usize>>,
+}
+
+/// The state before any op: the cert's creator set, policy and MEK
+/// generation, with the primary creator admitted (the cert names its member
+/// record; a further creator is admitted by its own `MemberJoined`, plan
+/// E3.2 S7s decision (17)).
+fn genesis_state(cert: &GenesisCert) -> GovernanceState {
+    let mut state = GovernanceState {
+        creators: cert.creator_set(),
+        admission_mode: Some(cert.policy),
+        mek_generation: crate::state::GENESIS_MEK_GENERATION,
+        ..GovernanceState::default()
+    };
+    state.members.insert(
+        cert.creator_pseudonym.clone(),
+        MemberState {
+            member_record: cert.creator_member_record.clone(),
+            member_record_owner: cert.creator_member_record_owner.clone(),
+            joined: OpStamp::MIN,
+        },
+    );
+    state
+}
+
+/// One pass. Power ops resolve against each other as before: in stamp
+/// order, each against the power state so far. Each non-power op is then
+/// judged, in mainline order, against the power state after its anchor
+/// (time-of-op judgement, plan E3.2 S7c.3a): the power ops are folded into
+/// the running state one by one as the mainline reaches their anchors, so
+/// non-power effects still fold in mainline order and the settled state
+/// holds every applied op.
+fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool]) -> Round {
+    let n = set.ops.len();
+    let mut applied = vec![false; n];
+    let mut order = Vec::new();
+    let candidates = (0..n).filter(|&i| !invalid[i]);
+    // A `DeviceReadmit` is judged at its causal position, against the power
+    // state in its past, as a kick is (ADR 0022 rule 8, plan E3.2 K4b Q6):
+    // it goes with the mainline, not the device phase.
+    let (device, others): (Vec<usize>, Vec<usize>) = candidates.partition(|&i| {
+        class_of(set.ops[i].body()) == OpClass::Device && !resolve::is_readmit(set.ops[i])
     });
-
-    // 3. Process in order, applying CRDT rules
-    let mut state = GovernanceState::default();
-    let mut clock = LamportClock::default();
-
-    for (idx, authored) in all.iter().enumerate() {
-        let is_genesis = idx == 0;
-
-        if is_genesis {
-            // Genesis entry always accepted — bootstraps the community
-            state.creator = Some(authored.author.clone());
-            apply(&authored.author, &authored.entry, &mut state);
-        } else if validate_write(&authored.author, &authored.entry, &state) {
-            apply(&authored.author, &authored.entry, &mut state);
-        } else {
-            // Silently excluded (reader-validates).
-            continue;
+    let (power, rest): (Vec<usize>, Vec<usize>) =
+        (others.into_iter()).partition(|&i| class_of(set.ops[i].body()) == OpClass::Power);
+    let mut power_state = genesis_state(cert);
+    // The device phase (ADR 0022 rule 6): before every power op, in stamp
+    // order; device ops anchor no mainline op. It orders the device view
+    // only (K4b Q6).
+    for i in device {
+        if try_apply(set.ops[i], &mut power_state) {
+            applied[i] = true;
+            order.push(i);
         }
-        clock.merge(authored.entry.lamport());
     }
-
-    (state, clock.current())
-}
-
-/// Apply a single governance entry to the accumulated state.
-///
-/// Each entry type has its own CRDT merge rule (see architecture doc §4.4).
-/// Public as `apply_entry` for incremental local updates (after permission validation).
-pub fn apply_entry(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
-    apply(author, entry, state);
-}
-
-/// Route an entry to its category-specific CRDT apply rule.
-fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
-    use GovernanceEntry as G;
-    match entry {
-        G::ChannelCreated { .. }
-        | G::ChannelArchived { .. }
-        | G::ChannelUpdated { .. }
-        | G::CategoryCreated { .. }
-        | G::CategoryArchived { .. }
-        | G::CategoryUpdated { .. }
-        | G::PermissionOverwrite { .. }
-        | G::ChannelSegmentLinked { .. } => apply_channels(entry, state),
-        G::JoinRequested { .. } | G::MemberApproved { .. } | G::MemberRejected { .. } => {
-            apply_admission(entry, state);
+    let device_order = order.len();
+    for i in power {
+        if frontier_holds(set, i) && try_apply(set.ops[i], &mut power_state) {
+            applied[i] = true;
+            order.push(i);
         }
-        // `validate_write` already refused any write after the first,
-        // so reaching here means this is the creator's one-and-only
-        // policy entry.
-        G::AdmissionPolicy { mode, .. } => state.admission_mode = Some(*mode),
-        G::CommunityMeta { .. }
-        | G::CommunityNotificationDefault { .. }
-        | G::MEKGenerationBump { .. }
-        | G::SegmentAdded { .. }
-        | G::CommunityPolicy { .. }
-        | G::InviteCreated { .. }
-        | G::InviteRevoked { .. } => apply_community(author, entry, state),
-        G::ThreadCreated { .. }
-        | G::ThreadArchived { .. }
-        | G::EventCreated { .. }
-        | G::EventArchived { .. }
-        | G::EventRsvp { .. } => apply_events(author, entry, state),
-        G::ExpressionAdded { .. } | G::ExpressionRemoved { .. } | G::AttachmentPinned { .. } => {
-            apply_expression(entry, state);
+    }
+    let power_order = order[device_order..].to_vec();
+    let anchor = set.past.latest_in_past(&positions(n, &power_order));
+    let mut mainline: Vec<(Option<usize>, u64, OpHash, usize)> = rest
+        .into_iter()
+        .map(|i| (anchor[i], set.ops[i].op().issued_at, set.ops[i].hash(), i))
+        .collect();
+    mainline.sort();
+    let mut state = genesis_state(cert);
+    for &d in &order[..device_order] {
+        fold(set.ops[d], &mut state);
+    }
+    let mut folded = 0;
+    for (at, _, _, i) in mainline {
+        let through = at.map_or(0, |a| a + 1);
+        for &p in power_order.get(folded..through).unwrap_or_default() {
+            fold(set.ops[p], &mut state);
         }
-        G::BanEntry { .. }
-        | G::UnbanEntry { .. }
-        | G::TimeoutEntry { .. }
-        | G::RemoveTimeoutEntry { .. }
-        | G::AdminDelete { .. }
-        | G::AutoModRule { .. } => apply_moderation(entry, state),
-        G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => apply_onboarding(entry, state),
-        G::RoleDefinition { .. }
-        | G::RoleAssignment { .. }
-        | G::RoleUnassignment { .. }
-        | G::RoleArchived { .. } => apply_roles(entry, state),
+        folded = folded.max(through);
+        if try_apply(set.ops[i], &mut state) {
+            applied[i] = true;
+            order.push(i);
+        }
+    }
+    for &p in &power_order[folded..] {
+        fold(set.ops[p], &mut state);
+    }
+    state.devices.clone_from(&set.devices);
+    // The cert's creator device (S7d-keys.5), as `prepare` seeded it
+    // (idempotent); every op of the set was verified for the one anchor.
+    if let Some(op) = set.ops.first() {
+        state.devices.seed_genesis(op.anchor(), cert);
+    }
+    Round {
+        state,
+        applied,
+        order,
+        power_order,
+        anchor,
     }
 }
 
+/// Per op of `n`, its position in `order`, when it is there: the latest
+/// such op in an op's causal past is its anchor (`Ancestry::latest_in_past`).
+fn positions(n: usize, order: &[usize]) -> Vec<Option<usize>> {
+    let mut at = vec![None; n];
+    for (k, &i) in order.iter().enumerate() {
+        at[i] = Some(k);
+    }
+    at
+}
+
+/// A `MemberRemoved` or `BanEntry` holds only when its target seq frontier
+/// is the number of its target's ops in its own causal past (plan E3.2
+/// S7c.3a), a pure function of its deps; every other op holds.
+fn frontier_holds(set: &resolve::OpSet<'_>, i: usize) -> bool {
+    let body = set.ops[i].body();
+    let (Some(claimed), Some(target)) = (
+        crate::power::target_seq_frontier(body),
+        crate::power::removal_target(body),
+    ) else {
+        return true;
+    };
+    tally!(frontier_steps, i as u64);
+    let counted = (0..i)
+        .filter(|&o| set.ops[o].author() == target && set.past.contains(i, o))
+        .map(|o| set.ops[o].op().seq + 1)
+        .max()
+        .unwrap_or(0);
+    claimed == counted
+}
+
+mod ancestry;
+mod apply;
 mod channels;
 mod community;
+mod cut;
+#[cfg(test)]
+mod device_cp_tests;
+#[cfg(test)]
+mod device_tests;
 mod events;
 mod expression;
+mod fixpoint;
+mod gates;
+mod judge;
+mod membership;
 mod moderation;
 mod onboarding;
+mod prefork;
+pub use prefork::first_fork_evidence;
+mod resolve;
+mod resume;
+mod resume_gates;
 mod roles;
 
 #[cfg(test)]
+mod ancestry_tests;
+#[cfg(test)]
+mod checkpoint_tests;
+#[cfg(test)]
+mod hint_tests;
+#[cfg(test)]
+mod op_proptests;
+#[cfg(test)]
 mod proptests;
+#[cfg(test)]
+mod readmit_tests;
+#[cfg(test)]
+mod resume_beside_tests;
+#[cfg(test)]
+mod resume_hint_tests;
+#[cfg(test)]
+mod resume_tests;
 #[cfg(test)]
 mod tests;
 
-use channels::apply_channels;
-use community::apply_community;
-use events::apply_events;
-use expression::apply_expression;
-use moderation::{apply_admission, apply_moderation};
-use onboarding::apply_onboarding;
-use roles::apply_roles;
+pub use apply::apply_entry;
+use apply::{fold, try_apply};
+pub use cut::merge_cut;
+pub use resume::{merge_from, NotOnTop};

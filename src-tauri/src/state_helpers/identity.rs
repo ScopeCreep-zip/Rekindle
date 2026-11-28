@@ -2,15 +2,29 @@
 
 use std::sync::Arc;
 
+use zeroize::Zeroizing;
+
 use crate::state::{AppState, IdentityState, UserStatus};
 
 /// The 32-byte identity secret, if an identity is loaded.
 ///
 /// THE accessor for `state.identity_secret` — adapter `Deps` impls
 /// delegate here (wrapping in their own error type where their trait
-/// wants a `Result`) instead of each re-spelling the lock-and-copy.
-pub fn identity_secret(state: &Arc<AppState>) -> Option<[u8; 32]> {
-    *state.identity_secret.lock()
+/// wants a `Result`) instead of each re-spelling the lock-and-copy. The
+/// copy is zeroized when the caller drops it (roadmap 1.8).
+pub fn identity_secret(state: &AppState) -> Option<Zeroizing<[u8; 32]>> {
+    state
+        .identity_secret
+        .lock()
+        .as_ref()
+        .map(|secret| Zeroizing::new(*secret.expose()))
+}
+
+/// The identity secret as plain bytes, for the `Deps` traits whose
+/// signature takes them (`rekindle-mek-rotation`, `rekindle-gossip`,
+/// `rekindle-calls`, `rekindle-voice`).
+pub fn identity_secret_bytes(state: &AppState) -> Option<[u8; 32]> {
+    identity_secret(state).map(|secret| *secret)
 }
 
 /// Current identity's public key, or error `"not logged in"`.
@@ -47,10 +61,7 @@ pub fn pseudonym_credentials(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Result<(rekindle_types::id::PseudonymKey, ed25519_dalek::SigningKey), String> {
-    let secret = {
-        let guard = state.identity_secret.lock();
-        *guard.as_ref().ok_or("identity secret not available")?
-    };
+    let secret = identity_secret(state).ok_or("identity secret not available")?;
     let signing_key = rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
     let pseudo_bytes = signing_key.verifying_key().to_bytes();
     let pseudonym = rekindle_types::id::PseudonymKey(pseudo_bytes);
@@ -104,3 +115,48 @@ pub fn identity_display_name(state: &Arc<AppState>) -> String {
 pub fn identity_status(state: &Arc<AppState>) -> Option<UserStatus> {
     state.identity.read().as_ref().map(|id| id.status)
 }
+
+/// Keep the `AppState.identity` projection in step with our own presence
+/// and profile as the Host publishes them (plan E1.1): the shell's
+/// remaining readers of our status and name read it, and no shell code
+/// writes it otherwise (E3.4 and E2.1 delete those readers).
+pub fn project_own(
+    state: &AppState,
+    event: &rekindle_types::subscription_events::SubscriptionEvent,
+) {
+    use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
+    let SubscriptionEvent::Presence(presence) = event else {
+        return;
+    };
+    let mut identity = state.identity.write();
+    let Some(id) = identity.as_mut() else {
+        return;
+    };
+    match presence {
+        PresenceEvent::SelfChanged {
+            public_key,
+            snapshot,
+        } if *public_key == id.public_key => {
+            if let Some(status) = snapshot
+                .status
+                .as_deref()
+                .and_then(|s| serde_json::from_value::<UserStatus>(s.into()).ok())
+            {
+                id.status = status;
+            }
+            if let Some(message) = &snapshot.status_message {
+                id.status_message.clone_from(message);
+            }
+        }
+        PresenceEvent::SelfProfileChanged {
+            public_key,
+            display_name: Some(name),
+            ..
+        } if *public_key == id.public_key => id.display_name.clone_from(name),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+#[path = "identity_tests.rs"]
+mod tests;

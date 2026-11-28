@@ -25,28 +25,24 @@ impl VideoAdapter {
     pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle) -> Arc<Self> {
         Arc::new(Self { state, app_handle })
     }
+}
 
-    /// Phase F — emit a `VideoEvent::EnvelopeRejected` from outside the
-    /// receive pipeline so the protocol-level `verify_envelope` failure
-    /// site in `services/veilid/app_message.rs` can surface the drop to
-    /// the UI without needing to construct a full `ControlPayload`. The
-    /// adapter's normal mapping path (`map_video_event`) handles the
-    /// translation to `CommunityEvent::VideoEnvelopeRejected`.
-    pub fn emit_video_envelope_rejected(
-        &self,
-        community_id: String,
-        sender_pseudonym: String,
-        reason: String,
-    ) {
-        VideoDeps::emit_event(
-            self,
-            VideoEvent::EnvelopeRejected {
-                community_id,
-                sender_pseudonym,
-                reason,
-            },
-        );
-    }
+/// Phase F — the frontend's `CommunityEvent::VideoEnvelopeRejected` for a
+/// channel-media envelope that failed `verify_envelope`, built outside the
+/// receive pipeline by the gossip ingest core (`services/veilid/app_message`,
+/// plan GI4), which returns it for its caller to emit; `map_video_event`
+/// maps the pipeline's own `VideoEvent::EnvelopeRejected` through it.
+#[must_use]
+pub fn rejection_event(
+    community_id: String,
+    sender_pseudonym: String,
+    reason: String,
+) -> CommunityEvent {
+    CommunityEvent::VideoEnvelopeRejected(crate::channels::VideoEnvelopeRejectedEvent {
+        community_id,
+        sender_pseudonym,
+        reason,
+    })
 }
 
 impl VideoDeps for VideoAdapter {
@@ -59,7 +55,7 @@ impl VideoDeps for VideoAdapter {
     }
 
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {
-        let secret = (*self.state.identity_secret.lock())?;
+        let secret = crate::state_helpers::identity_secret(&self.state)?;
         Some(rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id))
     }
 
@@ -261,11 +257,7 @@ fn map_video_event(event: VideoEvent) -> Option<CommunityEvent> {
             community_id,
             sender_pseudonym,
             reason,
-        } => CommunityEvent::VideoEnvelopeRejected(crate::channels::VideoEnvelopeRejectedEvent {
-            community_id,
-            sender_pseudonym,
-            reason,
-        }),
+        } => rejection_event(community_id, sender_pseudonym, reason),
     })
 }
 

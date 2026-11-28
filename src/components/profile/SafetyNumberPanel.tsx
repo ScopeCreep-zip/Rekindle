@@ -1,0 +1,99 @@
+import { type Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
+import { handleSetVerified } from "../../actions/verification.actions";
+import type { SafetyNumberView } from "../../ipc/commands/dto";
+import { addToast } from "../../stores/toast.store";
+import { qrPath, qrSize } from "../../utils/qr";
+import { groupDigits } from "../../utils/safety_number";
+import VerifiedBadge from "./VerifiedBadge";
+
+/**
+ * Our safety number with a peer (plan E2.3): the 60 digits in twelve groups
+ * of five, their QR code in Signal's scannable format, the verified state,
+ * and the mark-verified flow. Marking and clearing go through the Host's
+ * review (TrustChanging): its checkbox states the number, and committing it
+ * is the user saying they compared it.
+ *
+ * A security surface (plan E7.7.0): the number and the code sit on a fixed
+ * card drawn with the reserved `--sec-*` tokens, and the QR is drawn as a
+ * path from the Host's module rows (no markup is injected), so no skin can
+ * hide, recolour or fake what the user compares.
+ */
+const SafetyNumberPanel: Component<{
+  peerKey: string;
+  view: SafetyNumberView | null;
+  onChanged: () => void;
+}> = (props) => {
+  const [busy, setBusy] = createSignal(false);
+  const groups = createMemo(() => groupDigits(props.view?.digits ?? ""));
+  const size = createMemo(() => qrSize(props.view?.qrRows ?? []));
+
+  async function setVerified(verified: boolean): Promise<void> {
+    setBusy(true);
+    const error = await handleSetVerified(props.peerKey, verified);
+    setBusy(false);
+    if (error !== null) addToast(error, "error");
+    props.onChanged();
+  }
+
+  return (
+    <Show
+      when={props.view}
+      fallback={<div class="sec-safety-number">Reading the safety number…</div>}
+    >
+      {(view) => (
+        <section class="sec-safety-number" aria-label="Safety number">
+          <div class="sec-safety-number-state">
+            <VerifiedBadge view={view()} />
+            <Show when={!view().verified && !view().changed}>Not verified</Show>
+          </div>
+          <Show when={view().changed}>
+            <p class="sec-safety-number-hint">
+              Their key changed since you verified it. Compare the new number before you mark it
+              verified again.
+            </p>
+          </Show>
+          <figure
+            class="sec-safety-number-digits"
+            aria-label={`Safety number ${groups().join(" ")}`}
+          >
+            <For each={groups()}>{(group) => <span aria-hidden="true">{group}</span>}</For>
+          </figure>
+          {/* The Host always sends valid rows; if a reply ever does not
+              draw, only the code says so, never the digits, the name or
+              the badge above. */}
+          <ErrorBoundary
+            fallback={
+              <p class="sec-safety-number-hint" role="alert">
+                The QR code could not be drawn. Compare the numbers above instead.
+              </p>
+            }
+          >
+            <svg
+              class="sec-safety-number-qr"
+              viewBox={`0 0 ${size()} ${size()}`}
+              shape-rendering="crispEdges"
+              role="img"
+              aria-label="Safety number QR code"
+            >
+              <rect class="sec-safety-number-qr-ground" width={size()} height={size()} />
+              <path class="sec-safety-number-qr-modules" d={qrPath(view().qrRows)} />
+            </svg>
+          </ErrorBoundary>
+          <p class="sec-safety-number-hint">
+            Compare these numbers with them in person or on a call you trust.
+          </p>
+          <button
+            type="button"
+            class="sec-btn-secondary"
+            disabled={busy()}
+            onClick={() => void setVerified(!view().verified)}
+          >
+            {view().verified ? "Clear verification" : "Mark as verified"}
+          </button>
+        </section>
+      )}
+    </Show>
+  );
+};
+
+export default SafetyNumberPanel;

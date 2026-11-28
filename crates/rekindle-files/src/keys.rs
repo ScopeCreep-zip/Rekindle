@@ -8,10 +8,10 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::channel_keys::{self, KeyEpoch, KeyScope};
 use rekindle_types::id::ChannelId;
 
-use crate::deps::FilesDeps;
+use crate::deps::FileCacheDeps;
 use crate::error::FilesError;
 
-fn text_scope<D: FilesDeps + ?Sized>(
+fn text_scope<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
@@ -21,7 +21,7 @@ fn text_scope<D: FilesDeps + ?Sized>(
     Ok(deps.keys().scope_for_text(community_id, channel))
 }
 
-fn current<D: FilesDeps + ?Sized>(
+fn current<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     scope: KeyScope,
@@ -35,7 +35,7 @@ fn current<D: FilesDeps + ?Sized>(
     Ok(MediaEncryptionKey::from_bytes(*key, epoch.0))
 }
 
-fn at<D: FilesDeps + ?Sized>(
+fn at<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     scope: KeyScope,
@@ -52,7 +52,7 @@ fn at<D: FilesDeps + ?Sized>(
 }
 
 /// The current text key of `channel_id`, carrying its generation.
-pub(crate) fn current_text_key<D: FilesDeps + ?Sized>(
+pub(crate) fn current_text_key<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
@@ -65,7 +65,7 @@ pub(crate) fn current_text_key<D: FilesDeps + ?Sized>(
 }
 
 /// `channel_id`'s text key at exactly `generation`.
-pub(crate) fn text_key_at<D: FilesDeps + ?Sized>(
+pub(crate) fn text_key_at<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
@@ -80,7 +80,7 @@ pub(crate) fn text_key_at<D: FilesDeps + ?Sized>(
 }
 
 /// The current community key, carrying its generation.
-pub(crate) fn current_community_key<D: FilesDeps + ?Sized>(
+pub(crate) fn current_community_key<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
 ) -> Result<MediaEncryptionKey, FilesError> {
@@ -88,7 +88,7 @@ pub(crate) fn current_community_key<D: FilesDeps + ?Sized>(
 }
 
 /// The community key at exactly `generation`.
-pub(crate) fn community_key_at<D: FilesDeps + ?Sized>(
+pub(crate) fn community_key_at<D: FileCacheDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     generation: u64,

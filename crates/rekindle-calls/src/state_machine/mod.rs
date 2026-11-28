@@ -2,19 +2,20 @@
 //!
 //! Owns the lifecycle for 1:1 calls: maintains a `HashMap<CallId, CallState>`
 //! and translates [`CallInput`]s into [`Effect`]s. No async, no I/O, no
-//! Veilid — the [`crate::Effect`] consumer (W16.7's `CallRuntime` in
-//! rekindle-transport) interprets effects: sends envelopes via
-//! [`EnvelopeQueue`], spawns ring timers, starts/stops voice sessions,
-//! emits notifications.
+//! Veilid — an [`crate::Effect`] consumer interprets effects: sends the
+//! call messages, spawns ring timers, starts/stops voice sessions, emits
+//! notifications. No host runs one today: the transport's `CallRuntime`
+//! named the deleted 1:1 frames and was deleted with them (plan E2.3);
+//! E4.1 ports calls onto the Host.
 //!
 //! # Why a separate "pure logic" layer
 //!
 //! - **Testability**: state transitions test without spinning Veilid.
 //! - **Determinism**: every (event, current state) → (next state, effects)
 //!   tuple is reproducible, which makes property-based tests trivial.
-//! - **Cross-frontend parity**: Tauri's `CallRuntime` and rekindle-cli's
-//!   `CallRuntime` interpret the same effects against the same state
-//!   machine; behavioral parity is structural, not by convention.
+//! - **Cross-frontend parity**: every host interprets the same effects
+//!   against the same state machine; behavioral parity is structural, not
+//!   by convention.
 //!
 //! # State diagram (1:1 calls)
 //!
@@ -177,15 +178,15 @@ struct InviteReceivedParams {
     received_at_ms: u64,
 }
 
-/// Side-effects produced by [`CallStateMachine::apply`]. The runtime
-/// (W16.7) interprets these against transport, voice subsystem, store,
-/// timers, and the [`SharedState`] notification channel.
+/// Side-effects produced by [`CallStateMachine::apply`]. The host's
+/// runtime interprets these against transport, voice subsystem, store,
+/// timers, and its notification channel.
 #[derive(Debug, Clone)]
 pub enum Effect {
-    // ── Envelope sends ──────────────────────────────────────────────
+    // ── Call message sends ──────────────────────────────────────────
     //
-    // The runtime serializes the matching `DmPayload` variant and
-    // calls `EnvelopeQueue::send` with the right `EnvelopeKind`.
+    // The runtime sends the matching call message to `recipient` (the
+    // 0x02xx `DmFrame` kinds once E4.1 ports calls).
     SendCallInvite {
         recipient: String,
         call_id: String,
@@ -208,10 +209,8 @@ pub enum Effect {
         call_id: String,
         reason: String,
     },
-    // (Effect::SendCallRinging dropped per W16.5b — the CallRinging
-    //  reply is synthesized synchronously by the runtime's `on_call`
-    //  handler as `CallResponse::CallRinging` inside `app_call_reply`,
-    //  not produced as an outbound envelope.)
+    // (No `SendCallRinging`: the ringing acknowledgement is the host's
+    //  synchronous reply to the invite, not an outbound message.)
 
     // ── Voice session ───────────────────────────────────────────────
     /// Bring up audio + jitter buffer for this call. The voice session
@@ -266,8 +265,9 @@ pub enum Effect {
     },
 
     // ── Notifications ───────────────────────────────────────────────
-    /// Emit a [`TransportNotification`] via [`SharedState::notify`].
-    /// Each frontend (Tauri / CLI / daemon) bridges to its own surface.
+    /// Emit a [`TransportNotification`] through the host's notification
+    /// channel. Each frontend (Tauri / CLI / daemon) bridges to its own
+    /// surface.
     Notify(TransportNotification),
 }
 

@@ -1,11 +1,12 @@
+import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import { authState, setAuthState } from "../stores/auth.store";
-import { fetchAvatarUrl } from "../ipc/avatar";
+import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 
 export async function handleLogin(
   publicKey: string,
-  passphrase: string,
+  passphrase: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const result = await commands.login(publicKey, passphrase);
@@ -27,7 +28,7 @@ export async function handleLogin(
 
 export async function handleCreateIdentity(
   passphrase: string,
-  displayName?: string,
+  displayName?: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const result = await commands.createIdentity(passphrase, displayName);
@@ -48,24 +49,7 @@ export async function handleCreateIdentity(
 
 export async function handleLogout(): Promise<void> {
   try {
-    // Capture the active key before clearing — the login screen uses it to
-    // pre-select this account so the user just re-enters their passphrase
-    // instead of clicking through the picker again.
-    const activeKey = authState.publicKey;
     await commands.logout();
-    // Phase 10 — pair the backend `event_journal.clear()` with a
-    // frontend cursor reset so a re-login (same machine, possibly
-    // different identity) doesn't carry the previous session's cursor.
-    // The backend's journal counter restarts at 1 on logout; an old
-    // cursor like "200" left in localStorage would block every future
-    // `advanceCursor(n)` from updating (because n<200) until the new
-    // session's events catch up — a UX dead-zone where resume can't
-    // observe progress.
-    try {
-      localStorage.removeItem("rekindle.lastEventCursor");
-    } catch {
-      // localStorage unavailable (private mode) — already a no-op.
-    }
     setAuthState({
       isLoggedIn: false,
       publicKey: null,
@@ -73,14 +57,38 @@ export async function handleLogout(): Promise<void> {
       avatarUrl: null,
       status: "offline",
     });
-
-    // In E2E mode the Rust backend isn't managing windows, so we navigate
-    // to the login screen ourselves with the pre-select hint.
-    if (import.meta.env.VITE_E2E === "true") {
-      const param = activeKey ? `?account=${activeKey}` : "";
-      window.location.href = `/login${param}`;
-    }
   } catch (e) {
     console.error("Logout failed:", e);
+  }
+}
+
+/** Set our display name (the name field, `UserIdentityBar` and the skin
+ *  tree's `NameField`): shown at once, reverted with the Host's reason on
+ *  a refusal (walk 23 B12: a refusal was only logged). */
+export async function handleSetDisplayName(raw: string): Promise<void> {
+  const name = raw.trim();
+  if (!name || name === authState.displayName) return;
+  const oldName = authState.displayName;
+  setAuthState("displayName", name);
+  try {
+    await commands.setNickname(name);
+  } catch (e) {
+    setAuthState("displayName", oldName);
+    addToast(`Name not changed: ${errorMessage(e)}`, "error");
+  }
+}
+
+/** Set our status message (Xfire's status field): shown at once, reverted
+ *  on a refusal. */
+export async function handleSetStatusMessage(raw: string): Promise<void> {
+  const msg = raw.trim();
+  const oldMsg = authState.statusMessage;
+  if (msg === (oldMsg ?? "")) return;
+  setAuthState("statusMessage", msg || null);
+  try {
+    await commands.setStatusMessage(msg);
+  } catch (e) {
+    console.error("Failed to set status message:", e);
+    setAuthState("statusMessage", oldMsg);
   }
 }

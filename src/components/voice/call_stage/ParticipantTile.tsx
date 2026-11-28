@@ -1,7 +1,7 @@
-import { Component, Show, createMemo, onCleanup } from "solid-js";
-import Avatar from "../../common/Avatar";
+import { type Component, createMemo, onCleanup, Show } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
-import { ICON_MIC_OFF, ICON_SCREEN_SHARE } from "../../../icons";
+import Avatar from "../../common/Avatar";
+import SkinGlyph from "../../common/SkinGlyph";
 import type { CallTile } from "./useCallStage";
 
 /// One gallery cell: a live video surface (remote decoder canvas or local
@@ -21,7 +21,7 @@ const ParticipantTile: Component<{
 
   const isSpeaking = createMemo(() => participant()?.isSpeaking ?? false);
   const isMuted = createMemo(() =>
-    props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false),
+    props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false)
   );
   const name = createMemo(() => participant()?.displayName ?? props.tile.displayName);
 
@@ -36,7 +36,6 @@ const ParticipantTile: Component<{
         "call-stage-tile-mirror": props.tile.mirror === true,
         "call-stage-tile-screen": props.tile.isScreen,
       }}
-      onDblClick={() => props.onSpotlight?.()}
     >
       <Show
         when={props.tile.canvas}
@@ -75,16 +74,22 @@ const ParticipantTile: Component<{
         />
       </Show>
 
+      <button
+        type="button"
+        class="call-stage-tile-spotlight-btn"
+        aria-pressed={!!props.spotlighted}
+        aria-label={`Spotlight ${name()}`}
+        onDblClick={() => props.onSpotlight?.()}
+        onClick={(e) => {
+          if (e.detail === 0) props.onSpotlight?.();
+        }}
+      />
       <div class="call-stage-tile-overlay">
         <Show when={props.tile.isScreen}>
-          <span class="nf-icon call-stage-tile-badge" aria-hidden="true">
-            {ICON_SCREEN_SHARE}
-          </span>
+          <SkinGlyph name="screen-share" class="call-stage-tile-badge" />
         </Show>
         <Show when={isMuted()}>
-          <span class="nf-icon call-stage-tile-badge call-stage-tile-badge-muted" aria-hidden="true">
-            {ICON_MIC_OFF}
-          </span>
+          <SkinGlyph name="mic.off" class="call-stage-tile-badge call-stage-tile-badge-muted" />
         </Show>
         <span class="call-stage-tile-name">{name()}</span>
       </div>

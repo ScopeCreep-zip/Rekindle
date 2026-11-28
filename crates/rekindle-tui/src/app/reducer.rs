@@ -4,6 +4,8 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
+use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest, ServersRequest};
+use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
     /// Process a single action — the TEA reducer.
@@ -24,6 +26,18 @@ impl App {
                     tui.draw(|frame| self.draw(frame))?;
                 }
             }
+            Action::Resize(w, h) => {
+                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
+                tui.draw(|frame| self.draw(frame))?;
+            }
+            action => self.reduce(action)?,
+        }
+        Ok(())
+    }
+
+    /// Every action that does not draw to the terminal.
+    pub(crate) fn reduce(&mut self, action: Action) -> anyhow::Result<()> {
+        match action {
             Action::Tick => {
                 self.notifications.tick();
                 self.loading_spinner.tick();
@@ -52,10 +66,6 @@ impl App {
                 let use_unicode = self.theme.use_unicode();
                 self.nav.back(use_unicode);
             }
-            Action::Resize(w, h) => {
-                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
-                tui.draw(|frame| self.draw(frame))?;
-            }
             Action::FocusNext => self.nav.current_view_mut().focus_ring().next(),
             Action::FocusPrev => self.nav.current_view_mut().focus_ring().prev(),
             action @ (Action::EnterInputMode | Action::ReplyToSelected | Action::EditSelected) => {
@@ -83,8 +93,11 @@ impl App {
                 }
             }
             Action::ToggleHelp => self.nav.toggle_help(),
+            // A view answers Refresh with the action that reloads it.
             Action::Refresh => {
-                let _ = self.nav.current_view_mut().update(Action::Refresh);
+                if let Some(chained) = self.nav.current_view_mut().update(Action::Refresh)? {
+                    let _ = self.action_tx.send(chained);
+                }
             }
             Action::ToggleSidebar => {
                 self.nav.toggle_sidebar();
@@ -125,21 +138,17 @@ impl App {
                 };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_channel_history(&community, &channel);
+                self.load_community_members(&community);
             }
-            Action::ShowDmInbox => {
-                self.nav
-                    .navigate(ViewKind::DmInbox, self.theme.use_unicode());
-                self.load_dm_inbox();
-            }
-            Action::ShowDmThread { peer_key } => {
-                self.nav
-                    .navigate(ViewKind::DmThread { peer_key }, self.theme.use_unicode());
-            }
-            Action::ShowFriendList => {
-                self.nav
-                    .navigate(ViewKind::FriendList, self.theme.use_unicode());
-                self.load_friend_list();
-            }
+            action @ (Action::ShowDmInbox
+            | Action::ShowDmThread { .. }
+            | Action::ShowGroupDms
+            | Action::ShowGroupMessages { .. }
+            | Action::LoadDmHistory { .. }
+            | Action::AcceptGroupInvite { .. }
+            | Action::DeclineGroupInvite { .. }
+            | Action::LeaveGroup { .. }
+            | Action::ShowFriendList) => self.reduce_conversations(action),
             Action::ShowVoiceSession { community, channel } => {
                 self.nav.navigate(
                     ViewKind::VoiceSession { community, channel },
@@ -151,6 +160,34 @@ impl App {
                     .navigate(ViewKind::Doctor, self.theme.use_unicode());
                 self.load_dashboard_data(); // StatusSnapshot includes checks
             }
+            Action::ShowProfile { peer_key, name } => {
+                let kind = ViewKind::Profile {
+                    peer_key: peer_key.clone(),
+                    name,
+                };
+                self.nav.navigate(kind, self.theme.use_unicode());
+                self.load_profile(peer_key);
+            }
+            Action::ShowActivity => {
+                self.nav
+                    .navigate(ViewKind::Activity, self.theme.use_unicode());
+                self.load_activity(None);
+            }
+            Action::LoadActivity { before } => self.load_activity(before),
+            Action::ShowInfoview { subject } => {
+                let kind = ViewKind::Infoview {
+                    subject: subject.clone(),
+                };
+                self.nav.navigate(kind, self.theme.use_unicode());
+                self.load_infoview(subject);
+            }
+            action @ (Action::ShowFavourites
+            | Action::ShowInstalledGames
+            | Action::ShowServers
+            | Action::RemoveRecentServer { .. }
+            | Action::LaunchGame { .. }
+            | Action::AddFavourite { .. }
+            | Action::RemoveFavourite { .. }) => self.process_game_action(action),
             Action::ShowCommunityInfo { community } => {
                 let kind = ViewKind::CommunityInfo {
                     community: community.clone(),
@@ -164,36 +201,12 @@ impl App {
                 self.nav.close_overlay();
                 self.search.close();
             }
-            Action::ConfirmOverlay => {
-                self.confirm.hide();
-                if self.confirm.is_confirmed() {
-                    if let Some(deferred) = self.pending_confirm_action.take() {
-                        // Dispatch directly to the IPC-backed spawn_* call
-                        // rather than resending `deferred` — that action
-                        // routes back to the arming `process_*` function
-                        // above (`pending_confirm_action` is `None` again
-                        // by the time it's processed), which would just
-                        // re-show the same confirm dialog instead of
-                        // performing the operation.
-                        match deferred {
-                            Action::RemoveFriend { peer_key } => {
-                                self.spawn_remove_friend(peer_key);
-                            }
-                            Action::LeaveCommunity { community } => {
-                                let name = self.community_name(&community).to_string();
-                                self.spawn_leave_community(community, name);
-                            }
-                            Action::LeaveVoice => self.spawn_leave_voice(),
-                            other => {
-                                let _ = self.action_tx.send(other);
-                            }
-                        }
-                    }
-                } else {
-                    self.pending_confirm_action = None;
-                }
-            }
-            Action::LeaveVoice => self.process_leave_voice(),
+            Action::ShowIntent(review) => self.intent.show(*review),
+            Action::ApplySkin(skin) => self.apply_skin(&skin),
+            Action::OwnPresence(snapshot) => self.nav.dashboard_mut().apply_own_presence(&snapshot),
+            Action::CommitIntent { review, proof } => self.spawn_commit_intent(*review, proof),
+            Action::CancelIntent { intent_id } => self.spawn_cancel_intent(intent_id),
+            Action::LeaveVoice => self.spawn_leave_voice(),
             Action::ToggleMute => {
                 let _ = self.nav.current_view_mut().update(Action::ToggleMute);
             }
@@ -202,10 +215,26 @@ impl App {
             }
 
             // Friend operations
-            Action::AcceptFriendRequest(id) => self.spawn_accept_friend(id),
+            Action::AcceptFriendRequest { public_key } => self.spawn_accept_friend(public_key),
             Action::RejectFriendRequest(id) => self.spawn_reject_friend(id),
-            Action::RemoveFriend { ref peer_key } => self.process_remove_friend(peer_key),
-            Action::LeaveCommunity { ref community } => self.process_leave_community(community),
+            // The host's gate asks for any confirmation (plan D3.4).
+            Action::RemoveFriend { peer_key } => self.spawn_remove_friend(peer_key),
+            Action::BlockUser { public_key } => {
+                self.spawn_friend_request(IpcRequest::FriendBlock { public_key }, "block");
+            }
+            Action::UnblockUser { public_key } => {
+                self.spawn_friend_request(IpcRequest::FriendUnblock { public_key }, "unblock");
+            }
+            Action::CancelInvite { invite_id } => {
+                self.spawn_friend_request(
+                    IpcRequest::FriendInviteCancel { invite_id },
+                    "cancel invite",
+                );
+            }
+            Action::LeaveCommunity { community } => {
+                let name = self.community_name(&community).to_string();
+                self.spawn_leave_community(community, name);
+            }
 
             // Clipboard
             Action::YankToClipboard { ref text } => self.yank_to_clipboard(text),
@@ -224,11 +253,63 @@ impl App {
             } => {
                 self.spawn_send_channel_message(&community, &channel, text, reply_to);
             }
+            Action::CreateForumPost {
+                community,
+                channel,
+                title,
+                tag,
+                body,
+            } => self.spawn_forum_post(community, channel, title, tag, body),
+            Action::EditChannelMessage {
+                channel,
+                message_id,
+                text,
+            } => self.spawn_channel_change(
+                ChannelMessageRequest::ChannelMessageEdit {
+                    channel,
+                    message_id,
+                    body: text,
+                },
+                "edit message",
+                "Message edited".to_owned(),
+            ),
+            Action::DeleteChannelMessage {
+                channel,
+                message_id,
+            } => self.spawn_channel_change(
+                ChannelMessageRequest::ChannelMessageDelete {
+                    channel,
+                    message_id,
+                },
+                "delete message",
+                format!("Message {}", rekindle_client::fmt::DELETED_FOR_MEMBERS),
+            ),
+            Action::RemoveChannelMessage {
+                community,
+                channel,
+                message_id,
+            } => self.spawn_channel_change(
+                ChannelMessageRequest::ChannelMessageAdminDelete {
+                    community,
+                    channel,
+                    message_id,
+                    reason: None,
+                },
+                "remove message",
+                "Message removed".to_owned(),
+            ),
             Action::SendDm { peer_key, text } => {
                 self.spawn_send_dm(peer_key, text);
             }
+            Action::SendGroupDm { group_id, text } => self.spawn_send_group_dm(group_id, text),
 
             Action::SubscriptionEvent(ref event) => {
+                // A group's invite, member or key changed: the list reloads.
+                if matches!(**event, SubscriptionEvent::GroupDm(_))
+                    && *self.nav.current_view() == ViewKind::GroupDms
+                {
+                    self.load_group_dms();
+                }
                 self.nav.current_view_mut().on_subscription_event(event)?;
             }
 
@@ -241,6 +322,53 @@ impl App {
         Ok(())
     }
 
+    /// Favourite servers, installed games and launches (plan E7.2, E7.15).
+    fn process_game_action(&mut self, action: Action) {
+        match action {
+            Action::ShowFavourites => {
+                self.nav
+                    .navigate(ViewKind::Favourites, self.theme.use_unicode());
+                self.load_favourites();
+            }
+            Action::ShowInstalledGames => {
+                self.nav
+                    .navigate(ViewKind::InstalledGames, self.theme.use_unicode());
+                self.load_installed_games();
+            }
+            Action::ShowServers => {
+                self.nav
+                    .navigate(ViewKind::Servers, self.theme.use_unicode());
+                self.load_servers_view();
+            }
+            Action::RemoveRecentServer { game_id, server } => self.spawn_servers(
+                IpcRequest::Servers(ServersRequest::RecentRemove { game_id, server }),
+                "remove recent server",
+            ),
+            Action::LaunchGame {
+                game_id,
+                server,
+                source,
+            } => self.spawn_game_launch(game_id, server, source),
+            Action::AddFavourite {
+                game_id,
+                server,
+                label,
+            } => self.spawn_favourites(
+                IpcRequest::Servers(ServersRequest::FavouriteAdd {
+                    game_id,
+                    server,
+                    label,
+                }),
+                "add favourite server",
+            ),
+            Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
+                IpcRequest::Servers(ServersRequest::FavouriteRemove { game_id, server }),
+                "remove favourite server",
+            ),
+            _ => {}
+        }
+    }
+
     /// Handle a completed async command: update local caches, then forward
     /// the result to the active view.
     fn process_command_complete(
@@ -251,6 +379,10 @@ impl App {
         self.loading_spinner.stop();
         // Extract identity and community caches before forwarding to view
         match &result {
+            // Plan RV1g: a TUI started mid-outage shows it from the snapshot.
+            CommandResult::StatusLoaded { snapshot } => {
+                self.route_alert.load_down(&snapshot.own_route_down);
+            }
             CommandResult::IdentityLoaded {
                 public_key,
                 display_name,
@@ -263,12 +395,17 @@ impl App {
                     .dashboard_mut()
                     .set_identity(public_key, display_name);
             }
+            CommandResult::OwnPresenceLoaded { view } => {
+                self.nav.dashboard_mut().set_own_presence(view);
+            }
+            CommandResult::NetworkBarsLoaded { bars } => self.network_bars = *bars,
             CommandResult::CommunityListLoaded { communities } => {
                 self.cached_communities = communities
                     .iter()
                     .map(|c| super::CachedCommunity {
-                        governance_key: c.governance_key.clone(),
+                        anchor: c.anchor.clone(),
                         name: c.name.clone(),
+                        our_pseudonym: c.our_pseudonym.clone(),
                     })
                     .collect();
             }
@@ -304,40 +441,5 @@ impl App {
                 .notifications
                 .push(format!("Clipboard write failed: {e}"), ToastLevel::Warning),
         }
-    }
-
-    /// Two-step leave-voice flow: first press arms a confirmation, second
-    /// press (after confirm) performs the disconnect.
-    /// Arm the leave-voice confirmation dialog. The actual `VoiceLeave`
-    /// IPC call fires from `Action::ConfirmOverlay` once confirmed — see
-    /// its handler above, which dispatches on `pending_confirm_action`
-    /// instead of resending this action (that would just re-arm it).
-    fn process_leave_voice(&mut self) {
-        self.pending_confirm_action = Some(Action::LeaveVoice);
-        self.confirm
-            .show("Leave voice channel?", "You will be disconnected.");
-    }
-
-    /// Arm the remove-friend confirmation dialog (see `process_leave_voice`).
-    fn process_remove_friend(&mut self, peer_key: &str) {
-        self.pending_confirm_action = Some(Action::RemoveFriend {
-            peer_key: peer_key.to_string(),
-        });
-        self.confirm.show(
-            format!("Remove {}?", crate::helpers::abbreviate_key(peer_key)),
-            "They will no longer see your messages or presence.",
-        );
-    }
-
-    /// Arm the leave-community confirmation dialog (see `process_leave_voice`).
-    fn process_leave_community(&mut self, community: &str) {
-        let name = self.community_name(community).to_string();
-        self.pending_confirm_action = Some(Action::LeaveCommunity {
-            community: community.to_string(),
-        });
-        self.confirm.show(
-            format!("Leave '{name}'?"),
-            "You will lose access to all channels.",
-        );
     }
 }

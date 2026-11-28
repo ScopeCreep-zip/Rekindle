@@ -1,12 +1,15 @@
 //! Channel commands.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, RichRequest};
 
+use crate::channel_message;
 use crate::cli::ChannelCmd;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
+use rekindle_types::dto::channel_message::ChannelMessageView;
 
 pub async fn dispatch(
     cmd: &ChannelCmd,
@@ -15,11 +18,13 @@ pub async fn dispatch(
 ) -> anyhow::Result<()> {
     match cmd {
         ChannelCmd::List { community, .. } => {
-            let value = client
-                .request_ok(IpcRequest::ChannelList {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
                     community: community.clone(),
-                })
-                .await?;
+                })),
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -57,36 +62,31 @@ pub async fn dispatch(
             slowmode,
         } => {
             let validated_name = helpers::validate_name(name, "Channel")?;
-            let value = client
-                .request_ok(IpcRequest::ChannelCreate {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
                     community: community.clone(),
                     name: validated_name,
                     kind: kind.clone(),
                     category: category.clone(),
                     topic: topic.clone(),
                     slowmode_seconds: slowmode.unwrap_or(0),
-                })
-                .await?;
+                    parent_voice_channel: None,
+                })),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
-        ChannelCmd::Delete {
-            community,
-            channel,
-            force,
-        } => {
-            if !helpers::confirm_unless_forced(
-                *force,
-                &format!("Delete channel '{channel}' in '{community}'?"),
-            )? {
-                return format::print_text("Cancelled.");
-            }
+        ChannelCmd::Delete { community, channel } => {
             let channel_id = channel.clone();
-            let value = client
-                .request_ok(IpcRequest::ChannelDelete {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelDelete {
                     community: community.clone(),
                     channel_id,
-                })
-                .await?;
+                })),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Update {
@@ -101,15 +101,17 @@ pub async fn dispatch(
                 .as_ref()
                 .map(|n| helpers::validate_name(n, "Channel"))
                 .transpose()?;
-            let value = client
-                .request_ok(IpcRequest::ChannelUpdate {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelUpdate {
                     community: community.clone(),
                     channel_id,
                     name: validated_name,
                     topic: topic.clone(),
                     slowmode_seconds: *slowmode,
-                })
-                .await?;
+                })),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Send {
@@ -118,15 +120,39 @@ pub async fn dispatch(
             message,
             reply_to,
         } => {
-            let reply = reply_to.as_ref().and_then(|s| s.parse::<u64>().ok());
-            let value = client
-                .request_ok(IpcRequest::ChannelSend {
-                    community: community.clone(),
-                    channel: channel.clone(),
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelSend {
+                        community: community.clone(),
+                        channel: channel.clone(),
+                        body: message.clone(),
+                        reply_to: reply_to.clone(),
+                    },
+                )),
+            )
+            .await?;
+            format::print_structured(&value, mode)
+        }
+        ChannelCmd::ForumPost {
+            community,
+            channel,
+            title,
+            message,
+            tag,
+        } => {
+            let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Rich(RichRequest::CreateForumPost {
+                    community: anchor,
+                    channel_id,
+                    title: title.clone(),
+                    forum_tag: tag.clone(),
                     body: message.clone(),
-                    reply_to: reply,
-                })
-                .await?;
+                })),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::History {
@@ -135,15 +161,41 @@ pub async fn dispatch(
             limit,
             ..
         } => {
-            let value = client
-                .request_ok(IpcRequest::ChannelHistory {
-                    community: community.clone(),
-                    channel: channel.clone(),
-                    limit: u32::try_from(*limit).unwrap_or(u32::MAX),
-                })
-                .await?;
-            format::print_structured(&value, mode)
+            let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelMessages {
+                        channel: channel_id,
+                        limit: u32::try_from(*limit).unwrap_or(u32::MAX),
+                    },
+                )),
+            )
+            .await?;
+            if mode.is_structured() {
+                return format::print_structured(&value, mode);
+            }
+            let views: Vec<ChannelMessageView> = serde_json::from_value(value)?;
+            let names = channel_message::member_names(client, &anchor).await?;
+            channel_message::print_history(&views, &names)
         }
+        ChannelCmd::EditMessage {
+            community,
+            channel,
+            msg_id,
+            ..
+        }
+        | ChannelCmd::DeleteMessage {
+            community,
+            channel,
+            msg_id,
+        }
+        | ChannelCmd::RemoveMessage {
+            community,
+            channel,
+            msg_id,
+            ..
+        } => channel_message::dispatch_change(cmd, community, channel, msg_id, client, mode).await,
         ChannelCmd::Watch { community, channel } => {
             watch_channel(client, community, channel, mode).await
         }
@@ -151,6 +203,17 @@ pub async fn dispatch(
             Err(crate::identity::unimplemented("channel pin/unpin"))
         }
     }
+}
+
+/// The anchor key of `community` and the id of its channel `channel`;
+/// the user may have given either names or keys.
+async fn resolve_channel(
+    client: &DaemonClient,
+    community: &str,
+    channel: &str,
+) -> anyhow::Result<(String, String)> {
+    let target = channel_message::target(client, community, channel).await?;
+    Ok((target.anchor, target.channel_id))
 }
 
 /// `channel watch`: stream one channel's messages until Ctrl-C.
@@ -163,24 +226,12 @@ async fn watch_channel(
     use rekindle_types::subscription_events::{
         ChannelMessageEvent, EventCategory, SubscriptionEvent, SubscriptionFilter,
     };
-    // Events name the community by governance key and the channel by id;
-    // the user may have given either names or keys.
-    let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
-        client
-            .request_ok(IpcRequest::CommunityInfo {
-                governance_key: community.to_owned(),
-            })
-            .await?,
-    )?;
-    let channel_id = detail
-        .channels
-        .iter()
-        .find(|c| c.id == channel || c.name == channel)
-        .map(|c| c.id.clone())
-        .ok_or_else(|| anyhow::anyhow!("no channel '{channel}' in '{community}'"))?;
+    // Events name the community by anchor key and the channel by id.
+    let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
+    let names = channel_message::member_names(client, &anchor).await?;
     let filter = SubscriptionFilter {
         categories: Some(vec![EventCategory::ChannelMessage]),
-        community_scope: Some(detail.governance_key),
+        community_scope: Some(anchor),
     };
     let body = |text: &Option<String>| {
         text.as_deref().map_or_else(
@@ -194,12 +245,17 @@ async fn watch_channel(
             sender_pseudonym,
             timestamp,
             body: text,
+            automod_blurred,
             ..
         }) if *channel == channel_id => Some(format!(
             "[{}] {}: {}",
             rekindle_client::fmt::format_time_short(*timestamp),
             rekindle_client::fmt::abbreviate_key(sender_pseudonym),
-            body(text)
+            if *automod_blurred {
+                rekindle_client::fmt::AUTOMOD_BLURRED.to_owned()
+            } else {
+                body(text)
+            }
         )),
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
             channel,
@@ -214,11 +270,16 @@ async fn watch_channel(
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
             channel,
             message_id,
+            removed_by,
             ..
-        }) if *channel == channel_id => Some(format!(
-            "(deleted {})",
-            rekindle_client::fmt::abbreviate_key(message_id)
-        )),
+        }) if *channel == channel_id => {
+            // Plan E3.3 E4 and M4: never "erased".
+            let outcome = removed_by.as_ref().map_or(
+                channel_message::MessageChangeOutcome::DeletedForMembers,
+                |by| channel_message::MessageChangeOutcome::Removed { by: by.clone() },
+            );
+            Some(channel_message::outcome_line(message_id, &outcome, &names))
+        }
         _ => None,
     })
     .await

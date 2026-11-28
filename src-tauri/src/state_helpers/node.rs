@@ -67,16 +67,43 @@ pub fn safe_api_and_routing_context(
     Some((api, safe_routing_context_from(rc)?))
 }
 
-/// The session's DHT record pool (plan C7), or an error before login
-/// services have started it.
+/// The session's DHT record pool (plan C7): the transport's, which the
+/// Host's unlock starts (plan E1.1); an error while locked.
 pub fn record_pool(
     state: &Arc<AppState>,
-) -> Result<Arc<rekindle_protocol::dht::pool::RecordPool>, String> {
+) -> Result<Arc<dyn rekindle_records::port::RecordPort>, String> {
     state
-        .record_pool
+        .transport
         .read()
-        .clone()
+        .as_ref()
+        .and_then(|transport| transport.records())
         .ok_or_else(|| "record pool not running".to_string())
+}
+
+/// The Host's governance adapter (plan E3.1 B2f): every governance path
+/// runs over it; `NotLoggedIn` while no identity is unlocked.
+pub fn host_governance(
+    state: &AppState,
+) -> Result<rekindle_node::host::adapters::governance::HostGovernance, rekindle_db::NotLoggedIn> {
+    state
+        .host
+        .current()
+        .map(|host| host.governance())
+        .ok_or(rekindle_db::NotLoggedIn)
+}
+
+/// The unlocked Host's channel adapter (`HostChannel`), or `NotLoggedIn`.
+///
+/// # Errors
+/// `NotLoggedIn` while no identity is unlocked.
+pub fn host_channel(
+    state: &AppState,
+) -> Result<rekindle_node::host::adapters::channel::HostChannel, rekindle_db::NotLoggedIn> {
+    state
+        .host
+        .current()
+        .map(|host| host.channel())
+        .ok_or(rekindle_db::NotLoggedIn)
 }
 
 /// Routing context configured for safe community/chat transport, or a descriptive error.
@@ -86,50 +113,25 @@ pub fn require_safe_routing_context(
     safe_routing_context(state).ok_or_else(|| "not attached to network".to_string())
 }
 
-/// Profile DHT info tuple: `(profile_dht_key, route_blob, mailbox_dht_key)`.
-pub fn profile_dht_info(state: &Arc<AppState>) -> Result<(String, Vec<u8>, String), String> {
-    let node = state.node.read();
-    let nh = node.as_ref().ok_or("node not initialized")?;
-    let profile_key = nh
-        .profile_dht_key
-        .clone()
-        .ok_or("profile DHT key not set")?;
-    let route_blob = state
-        .own_routes
-        .read()
-        .as_ref()
-        .and_then(|r| r.blob(rekindle_protocol::own_routes::RouteClass::General))
-        .ok_or("route blob not set")?;
-    let mailbox_key = nh
-        .mailbox_dht_key
-        .clone()
-        .ok_or("mailbox DHT key not set")?;
-    Ok((profile_key, route_blob, mailbox_key))
-}
-
 /// The node's own routes (plan C7.9a).
 pub fn own_routes(
     state: &AppState,
 ) -> Option<
-    Arc<
-        rekindle_protocol::own_routes::OwnRoutes<
-            rekindle_protocol::own_routes::VeilidRouteAllocator,
-        >,
-    >,
+    Arc<rekindle_route::own_routes::OwnRoutes<rekindle_protocol::own_routes::VeilidRouteAllocator>>,
 > {
     state.own_routes.read().clone()
 }
 
 /// Our general route blob: what peers import to message us.
 pub fn our_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
-    own_routes(state)?.blob(rekindle_protocol::own_routes::RouteClass::General)
+    own_routes(state)?.blob(rekindle_records::port::RouteClass::General)
 }
 
 /// Our media-class route blob: what peers import to send us voice and
 /// video. Never substituted by the general route (plan C7.9c): without one,
 /// media is unavailable and the window says so.
 pub fn our_media_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
-    own_routes(state)?.blob(rekindle_protocol::own_routes::RouteClass::Media)
+    own_routes(state)?.blob(rekindle_records::port::RouteClass::Media)
 }
 
 /// Friend list DHT key.
@@ -141,23 +143,15 @@ pub fn friend_list_dht_key(state: &Arc<AppState>) -> Option<String> {
         .and_then(|nh| nh.friend_list_dht_key.clone())
 }
 
-/// Friend list owner keypair.
-pub fn friend_list_owner_keypair(state: &Arc<AppState>) -> Option<veilid_core::KeyPair> {
-    state
-        .node
-        .read()
-        .as_ref()
-        .and_then(|nh| nh.friend_list_owner_keypair.clone())
-}
-
 /// Whether the node is attached to the network.
 pub fn is_attached(state: &Arc<AppState>) -> bool {
     state.node.read().as_ref().is_some_and(|nh| nh.is_attached)
 }
 
-/// The login session's scope (plan C4), or `None` while logged out.
+/// The login session's scope, or `None` while logged out: the Host's
+/// unlock scope (plan E1.1), the one every session task runs in.
 pub fn login_scope(state: &AppState) -> Option<Arc<rekindle_lifecycle::SessionScope>> {
-    state.login_scope.read().clone()
+    state.host.current()?.unlock_scope()
 }
 
 /// The login scope, or a closed one while logged out, so work spawned

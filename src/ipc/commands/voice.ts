@@ -1,7 +1,5 @@
 import { invoke } from "../invoke";
-import type { ActiveCall,
-  AudioDevices, MissedCallRow,
-} from "./types";
+import type { ActiveCall, AudioDevices, MissedCallRow } from "./types";
 
 export const voiceCommands = {
   // Voice
@@ -12,8 +10,18 @@ export const voiceCommands = {
     invoke<void>("request_to_speak", { communityId, channelId }),
   getStageHandRaises: (communityId: string, channelId: string) =>
     invoke<string[]>("get_stage_hand_raises", { communityId, channelId }),
-  respondToSpeakRequest: (communityId: string, channelId: string, requesterPseudonym: string, granted: boolean) =>
-    invoke<void>("respond_to_speak_request", { communityId, channelId, requesterPseudonym, granted }),
+  respondToSpeakRequest: (
+    communityId: string,
+    channelId: string,
+    requesterPseudonym: string,
+    granted: boolean
+  ) =>
+    invoke<void>("respond_to_speak_request", {
+      communityId,
+      channelId,
+      requesterPseudonym,
+      granted,
+    }),
   setMute: (muted: boolean) => invoke<void>("set_mute", { muted }),
   setDeafen: (deafened: boolean) => invoke<void>("set_deafen", { deafened }),
   /**
@@ -25,9 +33,9 @@ export const voiceCommands = {
    */
   serverMuteMember: (
     communityId: string,
-    channelId: string,
+    channelId: string | null,
     targetPseudonym: string,
-    muted: boolean,
+    muted: boolean
   ) =>
     invoke<void>("server_mute_member", {
       communityId,
@@ -42,9 +50,9 @@ export const voiceCommands = {
    */
   serverDeafenMember: (
     communityId: string,
-    channelId: string,
+    channelId: string | null,
     targetPseudonym: string,
-    deafened: boolean,
+    deafened: boolean
   ) =>
     invoke<void>("server_deafen_member", {
       communityId,
@@ -64,8 +72,7 @@ export const voiceCommands = {
   // Plan §Failure 5 — direct call offer/accept handshake.
   startDmCall: (peerPublicKey: string, video: boolean) =>
     invoke<string>("start_dm_call", { peerPublicKey, video }),
-  acceptDmCall: (callId: string) =>
-    invoke<void>("accept_dm_call", { callId }),
+  acceptDmCall: (callId: string) => invoke<void>("accept_dm_call", { callId }),
   declineDmCall: (callId: string, reason?: string) =>
     invoke<void>("decline_dm_call", { callId, reason: reason ?? null }),
   /// C2 hangup — end an Active call (post-handshake), distinct from
@@ -75,12 +82,7 @@ export const voiceCommands = {
   /// Wave 12 W12.6 — fire-and-forget mid-call media-state ping so the
   /// peer's UI mounts/unmounts video and screen-share tiles in sync
   /// with our local toggle.
-  sendCallMediaState: (
-    callId: string,
-    audio: boolean,
-    video: boolean,
-    screen: boolean,
-  ) =>
+  sendCallMediaState: (callId: string, audio: boolean, video: boolean, screen: boolean) =>
     invoke<void>("send_call_media_state", { callId, audio, video, screen }),
   /// Wave 12 W12.12 — temporarily silence a caller. Future incoming
   /// offers from `peerPublicKey` auto-decline with "user is
@@ -94,39 +96,15 @@ export const voiceCommands = {
     invoke<void>("send_call_reaction", { callId, emoji }),
   /// Wave 12 W12.9 — group calls. Initiator fans out a per-recipient
   /// wrapped call_key to every invitee.
-  startGroupCall: (participantPubkeys: string[], video: boolean) =>
-    invoke<string>("start_group_call", { participantPubkeys, video }),
-  acceptGroupCall: (callId: string) =>
-    invoke<void>("accept_group_call", { callId }),
+  /** `groupId`: the group the call is for (GV2), null outside a group; the
+   *  Host refuses a participant outside that group's roster. */
+  startGroupCall: (participantPubkeys: string[], video: boolean, groupId: string | null) =>
+    invoke<string>("start_group_call", { participantPubkeys, video, groupId }),
+  acceptGroupCall: (callId: string) => invoke<void>("accept_group_call", { callId }),
   declineGroupCall: (callId: string, reason?: string) =>
     invoke<void>("decline_group_call", { callId, reason: reason ?? null }),
   endGroupCall: (callId: string, reason?: string) =>
     invoke<void>("end_group_call", { callId, reason: reason ?? null }),
-  /// B6 — explicit user-driven Signal session reset. Surfaced from the
-  /// friend context menu when the user has verified the peer's safety
-  /// number out-of-band and wants to re-handshake. NOT auto-invoked on
-  /// decrypt failure (vulnerable-user safety stance forbids
-  /// auto-rehandshake).
-  ///
-  /// P3.3 — also sends a SessionResetRequest to the peer carrying our
-  /// fresh PreKeyBundle. Peer's UI prompts them to verify our safety
-  /// number before accepting; on accept they reply with
-  /// SessionResetAccept which our backend processes to install the new
-  /// responder-side session.
-  resetSignalSession: (peerPublicKey: string) =>
-    invoke<void>("reset_signal_session", { peerPublicKey }),
-  /// P3.3 — accept a SessionResetRequest after verifying the peer's
-  /// safety number out-of-band. Frontend MUST gate this behind explicit
-  /// user consent (modal showing safety_number from
-  /// NotificationEvent::SessionResetRequested).
-  acceptSessionReset: (peerPublicKey: string) =>
-    invoke<void>("accept_session_reset", { peerPublicKey }),
-  /// P3.3 — decline a SessionResetRequest.
-  declineSessionReset: (peerPublicKey: string, reason?: string) =>
-    invoke<void>("decline_session_reset", {
-      peerPublicKey,
-      reason: reason ?? null,
-    }),
   getMissedCalls: () => invoke<MissedCallRow[]>("get_missed_calls"),
   /// A live 1:1 call, for a call window opening mid-call; null once ended.
   getActiveCall: (callId: string) => invoke<ActiveCall | null>("get_active_call", { callId }),

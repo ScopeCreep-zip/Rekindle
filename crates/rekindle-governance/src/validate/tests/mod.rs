@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::state::{GovernanceState, RoleState};
-use rekindle_types::permissions::{READ_HISTORY, VIEW_CHANNELS};
+use rekindle_types::permissions::{
+    CREATE_PUBLIC_THREADS, READ_HISTORY, SEND_MESSAGES, VIEW_CHANNELS,
+};
 use std::collections::{HashMap, HashSet};
 
 fn pseudo(b: u8) -> PseudonymKey {
@@ -26,7 +28,7 @@ fn state_with_creator_and_roles() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: crate::fixture::stamp(1),
         },
     );
     roles.insert(
@@ -40,7 +42,7 @@ fn state_with_creator_and_roles() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 2,
+            stamp: crate::fixture::stamp(2),
         },
     );
 
@@ -50,7 +52,7 @@ fn state_with_creator_and_roles() -> GovernanceState {
     assignments.insert(pseudo(5), admin_roles); // pseudo(5) is admin
 
     GovernanceState {
-        creator: Some(pseudo(1)),
+        creators: std::collections::BTreeSet::from([pseudo(1)]),
         roles,
         role_assignments: assignments,
         ..Default::default()
@@ -64,11 +66,9 @@ fn creator_always_validates() {
         channel_id: rekindle_types::id::ChannelId([0; 16]),
         name: "test".into(),
         channel_type: "text".into(),
-        record_key: "k".into(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport: 10,
     };
     assert!(validate_write(&pseudo(1), &entry, &state));
 }
@@ -80,11 +80,9 @@ fn regular_member_cannot_manage_channels() {
         channel_id: rekindle_types::id::ChannelId([0; 16]),
         name: "test".into(),
         channel_type: "text".into(),
-        record_key: "k".into(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport: 10,
     };
     // pseudo(99) has only @everyone perms — no MANAGE_CHANNELS
     assert!(!validate_write(&pseudo(99), &entry, &state));
@@ -97,11 +95,9 @@ fn admin_can_manage_channels() {
         channel_id: rekindle_types::id::ChannelId([0; 16]),
         name: "test".into(),
         channel_type: "text".into(),
-        record_key: "k".into(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport: 10,
     };
     // pseudo(5) is admin
     assert!(validate_write(&pseudo(5), &entry, &state));
@@ -112,7 +108,6 @@ fn bump(generation: u64) -> GovernanceEntry {
         generation,
         trigger_departed: pseudo(10),
         cascade_skipped: vec![],
-        lamport: 10,
     }
 }
 
@@ -158,27 +153,26 @@ fn banned_member_cannot_write() {
         generation: 2,
         trigger_departed: pseudo(10),
         cascade_skipped: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(50), &entry, &state));
 }
 
 #[test]
-fn regular_member_can_create_thread() {
-    let state = state_with_creator_and_roles();
+fn regular_member_needs_the_public_thread_permission() {
+    let mut state = state_with_creator_and_roles();
     let entry = GovernanceEntry::ThreadCreated {
         thread_id: rekindle_types::id::ThreadId([0; 16]),
         parent_channel_id: rekindle_types::id::ChannelId([0; 16]),
         name: "discussion".into(),
         thread_type: "public".into(),
-        record_key: None,
         invited: Vec::new(),
         forum_tag: None,
         auto_archive_seconds: 86_400,
-        lamport: 10,
     };
-    // @everyone has SEND_MESSAGES
-    assert!(validate_write(&pseudo(99), &entry, &state));
+    let member = pseudo(99);
+    assert!(!validate_write(&member, &entry, &state));
+    state.roles.get_mut(&rid(0)).unwrap().permissions |= CREATE_PUBLIC_THREADS;
+    assert!(validate_write(&member, &entry, &state));
 }
 
 #[test]
@@ -196,14 +190,13 @@ fn self_assignable_role_allows_self_write() {
             mentionable: false,
             self_assignable: true,
             exclusion_group: None,
-            lamport: 3,
+            stamp: crate::fixture::stamp(3),
         },
     );
 
     let entry = GovernanceEntry::RoleAssignment {
         target: pseudo(99),
         role_id: self_role_id,
-        lamport: 10,
     };
     assert!(validate_write(&pseudo(99), &entry, &state));
 }
@@ -225,7 +218,7 @@ fn expression_limit_rejects_extra_static_emoji() {
                 creator_pseudonym: None,
                 created_at: None,
                 available_to_peers: true,
-                lamport: u64::from(index),
+                stamp: crate::fixture::stamp(u64::from(index)),
             },
         );
     }
@@ -242,7 +235,6 @@ fn expression_limit_rejects_extra_static_emoji() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 50,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -268,7 +260,7 @@ fn expression_limit_rejects_extra_animated_emoji() {
                 creator_pseudonym: None,
                 created_at: None,
                 available_to_peers: true,
-                lamport: u64::from(index),
+                stamp: crate::fixture::stamp(u64::from(index)),
             },
         );
     }
@@ -285,7 +277,6 @@ fn expression_limit_rejects_extra_animated_emoji() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 100,
     };
     assert!(
         !validate_write(&pseudo(5), &entry, &state),
@@ -306,7 +297,6 @@ fn expression_limit_rejects_extra_animated_emoji() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 101,
     };
     assert!(
         validate_write(&pseudo(5), &static_entry, &state),
@@ -334,7 +324,6 @@ fn soundboard_entry_with_valid_meta_accepted() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -359,7 +348,6 @@ fn soundboard_entry_rejects_overlong_duration() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -384,7 +372,6 @@ fn soundboard_entry_rejects_volume_outside_range() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -409,7 +396,6 @@ fn emoji_entry_rejects_smuggled_sound_meta() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -443,7 +429,6 @@ fn onboarding_rejects_too_many_questions() {
         questions,
         welcome_message: None,
         guide_steps: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -458,7 +443,6 @@ fn onboarding_rejects_overlong_welcome_message() {
         questions: vec![],
         welcome_message: Some("a".repeat(501)),
         guide_steps: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -473,9 +457,55 @@ fn onboarding_rejects_unknown_mode() {
         questions: vec![],
         welcome_message: None,
         guide_steps: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
 
+mod admin_delete;
 mod hierarchy;
+mod target;
+
+fn invite_with(code_hash: String) -> GovernanceEntry {
+    GovernanceEntry::InviteCreated {
+        invite_id: [7; 16],
+        code_hash,
+        max_uses: 1,
+        expires_at: None,
+        secrets_record_key: "VLD0:s".into(),
+    }
+}
+
+/// An invite's `code_hash` is its public join key (plan E3.2 S10): one no
+/// invite proof can verify under is refused, the creator's included; the
+/// key `hash_invite_code` writes passes.
+#[test]
+fn invite_with_a_malformed_join_key_is_refused_even_from_the_creator() {
+    let state = state_with_creator_and_roles();
+    let creator = pseudo(1);
+    let valid = crate::fixture::code_key("a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8");
+    assert!(validate_write(
+        &creator,
+        &invite_with(valid.clone()),
+        &state
+    ));
+    let malformed = [
+        "code".to_owned(),
+        valid.to_uppercase(),
+        valid[..62].to_owned(),
+        format!("{valid}00"),
+        // Small order: y = 0 (order 4) and the identity.
+        "00".repeat(32),
+        format!("01{}", "00".repeat(31)),
+        // y = p, the non-canonical encoding of y = 0.
+        format!("ed{}7f", "ff".repeat(30)),
+    ];
+    for code_hash in malformed {
+        let entry = invite_with(code_hash.clone());
+        assert_eq!(
+            bounds::out_of_bounds_field(&entry),
+            Some("code_hash"),
+            "{code_hash}"
+        );
+        assert!(!validate_write(&creator, &entry, &state), "{code_hash}");
+    }
+}

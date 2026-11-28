@@ -1,5 +1,7 @@
 //! Frame routing: request-response correlation and pub-sub broadcast.
 
+use std::sync::Arc;
+
 use uuid::Uuid;
 
 use super::{ServerState, DAEMON_AGENT_NAME, RATE_LIMIT_MAX_TOKENS, RATE_LIMIT_REFILL_MS};
@@ -20,7 +22,7 @@ use crate::protocol::BusPayload;
 /// - If `correlation_id` is None: this is a new request or broadcast —
 ///   record the `msg_id` for response routing and forward to all other
 ///   connections at sufficient clearance.
-pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
+pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, payload: &[u8]) {
     // Decode the message envelope. Single type for all bus traffic.
     let mut msg: Message<BusPayload> = match decode_frame(payload) {
         Ok(m) => m,
@@ -96,27 +98,27 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             } else {
                 conn.agent_id = Some(msg.sender);
             }
-
-            // [RC-6] Sender clearance enforcement.
-            if conn.security_clearance < msg.security_level {
-                tracing::warn!(
-                    conn_id = sender_conn_id,
-                    sender = ?conn.security_clearance,
-                    msg = ?msg.security_level,
-                    "clearance insufficient, rejecting"
-                );
-                return;
-            }
         }
     }
 
-    // Stamp the sender's verified name and Noise key from connection
-    // state, overwriting whatever the client put there.
+    // Stamp the sender's verified name, Noise key, connection id and clearance from
+    // connection state and the registry, overwriting whatever the client
+    // put there. [RC-6] The clearance is the registry's for this key at
+    // this frame, not the handshake's: an unlock that registers the key
+    // raises its live connection, and a lock that unregisters it lowers it
+    // (plan D1). The daemon checks each request against it.
     {
         let conns = state.connections.read().await;
         let conn = conns.get(&sender_conn_id);
         msg.verified_sender_name = conn.and_then(|c| c.verified_name.clone());
         msg.verified_sender_key = conn.map(|c| c.static_key);
+        msg.verified_sender_conn = conn.map(|_| sender_conn_id);
+        let registry = state.registry.read().await;
+        msg.security_level = conn
+            .and_then(|c| registry.lookup(&c.static_key))
+            .map_or(crate::message::SecurityLevel::Open, |identity| {
+                identity.security_level
+            });
     }
 
     // Re-encode with server stamps applied.
@@ -163,24 +165,58 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
 
     // No correlation_id — route based on payload type.
     match &msg.payload {
-        BusPayload::Request(ref request) => {
+        BusPayload::Request(request) => {
             // Intercept Subscribe/Unsubscribe — handled server-side via EventRouter.
             // These never reach the daemon dispatch.
-            match request {
-                crate::protocol::IpcRequest::Subscribe { filters } => {
+            match &**request {
+                crate::protocol::IpcRequest::Subscribe { filters, from } => {
+                    // Events carry the identity's private data: the same
+                    // clearance every daemon request but the locked-state
+                    // ones needs (plan D1). Delivery re-checks it per event.
+                    let needed = crate::message::SecurityLevel::Authenticated;
+                    let permitted = {
+                        let conns = state.connections.read().await;
+                        let registry = state.registry.read().await;
+                        conns
+                            .get(&sender_conn_id)
+                            .and_then(|c| registry.lookup(&c.static_key))
+                            .is_some_and(|identity| {
+                                identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
+                            })
+                    };
+                    if msg.security_level < needed || !permitted {
+                        let response = crate::protocol::IpcResponse::error(
+                            403,
+                            "subscribing needs Authenticated clearance (an agent, events:read); unlock from this client first",
+                        );
+                        reply_direct(state, sender_conn_id, &msg, &response).await;
+                        return;
+                    }
                     let sender_tx = {
                         let conns = state.connections.read().await;
                         conns.get(&sender_conn_id).map(|c| c.tx.clone())
                     };
-                    let response = if let Some(tx) = sender_tx {
-                        match state
-                            .event_router
-                            .write()
-                            .subscribe(sender_conn_id, filters, tx)
-                        {
-                            Ok(count) => crate::protocol::IpcResponse::ok(&serde_json::json!({
-                                "subscribed": true, "filter_count": count,
-                            })),
+                    let response = if state.journal.get().is_none() {
+                        crate::protocol::IpcResponse::error(503, "host starting — retry shortly")
+                    } else if let Some(tx) = sender_tx {
+                        let subscribed = state.event_router.write().subscribe(
+                            sender_conn_id,
+                            filters,
+                            tx.clone(),
+                        );
+                        match subscribed {
+                            // The reply goes first, then the stream: the
+                            // client is waiting on the reply before reading
+                            // its event queue.
+                            Ok(count) => {
+                                let response =
+                                    crate::protocol::IpcResponse::ok(&serde_json::json!({
+                                        "subscribed": true, "filter_count": count,
+                                    }));
+                                reply_direct(state, sender_conn_id, &msg, &response).await;
+                                super::stream::start(state, sender_conn_id, tx, *from);
+                                return;
+                            }
                             Err(reason) => crate::protocol::IpcResponse::error(400, reason),
                         }
                     } else {
@@ -241,18 +277,13 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
                 "uncorrelated response without correlation_id, dropping"
             );
         }
-        BusPayload::Event(ref event) => {
-            // Events from the daemon's bridge task: route via EventRouter.
-            // Only the daemon agent may send events. Other sources are rejected.
-            if !is_daemon(state, sender_conn_id).await {
-                tracing::warn!(
-                    conn_id = sender_conn_id,
-                    "event from non-daemon source — rejected"
-                );
-                return;
-            }
-            let (delivered, dropped) = state.event_router.read().deliver(event);
-            tracing::debug!(delivered, dropped, "event routed via EventRouter");
+        BusPayload::Event(_) => {
+            // Events come only from the host's journal, each connection's
+            // own stream (`stream`); no connection may send one.
+            tracing::warn!(
+                conn_id = sender_conn_id,
+                "event frame from a connection — rejected"
+            );
         }
         BusPayload::Media(_) => {
             // Compressed video frame from the daemon. Fan out DIRECTLY to every
@@ -277,12 +308,14 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             // to the community's events. Fan out to all of them (noted: media
             // has no finer topic than the event subscription in Step 3), minus
             // the daemon's own connection so it never receives its own frames.
+            // Only subscribers whose key holds `Authenticated` now (plan D1).
+            let cleared = state.cleared_connections().await;
             let recipients = state.event_router.read().subscribed_conn_ids();
             let conns = state.connections.read().await;
             let mut delivered = 0usize;
             let mut evicted = 0usize;
             for conn_id in recipients {
-                if conn_id == sender_conn_id {
+                if conn_id == sender_conn_id || !cleared.contains(&conn_id) {
                     continue;
                 }
                 if let Some(conn) = conns.get(&conn_id) {
@@ -332,6 +365,7 @@ async fn reply_direct(
         security_level: request.security_level,
         verified_sender_name: Some(DAEMON_AGENT_NAME.to_string()),
         verified_sender_key: None,
+        verified_sender_conn: None,
         agent_type: None,
         community_scope: None,
         payload: BusPayload::Response(body),

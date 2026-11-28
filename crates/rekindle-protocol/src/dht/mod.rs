@@ -1,14 +1,12 @@
 pub mod account;
+pub mod backend;
 pub mod community;
-pub mod conversation;
 pub mod friends;
-pub mod log;
 pub mod mailbox;
 pub mod pool;
+pub mod prekeys;
 pub mod profile;
 pub mod route_imports;
-pub mod schema;
-pub mod short_array;
 
 use crate::error::ProtocolError;
 
@@ -20,3 +18,9 @@ pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolErr
     key.parse()
         .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))
 }
+
+#[cfg(test)]
+mod contested_tests;
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

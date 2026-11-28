@@ -69,7 +69,7 @@ to add someone is to know their public key out of band.
 
 Click a friend in the buddy list to open a chat window. Type a
 message and press **Enter**. The first message between you and a
-friend triggers a Signal Protocol X3DH handshake (this happens
+friend triggers a Signal Protocol PQXDH handshake (this happens
 automatically and takes a moment); subsequent messages are
 end-to-end encrypted with the Double Ratchet. You'll see message
 delivery status in the bottom-right of each message bubble: **Sending

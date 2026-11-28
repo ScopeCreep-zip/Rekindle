@@ -31,6 +31,17 @@ pub fn channel() -> (PresenceStartSender, PresenceStartReceiver) {
     tokio::sync::mpsc::unbounded_channel()
 }
 
+/// Ask the supervisor to start `community_id`'s presence poll (from the
+/// records hand-over, once per community per unlock).
+pub(crate) fn request(ctx: &DaemonContext, community_id: &str) {
+    let request = PresenceStartRequest {
+        community_ids: vec![community_id.to_string()],
+    };
+    if ctx.presence_start_tx.send(request).is_err() {
+        tracing::warn!(community = %community_id, "presence supervisor is gone — no roster");
+    }
+}
+
 /// Drain start requests and spawn one poll per community.
 pub async fn run_supervisor(ctx: Arc<DaemonContext>, mut rx: PresenceStartReceiver) {
     tracing::info!("presence supervisor started");

@@ -6,6 +6,7 @@
 //! These are the v2.0 types for flat SMPL governance. They do NOT re-export
 //! v1.0 types from rekindle-protocol — those are replaced, not wrapped.
 
+pub mod activity;
 pub mod analytics;
 pub mod attachment;
 pub mod base64_bytes;
@@ -14,24 +15,35 @@ pub mod channel_keys;
 pub mod config;
 pub mod cross_device_sync;
 pub mod dht_layout;
+pub mod disappearing;
 pub mod display;
+pub mod display_catch_up;
 pub mod domains;
+pub mod dto;
 pub mod error;
 pub mod event;
 pub mod expression;
+pub mod format_chars;
+pub mod friend;
+pub mod friend_code;
 pub mod friend_store;
 pub mod game_server;
 pub mod governance;
+pub mod group_dm;
 pub mod id;
+pub mod image_kind;
+pub mod intent;
 pub mod invite;
+pub mod join_refusal;
 pub mod key_format;
 pub mod lamport;
 pub mod link_preview;
-pub mod mek;
 pub mod member;
 pub mod message;
 pub mod notification;
+pub mod passphrase;
 pub mod permissions;
+pub mod preferences;
 pub mod presence;
 pub mod search;
 pub mod subscription_events;

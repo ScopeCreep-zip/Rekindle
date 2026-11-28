@@ -7,12 +7,51 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The DM or group DM an event is about (plan E7.1's `context`), shaped
+/// as `TypingContext`'s two conversation arms. A community channel's
+/// timer is its `ChannelUpdated` governance op, not this.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConversationContext {
+    /// A 1:1 DM with `peer_key`.
+    Dm { peer_key: String },
+    /// A group DM (plan E2.6).
+    GroupDm { group_id: String },
+}
+
+impl ConversationContext {
+    /// The context of conversation `id` (the peer's key, or the group's
+    /// id) of `kind`; `None` for a channel.
+    #[must_use]
+    pub fn of(id: &str, kind: crate::message::ConversationType) -> Option<Self> {
+        match kind {
+            crate::message::ConversationType::Dm => Some(Self::Dm {
+                peer_key: id.to_owned(),
+            }),
+            crate::message::ConversationType::GroupDm => Some(Self::GroupDm {
+                group_id: id.to_owned(),
+            }),
+            crate::message::ConversationType::Channel => None,
+        }
+    }
+
+    /// The peer's key, or the group's id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Dm { peer_key } => peer_key,
+            Self::GroupDm { group_id } => group_id,
+        }
+    }
+}
+
 /// Channel message lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ChannelMessageEvent {
     /// A new message was posted to a community channel.
     ///
-    /// Triggered by: gossip `MessageNotification`, DHT `ValueChange` on channel log.
+    /// Triggered by: the Host's read of the author's channel outbox (`M`/4).
     /// Body is populated by the SubscriptionManager enrichment stage if the
     /// MEK for this channel is cached. If not, `body: None` and the TUI
     /// shows a placeholder until the MEK arrives.
@@ -25,11 +64,29 @@ pub enum ChannelMessageEvent {
         timestamp: u64,
         /// Decrypted plaintext body. None if MEK unavailable at emission time.
         body: Option<String>,
-        /// Parent message sequence for threaded replies.
-        reply_to_sequence: Option<u64>,
+        /// The message id of the parent this one replies to.
+        reply_to_message_id: Option<String>,
+        /// The original author's pseudonym when the post is a forward (plan
+        /// E3.3 forwards): the value the stored row's
+        /// `forwarded_from_author` holds and history serves, so a live
+        /// forward renders as one before any reload. `None` otherwise.
+        forwarded_from_author: Option<String>,
+        /// That author as the community names them: the display form a
+        /// sender's header shows for that member (the member list's name,
+        /// the verified card's else the short fingerprint), never the raw
+        /// key. `None` when the post is not a forward.
+        forwarded_from_name: Option<String>,
+        /// The D26 gate hid the post (an automod `BlurContent` match): it is
+        /// stored with `automod_blurred` and every frontend renders it
+        /// blurred.
+        automod_blurred: bool,
+        /// The post was stored without its body, and why (`body` is
+        /// `None`): never "waiting for its key", which a held post is.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        undecryptable: Option<crate::dto::channel_message::Undecryptable>,
     },
     /// A message was edited.
-    /// Triggered by: gossip `ControlPayload::MessageEdited`.
+    /// Triggered by: an edit entry in its author's record (plan E3.3).
     Edited {
         community: String,
         channel: String,
@@ -38,16 +95,78 @@ pub enum ChannelMessageEvent {
         /// New decrypted body after edit. None if MEK unavailable.
         body: Option<String>,
     },
-    /// A message was deleted.
-    /// Triggered by: gossip `ControlPayload::MessageDeleted`.
+    /// A message was deleted for members (plan E3.3 E4).
+    /// Triggered by: a delete entry in its author's record, or a merged
+    /// moderator `AdminDelete` (M4).
     Deleted {
         community: String,
         channel: String,
         message_id: String,
+        /// The moderator who removed it, shown as "removed by"; `None` for
+        /// its author's own delete.
+        removed_by: Option<String>,
+    },
+    /// An author's channel outbox reaches a seq no read of ours reached
+    /// (plan E3.3, D23 "Gaps": loss is never silent): the author's entries
+    /// through `through_seq` may be missing from `channel`. The Host stored
+    /// the gap row (`messages.history_gap_through`) in every channel of the
+    /// community we read, and publishes one event per channel; every window
+    /// shows the marker where it falls, as the stored history would, without
+    /// a reload. None infers a gap itself.
+    /// Triggered by: a departure's outbox head no bounded gap read reached.
+    ChannelHistoryGap {
+        community: String,
+        channel: String,
+        /// The author whose outbox reaches the seq (hex pseudonym key).
+        sender_pseudonym: String,
+        /// The author's chain seq the gap reaches.
+        through_seq: u64,
+    },
+    /// A read reached the author's outbox head (plan E3.3, D23): the gap
+    /// rows of `sender_pseudonym` through `through_seq` were removed in every
+    /// channel of `community`, as the history now holds what they stood for.
+    /// Every window drops those markers.
+    /// Triggered by: an outbox read reaching a departure's head.
+    ChannelHistoryGapClosed {
+        community: String,
+        sender_pseudonym: String,
+        through_seq: u64,
+    },
+    /// Our own post changed delivery state (plan E3.1 E2c): `sent` when
+    /// its slot of the channel record settled at consensus, `failed` when
+    /// the network superseded our page without it (a resend merges it
+    /// back). Every window renders the state it names.
+    /// `awaiting_key` while the post waits for the channel's key (plan
+    /// E3.2 S7l, F9-1), `queued` when it is released to its write.
+    /// Triggered by: the record pool settling the post's write; a post
+    /// composed before the key, its release, or its key deadline.
+    ChannelSendStatus {
+        community: String,
+        channel: String,
+        message_id: String,
+        state: crate::message::SendState,
+        /// Why a `failed` post was not sent, as the user reads it; `None`
+        /// when the network superseded its page.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// An attachment of a channel finished downloading to the place the
+    /// user chose; the row now reads `downloaded`.
+    /// Triggered by: the Host's `AttachmentDownload`.
+    AttachmentDownloaded {
+        community: String,
+        channel: String,
+        attachment_id: String,
+    },
+    /// A custom emoji's or sticker's bytes are in the chunk cache.
+    /// Triggered by: the Host's eager expression fetch.
+    ExpressionAssetReady {
+        community: String,
+        expression_id: String,
     },
     /// A new DM was received from a peer.
     ///
-    /// Triggered by: `DmPayload::DirectMessage` via `InboundHandler::on_dm`.
+    /// Triggered by: an inbound 1:1 `DirectMessage` via `InboundHandler::on_direct`.
     /// DM bodies are always available because DMs are decrypted at the
     /// Signal session layer before reaching SubscriptionManager.
     DirectMessageReceived {
@@ -73,31 +192,87 @@ pub enum ChannelMessageEvent {
         server_message_id: Option<String>,
         /// The message this replies to, if any.
         reply_to_id: Option<String>,
+        /// Whether we sent it: a window renders it as ours. True for the
+        /// group DM log's echo of our own send (`rekindle-dm`, until E2.6);
+        /// a 1:1 message received from a peer is never ours (E5.3 adds our
+        /// other devices' sends).
+        is_own: bool,
     },
 
-    /// A direct message we sent was acknowledged by the peer.
-    DirectMessageAcknowledged {
-        /// The send timestamp in milliseconds, which is what a DM's
-        /// local echo is keyed on — a DM has no server-assigned id, so
-        /// this is a `u64` rather than the `String` that
-        /// `server_message_id` uses for channel messages.
-        message_id: u64,
-        /// The conversation the acknowledged message belongs to — the
-        /// peer's identity key for a 1:1 DM — so a frontend can route the
-        /// ack to that conversation's view.
+    /// Our own direct message, exactly as stored, once it is committed to
+    /// the outbox with its local echo (plan E2.5, E6.11): every window of
+    /// the conversation upserts it by `message.message_id`, so a send no
+    /// window optimistically rendered (or whose window reloaded its history
+    /// during the send's review) still shows. Distinct from
+    /// [`Self::DirectMessageReceived`] by type: it is never a peer's words,
+    /// so no consumer can notify for it or count it unread.
+    /// Triggered by: `dm::send_dm` committing our message.
+    DirectMessageSent {
+        /// The conversation it belongs to (the peer's identity key).
         conversation_id: String,
+        /// The client id of the message it replies to, if any.
+        reply_to_id: Option<String>,
+        /// The stored row, as `DmHistory` answers it.
+        message: Box<crate::dto::dm::DmMessage>,
     },
 
-    /// We were invited into a direct conversation — a per-peer DM log,
-    /// or a group DM.
-    DirectConversationInvited {
-        /// Who invited us.
-        from: String,
-        /// The conversation's DHT record.
-        record_key: String,
-        /// The initiator's pseudonym within the conversation.
-        initiator_pseudonym: String,
-        is_group: bool,
+    /// A direct message we sent changed delivery state, the one send-state
+    /// event (D22's vocabulary, plan E2.5): `queued` once committed to the
+    /// outbox, `sent` when a frame left this device, `delivered` from the
+    /// peer's `DmAck`, `read` from its `ReadUpTo`, `failed` past its
+    /// deadline or wedged (with Retry and Discard). Every window renders
+    /// the state it names; none infers it.
+    /// Triggered by: every state change of the message's outbox row.
+    DmSendStatus {
+        /// The conversation it belongs to (the peer's identity key).
+        conversation_id: String,
+        /// The message's client id, as `DmMessage.messageId` and
+        /// `server_message_id` name it.
+        client_id: String,
+        state: crate::message::SendState,
+        /// `Some` while the send went unanswered and is being retried (the
+        /// message reads "Not delivered yet — still trying", with the
+        /// attempt count and the next attempt's time); `None` on every
+        /// other change, so the first answer (`delivered`) clears it.
+        retry: Option<crate::message::DeliveryRetry>,
+    },
+
+    /// The peer's DM chain retired entries we never fetched: every entry
+    /// of their stream to us up to and including `through_seq` is gone
+    /// (plan E2.5). Every window shows one gap marker in the conversation
+    /// where it falls; none infers a gap itself.
+    /// Triggered by: the inbound stream finding its next unread entry
+    /// already retired from the peer's chain.
+    DmHistoryGap {
+        /// The peer (and the conversation: a 1:1 DM is keyed by its peer).
+        peer_key: String,
+        /// The last sequence of the peer's stream that is lost.
+        through_seq: u64,
+    },
+
+    /// The disappearing-message timer of a DM or group DM changed (plan
+    /// E7.1), set by us (`set_by` our key) or a member: every window shows
+    /// a timeline notice and its timer control takes `seconds` (0 = off).
+    /// Triggered by: our `DisappearingSet`, or a received
+    /// `DisappearingTimer` (0x0160).
+    DisappearingTimerChanged {
+        context: ConversationContext,
+        seconds: u32,
+        set_by: String,
+        /// The stored notice row's client id (`messages.timer_notice_seconds`),
+        /// which a later `MessagesExpired` names.
+        client_id: String,
+        /// When it was set (ms), the notice row's timestamp.
+        timestamp: i64,
+    },
+
+    /// Messages of a DM or group DM reached their `expire_at` and were
+    /// deleted (plan E7.1): every window drops them, and the shell
+    /// withdraws any OS notification it showed for them.
+    /// Triggered by: the Host's expiry task.
+    MessagesExpired {
+        context: ConversationContext,
+        client_ids: Vec<String>,
     },
 
     /// Something happened that should bring a conversation to the

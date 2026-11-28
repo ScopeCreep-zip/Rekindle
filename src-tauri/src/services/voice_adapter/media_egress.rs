@@ -39,13 +39,13 @@ fn sign(
         &signing_key,
         community_id,
         &hex::encode(pseudonym.0),
+        rekindle_utils::random::id_bytes_16_from(state.rng.as_ref()),
         &bytes,
     );
     // Point to point: a receiver must never gossip it on.
     signed.ttl = 0;
-    Ok(rekindle_codec::capnp_envelope::encode_signed_envelope(
-        &signed,
-    ))
+    rekindle_codec::capnp_envelope::encode_signed_envelope(&signed)
+        .map_err(|error| format!("encode signed video envelope: {error}"))
 }
 
 /// Sign a video-plane control envelope and queue it for every peer on the

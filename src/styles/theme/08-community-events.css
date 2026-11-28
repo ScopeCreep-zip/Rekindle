@@ -4,14 +4,14 @@
   }
 
   .channel-voice-join-btn:hover {
-    background: var(--color-xfire-online);
+    background: var(--color-xfire-success-fill);
   }
 
   /* Timeout duration dropdown */
   .timeout-select {
     width: auto;
     min-width: 80px;
-    background: var(--color-xfire-bg-input);
+    background-color: var(--color-xfire-bg-input);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 3px;
     padding: 2px 6px;
@@ -77,27 +77,39 @@
     pointer-events: none;
   }
 
+  /* The polite and assertive regions (plan E7.3) lay their toasts out as
+   * one stack. */
+  .toast-region {
+    display: contents;
+  }
+
+  .toast-message {
+    cursor: pointer;
+    text-align: left;
+  }
+
   .toast-item {
     padding: 8px 14px;
     border-radius: 4px;
     font-size: 12px;
-    color: white;
+    color: var(--color-xfire-text-on-fill);
     pointer-events: auto;
     cursor: pointer;
     max-width: 320px;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: anywhere;
   }
 
   /* Architecture §32 a11y — toast slide-in only for motion-tolerant users. */
   @media (prefers-reduced-motion: no-preference) {
-    .toast-message {
+    .toast-item {
       animation: toast-slide-in var(--motion-duration-base) ease-out;
     }
   }
 
-  .toast-success { background: color-mix(in srgb, var(--color-xfire-online) 90%, black); }
-  .toast-error { background: color-mix(in srgb, var(--color-xfire-busy) 90%, black); }
-  .toast-info { background: color-mix(in srgb, var(--color-xfire-accent) 90%, black); }
+  .toast-success { background: var(--color-xfire-success-fill); }
+  .toast-error { background: var(--color-xfire-danger); }
+  .toast-info { background: var(--color-xfire-accent); }
 
   /* Confirm dialog */
   .confirm-dialog-body {
@@ -108,11 +120,31 @@
     color: var(--color-xfire-text);
   }
 
+  /* The dialog footer (frontend wiring guide: Cancel and the primary
+     action side by side on one row, primary last, right-aligned). A modal
+     form's `.modal-footer` is this same footer (plan GC2: New Group's
+     Create sat full-width under Cancel because `.modal-footer` had no rule
+     and `.form-btn-primary` is a block of `width: 100%`). */
   .confirm-dialog-actions,
-  .consent-dialog-actions {
+  .consent-dialog-actions,
+  .modal-footer {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     gap: 8px;
+  }
+
+  .modal-footer {
+    margin-top: 12px;
+  }
+
+  /* In a footer the primary keeps its label's width, last in the row. */
+  .confirm-dialog-actions .form-btn-primary,
+  .consent-dialog-actions .form-btn-primary,
+  .modal-footer .form-btn-primary {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 8px 16px;
   }
 
   /* Tab bar */
@@ -133,7 +165,7 @@
     color: var(--color-xfire-text-dim);
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--motion-duration-fast), border-color var(--motion-duration-fast);
   }
 
   .buddy-tab:hover {
@@ -141,7 +173,7 @@
   }
 
   .buddy-tab-active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     border-bottom-color: var(--color-xfire-accent);
   }
 
@@ -165,7 +197,7 @@
     display: flex;
     height: 22px;
     align-items: stretch;
-    background: color-mix(in srgb, var(--color-xfire-bg-dark) 90%, white);
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 90%, var(--color-xfire-overlay));
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     flex-shrink: 0;
   }
@@ -179,19 +211,19 @@
     padding: 0 10px;
     height: 100%;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast);
   }
 
   .menu-bar-item:hover,
   .menu-bar-item:focus-visible {
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     color: var(--color-xfire-text);
     outline: none;
   }
 
   /* Kobalte sets data-expanded="" on the trigger while its menu is open. */
   .menu-bar-item[data-expanded] {
-    background: color-mix(in srgb, white 12%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 12%, transparent);
     color: var(--color-xfire-text);
   }
 
@@ -201,7 +233,7 @@
     left: 0;
     min-width: 160px;
     background: var(--color-xfire-bg-panel);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+    border: 1px solid var(--color-xfire-border);
     border-radius: 4px;
     box-shadow: var(--shadow-elevated);
     z-index: var(--z-context-menu);
@@ -214,7 +246,7 @@
     color: var(--color-xfire-text);
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.1s;
+    transition: background var(--motion-duration-fast);
   }
 
   .menu-dropdown-item:hover {
@@ -233,11 +265,11 @@
   }
 
   .menu-dropdown-item-danger {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   .menu-dropdown-item-danger:hover {
-    background: color-mix(in srgb, var(--color-xfire-busy) 20%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-busy) 12%, transparent);
   }
 
   /* Identity bar two-row layout */
@@ -249,6 +281,10 @@
   }
 
   .identity-bar-status-msg {
+    /* Shrinks to its text, so a skinned info bar's backing (E7.7.7) sits
+       under the message only and the bar's bitmap shows beside it. */
+    align-self: flex-start;
+    max-width: 100%;
     font-size: 10px;
     color: var(--color-xfire-text-dim);
     font-style: italic;
@@ -257,7 +293,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
+    text-align: left;
   }
 
   .identity-bar-status-msg:hover {
@@ -290,37 +327,6 @@
     flex: 1;
   }
 
-  /* ─── Notification overrides ─── */
-  .notification-override-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    border-radius: 4px;
-  }
-
-  .notification-override-label {
-    font-size: 12px;
-    color: var(--color-xfire-text-secondary);
-  }
-
-  .notification-override-select {
-    /* Reuse form-select styling */
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
-
-  .notification-override-select:focus {
-    border-color: var(--color-xfire-accent);
-  }
-
   /* ─── Reply preview ─── */
   .reply-preview {
     display: flex;
@@ -333,7 +339,7 @@
   }
 
   .reply-preview-icon {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -349,7 +355,7 @@
   .reply-preview-sender {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
 
@@ -374,7 +380,7 @@
     gap: 6px;
     padding: 3px 8px;
     margin-bottom: 2px;
-    background: color-mix(in srgb, white 4%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
     border-left: 2px solid var(--color-xfire-accent);
     border-radius: 0 3px 3px 0;
     font-size: 10px;
@@ -382,13 +388,19 @@
     cursor: pointer;
   }
 
+  /* A reply whose parent this window does not hold: said in italics, in the
+   * snippet's own colours (plan G-replies). */
+  .reply-snippet-missing {
+    font-style: italic;
+  }
+
   .reply-snippet:hover {
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .reply-snippet-sender {
     font-weight: 600;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Reactions ─── */
@@ -406,18 +418,18 @@
     padding: 2px 6px;
     border-radius: 10px;
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
     cursor: pointer;
     font-size: 12px;
-    transition: background 0.15s, border-color 0.15s;
+    transition: background var(--motion-duration-fast), border-color var(--motion-duration-fast);
   }
 
   .reaction-chip:hover {
-    background: color-mix(in srgb, white 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   .reaction-chip-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
     border-color: var(--color-xfire-accent);
   }
 
@@ -433,7 +445,7 @@
 
 
   .reaction-chip-active .reaction-chip-count {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Emoji picker ─── */
@@ -451,7 +463,7 @@
     flex-direction: column;
     padding: 6px;
     background: var(--color-xfire-bg-panel);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+    border: 1px solid var(--color-xfire-border);
     border-radius: 6px;
     box-shadow: var(--shadow-elevated);
   }

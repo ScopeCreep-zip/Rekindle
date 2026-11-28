@@ -12,25 +12,52 @@
 //! - `identity.rs`  — IdentityCreate, Show, Export, Rotate, Destroy, Wipe
 //! - `community.rs` — CommunityCreate, Join, Leave, List, Info
 //! - `channel.rs`   — ChannelList, Create, Delete, Update, Send, History
-//! - `social.rs`    — Friend*, Dm*
+//! - `friends.rs`   — Friend*, Dm*, SessionReset* (over `operations::friend`/`dm`)
 //! - `governance.rs` — Role*, moderation (Kick/Ban/Unban/Timeout), invites
-//! - `keys.rs`      — Mek*, PrekeyReplenish
-//! - `presence.rs`  — PresenceSet, GamePresence*, VoiceJoin, VoiceLeave
+//! - `keys.rs`      — Mek*
+//! - `own.rs`       — our presence, profile, game, audit log, links
+//! - `voice.rs`     — VoiceJoin, VoiceLeave
 //! - `admin.rs`     — Agent*, Policy, Subscribe, Unsubscribe, Network*
 
 mod admin;
+mod attachments;
+mod audit;
+mod automod;
 pub(crate) mod channel;
+mod channel_admin;
+mod channel_message;
+mod channel_message_ops;
 pub(crate) mod community;
-mod context;
+mod community_profile;
+pub(crate) mod context;
+mod events;
+mod expressions;
+mod friends;
+mod game_servers;
 pub(crate) mod governance;
 mod identity;
 mod in_flight;
 mod keys;
 mod lifecycle;
-mod presence;
+mod local_search;
+mod member_block;
+mod onboarding;
+mod own;
+mod own_activity;
+pub(crate) mod own_favourite_servers;
+mod own_game;
+mod own_game_invite;
+mod own_game_launch;
+mod own_idle;
+mod pins;
+mod quick_wipe;
+mod rich_messaging;
 mod router;
-mod social;
+pub(crate) mod shell;
 mod status;
+mod transfers;
+mod unread;
+mod voice;
 
 use std::sync::Arc;
 
@@ -38,38 +65,27 @@ use parking_lot::RwLock;
 
 use rekindle_transport::{crypto::mek::MekCache, Session, TransportNode};
 
-use crate::state::keystore::SigningKeyHandle;
+use crate::state::signing_key::SigningKeyHandle;
 use rekindle_ipc::registry::ClearanceRegistry;
 
-pub(crate) use context::{state_error, transition};
-pub(crate) use lifecycle::teardown_unlocked;
+pub(crate) use context::{runtime_refused, state_error, transition};
+pub(crate) use lifecycle::{daemon_overlays, daemon_release_communities, daemon_teardown};
 pub use router::dispatch;
 
 use crate::host::policy::PolicyConfig;
 
-/// Who sent the request being dispatched, as the bus server verified it.
-///
-/// Every field is server-stamped from the sender's connection; nothing
-/// here comes from the client's own claims.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallerContext {
-    /// The agent name the sender's Noise key is registered under, if any.
-    pub verified_name: Option<String>,
-    /// The sender's Noise static key, proven by the handshake.
-    pub static_key: Option<[u8; 32]>,
-    /// The clearance the request was sent at.
-    pub level: rekindle_ipc::message::SecurityLevel,
-}
+/// Who sent the request being dispatched (`host::api::Caller`).
+pub use rekindle_ipc::Caller;
 
 /// Build a governance adapter over this request's context.
 ///
 /// One definition rather than one per dispatch module: the body is
 /// three tokens, which is exactly the size at which copies stop looking
 /// worth converging and start drifting.
-pub(crate) fn adapter(
-    ctx: &DaemonContext,
-) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
-    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
+pub(crate) fn adapter(ctx: &DaemonContext) -> crate::host::adapters::governance::HostGovernance {
+    crate::host::adapters::governance::HostGovernance::new(
+        ctx.this.upgrade().expect("a context in use is alive"),
+    )
 }
 
 /// Shared daemon context accessible by all dispatch handlers.
@@ -96,10 +112,33 @@ pub(crate) fn adapter(
 /// Rule: if the critical section contains `await`, use `tokio::sync`. Otherwise,
 /// use `parking_lot`.
 pub struct DaemonContext {
+    /// Daemon or shell (`host::runtime::HostMode`).
+    pub mode: crate::host::HostMode,
     /// The transport node (Veilid bridge). None before Veilid is started.
     pub transport: RwLock<Option<Arc<TransportNode>>>,
-    /// The user's session (loaded from session.json). None if no identity.
+    /// The unlocked identity's session, projected from its stores at
+    /// unlock (`host::session`). None while locked.
     pub session: Arc<RwLock<Option<Session>>>,
+    /// The data root: the identity registry and every identity's files.
+    pub root: rekindle_db::paths::DataRoot,
+    /// Each open window's Infoview subject (plan E7.15, IV4).
+    pub(crate) infoview: crate::host::infoview::OpenViews,
+    /// The Servers view's held game invites (plan E7.2 G3).
+    pub(crate) servers: crate::host::servers::ServersState,
+    /// The skin helper, trial, shown grounds and each skin window's
+    /// selection and signals (`host::skin::SkinState`).
+    pub(crate) skin: crate::host::skin::SkinState,
+    /// The unlocked identity's database (plan D1), shared with the
+    /// handler and the inbox scan. Empty while locked.
+    pub db: Arc<rekindle_db::DbHandle>,
+    /// The unlocked identity's vault. Empty while locked.
+    pub vault: rekindle_vault::VaultHandle,
+    /// This device's vault (plan E3.2 S7d-keys.7, ADR 0022 rule 4): the
+    /// per-community device op keys, never exported. Empty while locked.
+    pub device_vault: rekindle_vault::VaultHandle,
+    /// The one wrong-passphrase counter per identity (U1.9): unlock,
+    /// import, rotate and export count on it.
+    pub identity_attempts: std::sync::Arc<rekindle_idempotency::attempts::AttemptLimiter<String>>,
     /// MEK cache shared with transport operations.
     pub mek_cache: Arc<RwLock<MekCache>>,
     /// Ed25519 signing key, held in memory after unlock. None when locked.
@@ -108,46 +147,69 @@ pub struct DaemonContext {
     pub signing_key: Arc<RwLock<Option<SigningKeyHandle>>>,
     /// Current daemon lifecycle state.
     pub lifecycle: Arc<crate::daemon::DaemonLifecycle>,
-    /// Path to session.json for persistence.
-    pub session_path: std::path::PathBuf,
     /// Agent identity and clearance registry (shared with server).
     pub registry: Arc<tokio::sync::RwLock<ClearanceRegistry>>,
+    /// The registry names of the unlocked identity's clients
+    /// (`daemon::clients`), removed again at lock.
+    pub unlocked_clients: parking_lot::Mutex<Vec<String>>,
     /// Active authorization policy.
     pub policy: RwLock<PolicyConfig>,
     /// Path to the policy config directory (for reload).
     pub config_dir: std::path::PathBuf,
-    /// BLAKE3 hash-chained audit logger for all dispatched IPC requests.
-    pub audit: parking_lot::Mutex<Option<crate::state::audit::AuditLogger>>,
+    /// The unlocked identity's tamper-evident audit chain
+    /// (`host::audit`); `None` while locked, when nothing is written.
+    pub audit_chain: std::sync::Arc<crate::host::audit::ChainSlot>,
     /// Consolidated inbound event manager (watch + gossip + poll → dedup → emit).
-    /// None before unlock/resume. Created during Resuming transition.
-    pub subscriptions: RwLock<Option<rekindle_transport::SubscriptionManager>>,
+    /// None before unlock/resume. Created during Resuming transition. The
+    /// transport's inbound handler holds the same slot, so the gossip and
+    /// value changes it receives reach the manager installed here.
+    pub subscriptions: std::sync::Arc<RwLock<Option<rekindle_transport::SubscriptionManager>>>,
     /// Consolidated outbound broadcast manager (gossip mesh + rate limiting).
     /// None before unlock/resume. Created during Resuming transition.
     pub broadcast_mgr: RwLock<Option<rekindle_transport::BroadcastManager>>,
-    /// Watch channel sender for notifying the IPC server when the subscription
-    /// event source becomes available (on unlock) or unavailable (on lock).
-    /// The server awaits `.changed()` and starts/stops its delivery task.
+    /// The host's one intent gate (plan D3.3), counting wrong passphrase
+    /// proofs on `identity_attempts`.
+    pub intents: std::sync::Arc<crate::host::gate::HostGate>,
+    /// The undo offers of actions that ran (plan E1.1).
+    pub undo: crate::host::undo::UndoCache,
+    /// The host's one event journal (plan D3.2): every event a frontend
+    /// observes is published here, and every subscriber reads from it.
+    pub journal: std::sync::Arc<rekindle_events::SessionJournal>,
+    /// The host's wall clock (plan C9.2): every timestamp the host and its
+    /// engines write or compare. `SystemClock` in production.
+    pub clock: Arc<dyn rekindle_utils::Clock>,
+    /// The host's generator for the ids, keys and jitter it and its engines
+    /// mint (plan C9.2). `OsRandom` in production; AEAD nonces never come
+    /// from it.
+    pub rng: Arc<dyn rekindle_utils::RandomSource>,
+    /// The user's input idle time (plan E2.B): `rekindle_idle::OsIdle` in
+    /// production.
+    pub idle: Arc<dyn rekindle_utils::IdleSource>,
+    /// The transport's subscription event source while unlocked: the
+    /// forwarder (`daemon::event_forward`) journals what it carries.
     pub event_watch_tx: tokio::sync::watch::Sender<
         Option<
             tokio::sync::broadcast::Sender<rekindle_types::subscription_events::SubscriptionEvent>,
         >,
     >,
-    /// Pending community join completions. Keyed by governance_key.
-    /// Shared between DaemonContext (writer: handle_join registers) and
-    /// DaemonHandler (writer: on_gossip completes on JoinAccepted receipt).
-    /// Tuple: (oneshot sender carrying slot_index, creation instant for cleanup).
-    pub pending_joins: Arc<
-        parking_lot::Mutex<
-            std::collections::HashMap<
-                String,
-                (tokio::sync::oneshot::Sender<u32>, std::time::Instant),
-            >,
-        >,
+    /// Each community's compiled automod rules, which the channel pipeline
+    /// rebuilds when the rules' fingerprint changes (`rekindle_channel::automod`).
+    pub automod_rules: parking_lot::RwLock<
+        std::collections::HashMap<String, Arc<rekindle_channel::AutoModCompiledCache>>,
     >,
-    /// Per-community runtime state backing the governance adapter —
-    /// cached CRDT `GovernanceState` and open-record tracking. Not
-    /// persisted; see `daemon::community_runtime`.
-    pub community_runtime: Arc<crate::daemon::community_runtime::CommunityRuntimeMap>,
+    /// The Host's one community store (plan E3.1, `host::community`): the
+    /// cached CRDT `GovernanceState`, leases, roster and roles, over the
+    /// map the GUI's `AppState.communities` shares in Shell mode.
+    pub communities: Arc<crate::host::community::CommunityStore>,
+    /// The downloads running now, by attachment id (plan E7.2 G12):
+    /// `TransferStop` aborts one.
+    pub transfers: Arc<crate::host::transfers::TransferRuns>,
+    /// The unlocked identity's chunk caches (plan E3.1 E3c,
+    /// `host::adapters::files`).
+    pub files: Arc<rekindle_files::FileCacheStore>,
+    /// Read markers advanced but not yet written (plan E3.1, D25: ≤ 30 s
+    /// write-behind; `host::read_markers`).
+    pub read_markers: crate::host::read_markers::PendingMarkers,
     /// Departure-triggered MEK rotations, queued for the worker that
     /// owns the daemon's `Arc<DaemonContext>`.
     ///
@@ -165,12 +227,12 @@ pub struct DaemonContext {
     pub gossip_tx: crate::daemon::gossip::GossipSender,
     pub mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
     /// The unlock's scope (plan C4): every task that needs the unlocked
-    /// identity runs in it, and `teardown_unlocked` shuts it down first.
-    /// `None` while locked. A panic in one of its tasks exits the daemon
-    /// (`ExitReason::HandlerPanic`), as a handler panic does.
+    /// identity runs in it, and `host::unlock::teardown` shuts it down
+    /// first. `None` while locked. A panic in one of its tasks exits the
+    /// daemon (`ExitReason::HandlerPanic`) and ends the GUI's session.
     pub unlock_scope: RwLock<Option<Arc<rekindle_lifecycle::SessionScope>>>,
     /// Per-community children of the unlock scope (the presence poll),
-    /// keyed by governance key. The polls hold an `Arc<DaemonContext>` and
+    /// keyed by anchor key. The polls hold an `Arc<DaemonContext>` and
     /// write presence rows, so leaving a community shuts its scope down
     /// and locking shuts them all down with the unlock scope.
     pub community_scopes: parking_lot::Mutex<
@@ -179,11 +241,14 @@ pub struct DaemonContext {
     /// Asks the presence supervisor to start polls. Sent on unlock,
     /// once the signing key and broadcast manager exist.
     pub presence_start_tx: crate::daemon::presence_adapter::supervisor::PresenceStartSender,
-    /// The unlock's own status, written by its one STATUS publisher
-    /// (plan C7.8c); Online at unlock.
-    pub status: Arc<RwLock<rekindle_presence::UserStatusKind>>,
-    /// Wakes that publisher.
-    pub status_wake: Arc<tokio::sync::Notify>,
+    /// Our own presence, one owner on both hosts (plan E1.1): status,
+    /// message, game and idle state, and the unlock's STATUS publisher.
+    pub(crate) own_presence: crate::host::own_presence::OwnPresence,
+    /// The voice channel we are in on `rekindled` (plan E3.4 S8-pre,
+    /// toward E4.1): recorded by `VoiceJoin`, taken by `VoiceLeave`, a
+    /// leave of its community and the lock; our beat reads it. A shell's
+    /// voice session is its own until E4.1 (`ShellHooks::session_presence`).
+    pub(crate) own_voice: crate::host::own_voice::OwnVoice,
     /// The dispatch lane (`IpcRequest::lane`): `Write` requests hold it
     /// shared, `Exclusive` ones alone. A lock, unlock or identity change
     /// therefore never overlaps a write that may hold the signing key.
@@ -193,6 +258,50 @@ pub struct DaemonContext {
     /// The daemon-wide shutdown signal and the reason it was raised.
     /// Shared with the unlock scope's panic hook.
     pub shutdown: Arc<crate::daemon::shutdown::Shutdown>,
+    /// The GUI's side of an unlock (`host::shell_hooks`); `None` in
+    /// `rekindled`.
+    pub shell: Option<Arc<dyn crate::host::shell_hooks::ShellHooks>>,
+    /// A panicked unlock task's name, for the shell's teardown worker
+    /// (`host::unlock::run_panic_teardowns`).
+    pub unlock_panics: tokio::sync::mpsc::UnboundedSender<String>,
+    /// The real-app suite's one-shot (`host::webdriver`): the next received
+    /// channel post's ciphertext is damaged before it is opened.
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    pub(crate) damage_next_post: std::sync::atomic::AtomicBool,
+    /// The receive gate's friend authority over the unlocked identity's
+    /// database (plan E2.1); `None` while locked.
+    pub friend_store: RwLock<Option<Arc<rekindle_db::SqliteFriendStore>>>,
+    /// The 1:1 replay guard and session-reset state of the unlocked
+    /// identity (plan E2.1), cleared at lock.
+    pub friend_stores: rekindle_transport::operations::friend::FriendStores,
+    /// Our creations waiting on their co-creators (plan E3.2 S7s.3),
+    /// memory only (ADR 0011), dropped at lock.
+    pub(crate) pending_creations: crate::host::adapters::governance::PendingCreations,
+    /// The unlocked identity's outbox (plan E2.5, D22).
+    pub(crate) outbox: crate::host::adapters::outbox::OutboxSlot,
+    /// One lock per community a join is in flight for (review RV7 M3).
+    pub(crate) community_joins: crate::host::adapters::governance::JoinLocks,
+    /// Each watched friend's profile lease (it carries the watch), and the
+    /// friends whose watch failed, polled instead (plan E2.1).
+    pub(crate) friend_watches: crate::host::adapters::friends::FriendWatches,
+    /// Our profile record's session lease, so a rotation releases it.
+    pub(crate) own_profile_lease: Arc<parking_lot::Mutex<Option<rekindle_records::lease::LeaseId>>>,
+    /// Our prekey record's session lease (plan E2.4), set by the own-records
+    /// stage; the maintenance and the refills write through it.
+    pub(crate) own_prekey_lease: Arc<parking_lot::Mutex<Option<rekindle_records::lease::LeaseId>>>,
+    /// Held by every writer of our prekey record (the own-records stage
+    /// from its reconcile through its later slots, each maintenance pass,
+    /// and a rotation from its set until the unlock ends): a reconcile
+    /// compares the record with our rows, so one running beside a rotation
+    /// would put the old set back over the new one (E2.B finding F9).
+    pub(crate) own_prekey_writes: Arc<tokio::sync::Mutex<()>>,
+    /// The game stage, running only while detection is on (plan E7.2).
+    pub(crate) game: crate::host::game_stage::GameControl,
+    /// The network indicator's smoothed bars (plan E7.2), shared with the
+    /// inbound handler that samples them; `NetworkStatus` reads them.
+    pub(crate) network_strength: Arc<rekindle_events::strength::Strength>,
+    /// This context, for work that outlives a call (`HostFriends::owned`).
+    pub(crate) this: std::sync::Weak<DaemonContext>,
 }
 
 impl DaemonContext {
@@ -255,14 +364,23 @@ impl DaemonContext {
             .unwrap_or_default()
     }
 
-    /// Publish one `SubscriptionEvent`, if anything is listening.
-    ///
-    /// Send failure means every receiver has dropped, which is the
-    /// normal state with no clients attached — not an error.
+    /// Journal one `SubscriptionEvent` for every subscriber (plan D3.2),
+    /// through the Host's one journal entry (`host::journal_entry`).
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
-        let guard = self.subscriptions.read();
-        if let Some(manager) = guard.as_ref() {
-            let _ = manager.event_sender().send(event);
-        }
+        crate::host::journal_entry::publish(&self.journal, event);
     }
+
+    /// Publish `event` as one of the session's standing events (a security
+    /// alert): every subscriber that connects later is handed it too, until
+    /// the identity locks.
+    pub fn publish_standing(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
+        self.journal.publish_standing(event);
+    }
+}
+
+/// The duress passphrase's wipe, for the host's intent gate (plan E7.1).
+pub(crate) async fn quick_wipe_on_duress(
+    ctx: &DaemonContext,
+) -> rekindle_ipc::protocol::IpcResponse {
+    quick_wipe::on_duress(ctx).await
 }

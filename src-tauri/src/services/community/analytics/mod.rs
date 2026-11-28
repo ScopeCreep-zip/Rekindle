@@ -104,20 +104,3 @@ fn log_voice_event(
         Ok(())
     });
 }
-
-/// Append a member-leave event to the analytics log.
-pub fn log_member_leave(pool: &Db, owner_key: &str, community_id: &str, pseudonym: &str) {
-    let owner = owner_key.to_string();
-    let cid = community_id.to_string();
-    let pse = pseudonym.to_string();
-    let ts = rekindle_utils::timestamp_ms_i64();
-    crate::db_helpers::db_fire(pool, "member leave event", move |conn| {
-        conn.execute(
-            "INSERT INTO community_member_leaves \
-             (owner_key, community_id, pseudonym_key, left_at) \
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![owner, cid, pse, ts],
-        )?;
-        Ok(())
-    });
-}

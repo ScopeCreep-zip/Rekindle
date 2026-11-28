@@ -1,9 +1,19 @@
-//! Key management dispatch handlers: MekList, MekRotate, MekRequest, PrekeyReplenish.
+//! Key management dispatch handlers: PrekeyStatus, MekList, MekRotate,
+//! MekRequest.
 
 use crate::daemon::DaemonState;
 use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
+
+/// This device's prekey record and its upkeep (plan E2.4).
+pub(crate) async fn handle_prekey_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let host = crate::host::adapters::friends::HostFriends::of(ctx);
+    super::friends::answer(rekindle_transport::operations::prekeys::status(&host).await)
+}
 
 pub(crate) fn handle_mek_list(
     ctx: &DaemonContext,
@@ -13,7 +23,14 @@ pub(crate) fn handle_mek_list(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let snapshot = ctx.mek_cache.read().snapshot(community);
+    // `community` is what the user typed, a name or an anchor key; the
+    // cache is keyed by the anchor key, so a name matched nothing
+    // (live A/B finding 10).
+    let membership = match ctx.resolve_community(community) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    let snapshot = ctx.mek_cache.read().snapshot(&membership.anchor);
     IpcResponse::ok(&snapshot)
 }
 
@@ -88,7 +105,7 @@ pub(crate) fn handle_mek_request(
     // (§A3/P1.3). Only that peer replies; the requester re-sends with an
     // incremented index if nobody does, which is the desktop's
     // `spawn_mek_request_with_retry` loop.
-    let request = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+    let request = rekindle_codec::community::envelope::CommunityEnvelope::control(
         rekindle_codec::community::envelope::ControlPayload::RequestMEK {
             channel_id: channel.to_string(),
             needed_generation: generation,
@@ -96,46 +113,11 @@ pub(crate) fn handle_mek_request(
             cascade_index: 0,
         },
     );
-    crate::daemon::gossip::send(&ctx.gossip_tx, &membership.governance_key, &request);
+    crate::daemon::gossip::send(&ctx.gossip_tx, &membership.anchor, &request);
 
     IpcResponse::ok(&serde_json::json!({
         "requested": true,
         "channel": channel,
         "generation": generation,
     }))
-}
-
-pub(crate) async fn handle_prekey_replenish(
-    ctx: &DaemonContext,
-    state: DaemonState,
-) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let signing_key = match ctx.require_signing_key() {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    let profile_key = match ctx.require_session(|s| s.identity.profile_dht_key.clone()) {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-
-    match rekindle_transport::operations::mek::replenish_prekeys(
-        &transport,
-        &profile_key,
-        &signing_key,
-    )
-    .await
-    {
-        Ok(count) => IpcResponse::ok(&serde_json::json!({
-            "replenished": true,
-            "bytes_written": count,
-        })),
-        Err(e) => IpcResponse::error(500, format!("prekey replenish: {e}")),
-    }
 }

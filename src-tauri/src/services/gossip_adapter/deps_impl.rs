@@ -21,11 +21,15 @@ impl GossipDeps for GossipAdapter {
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        state_helpers::identity_secret(&self.state)
+        state_helpers::identity_secret_bytes(&self.state)
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         state_helpers::login_scope_or_closed(&self.state)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::clone(&self.state.rng)
     }
 
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {
@@ -75,42 +79,18 @@ impl GossipDeps for GossipAdapter {
         );
     }
 
-    async fn record_delivery(
-        &self,
-        message_id: &str,
-        community_id: &str,
-        recipient: &str,
-        status: &str,
-    ) {
-        let mid = message_id.to_string();
-        let cid = community_id.to_string();
-        let rp = recipient.to_string();
-        let st = status.to_string();
-        let now = rekindle_utils::timestamp_secs();
-        crate::db_helpers::db_fire(&self.pool, "record_delivery", move |conn| {
-            conn.execute(
-                "INSERT INTO message_delivery (message_id, community_id, recipient_pseudonym, status, attempts, last_attempt_at) \
-                 VALUES (?1, ?2, ?3, ?4, 1, ?5) \
-                 ON CONFLICT(message_id, recipient_pseudonym) \
-                 DO UPDATE SET status=excluded.status, attempts=attempts+1, last_attempt_at=excluded.last_attempt_at",
-                rusqlite::params![mid, cid, rp, st, now.cast_signed()],
-            )?;
-            Ok(())
-        });
-    }
-
     async fn resolve_peer_route_from_dht(
         &self,
         community_id: &str,
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>> {
-        crate::services::community::routes::resolve_member_route(
-            &self.state,
-            &self.pool,
-            community_id,
-            peer_pseudonym,
-        )
-        .await
+        // A send to the peer's route failed: the Host forgets its cached
+        // route and re-reads the peer's `M`/6 once, pinned and verified
+        // (plan E3.4 S4).
+        let governance = crate::state_helpers::host_governance(&self.state).ok()?;
+        governance
+            .reread_member_route(community_id, peer_pseudonym)
+            .await
     }
 
     fn resolve_gate(&self) -> &rekindle_gossip::ResolveGate {
@@ -126,7 +106,7 @@ impl GossipDeps for GossipAdapter {
 /// `services/community/gossip.rs` constructs this per call (cheap —
 /// just clones two Arcs) and hands it to the crate's orchestrators.
 pub fn build_adapter(state: &std::sync::Arc<crate::state::AppState>) -> Option<GossipAdapter> {
-    // GossipAdapter needs only state + pool; the handle is dropped.
-    let (_app_handle, pool) = state_helpers::app_context(state)?;
-    Some(GossipAdapter::new(std::sync::Arc::clone(state), pool))
+    // Only while the app is up and an identity's database is open.
+    state_helpers::app_context(state)?;
+    Some(GossipAdapter::new(std::sync::Arc::clone(state)))
 }

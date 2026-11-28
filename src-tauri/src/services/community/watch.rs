@@ -1,4 +1,6 @@
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 use rekindle_sync::watch::WatchManager;
 
@@ -30,10 +32,10 @@ pub fn mark_watch_inactive(state: &Arc<AppState>, record_key: &str) {
 }
 
 /// Every community record key the watch tier tracks, labelled for
-/// logging: top-level governance + member registry + channel logs from
+/// logging: top-level governance + member registry + segment records from
 /// `open_community_records`, PLUS Plate Gate segment-N governance /
-/// registry records and channel-segment records from the merged
-/// governance state (§15.4). The presence scan reads segment
+/// registry records from the merged governance state (§15). A channel
+/// has no record (plan E3.3). The presence scan reads segment
 /// registries, so they must be watched like segment 0 — otherwise a
 /// >255-member community's presence updates only surface on the poll
 /// backstop. De-duped (segment lists can overlap the top-level keys).
@@ -46,33 +48,19 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
                 out.push((label, key));
             }
         };
-    if let Some(ref gov_key) = community.open_community_records.governance_key {
+    if let Some(ref gov_key) = community.open_community_records.anchor {
         push("governance", gov_key.clone(), &mut seen);
     }
     if let Some(ref reg_key) = community.open_community_records.registry_key {
         push("registry", reg_key.clone(), &mut seen);
     }
-    for ch_key in &community.open_community_records.channel_keys {
-        push("channel", ch_key.clone(), &mut seen);
-    }
-    // Channel logs come straight from governance-synced state, not from
-    // the opened-records list: a channel discovered in a governance
-    // rebuild is a watch target *before* anything has opened it, and
-    // `watch_record` now heals the open itself. Routing these through
-    // `open_community_records.channel_keys` (as an overwrite in
-    // `apply_governance_rebuild_result` once did) made that list lie
-    // about what was open, which disabled `open_new_channel_records`'
-    // already-opened skip check.
-    for ch_key in community.channel_log_keys.values() {
-        push("channel", ch_key.clone(), &mut seen);
+    for seg_key in &community.open_community_records.segment_keys {
+        push("segment", seg_key.clone(), &mut seen);
     }
     if let Some(gov) = community.governance_state.as_ref() {
         for seg in &gov.segments {
-            push("segment-governance", seg.governance_key.clone(), &mut seen);
+            push("segment-governance", seg.anchor.clone(), &mut seen);
             push("segment-registry", seg.registry_key.clone(), &mut seen);
-        }
-        for csr in gov.channel_segment_records.values() {
-            push("channel-segment", csr.record_key.clone(), &mut seen);
         }
     }
     out
@@ -118,38 +106,44 @@ pub async fn hold_unheld_records(
     let Ok(pool) = state_helpers::record_pool(state) else {
         return;
     };
-    let (governance_key, registry_key, registry_writer) = {
+    let (anchor, registry_key, registry_writer) = {
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else {
             return;
         };
         (
-            cs.governance_key.clone(),
+            cs.anchor.clone(),
             cs.member_registry_key.clone(),
             cs.registry_owner_keypair
-                .clone()
-                .or_else(|| cs.slot_keypair.clone())
-                .and_then(|w| w.parse::<veilid_core::KeyPair>().ok()),
+                .as_ref()
+                .map(|key| key.as_str())
+                .or(cs.slot_keypair.as_deref())
+                .map(|key| Zeroizing::new(key.to_owned())),
         )
     };
     let mut leases = rekindle_records::lease::CommunityLeases::default();
     for record_key in pending {
         // Leaving the community stops this before the next borrow; a borrow
         // in flight runs on the pool's scope, so none is dropped (C4.L1).
-        let Ok(parsed) = record_key.parse::<veilid_core::RecordKey>() else {
-            continue;
-        };
         let is_registry = registry_key.as_deref() == Some(record_key.as_str());
-        let writer = is_registry.then(|| registry_writer.clone()).flatten();
+        let writer = registry_writer
+            .as_ref()
+            .filter(|_| is_registry)
+            .map(|key| key.as_str());
         let Some(acquired) = stop
-            .run_until_cancelled(pool.acquire(&parsed, writer))
+            .run_until_cancelled(pool.acquire(&record_key, writer, OpenIntent::Hold))
             .await
         else {
             break;
         };
         match acquired {
-            Ok(lease) if governance_key.as_deref() == Some(record_key.as_str()) => {
-                leases.governance = Some(lease);
+            Ok(lease) if anchor.as_deref() == Some(record_key.as_str()) => {
+                // The anchor cannot change after its GenesisCert (ADR 0011):
+                // the keepalive re-opens it and never inspects it (plan KA1).
+                if let Err(e) = pool.mark_immutable(lease) {
+                    tracing::debug!(community = %community_id, error = %e, "anchor lease not held");
+                }
+                leases.anchor = Some(lease);
             }
             Ok(lease) if is_registry => leases.registry = Some(lease),
             Ok(lease) => leases.segments.push(lease),
@@ -166,8 +160,9 @@ pub async fn hold_unheld_records(
     }
 }
 
-/// Watch every record the community holds (governance, registry, channels,
-/// segments) on its lease. Overflow pages are never watched: the primary
+/// Watch every record the community holds but its anchor (registry,
+/// segments; a channel has no record, plan E3.3) on its lease. The anchor is immutable, and a
+/// governance change arrives through the watch ring (plan E3.2 S7). Overflow pages are never watched: the primary
 /// subkey's watch re-follows the chain. A watch rides a held lease, so the
 /// record is open with its sticky writer and there is nothing to re-open;
 /// a watch that dies is re-armed by the record pool.
@@ -180,10 +175,8 @@ pub async fn watch_community_records(
         let communities = state.communities.read();
         let community = communities.get(community_id).ok_or("community not found")?;
         let held = &community.leases;
-        held.governance
+        held.registry
             .iter()
-            .chain(held.registry.iter())
-            .chain(held.channels.values())
             .chain(held.segments.iter())
             .copied()
             .collect()

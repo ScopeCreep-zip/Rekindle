@@ -99,25 +99,23 @@ fn main() {
 
             capnpc::CompilerCommand::new()
                 .src_prefix("../../schemas")
-                .file("../../schemas/message.capnp")
+                .file("../../schemas/direct.capnp")
                 .file("../../schemas/identity.capnp")
+                .file("../../schemas/chain.capnp")
                 .file("../../schemas/presence.capnp")
                 .file("../../schemas/friend.capnp")
                 .file("../../schemas/voice.capnp")
                 .file("../../schemas/voice_packet.capnp")
                 .file("../../schemas/media_feedback.capnp")
                 .file("../../schemas/account.capnp")
-                .file("../../schemas/conversation.capnp")
                 // Phase 2 of `.claude/plans/community-envelope-capnp-migration.md`:
                 // typed community envelope + governance + per-variant schemas.
-                .file("../../schemas/community_member.capnp")
-                .file("../../schemas/community_thread.capnp")
                 .file("../../schemas/community_game_server.capnp")
-                .file("../../schemas/community_mek.capnp")
-                .file("../../schemas/community_message.capnp")
                 .file("../../schemas/community_event.capnp")
                 .file("../../schemas/community_governance.capnp")
                 .file("../../schemas/community_envelope.capnp")
+                .file("../../schemas/member_record.capnp")
+                .file("../../schemas/governance_op.capnp")
                 .run()
                 .expect("Cap'n Proto schema compilation failed");
 

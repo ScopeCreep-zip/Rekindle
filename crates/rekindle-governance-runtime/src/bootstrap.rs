@@ -1,403 +1,474 @@
-//! Phase 18.e — bootstrap pipeline.
+//! The bootstrap exchange of the self-sovereign join (plan E3.2, ADR 0011).
 //!
-//! Ported from `src-tauri/src/services/community/bootstrap.rs`.
-//! Builds the `ControlPayload::BootstrapResponse` envelope that a joiner
-//! receives during community join: snapshot governance entries + online
-//! member list + wrapped owner keypair + wrapped per-channel MEKs +
-//! re-encrypted recent messages.
-//!
-//! No DHT writes, no mesh broadcast — purely a read-side assembly task.
-
-use std::collections::HashMap;
+//! The join works from the DHT with nobody online; when the inviter is
+//! online, this exchange is how it learns of the joiner. The joiner sends
+//! `BootstrapRequest{joinerPseudonym, anchor, memberJoined}` as a bare
+//! `app_call` to the inviter's current route, read from its `M`/6 by the
+//! join (`crate::member_routes::read_member_route`), once its `MemberJoined`
+//! is durable on its member record. The request's authority is that
+//! signed op, carried with its `OpRef` (an inviter answers within the
+//! app_call reply window, too short for a DHT read): the inviter checks
+//! it against the `OpRef`, verifies it and merges it in memory first: an
+//! op the merge does not admit (no member and no pending knock results) is
+//! never stored, since the request names no sender and its op lives in the
+//! joiner's own record, where any reader fetches it; an admitted op is
+//! stored and merged, and only a joiner who is then a member of the
+//! merged state is answered, with `bootstrapResponseV2{anchor, frontier}`:
+//! where the joiner's walk of the op DAG continues. It ships no keys (D11;
+//! the joiner asks for the community key by `RequestMEK`), no messages and
+//! no checkpoint hint (the joiner asks for that before its walk, by
+//! `checkpointHintRequest`).
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_governance::state::GovernanceState;
-use rekindle_secrets::derive;
-use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_secrets::keys::MediaEncryptionKey;
-use rekindle_secrets::mek::wrap_mek;
-use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::mek::ChannelMekDelivery;
-use rekindle_types::member::MemberInfo;
-use rekindle_types::message::{BootstrapChannelMessages, BootstrapMessage};
+use rekindle_types::governance::OpRef;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+use crate::op_log::{self, HeldOp};
 
-const RECENT_MESSAGES_PER_CHANNEL: i64 = 50;
+/// The `app_call` reply cap a response stays under (Veilid's
+/// `MAX_APP_CALL_Q_MESSAGE_LEN`).
+pub const MAX_BOOTSTRAP_RESPONSE_LEN: usize = 32_768;
 
-/// Architecture §13.4 — synthesize a typed `GovernanceEntry` snapshot
-/// from the merged `GovernanceState` for a bootstrap response. The
-/// joiner re-merges these entries; CRDT idempotence (Almeida 2016 §3)
-/// makes a snapshot indistinguishable from the live DHT reads they'll
-/// also perform.
-fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEntry> {
-    let mut entries: Vec<GovernanceEntry> = Vec::new();
-
-    if let Some(metadata) = &governance.metadata {
-        entries.push(GovernanceEntry::CommunityMeta {
-            name: Some(metadata.name.clone()),
-            description: metadata.description.clone(),
-            icon_hash: metadata.icon_hash.clone(),
-            banner_hash: metadata.banner_hash.clone(),
-            lamport: metadata.lamport,
-        });
-    }
-
-    for (channel_id, channel) in &governance.channels {
-        entries.push(GovernanceEntry::ChannelCreated {
-            channel_id: *channel_id,
-            name: channel.name.clone(),
-            channel_type: channel.channel_type.clone(),
-            record_key: channel.record_key.clone(),
-            category_id: channel.category_id,
-            position: channel.position,
-            parent_voice_channel_id: channel.parent_voice_channel_id,
-            lamport: channel.created_lamport,
-        });
-    }
-
-    for (role_id, role) in &governance.roles {
-        entries.push(GovernanceEntry::RoleDefinition {
-            role_id: *role_id,
-            name: role.name.clone(),
-            permissions: role.permissions,
-            position: role.position,
-            color: role.color,
-            hoist: role.hoist,
-            mentionable: role.mentionable,
-            self_assignable: role.self_assignable,
-            exclusion_group: role.exclusion_group.clone(),
-            lamport: role.lamport,
-        });
-    }
-
-    for (member, role_ids) in &governance.role_assignments {
-        for role_id in role_ids {
-            entries.push(GovernanceEntry::RoleAssignment {
-                target: member.clone(),
-                role_id: *role_id,
-                lamport: 0,
-            });
-        }
-    }
-
-    for banned in &governance.bans {
-        entries.push(GovernanceEntry::BanEntry {
-            target: banned.clone(),
-            reason: None,
-            lamport: 0,
-        });
-    }
-
-    for (member, timeout) in &governance.timeouts {
-        entries.push(GovernanceEntry::TimeoutEntry {
-            target: member.clone(),
-            duration_seconds: timeout.duration_seconds,
-            reason: None,
-            started_at: timeout.started_at,
-            lamport: timeout.lamport,
-        });
-    }
-
-    for (category_id, category) in &governance.categories {
-        entries.push(GovernanceEntry::CategoryCreated {
-            category_id: *category_id,
-            name: category.name.clone(),
-            position: category.position,
-            lamport: category.created_lamport,
-        });
-    }
-
-    if let Some(onboarding) = &governance.onboarding {
-        entries.push(GovernanceEntry::OnboardingConfig {
-            enabled: onboarding.enabled,
-            mode: onboarding.mode.clone(),
-            default_channels: onboarding.default_channels.clone(),
-            questions: onboarding.questions.clone(),
-            welcome_message: onboarding.welcome_message.clone(),
-            guide_steps: onboarding.guide_steps.clone(),
-            lamport: onboarding.lamport,
-        });
-    }
-
-    if let Some(welcome_screen) = &governance.welcome_screen {
-        entries.push(GovernanceEntry::WelcomeScreen {
-            description: welcome_screen.description.clone(),
-            channels: welcome_screen.channels.clone(),
-            lamport: welcome_screen.lamport,
-        });
-    }
-
-    for (invite_id, invite) in &governance.invites {
-        entries.push(GovernanceEntry::InviteCreated {
-            invite_id: *invite_id,
-            code_hash: invite.code_hash.clone(),
-            max_uses: invite.max_uses,
-            expires_at: invite.expires_at,
-            secrets_record_key: invite.secrets_record_key.clone(),
-            lamport: invite.created_lamport,
-        });
-    }
-
-    entries
+/// Who asks: the joiner's pseudonym and its `MemberJoined` (op #0, or a
+/// re-join's later op).
+#[derive(Debug, Clone)]
+pub struct BootstrapJoiner {
+    /// Hex of the joiner's community pseudonym.
+    pub pseudonym: String,
+    pub member_joined: OpRef,
+    /// The encoded signed op `member_joined` names.
+    pub member_joined_op: Vec<u8>,
+    /// The joiner's route, where the inviter delivers the community key
+    /// (D16).
+    pub route: Vec<u8>,
 }
 
-fn wrap_key_material(
-    sender_signing_key: &SigningKey,
-    joiner_pseudonym: &[u8; 32],
-    key_material: &[u8],
-) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    wrap_mek(sender_signing_key, joiner_pseudonym, key_material)
-        .map_err(|e| GovernanceRuntimeError::Crypto(format!("wrap bootstrap key material: {e}")))
+fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
+    GovernanceRuntimeError::Adapter(msg.into())
 }
 
-/// Build the encoded bytes of `ControlPayload::BootstrapResponse` for a
-/// joiner. Returns the Cap'n Proto-encoded envelope ready for transport.
-pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
+/// Our encoded answer to a `BootstrapRequest`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BootstrapAnswer {
+    /// `bootstrapResponseV2`: we merged the joiner's `MemberJoined`, and
+    /// the caller delivers it the community key (D16).
+    Frontier(Vec<u8>),
+    /// `bootstrapPartial` (S7c.8 (i)): we joined from a hint and have not
+    /// backfilled, so we vouch for no frontier and merged nothing; the
+    /// joiner asks another member (`crate::bootstrap_peers`).
+    Partial(Vec<u8>),
+    /// `bootstrapRefused` (plan E3.2 join step 5, IJ2): our merge does not
+    /// admit the joiner's `MemberJoined`, for the typed reason it names
+    /// (`JoinRefusal`). The answer itself, so every host forwards it as is
+    /// and none can drop the reason to a bare NAK.
+    Refused(Vec<u8>),
+    /// `RETRY_LATER` (`rekindle_types::message::CALL_RETRY_LATER`, plan
+    /// E3.2 JN1): the joiner's `MemberJoined` waits on a dep we hold not
+    /// and could not fetch yet, so we cannot judge it (BR1's vocabulary: a
+    /// call we cannot judge is no refusal). We merged and stored nothing;
+    /// the joiner retries (`bootstrap_peers`: `PeerRetryLater`). The answer
+    /// itself, so every host forwards it as is, never a bare NAK.
+    RetryLater(Vec<u8>),
+}
+
+/// Answer a joiner's `BootstrapRequest`: while we are partial, with
+/// `bootstrapPartial`; otherwise check its `MemberJoined` against the
+/// `OpRef`, verify it, merge it in memory, store it only when that merge
+/// admits it, then encode `bootstrapResponseV2`
+/// with our frontier.
+///
+/// The partial check runs first (plan E3.2 S7c.8 (i),
+/// [`crate::partial::is_partial`]): a community whose partial flag is set,
+/// or whose flag cannot be read (on the Host: no identity unlocked), is
+/// answered [`BootstrapAnswer::Partial`] before anything below is checked.
+///
+/// # Errors
+/// Past the partial check only: we are not in the community, the op is not
+/// the joiner's `MemberJoined` or does not match its `OpRef`, or the store
+/// or the encode failed. The caller NAKs. A join the merge does not admit is answered
+/// [`BootstrapAnswer::Refused`], one we cannot judge yet (a dep not
+/// fetchable) [`BootstrapAnswer::RetryLater`].
+pub async fn answer_bootstrap_request<D: GovernanceRuntimeDeps>(
     deps: &D,
-    community_id: &str,
-    governance_key: &str,
-    joiner_pseudonym_hex: &str,
+    anchor: &str,
+    joiner: &BootstrapJoiner,
+) -> Result<BootstrapAnswer, GovernanceRuntimeError> {
+    if crate::partial::is_partial(deps, anchor).await {
+        let payload = ControlPayload::BootstrapPartial {
+            anchor: anchor.to_owned(),
+        };
+        return encode_response(payload).map(BootstrapAnswer::Partial);
+    }
+    match build_bootstrap_response_v2(deps, anchor, joiner).await {
+        Ok(bytes) => Ok(BootstrapAnswer::Frontier(bytes)),
+        Err(GovernanceRuntimeError::JoinNotAdmitted(reason)) => {
+            tracing::warn!(
+                community = anchor,
+                %reason,
+                "bootstrap request refused: the merge does not admit the joiner"
+            );
+            encode_refusal(anchor, reason).map(BootstrapAnswer::Refused)
+        }
+        Err(GovernanceRuntimeError::JoinUnresolved { missing }) => {
+            tracing::info!(
+                community = anchor,
+                missing,
+                "bootstrap request unresolved: a dep of the joiner's op is not fetchable yet; answered retry-later"
+            );
+            Ok(BootstrapAnswer::RetryLater(
+                rekindle_types::message::CALL_RETRY_LATER.to_vec(),
+            ))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    joiner: &BootstrapJoiner,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    let joiner_pseudonym: [u8; 32] = hex::decode(joiner_pseudonym_hex)
-        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
-        .try_into()
-        .map_err(|_| {
-            GovernanceRuntimeError::InvalidPseudonymHex("joiner pseudonym must be 32 bytes".into())
-        })?;
-
-    let identity_secret = deps
-        .identity_secret()
-        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let bootstrap_signing_key =
-        derive::derive_community_pseudonym(&identity_secret, governance_key);
-
-    let gov_state = deps
-        .governance_state(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
-    let membership = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
-
-    let governance_entries = snapshot_governance_entries(&gov_state);
-
-    let online = deps.online_members(community_id);
-    let member_list: Vec<MemberInfo> = online
-        .into_iter()
-        .map(|m| MemberInfo {
-            pseudonym_key: m.pseudonym_hex,
-            display_name: String::new(),
-            role_ids: Vec::new(),
-            status: m.status,
-            timeout_until: None,
-            route_blob: Some(m.route_blob),
-            bio: None,
-            pronouns: None,
-            theme_color: None,
-            badges: Vec::new(),
-            last_seen: m.last_seen,
-        })
-        .collect();
-
-    let wrapped_owner_keypair = match membership.dht_owner_keypair.as_ref() {
-        Some(keypair_str) => wrap_key_material(
-            &bootstrap_signing_key,
-            &joiner_pseudonym,
-            keypair_str.as_bytes(),
-        )?,
-        None => Vec::new(),
+    deps.community_membership(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(anchor.to_owned()))?;
+    let author = &joiner.member_joined.author;
+    if hex::encode(author.0) != joiner.pseudonym {
+        return Err(adapter("bootstrap: the OpRef is not the joiner's"));
+    }
+    let op = op_log::held_from_encoded(&joiner.member_joined, joiner.member_joined_op.clone())
+        .ok_or_else(|| adapter("bootstrap: the op does not match the joiner's OpRef"))?;
+    let before = deps.governance_state(anchor).unwrap_or_default();
+    if !is_joiners_member_joined(&op, &joiner.member_joined, &before) {
+        return Err(adapter(
+            "bootstrap: the op is not the joiner's MemberJoined (op #0, or a re-join after its departure)",
+        ));
+    }
+    // Check, store and (on the last use) revoke under one lock (plan SU1):
+    // two joiners on one invite are admitted one after the other.
+    let admission = deps.admission_lock(anchor);
+    let admitting = admission.lock().await;
+    for dep in admitted_deps(deps, anchor, &op).await? {
+        deps.op_store().store_governance_op(anchor, &dep).await?;
+    }
+    let joined_op = op.clone();
+    op_log::receive_op(deps, anchor, op.encoded).await?;
+    let state = deps
+        .governance_state(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
+    if !holds_joined(&state, author) {
+        return Err(GovernanceRuntimeError::JoinNotAdmitted(
+            rekindle_types::join_refusal::JoinRefusal::NotAdmitted,
+        ));
+    }
+    revoke_if_used_up(deps, anchor, &joined_op, &state).await?;
+    drop(admitting);
+    let state = deps
+        .governance_state(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
+    let cert = deps
+        .genesis_cert(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
+    let set =
+        op_log::verify_held_with(deps, anchor, &deps.op_store().governance_ops(anchor).await?);
+    let payload = ControlPayload::BootstrapResponseV2 {
+        anchor: anchor.to_owned(),
+        frontier: op_log::frontier_refs(&cert, &state, &set),
     };
-
-    // The community key — the text plane's scope (plan D6). A voice
-    // channel's own key reaches the joiner when it joins that channel
-    // (architecture §10.5); nothing here substitutes one scope's key for
-    // another's.
-    let channel_meks: Vec<ChannelMekDelivery> = match rekindle_types::channel_keys::current_key(
-        &*deps.keys(),
-        community_id,
-        rekindle_types::channel_keys::KeyScope::Community,
-    ) {
-        Some((epoch, key)) => vec![ChannelMekDelivery {
-            channel_id: None,
-            generation: epoch.0,
-            wrapped_mek: wrap_key_material(
-                &bootstrap_signing_key,
-                &joiner_pseudonym,
-                &MediaEncryptionKey::from_bytes(*key, epoch.0).to_wire_bytes(),
-            )?,
-        }],
-        None => Vec::new(),
-    };
-
-    // Architecture §14.4 — recent messages snapshot per channel, each
-    // message re-encrypted under the historical MEK generation it was
-    // stored with.
-    let recent_messages = build_recent_messages(deps, community_id, &membership.channel_ids).await;
-
-    let payload = ControlPayload::BootstrapResponse {
-        governance_entries,
-        member_list,
-        channel_meks,
-        recent_messages,
-        wrapped_owner_keypair,
-    };
-    let envelope = CommunityEnvelope::Control(payload);
-    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&envelope)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap response: {e}")))?;
-
+    let bytes = encode_response(payload)?;
     deps.emit_event(GovernanceRuntimeEvent::BootstrapResponseBuilt {
-        community_id: community_id.to_string(),
-        joiner_pseudonym_hex: joiner_pseudonym_hex.to_string(),
+        community_id: anchor.to_owned(),
+        joiner_pseudonym_hex: joiner.pseudonym.clone(),
         bytes: bytes.len(),
     });
-
     Ok(bytes)
 }
 
-async fn build_recent_messages<D: GovernanceRuntimeDeps>(
+/// The deps `op` cites that we do not hold, when the merge of our op set,
+/// those deps (fetched by their `OpRef` and checked against its hash, as a
+/// rebuild fetches them) and `op`, all in memory, applies `op` and holds
+/// its author as a member or a pending one (ADR 0011: an
+/// `ApprovalRequired` join is a knock readers keep). Nothing is stored
+/// before this answers.
+///
+/// The merge judges `op` only once its whole causal past is held: when a
+/// dep it waits on (transitively) is neither held nor fetchable yet, it
+/// answers [`GovernanceRuntimeError::JoinUnresolved`] (plan E3.2 JN1), not
+/// a refusal, since a merge missing the op's past cannot apply it whatever
+/// its merit.
+///
+/// # Errors
+/// `op` waits on an unheld dep ([`GovernanceRuntimeError::JoinUnresolved`]:
+/// the caller answers retry later and stores nothing), the merge does not
+/// admit `op` (the caller refuses and stores nothing), no cert is pinned,
+/// or the op store failed. A dep fetch that fails leaves that dep unheld.
+async fn admitted_deps<D: GovernanceRuntimeDeps>(
     deps: &D,
-    community_id: &str,
-    channel_ids: &[String],
-) -> Vec<BootstrapChannelMessages> {
-    let mut out: Vec<BootstrapChannelMessages> = Vec::new();
-    for channel_id in channel_ids {
-        let rows = deps
-            .recent_channel_messages(community_id, channel_id, RECENT_MESSAGES_PER_CHANNEL)
-            .await;
-        if rows.is_empty() {
+    anchor: &str,
+    op: &HeldOp,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    let cert = deps
+        .genesis_cert(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
+    let mut held = deps.op_store().governance_ops(anchor).await?;
+    held.push(op.clone());
+    let logs = op_log::WalkLogCache::default();
+    let mut tried = std::collections::BTreeSet::new();
+    let mut fetched = Vec::new();
+    loop {
+        let set = op_log::verify_held_with(deps, anchor, &held);
+        let wanted: Vec<OpRef> = (set.missing.iter())
+            .filter(|r| tried.insert(r.op_hash))
+            .cloned()
+            .collect();
+        let before = fetched.len();
+        for op_ref in wanted {
+            // A dep we cannot fetch now (not yet on the replicas we reach,
+            // or the read failed) leaves the op unjudged: answered retry
+            // later below, never a refusal.
+            match op_log::fetch_held(deps, &op_ref, &logs).await {
+                Ok(Some(dep)) => {
+                    held.push(dep.clone());
+                    fetched.push(dep);
+                }
+                Ok(None) => {}
+                Err(e) => tracing::debug!(
+                    community = anchor,
+                    error = %e,
+                    "bootstrap: a dep of the joiner's op is not fetchable now"
+                ),
+            }
+        }
+        if fetched.len() > before {
             continue;
         }
-        if let Some(group) = build_channel_envelope(deps, community_id, channel_id, &rows) {
-            out.push(group);
+        let unheld = unheld_ancestry(op, &held);
+        if !unheld.is_empty() {
+            return Err(GovernanceRuntimeError::JoinUnresolved {
+                missing: unheld.len(),
+            });
         }
+        let outcome = rekindle_governance::merge::merge_outcome(&cert, &set.ops);
+        let state = &outcome.state;
+        let admitted = outcome.applied.contains(&op.hash)
+            && (holds_joined(state, &op.author) || state.pending_members.contains_key(&op.author));
+        return if admitted {
+            Ok(fetched)
+        } else {
+            let reason = (outcome.join_refusals.get(&op.hash).copied())
+                .unwrap_or(rekindle_types::join_refusal::JoinRefusal::NotAdmitted);
+            Err(GovernanceRuntimeError::JoinNotAdmitted(reason))
+        };
     }
-    out
 }
 
-/// Re-encrypt each row under exactly the generation of the channel's text
-/// key it was originally stored with (architecture §5.2 line 1100), current
-/// or historical. A row whose generation is not held is left out. The
-/// per-call HashMap caches each generation for the rest of the build.
-fn build_channel_envelope<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    channel_id: &str,
-    rows: &[crate::deps::RecentMessageRow],
-) -> Option<BootstrapChannelMessages> {
-    let provider = deps.keys();
-    let scope = provider.scope_for_text(
-        community_id,
-        rekindle_types::id::ChannelId::from_hex(channel_id)?,
-    );
-    let mut mek_by_gen: HashMap<u64, MediaEncryptionKey> = HashMap::new();
-    let mut entries: Vec<BootstrapMessage> = Vec::with_capacity(rows.len());
-
-    // Iterate oldest→newest so the joiner sees lamport-monotonic order
-    // despite the underlying query returning DESC.
-    for row in rows.iter().rev() {
-        let mek = match mek_by_gen.entry(row.mek_generation) {
-            std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
-            std::collections::hash_map::Entry::Vacant(v) => {
-                let Some(key) = provider.key(
-                    community_id,
-                    scope,
-                    rekindle_types::channel_keys::KeyEpoch(row.mek_generation),
-                ) else {
-                    continue;
-                };
-                v.insert(MediaEncryptionKey::from_bytes(*key, row.mek_generation))
-            }
-        };
-        let Ok(ciphertext) = mek.encrypt(row.body.as_bytes()) else {
+/// The hashes `op` waits on, directly or through held ops, that we do not
+/// hold (`held` includes `op`): its deps and its `prev` (a re-join's own
+/// chain), as `verify_cache::waits_on` reads them. A dep we hold but refused
+/// (quarantined) is held, so the merge judges the op without it.
+fn unheld_ancestry(
+    op: &HeldOp,
+    held: &[HeldOp],
+) -> std::collections::BTreeSet<rekindle_types::governance::OpHash> {
+    let by_hash: std::collections::HashMap<_, _> = held.iter().map(|h| (h.hash, h)).collect();
+    let mut seen = std::collections::BTreeSet::from([op.hash]);
+    let mut queue = vec![op];
+    let mut unheld = std::collections::BTreeSet::new();
+    while let Some(next) = queue.pop() {
+        let Ok(decoded) = rekindle_codec::governance_op::decode_op(&next.encoded) else {
             continue;
         };
-        entries.push(BootstrapMessage {
-            message_id: row.message_id.clone(),
-            sender_pseudonym: row.sender_pseudonym.clone(),
-            ciphertext,
-            mek_generation: row.mek_generation,
-            timestamp: row.timestamp,
-        });
+        let prev = decoded.op.prev.filter(|_| decoded.op.seq > 0);
+        let waits = (decoded.op.deps.iter().map(|d| d.op_hash)).chain(prev);
+        for hash in waits {
+            if !seen.insert(hash) {
+                continue;
+            }
+            match by_hash.get(&hash) {
+                Some(dep) => queue.push(dep),
+                None => {
+                    unheld.insert(hash);
+                }
+            }
+        }
     }
+    unheld
+}
 
-    if entries.is_empty() {
-        return None;
+/// When the join we just admitted (`joined`) takes the last use of an
+/// invite we created, revoke that invite citing it (plan SU1): every
+/// reader then refuses a join outside the revoke's causal past
+/// (`merge::gates::revoke_excluding`), so a join citing stale deps and
+/// ground to a lower hash can never displace the one we admitted. The
+/// revoke is queued (we answer within the `app_call` window); our frontier
+/// holds the join, so the revoke cites it. An invite already revoked has
+/// left `state.invites`, so a repeated request revokes nothing.
+///
+/// # Errors
+/// The revoke could not be authored or stored.
+async fn revoke_if_used_up<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    joined: &HeldOp,
+    state: &rekindle_governance::state::GovernanceState,
+) -> Result<(), GovernanceRuntimeError> {
+    use rekindle_types::governance::GovernanceEntry;
+    let Ok(decoded) = rekindle_codec::governance_op::decode_op(&joined.encoded) else {
+        return Ok(());
+    };
+    let GovernanceEntry::MemberJoined {
+        invite_proof: Some(proof),
+        ..
+    } = decoded.op.body
+    else {
+        return Ok(());
+    };
+    let me = deps
+        .community_membership(anchor)
+        .and_then(|m| m.my_pseudonym_hex);
+    let used_up = (state.invites.iter())
+        .filter(|(_, i)| i.code_hash == proof.code_hash)
+        .min_by_key(|(id, _)| **id)
+        .filter(|(_, i)| i.uses >= i.max_uses)
+        .filter(|(_, i)| me.as_deref() == Some(hex::encode(i.creator_pseudonym.0).as_str()))
+        .map(|(id, _)| *id);
+    if let Some(invite_id) = used_up {
+        crate::apply::write_entry_queued(
+            deps,
+            anchor,
+            GovernanceEntry::InviteRevoked { invite_id },
+        )
+        .await?;
+        tracing::info!(
+            community = anchor,
+            "a used-up invite revoked at its last admission"
+        );
     }
-    Some(BootstrapChannelMessages {
-        channel_id: channel_id.to_string(),
-        messages: entries,
+    Ok(())
+}
+
+/// Whether the merged `state` holds `author`'s `MemberJoined` as admitted:
+/// a current member, or one a later `MemberRemoved` removed (a kick is an
+/// op after the join, not a verdict on it: ADR 0011, D15). The kicked
+/// joiner learns its removal from the frontier walk, as every member learns
+/// an op; a refusal is kept for a `MemberJoined` no merge admits (an
+/// expired or forged invite, a banned author), which the joiner withdraws
+/// (`withdraw_refused_join`). Refusing a kicked joiner withdrew a join the
+/// removal had already ended, and that leave raced its re-join.
+fn holds_joined(
+    state: &rekindle_governance::state::GovernanceState,
+    author: &rekindle_types::id::PseudonymKey,
+) -> bool {
+    !state.bans.contains(author)
+        && (state.members.contains_key(author) || state.removed.contains_key(author))
+}
+
+/// Whether `op` is the joiner's `MemberJoined`: its op #0, or a re-join,
+/// a later `MemberJoined` of the same pseudonym by an author `state` does
+/// not hold as a member (it left or was removed; the merge's re-join rule,
+/// `gates::rejoined`, decides whether it stands). A member's community
+/// pseudonym is fixed per identity and community (`derive_community_pseudonym`),
+/// so a re-join continues its own op chain. A re-join we already merged
+/// (its `MemberJoined` reached us by gossip or the watch ring before its
+/// request, walk M87) holds the author as a member admitted by this very
+/// op (`MemberState::joined`), and is answered like any other: the request
+/// is idempotent, as the merge is.
+fn is_joiners_member_joined(
+    op: &op_log::HeldOp,
+    op_ref: &OpRef,
+    state: &rekindle_governance::state::GovernanceState,
+) -> bool {
+    let Ok(decoded) = rekindle_codec::governance_op::decode_op(&op.encoded) else {
+        return false;
+    };
+    let joined = matches!(
+        decoded.op.body,
+        rekindle_types::governance::GovernanceEntry::MemberJoined { .. }
+    );
+    joined
+        && op.author == op_ref.author
+        && op.seq == op_ref.author_seq
+        && (op.seq == 0 || (state.members.get(&op.author)).is_none_or(|m| m.joined.hash == op.hash))
+}
+
+/// Our `bootstrapRefused` answer for `anchor`: the merge does not admit
+/// the joiner's `MemberJoined`, for `reason` (plan E3.2 join step 5).
+///
+/// # Errors
+/// The encode failed.
+pub fn encode_refusal(
+    anchor: &str,
+    reason: rekindle_types::join_refusal::JoinRefusal,
+) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    encode_response(ControlPayload::BootstrapRefused {
+        anchor: anchor.to_owned(),
+        reason,
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rekindle_governance::state::GovernanceState;
-    use rekindle_types::id::ChannelId;
-
-    #[test]
-    fn snapshot_empty_governance_state_produces_empty_entries() {
-        let gov = GovernanceState::default();
-        assert!(snapshot_governance_entries(&gov).is_empty());
+fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(
+        &CommunityEnvelope::control(payload),
+    )
+    .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap response: {e}")))?;
+    if bytes.len() > MAX_BOOTSTRAP_RESPONSE_LEN {
+        return Err(GovernanceRuntimeError::Encoding(format!(
+            "bootstrap response is {} B, over the {MAX_BOOTSTRAP_RESPONSE_LEN} B app_call cap",
+            bytes.len()
+        )));
     }
-
-    #[test]
-    fn snapshot_includes_community_meta() {
-        let gov = GovernanceState {
-            metadata: Some(rekindle_governance::state::MetadataState {
-                name: "Test".into(),
-                description: Some("desc".into()),
-                icon_hash: None,
-                banner_hash: None,
-                lamport: 1,
-            }),
-            ..Default::default()
-        };
-        let entries = snapshot_governance_entries(&gov);
-        assert_eq!(entries.len(), 1);
-        assert!(matches!(entries[0], GovernanceEntry::CommunityMeta { .. }));
-    }
-
-    #[test]
-    fn snapshot_channels_become_channel_created_entries() {
-        let channel_id = ChannelId([1u8; 16]);
-        let mut channels = std::collections::HashMap::new();
-        channels.insert(
-            channel_id,
-            rekindle_governance::state::ChannelState {
-                name: "general".into(),
-                channel_type: "text".into(),
-                record_key: "rk".into(),
-                category_id: None,
-                position: 0,
-                topic: None,
-                forum_tags: None,
-                slowmode_seconds: None,
-                nsfw: None,
-                parent_voice_channel_id: None,
-                created_lamport: 5,
-            },
-        );
-        let gov = GovernanceState {
-            channels,
-            ..Default::default()
-        };
-        let entries = snapshot_governance_entries(&gov);
-        assert_eq!(entries.len(), 1);
-        match &entries[0] {
-            GovernanceEntry::ChannelCreated {
-                channel_id: cid,
-                name,
-                lamport,
-                ..
-            } => {
-                assert_eq!(cid, &channel_id);
-                assert_eq!(name, "general");
-                assert_eq!(*lamport, 5);
-            }
-            other => panic!("expected ChannelCreated, got {other:?}"),
-        }
-    }
+    Ok(bytes)
 }
+
+/// Ask the inviter at `inviter_route` (its member record `inviter_record`)
+/// for its frontier once our `MemberJoined` is durable, or, when it is
+/// partial, other members (`crate::bootstrap_peers`), and walk the op DAG
+/// from the frontier answered: the ops the walk found (the caller stores
+/// the new ones and rebuilds).
+///
+/// # Errors
+/// The inviter's `app_call` failed, the inviter refused
+/// ([`GovernanceRuntimeError::BootstrapRefused`]: the reply is neither a
+/// `bootstrapResponseV2` nor a `bootstrapPartial` for `anchor`), it was
+/// partial and no other member answered
+/// ([`GovernanceRuntimeError::BootstrapUnavailable`]), or the walk failed.
+pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    inviter_route: &[u8],
+    inviter_record: &str,
+    anchor: &str,
+    joiner: &BootstrapJoiner,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    let request = CommunityEnvelope::control(ControlPayload::BootstrapRequest {
+        joiner_pseudonym: joiner.pseudonym.clone(),
+        anchor: anchor.to_owned(),
+        member_joined: joiner.member_joined.clone(),
+        member_joined_op: joiner.member_joined_op.clone(),
+        joiner_route: joiner.route.clone(),
+    });
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&request)
+        .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap request: {e}")))?;
+    let me = joiner.member_joined.author.clone();
+    let candidates = crate::bootstrap_peers::candidates(
+        &deps.governance_state(anchor).unwrap_or_default(),
+        &me,
+        inviter_record,
+    );
+    let port = deps.record_port()?;
+    let call =
+        |route: Vec<u8>, payload: Vec<u8>| async move { deps.app_call_peer(&route, payload).await };
+    let frontier = crate::bootstrap_peers::find_frontier(
+        call,
+        &*port,
+        (anchor, deps.clock().now_ms()),
+        inviter_route,
+        &candidates,
+        &bytes,
+    )
+    .await?;
+    op_log::walk(deps, anchor, &frontier).await
+}
+
+#[cfg(test)]
+#[path = "bootstrap_tests.rs"]
+mod tests;

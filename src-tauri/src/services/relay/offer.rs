@@ -1,17 +1,17 @@
 //! Carol's side of Strand Relay (architecture §13.2 step 1-2):
 //! allocate a dedicated private route on Veilid distinct from her
 //! personal route, persist the (friend → route_id) mapping, and ship
-//! the route blob to the friend over `app_message`.
+//! the route blob to the friend in a `RelayOffer` (0x0130) by `app_call`,
+//! answered with a `RelayOfferAck` (0x0132) frame.
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, RelayOffer, RelayOfferAck, RelayWithdraw};
 
 use rekindle_db::Db;
 use rusqlite::OptionalExtension as _;
 
-use crate::db_helpers::{db_call, db_call_or_default};
-use crate::services::message_service;
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -31,8 +31,8 @@ enum Replaced {
 /// 2. Persist `(friend_public_key → route_id, blob)` so the inbound
 ///    `RelayEnvelope` dispatcher knows which friend is the intended target;
 ///    a route this replaces is released.
-/// 3. Send a `RelayOffer` via `app_message` so Bob can publish the blob in
-///    his pool.
+/// 3. Send a `RelayOffer` by `app_call` so Bob can publish the blob in
+///    his pool; his `RelayOfferAck` says whether he did.
 pub async fn volunteer_relay(
     state: &Arc<AppState>,
     pool: &Db,
@@ -51,7 +51,7 @@ pub async fn on_dead_relay_routes(state: &Arc<AppState>, pool: &Db, dead: &[veil
         return;
     }
     let dead_ids: Vec<String> = dead.iter().map(ToString::to_string).collect();
-    let friends: Vec<String> = db_call_or_default(pool, move |conn| {
+    let friends = db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT friend_public_key, relay_route_id FROM strand_relay_volunteered \
              WHERE owner_key = ?1",
@@ -64,9 +64,16 @@ pub async fn on_dead_relay_routes(state: &Arc<AppState>, pool: &Db, dead: &[veil
             .into_iter()
             .filter(|(_, route_id)| dead_ids.contains(route_id))
             .map(|(friend, _)| friend)
-            .collect())
+            .collect::<Vec<String>>())
     })
     .await;
+    let friends = match friends {
+        Ok(friends) => friends,
+        Err(e) => {
+            tracing::warn!(error = %e, "relay volunteers unreadable; dead relay routes not re-offered");
+            return;
+        }
+    };
     for friend in friends {
         match offer_relay(state, pool, &friend, Replaced::Dead).await {
             Ok(()) => tracing::info!(friend = %friend, "relay route died; re-volunteered"),
@@ -88,6 +95,17 @@ async fn offer_relay(
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Err("no identity".into());
+    }
+    // A relay offer's route leaves the device: it spends from the
+    // identity's new-route budget, and an empty one offers nothing (plan
+    // RV1, threat model L2 bounded exposure).
+    let transport = state
+        .transport
+        .read()
+        .clone()
+        .ok_or_else(|| "transport not started".to_string())?;
+    if !transport.routes().spend_budget() {
+        return Err("new-route budget spent; relay offer paused".into());
     }
     let route = api
         .new_private_route()
@@ -130,23 +148,35 @@ async fn offer_relay(
         }
     }
 
-    let payload = MessagePayload::RelayOffer {
+    let body = DirectBody::RelayOffer(RelayOffer {
         relay_route_blob: route_blob,
         relay_pseudonym: owner_key,
-    };
+    });
     // Architecture §13.2 step 2 — `app_call` so we get a persisted-ack
     // reply. If the friend's pool persist failed (disk full, schema
     // mismatch) we surface the error rather than silently leaving the
     // friend without our route.
-    let reply = message_service::send_to_peer_call(state, friend_public_key, &payload).await?;
-    match reply {
-        MessagePayload::RelayOfferAck { ok: true, .. } => Ok(()),
-        MessagePayload::RelayOfferAck { ok: false, reason } => Err(if reason.is_empty() {
-            "friend rejected RelayOffer".to_string()
-        } else {
-            format!("friend rejected RelayOffer: {reason}")
-        }),
-        other => Err(format!("unexpected RelayOffer reply: {other:?}")),
+    let reply = rekindle_transport::operations::dm::send_to_peer_call(
+        state_helpers::friend_host(state)?.as_ref(),
+        friend_public_key,
+        &body,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    match reply.map(|opened| opened.body) {
+        Some(DirectBody::RelayOfferAck(RelayOfferAck { ok: true, .. })) => Ok(()),
+        Some(DirectBody::RelayOfferAck(RelayOfferAck { ok: false, reason })) => {
+            Err(if reason.is_empty() {
+                "friend rejected RelayOffer".to_string()
+            } else {
+                format!("friend rejected RelayOffer: {reason}")
+            })
+        }
+        Some(other) => Err(format!(
+            "unexpected RelayOffer reply: {:?}",
+            other.type_id()
+        )),
+        None => Err("friend sent no RelayOfferAck".to_string()),
     }
 }
 
@@ -195,10 +225,20 @@ pub async fn revoke_relay(
         }
     }
 
-    let payload = MessagePayload::RelayWithdraw {
+    let body = DirectBody::RelayWithdraw(RelayWithdraw {
         relay_pseudonym: pseudonym_for_payload,
-    };
-    let _ = message_service::send_to_peer(state, pool, friend_public_key, &payload).await;
+    });
+    if let Ok(host) = state_helpers::friend_host(state) {
+        if let Err(e) = rekindle_transport::operations::dm::send_to_peer(
+            host.as_ref(),
+            friend_public_key,
+            &body,
+        )
+        .await
+        {
+            tracing::debug!(to = %friend_public_key, error = %e, "relay notice not sent");
+        }
+    }
     Ok(())
 }
 
@@ -217,12 +257,12 @@ fn release_relay_route(api: &veilid_core::VeilidAPI, id: &str) {
 /// List friends we've volunteered to relay for. Used by the buddy-list
 /// context menu to swap "Volunteer to relay" for "Stop relaying" without
 /// a server round-trip.
-pub async fn list_volunteered_for(state: &Arc<AppState>, pool: &Db) -> Vec<String> {
+pub async fn list_volunteered_for(state: &Arc<AppState>, pool: &Db) -> Result<Vec<String>, String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT friend_public_key FROM strand_relay_volunteered WHERE owner_key = ?1",
         )?;

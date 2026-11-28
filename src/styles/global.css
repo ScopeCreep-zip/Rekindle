@@ -1,25 +1,51 @@
+/* The whole cascade, declared once and first (plan E7.7.0). CSS allows a
+ * `@layer` statement ahead of `@import`. Tailwind's own import emits
+ * `@layer theme, base, components, utilities;`
+ * (`node_modules/tailwindcss/index.css:1`); naming `utilities` here keeps it
+ * below `a11y` and `sec` instead of appended after them.
+ *   theme           Tailwind `@theme` tokens (the generated dark defaults)
+ *   base            element resets
+ *   xfire-defaults  per-base default values that differ from the dark ones
+ *   skin            a skin's generated tokens and region properties (E7.7.2),
+ *                   never element styles
+ *   components      every app rule (`src/styles/theme/*`, scrollbars, the
+ *                   region slots `generated/regions.css` paints last)
+ *   shape           a skin's window frame (plan SK0 S2): the served
+ *                   `.app-frame[data-skin-window]` box and its tile slots,
+ *                   built from the validated layout (`rekindle-skin`
+ *                   `shape::css`); it replaces `.app-frame`'s box, so it
+ *                   sits after `components`
+ *   utilities       Tailwind utilities
+ *   a11y            user accessibility settings; beats any skin (the
+ *                   region slots under reduced motion and forced colours:
+ *                   `generated/regions-a11y.css`)
+ *   sec             security surfaces; nothing overrides it */
+@layer theme, base, xfire-defaults, skin, components, shape, utilities, a11y, sec;
 @import "tailwindcss" source(none);
-@source "../";
+/* The skin tokens: the dark defaults as `@theme`, the light base under
+ * `@layer xfire-defaults`, and `--chrome-height`. One source of truth,
+ * generated from `rekindle-skin::registry` (`cargo xtask
+ * gen-skin-registry`, plan E7.7.1). */
+@import "./generated/tokens.css";
 /* The Xfire skin, split into ordered parts. It was one 7,926-line file,
  * which the 600-line ceiling could not cover. Import order IS cascade
- * order, so these must stay sorted: parts `00`-`14` each re-open
- * `@layer components`, and CSS concatenates them in source order.
+ * order within a layer, so these must stay sorted: parts `00`-`15`, `90`
+ * and `91` each re-open `@layer components`, and CSS concatenates them in
+ * source order. `16-security-surfaces.css` is `@layer sec`; `91` also
+ * closes with the `@layer a11y` forced-colors and contrast rules.
  *
  * `00-primitives.css` comes first and holds the declaration sets that
  * were written two-to-four times across the other parts. Same layer,
  * earliest source position, so any later rule of equal specificity
  * still wins — which is what makes hoisting them safe.
  *
- * NOTE: `90-` and `91-top-level.css` have no `@layer components`
- * wrapper, so their ~140 class rules sit OUTSIDE the layer and
- * therefore beat every layered rule regardless of specificity. This
- * comment used to say `99-top-level.css` held "the keyframes and media
- * queries that sat outside the layer"; there is no `99-`, and the two
- * files that exist hold 140 ordinary rules and 5 at-rules between them.
- * Whether that precedence is intentional or an artifact of the split
- * is unresolved, so those two parts were left untouched by the
- * primitives hoist — moving a rule out of them would demote it. */
+ * Every colour is a token. Hex, colour-function and named-colour literals
+ * (`white`, `black`, …) appear only in the custom-property declarations of
+ * this file's token blocks: `@theme`, and the `:root` rules of
+ * `@layer xfire-defaults` and `@layer sec` (`cargo xtask
+ * check-theme-literals`). The `@layer a11y` overrides below read tokens. */
 @import "./theme/00-primitives.css";
+@import "./theme/00-focus.css";
 @import "./theme/00-rules.css";
 @import "./theme/01-form-primitives.css";
 @import "./theme/02-form-primitives.css";
@@ -35,10 +61,38 @@
 @import "./theme/12-channel-settings-inline-slowmode-t.css";
 @import "./theme/13-bulk-message-delete-mod-selection-.css";
 @import "./theme/14-sidebar-sections-servers-events.css";
+@import "./theme/15-intent-dialog.css";
+@import "./theme/16-security-surfaces.css";
+@import "./theme/17-group-dm.css";
+@import "./theme/18-skin-editor.css";
+@import "./theme/19-game-invite.css";
+@import "./theme/19-game-surface.css";
+@import "./theme/20-keyboard-shortcuts.css";
+@import "./theme/21-disappearing.css";
+@import "./theme/22-co-create.css";
+@import "./theme/22-skin-frame.css";
+@import "./theme/23-activity.css";
+@import "./theme/24-files-view.css";
+@import "./theme/25-settings-select.css";
+@import "./skin-tree.css";
 @import "./theme/90-top-level.css";
 @import "./theme/91-top-level.css";
 @import "./animations.css";
 @import "./scrollbar.css";
+@import "./generated/regions.css";
+@import "./generated/regions-a11y.css";
+@source "../";
+/* The generated token map names each role as a string (`"shadow"`), which
+ * Tailwind would read as a utility class. */
+@source not "./generated";
+
+/* The spacing grid (plan E7.12): every gap, padding and margin between
+ * controls is a whole multiple of this step, the scale the theme parts
+ * were written on (2, 4, 6, 8, 10, 12, 16 px). The real-app layout specs
+ * (`e2e/app/geometry-page.ts`, `spacingOffScale`) read it from here. */
+@theme static {
+  --layout-grid: 2px;
+}
 
 @font-face {
   font-family: "Symbols Nerd Font Mono";
@@ -48,53 +102,149 @@
   font-display: block;
 }
 
-@theme {
-  --color-xfire-bg-dark: #0a0a0a;
-  --color-xfire-bg-panel: #1e1e1e;
-  --color-xfire-bg-input: #1e1e1e;
-  --color-xfire-bg-status: #181818;
-  --color-xfire-bg-tooltip: #282828;
-  --color-xfire-bg: #0a0a0a;
-  --color-xfire-bg-primary: #141414;
-  --color-xfire-bg-secondary: #1a1a1a;
-  --color-xfire-bg-tertiary: #252525;
-  --color-xfire-border: #2a2a2a;
-  --color-xfire-text-primary: #e7e7e7;
-  --color-xfire-text-secondary: #a0a0a0;
-  --color-xfire-accent: #177cc1;
-  --color-xfire-text: #e7e7e7;
-  --color-xfire-text-dim: #8fb9d7;
-  --color-xfire-text-clan: #1ba1fd;
-  --color-xfire-text-status: #969696;
-  --color-xfire-text-timestamp: #a0a0a0;
-  --color-xfire-online: #53d769;
-  --color-xfire-away: #ffcc00;
-  --color-xfire-ingame: #4fc3f7;
-  --color-xfire-busy: #ef4444;
-  --color-xfire-offline: #7d7d7d;
-  --color-xfire-link: #5fa8d3;
-  --color-xfire-focus-outline: #5fa8d3;
-  --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
-  --font-family-icons: "Symbols Nerd Font Mono";
-}
-
-/* Architecture §32 a11y — motion duration tokens.
- * Default to 0ms so reduced-motion users get instant transitions; the
- * `no-preference` media query opts motion-tolerant users in. Consumers
- * use `var(--motion-duration-base)` etc. directly in transition/animation
- * declarations; the @keyframes themselves stay defined so motion-tolerant
- * users get the full effect. */
-:root {
-  --motion-duration-fast: 0ms;
-  --motion-duration-base: 0ms;
-  --motion-duration-slow: 0ms;
-}
-
-@media (prefers-reduced-motion: no-preference) {
+/* Security surfaces (plan E7.7.0): reserved tokens, defined only here, in
+ * `@layer sec`, valued per base and never themeable. The commit controls of
+ * the intent review, the deep-link consent and device pairing use them, so a
+ * skin cannot disguise a destructive commit; the review card (`--sec-review-*`)
+ * carries what those decisions rest on (facts, escalations, a key
+ * fingerprint), so a skin cannot hide it; StatusDot's cutouts paint with
+ * `--sec-status-cutout`, so a skin cannot erase the shape cue; the safety
+ * number, the pairing QR and code and the key-trust badges use them, so a
+ * skin cannot hide or fake what the user compares (plan E2.3). Review card
+ * text, dark / light / high contrast: fg 15.15 / 16.63 / 21, muted 8.64 /
+ * 8.47 / 21, escalation 8.21 / 6.25 / 9.20 :1 on the card; its border 4.12 /
+ * 4.34 / 21. */
+@layer sec {
   :root {
-    --motion-duration-fast: 120ms;
-    --motion-duration-base: 200ms;
-    --motion-duration-slow: 320ms;
+    --sec-font-family: "Segoe UI", "Tahoma", sans-serif;
+    --sec-commit-bg: #1565a8;
+    --sec-commit-fg: #fff;
+    --sec-commit-border: #1565a8;
+    --sec-danger-bg: #c62828;
+    --sec-danger-fg: #fff;
+    --sec-danger-border: #c62828;
+    --sec-secondary-bg: #2e2e2e;
+    --sec-secondary-fg: #e7e7e7;
+    --sec-secondary-border: #767676;
+    --sec-focus: #8cc4ff;
+    --sec-focus-ground: #0a0a0a;
+    --sec-hover-shade: #000;
+    --sec-disabled-bg: #2a2a2a;
+    --sec-disabled-fg: #9a9a9a;
+    --sec-disabled-border: #4a4a4a;
+    --sec-icon-font-family: "Symbols Nerd Font Mono";
+    --sec-status-cutout: #0a0a0a;
+    --sec-qr-backing: #f8fafc;
+    /* The safety number's card (plan E2.3): dark digits and modules on the
+     * QR backing in every skin, and the key-trust badges. */
+    --sec-qr-ink: #0a0a0a;
+    --sec-mono-font-family: "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+    --sec-verified-bg: #1b5e20;
+    --sec-verified-fg: #fff;
+    --sec-changed-bg: #8a4b00;
+    --sec-changed-fg: #fff;
+    --sec-review-bg: #121212;
+    --sec-review-fg: #e7e7e7;
+    --sec-review-muted-fg: #b0b0b0;
+    --sec-review-danger-fg: #ff8a80;
+    --sec-review-border: #767676;
+    /* The sec controls' own motion, instant unless the user allows motion. */
+    --sec-motion-duration: 0ms;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :root {
+      --sec-motion-duration: 120ms;
+    }
+  }
+
+  :root[data-skin-base="light"] {
+    --sec-commit-bg: #0b5cad;
+    --sec-commit-fg: #fff;
+    --sec-commit-border: #0b5cad;
+    --sec-danger-bg: #b3261e;
+    --sec-danger-fg: #fff;
+    --sec-danger-border: #b3261e;
+    --sec-secondary-bg: #ececec;
+    --sec-secondary-fg: #1a1a1a;
+    --sec-secondary-border: #767676;
+    --sec-focus: #0b5cad;
+    --sec-focus-ground: #fff;
+    --sec-disabled-bg: #e0e0e0;
+    --sec-disabled-fg: #5b5b5b;
+    --sec-disabled-border: #9a9a9a;
+    --sec-status-cutout: #fff;
+    --sec-review-bg: #f8fafc;
+    --sec-review-fg: #1a1a1a;
+    --sec-review-muted-fg: #4a4a4a;
+    --sec-review-danger-fg: #b3261e;
+    --sec-review-border: #767676;
+  }
+
+  @media (prefers-contrast: more) {
+    :root,
+    :root[data-skin-base="light"] {
+      --sec-commit-bg: #000;
+      --sec-commit-fg: #fff;
+      --sec-commit-border: #fff;
+      --sec-danger-bg: #7a0000;
+      --sec-danger-fg: #fff;
+      --sec-danger-border: #fff;
+      --sec-secondary-bg: #000;
+      --sec-secondary-fg: #fff;
+      --sec-secondary-border: #fff;
+      --sec-focus: #fff;
+      --sec-focus-ground: #000;
+      --sec-disabled-bg: #000;
+      --sec-disabled-fg: #a0a0a0;
+      --sec-disabled-border: #a0a0a0;
+      --sec-status-cutout: #000;
+      --sec-review-bg: #000;
+      --sec-review-fg: #fff;
+      --sec-review-muted-fg: #fff;
+      --sec-review-danger-fg: #ff8a80;
+      --sec-review-border: #fff;
+    }
+  }
+}
+
+/* The user's accessibility settings, in `@layer a11y`, so no skin can undo
+ * them (wiring guide §14d; `forced-colors` is at the end of
+ * `theme/91-top-level.css`).
+ *
+ * macOS "Increase Contrast" and the other `prefers-contrast: more` hosts:
+ * borders and the dim text roles move toward the text colour of the base,
+ * by mixing the per-base overlay (white on dark, black on light) at the old
+ * alphas, so one rule serves both bases.
+ *
+ * Architecture §32 — motion duration tokens. Default to 0ms so
+ * reduced-motion users get instant transitions; the `no-preference` media
+ * query opts motion-tolerant users in. Consumers use
+ * `var(--motion-duration-fast)`, `-base` and `-slow` directly in
+ * transition/animation declarations (`cargo xtask check-motion`); the @keyframes themselves stay
+ * defined so motion-tolerant users get the full effect. */
+@layer a11y {
+  @media (prefers-contrast: more) {
+    :root {
+      --color-xfire-border: color-mix(in srgb, var(--color-xfire-overlay) 55%, transparent);
+      --color-xfire-text-dim: color-mix(in srgb, var(--color-xfire-overlay) 85%, transparent);
+      --color-xfire-text-status: color-mix(in srgb, var(--color-xfire-overlay) 85%, transparent);
+    }
+  }
+
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-base: 0ms;
+    --motion-duration-slow: 0ms;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :root {
+      --motion-duration-fast: 120ms;
+      --motion-duration-base: 200ms;
+      /* A highlight fading out (the jumped-to message). */
+      --motion-duration-slow: 1500ms;
+    }
   }
 }
 
@@ -104,7 +254,6 @@
  * chrome. Tokens make collisions visible and fix it once. Kobalte
  * primitives portal into these layers via the class on their Content. */
 :root {
-  --z-base: 0;
   --z-elevated: 10;            /* sticky message-input chrome, fixed headers */
   --z-dropdown: 100;           /* status picker, mention popover, expression picker */
   --z-tooltip: 200;
@@ -113,26 +262,34 @@
   --z-modal-backdrop: 500;
   --z-modal: 510;              /* modal content sits above its own backdrop */
   --z-toast: 600;              /* future toast layer; above modals */
+  /* The U1 review (ADR 0019, `IntentDialog`) is the safety step: it is drawn
+   * above every modal, popover, menu and toast, whatever the portal order
+   * (a review once drew behind the form that raised it). Only the skip link
+   * is higher, and it cannot take focus while the review traps it.
+   * `cargo xtask check-overlay-layers` keeps these the highest overlay
+   * layers and lets only `.intent-overlay*` read them. */
+  --z-review-backdrop: 9000;
+  --z-review: 9010;            /* the review's content above its backdrop */
   --z-skip-link: 9999;         /* must beat everything for a11y */
-}
 
-/* Elevation shadow for floating surfaces — popups, dropdowns, call
- * banners, pickers. Eight selectors in `xfire-theme.css` each carried
- * the identical `0 4px 12px rgba(0, 0, 0, 0.4)` literal, so restyling
- * "things that float" meant finding all eight. */
-:root {
-  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-/* Architecture §32 — single chrome-height token. Titlebar, status bar,
- * menu bar, channel header, member-list header, chat-peer-status, and
- * BottomActionBar all converge on this size. Replaces ad-hoc 28px
- * literals scattered through `xfire-theme.css`. */
-:root {
-  --chrome-height: 28px;
+  /* Elevation shadow for floating surfaces — popups, dropdowns, call
+   * banners, pickers. Eight selectors in `xfire-theme.css` each carried
+   * the identical `0 4px 12px rgba(0, 0, 0, 0.4)` literal, so restyling
+   * "things that float" meant finding all eight. */
+  --shadow-elevated: 0 4px 12px color-mix(in srgb, var(--color-xfire-shadow) 40%, transparent);
 }
 
 @layer base {
+  /* Never-hide groups controls in a fieldset to disable them with one
+   * reason: no browser border, margin, padding or min-width, at no
+   * specificity, so a component's own box rules apply. */
+  :where(fieldset) {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+
   html,
   body {
     margin: 0;
@@ -141,7 +298,11 @@
     font-family: var(--font-family-xfire);
     font-size: 12px;
     color: var(--color-xfire-text);
-    overflow: hidden;
+    /* clip, not hidden: a hidden-overflow root is still a scroll container,
+     * and the browser scrolled it sideways to bring a focused popover into
+     * view (the member profile popup clipped the window's left column).
+     * A window never scrolls as a page; its parts scroll inside. */
+    overflow: clip;
     user-select: none;
   }
 

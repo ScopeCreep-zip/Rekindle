@@ -3,9 +3,13 @@
 
 use std::sync::Arc;
 
+use rekindle_types::subscription_events::JoinHandshake;
+
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 
-use super::join::send_confirmed_if_first;
+use super::roster::named_roster;
+
+use super::join::{advance_handshake, send_confirmed_if_first};
 
 /// Handshake leg 2, joiner side: a present member acked our VoiceJoin.
 /// The ack carries the acker's identity + route, so it alone is enough
@@ -16,7 +20,6 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     sender_pseudonym: &str,
     channel_id: String,
     joiner_pseudonym: &str,
-    display_name: Option<String>,
     route_blob: Vec<u8>,
 ) {
     let my_pk = deps.my_pseudonym(community_id).unwrap_or_default();
@@ -29,6 +32,8 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     let Some(transport) = deps.transport_handle() else {
         return;
     };
+
+    let display_name = deps.member_shown_name(community_id, sender_pseudonym);
 
     // Surface the acker to the UI exactly like a VoiceJoin would —
     // the joiner may not have seen the acker any other way yet.
@@ -45,10 +50,10 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     let acker = sender_pseudonym.to_string();
     deps.scope().spawn_or_drop("voice join ack", async move {
         if !route_blob.is_empty() {
-            let (newly_added, remote_count) = {
+            let (newly_added, members) = {
                 let mut t = transport.lock().await;
-                let newly = t.add_peer(&acker, &route_blob, display_name.as_deref());
-                (newly, t.peer_count())
+                let newly = t.add_peer(&acker, &route_blob);
+                (newly, t.peer_keys())
             };
             if newly_added {
                 deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -57,33 +62,29 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                     pseudonym_key: acker.clone(),
                     present: true,
                     display_name: display_name.clone(),
-                    remote_count,
+                    roster: named_roster(&*deps_task, &cid, members),
                 });
                 // Plan C7.20 — the acker added us and sent its key; it
                 // gets ours.
-                let is_stage = deps_task
-                    .stage_channel_info(&cid, &channel_id)
-                    .is_some_and(|s| s.is_stage);
                 crate::signaling::media_keys::on_peer_added(
                     &deps_task,
                     &cid,
                     &channel_id,
                     &transport,
                     &acker,
-                    is_stage,
                 )
                 .await;
             }
         }
-        if transport.lock().await.advance_handshake_seen() {
-            deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                community_id: cid.clone(),
-                channel_id: channel_id.clone(),
-                state: "seen".to_string(),
-                peer: Some(acker),
-                display_name,
-            });
-        }
+        advance_handshake(
+            &*deps_task,
+            &cid,
+            &channel_id,
+            &transport,
+            JoinHandshake::Seen,
+            Some((acker, display_name)),
+        )
+        .await;
         send_confirmed_if_first(&*deps_task, &cid, &channel_id, &transport).await;
     });
 }
@@ -113,15 +114,16 @@ pub(in crate::signaling) fn handle_voice_join_confirmed(
         let peer = sender_pseudonym.to_string();
         deps.scope()
             .spawn_or_drop("voice join confirmed", async move {
-                if transport.lock().await.advance_handshake_seen() {
-                    deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                        community_id: cid.clone(),
-                        channel_id: ch.clone(),
-                        state: "seen".to_string(),
-                        peer: Some(peer),
-                        display_name: None,
-                    });
-                }
+                let name = deps_task.member_shown_name(&cid, &peer);
+                advance_handshake(
+                    &*deps_task,
+                    &cid,
+                    &ch,
+                    &transport,
+                    JoinHandshake::Seen,
+                    Some((peer, name)),
+                )
+                .await;
                 send_confirmed_if_first(&*deps_task, &cid, &ch, &transport).await;
             });
     }

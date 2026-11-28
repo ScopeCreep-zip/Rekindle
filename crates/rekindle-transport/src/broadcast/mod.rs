@@ -1,33 +1,28 @@
-//! Consolidated outbound module — the sole Veilid boundary for all outgoing data.
-//!
-//! Every way data leaves the node to Veilid lives here. No other module
-//! in the workspace imports `veilid_core`. This is the strict outbound boundary.
+//! Consolidated outbound module: every way data leaves the node, over the
+//! record, route and app-message ports (plan C9.1).
 //!
 //! # Submodules
 //!
-//! ## Veilid lifecycle & infrastructure
-//! - `node` — VeilidAPI lifecycle (startup, shutdown, attach, detach, RoutingContext)
-//! - `send` — app_message / app_call outbound wrappers
+//! ## Node and infrastructure
+//! - `node` — the transport node over its `PortSet` (start, adopt, shutdown,
+//!   record sessions, own routes)
+//! - `send` — app message / app call senders
+//! - `deadline` — our bound on every outbound app call (finding 78)
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
-//! - `dht/` — all DHT record CRUD (create, open, close, get, set, watch, inspect)
 //!
 //! ## Application-level broadcast
-//! - `dht_writes` — thin primitive wrappers over dht/ for TransportNode callers
-//! - `gossip` — community mesh broadcast (all 52 GossipPayload + ControlPayload variants)
-//! - `dm` — peer-to-peer DM sends (all 10 DmPayload variants)
-//! - `rpc` — request-response RPC calls (governance, sync, leave)
-//! - `voice` — voice packet send (single peer + mesh)
-//! - `route` — route lifecycle convenience (allocate, refresh, publish)
+//! - `dht_writes` — leased-record and own-profile operations for TransportNode callers
+//! - `rpc` — request-response RPC calls (sync, leave)
+//! - `route` — peer route import
 
-// Veilid infrastructure (imports veilid_core)
-pub mod dht;
+// Node and infrastructure
+pub mod deadline;
 pub mod node;
 pub mod peer_registry;
 pub mod send;
 
 // Application-level broadcast (calls through infrastructure above)
 pub mod dht_writes;
-pub mod dm;
 pub mod route;
 pub mod rpc;
 
@@ -47,12 +42,12 @@ use node::TransportNode;
 /// Rate limiter for outbound gossip, keyed by a string identifier.
 #[derive(Debug, Default)]
 pub struct OutboundRateLimiter {
-    last_sent: HashMap<String, std::time::Instant>,
+    last_sent: HashMap<String, tokio::time::Instant>,
 }
 
 impl OutboundRateLimiter {
     pub fn check(&mut self, key: &str, min_interval: std::time::Duration) -> bool {
-        let now = std::time::Instant::now();
+        let now = tokio::time::Instant::now();
         if let Some(last) = self.last_sent.get(key) {
             if now.duration_since(*last) < min_interval {
                 return false;
@@ -81,16 +76,21 @@ pub struct BroadcastManager {
 }
 
 impl BroadcastManager {
+    /// `meshes` is the subscription manager's map
+    /// (`SubscriptionManager::meshes`): the presence poll writes each
+    /// community's overlay there, and a broadcast picks its peers from
+    /// the same map, so the two can never disagree about who is online.
     pub fn new(
         node: Arc<TransportNode>,
         session: Arc<RwLock<Option<Session>>>,
         mek_cache: Arc<RwLock<MekCache>>,
+        meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
     ) -> Self {
         Self {
             node,
             session,
             mek_cache,
-            meshes: Arc::new(RwLock::new(HashMap::new())),
+            meshes,
             rate_limiter: Arc::new(RwLock::new(OutboundRateLimiter::default())),
             // 1024 entries — the architecture's stated mesh dedup size
             // (§3.1, "1024-entry FIFO cache").

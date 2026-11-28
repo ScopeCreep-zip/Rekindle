@@ -37,9 +37,15 @@ pub fn print_json<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A value as one JSONL line, without the newline: what `print_jsonl`
+/// writes, and what a streaming command emits per event.
+pub fn jsonl_line<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<String> {
+    Ok(serde_json::to_string(value)?)
+}
+
 /// Print a value as a single-line JSON (JSONL).
 pub fn print_jsonl<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
-    let json = serde_json::to_string(value)?;
+    let json = jsonl_line(value)?;
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "{json}")?;
     Ok(())
@@ -133,7 +139,6 @@ pub fn print_list(items: &[String], mode: OutputMode) -> anyhow::Result<()> {
 pub fn print_doctor_checks(
     checks: &[rekindle_types::display::Check],
     mode: OutputMode,
-    quiet: bool,
 ) -> anyhow::Result<()> {
     if mode.is_structured() {
         let output = serde_json::json!({
@@ -159,7 +164,9 @@ pub fn print_doctor_checks(
         return print_structured(&output, mode);
     }
 
-    if quiet {
+    // The global `--quiet` (errors only): a doctor run prints nothing and
+    // answers through its exit code (`--exit-code`).
+    if is_quiet() {
         return Ok(());
     }
 
@@ -227,94 +234,6 @@ pub fn step_done(msg: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Print a step skip message.
-pub fn step_skip(msg: &str) -> anyhow::Result<()> {
-    if is_quiet() {
-        return Ok(());
-    }
-    let mut stdout = std::io::stdout().lock();
-    writeln!(stdout, "        {msg} ... (already done)")?;
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn print_structured_json_produces_valid_json() {
-        // We can't capture stdout in a unit test, but we can verify
-        // the serialization doesn't panic on various types
-        let val = serde_json::json!({"key": "value", "num": 42});
-        // Serialize to string (same path as print_json) to verify no panic
-        let json = serde_json::to_string_pretty(&val).unwrap();
-        assert!(json.contains("\"key\""));
-        assert!(json.contains("42"));
-    }
-
-    #[test]
-    fn print_structured_handles_empty_object() {
-        let val = serde_json::json!({});
-        let json = serde_json::to_string_pretty(&val).unwrap();
-        assert_eq!(json.trim(), "{}");
-    }
-
-    #[test]
-    fn print_structured_handles_nested() {
-        let val = serde_json::json!({
-            "community": {
-                "name": "dev-team",
-                "channels": ["general", "random"]
-            }
-        });
-        let json = serde_json::to_string_pretty(&val).unwrap();
-        assert!(json.contains("dev-team"));
-        assert!(json.contains("general"));
-    }
-
-    #[test]
-    fn print_structured_handles_unicode() {
-        let val = serde_json::json!({"name": "日本語コミュニティ"});
-        let json = serde_json::to_string_pretty(&val).unwrap();
-        assert!(json.contains("日本語コミュニティ"));
-    }
-
-    #[test]
-    fn print_structured_escapes_special_chars() {
-        let val = serde_json::json!({"msg": "hello \"world\" \n\ttab"});
-        let json = serde_json::to_string(&val).unwrap();
-        assert!(json.contains("\\\"world\\\""));
-        assert!(json.contains("\\n"));
-        assert!(json.contains("\\t"));
-    }
-
-    #[test]
-    fn doctor_check_serialization() {
-        let checks = [
-            rekindle_types::display::Check {
-                id: "node.running".into(),
-                category: "node".into(),
-                status: rekindle_types::display::CheckStatus::Pass,
-                value: "active".into(),
-                description: String::new(),
-            },
-            rekindle_types::display::Check {
-                id: "crypto.prekeys.low".into(),
-                category: "crypto".into(),
-                status: rekindle_types::display::CheckStatus::Warn,
-                value: "3 remaining".into(),
-                description: "replenish prekeys".into(),
-            },
-        ];
-
-        // Verify the JSON structure matches the contract
-        let output = serde_json::json!({
-            "summary": {
-                "pass": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Pass).count(),
-                "warn": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Warn).count(),
-                "fail": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Fail).count(),
-            },
-        });
-        assert_eq!(output["summary"]["pass"], 1);
-        assert_eq!(output["summary"]["warn"], 1);
-        assert_eq!(output["summary"]["fail"], 0);
-    }
-}
+#[path = "format_tests.rs"]
+mod tests;

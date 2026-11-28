@@ -6,7 +6,7 @@
 # DHTShortArrays — a contact list, a chat list and an invitation list,
 # the classic-Xfire account model. Nothing ever wrote to or read from
 # them: friends live in their own friend-list record, conversations in
-# ConversationRecord, and friend requests in the friend inbox. Creating
+# 'D' frames, and friend requests in the friend inbox. Creating
 # an account allocated three DHT records that stayed empty for the
 # account's whole life, and every login reopened all three.
 struct AccountHeader {

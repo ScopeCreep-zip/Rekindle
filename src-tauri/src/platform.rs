@@ -12,7 +12,7 @@
 ///    renderer unconditionally on Linux regressed input handling on
 ///    non-NVIDIA Mesa/Wayland (Pop!_OS): the webview rendered but did not
 ///    receive pointer events, because modern WebKitGTK (2.42+) treats the
-///    DMABuf path as primary and the disabled-fallback path mis-routes input
+///    DMABuf path as primary and the disabled-fallback path misroutes input
 ///    on Wayland subsurfaces. The asymmetric-video fix lives in the codec
 ///    negotiation path (frontend probe removal), not here, so this guard
 ///    stays NVIDIA-only.
@@ -140,36 +140,8 @@ fn scrub_nix_gui_stack_from_ld_library_path() {
 }
 
 #[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use super::filter_nix_gui_stack;
-
-    #[test]
-    fn drops_nix_gui_stack_keeps_host_and_runtime_deps() {
-        let input = concat!(
-            "/nix/store/4i6mqkahmcjamn3gy5ni5r8hjidf7srh-webkitgtk-2.50.4+abi=4.1/lib:",
-            "/nix/store/wy4c9khmxwp1vd2p6nbf1lpg0rpnk61v-glib-2.86.3/lib:",
-            "/nix/store/dw1l57pjcr8ysf3r7xpx06mm8gg1xicd-gstreamer-1.26.5/lib:",
-            "/nix/store/abc123-libsodium-1.0.20/lib:",
-            "/nix/store/def456-libopus-1.5.2/lib:",
-            "/usr/local/lib"
-        );
-        let filtered = filter_nix_gui_stack(input).expect("GUI entries must be dropped");
-        assert_eq!(
-            filtered,
-            "/nix/store/abc123-libsodium-1.0.20/lib:/nix/store/def456-libopus-1.5.2/lib:/usr/local/lib",
-            "REKINDLE_LIB_PATH deps and host paths pass through"
-        );
-    }
-
-    #[test]
-    fn clean_path_is_left_untouched() {
-        assert_eq!(filter_nix_gui_stack("/usr/lib:/opt/lib"), None);
-        assert_eq!(
-            filter_nix_gui_stack("/nix/store/abc-libsodium-1.0.20/lib"),
-            None
-        );
-    }
-}
+#[path = "platform_tests.rs"]
+mod tests;
 
 /// Enable in-webview camera/microphone capture on Linux (WebKitGTK), for a
 /// window whose `WindowKind::captures_media()` is true.
@@ -239,7 +211,7 @@ pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
 ///   `tauri dev`'s bare binary has none, so even with host TCC
 ///   authorized + the per-origin prompt granted, `getUserMedia` rejects
 ///   with "No AVVideoCaptureSource device". Video capture on macOS
-///   requires the bundled `.app` (`pnpm tauri build --debug`); confirmed
+///   requires the bundled `.app` (`pnpm bundle --debug`); confirmed
 ///   by tauri-apps/tauri#11951. See `docs/contributor/development.md`.
 /// - In `tauri dev` the TCC grant is additionally attributed to the
 ///   RESPONSIBLE PROCESS — the terminal/IDE that launched the binary —

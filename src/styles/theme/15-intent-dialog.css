@@ -1,0 +1,26 @@
+@layer components {
+
+  /* The intent review (ADR 0019, plan U1.6). No animation: the dialog
+   * appears in place, so reduced-motion users get the same view. What the
+   * decision rests on is the `.sec-review` card (`16-security-surfaces.css`);
+   * the proof fields below it are dialog chrome. */
+  .intent-dialog-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  /* A toast's one action (the undo offer is the first) (its row layout is grouped with
+   * `.active-call-panel-header`). The dialog's body and action row are
+   * grouped with the add-friend panel's. */
+  .toast-action-button {
+    background: transparent;
+    border: 1px solid currentcolor;
+    border-radius: 3px;
+    color: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+}

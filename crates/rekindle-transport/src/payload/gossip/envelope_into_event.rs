@@ -13,15 +13,13 @@
 //! variant to rather than two.
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_types::subscription_events::{
-    ChannelMessageEvent, PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
-};
+use rekindle_types::subscription_events::SubscriptionEvent;
 
 use super::into_event_control::control_into_event;
 
 /// Convert a verified gossip envelope into a subscription event.
 ///
-/// `None` for [`CommunityEnvelope::WatchRelay`]: it is not news about
+/// `None` for a [`CommunityEnvelope::WatchRelay`]: it is not news about
 /// the community, it is news about a *record*, and the handler acts on
 /// it by fetching rather than by emitting. Returning an event for it
 /// would surface Mutual Aid plumbing in the UI.
@@ -31,61 +29,13 @@ pub fn envelope_into_event(
     community: &str,
     sender: &str,
 ) -> Option<SubscriptionEvent> {
-    let c = || community.to_string();
-    let s = || sender.to_string();
-
-    Some(match envelope {
-        CommunityEnvelope::MessageNotification {
-            channel_id,
-            message_id,
-            sequence,
-            timestamp,
-            ..
-        } => SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community: c(),
-            channel: channel_id,
-            message_id,
-            sender_pseudonym: s(),
-            sequence,
-            timestamp,
-            body: None,              // populated by the enrichment stage
-            reply_to_sequence: None, // populated by the enrichment stage
-        }),
-        CommunityEnvelope::TypingIndicator {
-            channel_id,
-            pseudonym_key,
-        } => SubscriptionEvent::Typing(TypingEvent::Started {
-            context: TypingContext::Channel {
-                community: c(),
-                channel: channel_id,
-            },
-            who: pseudonym_key,
-        }),
-        CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            ..
-        } => SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {
-            community: c(),
-            pseudonym: pseudonym_key,
-            // Unpacked from `PresenceGameInfo` rather than dropped —
-            // rich presence is the point of the field. A gossip row
-            // always carries a game observation, even when it is
-            // `Idle`, so the peer's game clears when they stop.
-            snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(status)
-                .with_game(
-                    rekindle_types::subscription_events::GameActivity::from_parts(
-                        game_info.as_ref().map(|g| g.game_name.clone()),
-                        game_info.as_ref().and_then(|g| g.game_id),
-                        None,
-                        None,
-                    ),
-                ),
-        }),
-        CommunityEnvelope::Control(control) => {
-            return control_into_event(control, community, sender)
-        }
-        CommunityEnvelope::WatchRelay { .. } => return None,
-    })
+    match envelope {
+        CommunityEnvelope::Control(control) => control_into_event(*control, community, sender),
+        // Channel typing is the Host's (plan E3.4 S9): only it holds the
+        // text keys that name the channel behind the tag, and it lapses
+        // the start itself (`operations::typing::channel_frame`). A
+        // member's presence is its beat and card (plan E3.4 S2, S6): the
+        // gossip `PresenceUpdate` (envelope arm @2) is obsolete.
+        CommunityEnvelope::TypingIndicator { .. } | CommunityEnvelope::WatchRelay { .. } => None,
+    }
 }

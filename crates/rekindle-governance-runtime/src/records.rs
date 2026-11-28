@@ -4,6 +4,7 @@
 //! table hit with no Veilid call.
 
 use rekindle_records::lease::CommunityLeases;
+use rekindle_records::port::OpenIntent;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
@@ -13,19 +14,10 @@ pub(crate) async fn inspect_local_seqs<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
+    let lease = deps
+        .acquire_record(record_key, None, OpenIntent::Check)
+        .await?;
     let seqs = deps.inspect_dht_record_local_seqs(lease).await;
-    deps.release_record(lease).await;
-    seqs
-}
-
-/// [`GovernanceRuntimeDeps::inspect_dht_record_update_get_seqs`] on a borrow.
-pub(crate) async fn inspect_update_get_seqs<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    record_key: &str,
-) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
-    let seqs = deps.inspect_dht_record_update_get_seqs(lease).await;
     deps.release_record(lease).await;
     seqs
 }
@@ -35,7 +27,9 @@ pub(crate) async fn inspect_present_subkeys<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Result<Vec<u32>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
+    let lease = deps
+        .acquire_record(record_key, None, OpenIntent::Check)
+        .await?;
     let present = deps.inspect_dht_record_present_subkeys(lease).await;
     deps.release_record(lease).await;
     present
@@ -59,7 +53,12 @@ pub(crate) async fn publish_created<D: GovernanceRuntimeDeps>(
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("derive publish slot: {e}")))?;
     let writer = deps.format_writer_keypair(slot.verifying_key().to_bytes(), slot.to_bytes());
     match deps
-        .set_dht_value(lease, last, Vec::new(), Some(writer))
+        .set_dht_value(
+            lease,
+            last,
+            Vec::new(),
+            Some(zeroize::Zeroizing::new(writer)),
+        )
         .await?
     {
         None => Ok(()),
@@ -76,49 +75,5 @@ pub(crate) async fn release_all<D: GovernanceRuntimeDeps>(deps: &D, leases: &Com
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::deps::MockGovernanceRuntimeDeps;
-    use rekindle_records::lease::LeaseId;
-
-    /// The publish write is an empty value in the last subkey, under the
-    /// writer derived for that slot of the record's range.
-    #[tokio::test]
-    async fn publish_writes_empty_last_slot_under_its_derived_writer() {
-        let seed = [9u8; 32];
-        let range_start = 255;
-        let expected = rekindle_secrets::derive::derive_slot_keypair(&seed, range_start + 254)
-            .expect("derive")
-            .verifying_key()
-            .to_bytes();
-        let mut deps = MockGovernanceRuntimeDeps::new();
-        deps.expect_format_writer_keypair()
-            .returning(|public, _| hex::encode(public));
-        deps.expect_set_dht_value()
-            .withf(move |lease, subkey, value, writer| {
-                *lease == LeaseId(7)
-                    && *subkey == 254
-                    && value.is_empty()
-                    && writer.as_deref() == Some(hex::encode(expected).as_str())
-            })
-            .times(1)
-            .returning(|_, _, _, _| Ok(None));
-        publish_created(&deps, LeaseId(7), &seed, range_start)
-            .await
-            .expect("published");
-    }
-
-    /// A newer value already at that subkey is a conflict, not success.
-    #[tokio::test]
-    async fn publish_conflict_is_an_error() {
-        let mut deps = MockGovernanceRuntimeDeps::new();
-        deps.expect_format_writer_keypair()
-            .returning(|_, _| "kp".to_string());
-        deps.expect_set_dht_value()
-            .returning(|_, _, _, _| Ok(Some(vec![1])));
-        assert!(matches!(
-            publish_created(&deps, LeaseId(1), &[0u8; 32], 0).await,
-            Err(GovernanceRuntimeError::WriteConflict(1))
-        ));
-    }
-}
+#[path = "records_tests.rs"]
+mod tests;

@@ -1,5 +1,12 @@
 # DM envelope interop audit — desktop vs daemon track
 
+> **Superseded.** Plan E2.1 put both hosts on the one `'D'` envelope, and
+> E2.3 deleted the daemon's framed DM path described below (`DmPayload`,
+> `Sender::send_dm`, `SignedPayload.seq`/`correlation_id` and the
+> `SeqTracker` dedup). `SignedPayload` now signs only the daemon's framed
+> community RPCs, under `rekindle-frame-sig-v3`. The audit is kept for its
+> non-goal at the end, which `rekindle-codec` cites.
+
 Companion to the ratchet convergence (`rekindle_crypto::signal::ratchet`,
 which made the two tracks' Signal sessions wire-compatible and proved it
 with `cross_track_session_interop`). This documents the layer ABOVE the

@@ -1,6 +1,6 @@
 //! `MekDistributeDeps` for the daemon.
 //!
-//! Most methods delegate to `DaemonGovernanceAdapter` through
+//! Most methods delegate to `HostGovernance` through
 //! `GovernanceRuntimeDeps` rather than reaching into `DaemonContext`
 //! themselves. Identity, Lamport counter, membership and the online
 //! roster are all questions that adapter already answers, and answering
@@ -24,12 +24,12 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
 use super::DaemonMekAdapter;
-use crate::daemon::governance_adapter::DaemonGovernanceAdapter;
+use crate::host::adapters::governance::HostGovernance;
 
 impl DaemonMekAdapter {
-    /// A short-lived governance adapter borrowed from our own `Arc`.
-    fn governance(&self) -> DaemonGovernanceAdapter<'_> {
-        DaemonGovernanceAdapter::new(&self.ctx)
+    /// The Host's governance adapter.
+    fn governance(&self) -> HostGovernance {
+        HostGovernance::new(Arc::clone(&self.ctx))
     }
 
     fn transport(&self) -> Option<Arc<rekindle_transport::TransportNode>> {
@@ -46,6 +46,10 @@ impl DaemonMekAdapter {
 impl MekDistributeDeps for DaemonMekAdapter {
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
         self.ctx.unlock_scope_or_closed()
+    }
+
+    fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource> {
+        Arc::clone(&self.ctx.rng)
     }
 
     fn cache(&self) -> Arc<dyn ChannelMekCache> {
@@ -65,27 +69,29 @@ impl MekDistributeDeps for DaemonMekAdapter {
 
     fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool {
         self.ctx
-            .community_runtime
+            .communities
             .governance_state(community_id)
             .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }
 
-    fn online_recipients(
+    async fn online_recipients(
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,
     ) -> Vec<RotationRecipient> {
+        // Every roster member with an `M`/6 route (plan E3.4 S4), not only
+        // those gossip presence shows online; a route not cached yet is
+        // read once first, so a cold cache leaves nobody out.
         let excluded = exclude_pseudonym.unwrap_or_default();
-        self.governance()
-            .online_members(community_id)
+        let governance = self.governance();
+        governance.fill_member_routes(community_id).await;
+        governance
+            .routed_members(community_id)
             .into_iter()
-            // A member with no route blob cannot be app_called, so
-            // keeping them would only add a guaranteed failure to the
-            // delivery loop.
-            .filter(|m| !m.route_blob.is_empty() && m.pseudonym_hex != excluded)
-            .map(|m| RotationRecipient {
-                pseudonym_hex: m.pseudonym_hex,
-                route_blob: m.route_blob,
+            .filter(|(pseudonym, _)| pseudonym != excluded)
+            .map(|(pseudonym_hex, route_blob)| RotationRecipient {
+                pseudonym_hex,
+                route_blob,
             })
             .collect()
     }
@@ -109,7 +115,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
         // so the sender is authenticated by whether it decrypts at all.
         // See `Caller::call_community_envelope`.
         node.caller()
-            .call_community_envelope(&target, envelope_bytes)
+            .call_community_envelope(&target, route_blob, envelope_bytes)
             .await
             .map_err(|e| {
                 MekRotationError::Transport(format!("MEK app_call to {peer_pseudonym_hex}: {e}"))
@@ -170,13 +176,6 @@ impl MekDistributeDeps for DaemonMekAdapter {
         self.publish(SubscriptionEvent::Crypto(mapped));
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        self.governance().next_governance_lamport(community_id)
-    }
-
     fn identity_secret(&self) -> Option<[u8; 32]> {
         self.governance().identity_secret()
     }
@@ -193,7 +192,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
     fn persist_received_mek(&self, community_id: &str, scope: KeyScope, mek: &MediaEncryptionKey) {
         // `MekPersist` is async and this method is not, so the write runs
         // on the unlock scope, finishing before a lock completes. Losing it
-        // costs a keyring entry, not the key — the cache above already
+        // costs the vault's copy, not the key — the cache above already
         // holds it for this process.
         let persist = Arc::clone(&self.persist);
         let community_id = community_id.to_string();
@@ -220,13 +219,17 @@ impl MekDistributeDeps for DaemonMekAdapter {
         }));
     }
 
+    /// Queued, not waited for: the rotation worker runs one rotation at a
+    /// time, so a wait on the network here would hold every later one; the
+    /// governance-op outbox stream lands the `MEKGenerationBump` (S6b).
     async fn write_governance_entry(
         &self,
         community_id: &str,
         entry: rekindle_types::governance::GovernanceEntry,
     ) -> Result<(), MekRotationError> {
-        rekindle_governance_runtime::write_entry(&self.governance(), community_id, entry)
+        rekindle_governance_runtime::write_entry_queued(&self.governance(), community_id, entry)
             .await
+            .map(drop)
             .map_err(|e| MekRotationError::InvalidInput(e.to_string()))
     }
 

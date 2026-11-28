@@ -1,6 +1,6 @@
 # 0014 — The Veilid boundary is transitive
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [0021](0021-record-pool-crate.md): the record pool is `rekindle-record-pool`; this crate keeps its Veilid backend)
 - **Date:** 2026-10-07
 - **Supersedes:** the boundary sentences of [0001](0001-veilid-as-transport.md) ("`rekindle-protocol`
   (desktop) and `rekindle-transport` (daemon track) are the only `veilid_core` importers") and of

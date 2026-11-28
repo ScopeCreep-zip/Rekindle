@@ -1,24 +1,19 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
+import { handleSubmitOnboarding } from "../../actions/community.actions";
 import ForwardMessageDialog from "../../components/chat/ForwardMessageDialog";
-import CreateCommunityModal from "../../components/community/CreateCommunityModal";
-import CreateChannelModal from "../../components/community/CreateChannelModal";
-import JoinCommunityModal from "../../components/community/JoinCommunityModal";
+import SearchPanel from "../../components/chat/SearchPanel";
 import CommunitySettingsModal from "../../components/community/CommunitySettingsModal";
-import RenameChannelModal from "../../components/community/RenameChannelModal";
-import RenameCategoryModal from "../../components/community/RenameCategoryModal";
 import CreateCategoryModal from "../../components/community/CreateCategoryModal";
+import CreateChannelModal from "../../components/community/CreateChannelModal";
+import CreateCommunityModal from "../../components/community/CreateCommunityModal";
 import CreateEventModal from "../../components/community/CreateEventModal";
 import CreatePollModal from "../../components/community/CreatePollModal";
-import OnboardingWizard from "../../components/community/OnboardingWizard";
-import SearchPanel from "../../components/chat/SearchPanel";
 import CreateThreadModal from "../../components/community/CreateThreadModal";
-import ConfirmDialog from "../../components/common/ConfirmDialog";
+import JoinCommunityModal from "../../components/community/JoinCommunityModal";
+import OnboardingWizard from "../../components/community/OnboardingWizard";
+import RenameCategoryModal from "../../components/community/RenameCategoryModal";
+import RenameChannelModal from "../../components/community/RenameChannelModal";
 import { setCommunityState } from "../../stores/community.store";
-import {
-  handleLeaveCommunity,
-  handleDeleteChannelMessage,
-  handleSubmitOnboarding,
-} from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// All modal / overlay dialogs for `CommunityWindow`, rendered as a flat
@@ -44,7 +39,6 @@ const CommunityModals: Component<{ vm: CommunityVm }> = (props) => {
         <CommunitySettingsModal
           isOpen={vm.showSettings()}
           community={vm.activeCommunity()!}
-          myRoleIds={vm.myRoleIds()}
           onClose={() => vm.setShowSettings(false)}
         />
         <Show when={vm.showSearch()}>
@@ -62,7 +56,10 @@ const CommunityModals: Component<{ vm: CommunityVm }> = (props) => {
         <CreateEventModal
           isOpen={vm.showCreateEvent()}
           communityId={vm.selectedCommunityId()}
-          onClose={() => { vm.setShowCreateEvent(false); vm.setEditingEvent(null); }}
+          onClose={() => {
+            vm.setShowCreateEvent(false);
+            vm.setEditingEvent(null);
+          }}
           isEditing={vm.editingEvent() !== null}
           eventId={vm.editingEvent()?.id}
           initialTitle={vm.editingEvent()?.title}
@@ -124,33 +121,6 @@ const CommunityModals: Component<{ vm: CommunityVm }> = (props) => {
           />
         )}
       </Show>
-      <ConfirmDialog
-        isOpen={vm.showLeaveConfirm()}
-        title="Leave Community"
-        message={`Leave ${vm.activeCommunity()?.name ?? "this community"}? You will need to be re-invited to rejoin.`}
-        danger
-        confirmLabel="Leave"
-        onConfirm={() => {
-          handleLeaveCommunity(vm.selectedCommunityId());
-          vm.setShowLeaveConfirm(false);
-        }}
-        onCancel={() => vm.setShowLeaveConfirm(false)}
-      />
-      <ConfirmDialog
-        isOpen={vm.deleteTarget() !== null}
-        title="Delete Message"
-        message="Are you sure you want to delete this message? This cannot be undone."
-        danger
-        confirmLabel="Delete"
-        onConfirm={() => {
-          const msgId = vm.deleteTarget();
-          if (msgId) {
-            handleDeleteChannelMessage(vm.selectedChannelId(), msgId);
-          }
-          vm.setDeleteTarget(null);
-        }}
-        onCancel={() => vm.setDeleteTarget(null)}
-      />
       <Show when={vm.shouldShowOnboarding() && vm.activeCommunity()?.onboardingConfig}>
         <OnboardingWizard
           communityId={vm.selectedCommunityId()}

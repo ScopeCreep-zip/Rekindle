@@ -1,12 +1,12 @@
 //! Gossip message deduplication cache and key extraction.
 //!
 //! Prevents infinite gossip forwarding loops and duplicate processing.
-//! FIFO eviction when capacity is exceeded. Different envelope types
-//! use different dedup strategies (exact ID vs time-bucketed).
+//! FIFO eviction when capacity is exceeded. Every envelope is keyed by
+//! its sender-chosen message id ([`message_dedup_key`]): epidemic
+//! broadcast suppresses copies of one message, never a deliberate
+//! re-send of the same content.
 
 use std::collections::{HashSet, VecDeque};
-
-use blake2::{digest::consts::U16, Blake2b, Digest};
 
 use crate::envelope::SignedEnvelope;
 
@@ -96,151 +96,26 @@ fn hash_dedup_tuple(community_id: &str, sender: &str, dedup_key: &str) -> DedupH
         hasher.update(&(field.len() as u64).to_le_bytes());
         hasher.update(field.as_bytes());
     }
-    let digest = hasher.finalize();
-    u64::from_le_bytes(
-        digest.as_bytes()[..8]
-            .try_into()
-            .expect("Blake3 always produces >=8 bytes"),
-    )
+    // A BLAKE3 digest is a `[u8; 32]`: its first eight bytes, by type.
+    let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = *hasher.finalize().as_bytes();
+    u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
 }
 
-/// Extract a dedup key from a signed envelope's inner payload.
+/// The dedup key of a gossip envelope: its message id, hex-encoded.
 ///
-/// Different envelope types use different strategies:
-/// - Known message types: extract a unique ID field.
-/// - Unknown/fallback: BLAKE2b-128 hash of envelope bytes (collision-resistant).
-///
-/// This function deserializes the envelope to inspect it. If deserialization
-/// fails, it falls back to hashing.
-///
-/// # Note
-/// This operates on the `SignedEnvelope`'s `envelope_bytes` which contains
-/// the JSON-serialized inner payload. The sender pseudonym is NOT part of
-/// the dedup key — it's provided separately to `check_and_insert`.
-pub fn extract_dedup_key(signed: &SignedEnvelope) -> String {
-    // Try to extract a meaningful dedup key from known fields.
-    // We peek at the JSON to find a "type" tag and relevant ID fields
-    // without requiring the full envelope type to be in this crate.
-    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&signed.envelope_bytes) {
-        // Check for message_id (ChatMessage, governance entries, etc.)
-        if let Some(id) = value.get("message_id").and_then(|v| v.as_str()) {
-            return id.to_string();
-        }
-
-        // Check for governance entry type + lamport (unique per author per lamport)
-        if let Some(entry_type) = value.get("type").and_then(|v| v.as_str()) {
-            if let Some(lamport) = value.get("lamport").and_then(serde_json::Value::as_u64) {
-                return format!("{entry_type}:{lamport}");
-            }
-        }
-    }
-
-    // Fallback: BLAKE2b-128 hash of envelope bytes
-    hash_envelope_bytes(&signed.envelope_bytes)
-}
-
-/// BLAKE2b-128 hash of arbitrary bytes, hex-encoded.
-///
-/// Used as a collision-resistant dedup key when no semantic ID is available.
-pub fn hash_envelope_bytes(bytes: &[u8]) -> String {
-    let mut h = Blake2b::<U16>::new();
-    h.update(bytes);
-    hex::encode(h.finalize())
+/// The id is chosen by the sender per send, covered by the signature and
+/// forwarded unchanged by relays, so every copy of one message shares it
+/// while a re-send of identical bytes does not. Content-derived keys (a
+/// hash of the payload, a time bucket) were used before and silently
+/// dropped deliberate re-sends; the libp2p pubsub spec names the same
+/// hazard for content-addressed ids. The sender pseudonym is supplied to
+/// [`DedupCache::check_and_insert`] separately, so an id can never
+/// collide across senders.
+#[must_use]
+pub fn message_dedup_key(signed: &SignedEnvelope) -> String {
+    hex::encode(signed.message_id)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dedup_cache_rejects_duplicates() {
-        let mut cache = DedupCache::new(10);
-        assert!(!cache.check_and_insert("c1", "sender1", "msg1"));
-        assert!(cache.check_and_insert("c1", "sender1", "msg1"));
-    }
-
-    #[test]
-    fn dedup_cache_different_keys_accepted() {
-        let mut cache = DedupCache::new(10);
-        assert!(!cache.check_and_insert("c1", "s1", "msg1"));
-        assert!(!cache.check_and_insert("c1", "s1", "msg2"));
-        assert!(!cache.check_and_insert("c1", "s2", "msg1"));
-        assert!(!cache.check_and_insert("c2", "s1", "msg1"));
-    }
-
-    #[test]
-    fn dedup_cache_evicts_oldest_at_capacity() {
-        let mut cache = DedupCache::new(3);
-        cache.check_and_insert("c", "s", "a");
-        cache.check_and_insert("c", "s", "b");
-        cache.check_and_insert("c", "s", "c");
-        assert_eq!(cache.len(), 3);
-
-        // Insert 4th — should evict "a"
-        cache.check_and_insert("c", "s", "d");
-        assert_eq!(cache.len(), 3);
-        // "a" should no longer be recognized as duplicate
-        assert!(!cache.check_and_insert("c", "s", "a"));
-    }
-
-    #[test]
-    fn dedup_cache_clear() {
-        let mut cache = DedupCache::new(10);
-        cache.check_and_insert("c", "s", "msg");
-        cache.clear();
-        assert!(cache.is_empty());
-        // Previously seen message is now new
-        assert!(!cache.check_and_insert("c", "s", "msg"));
-    }
-
-    #[test]
-    fn extract_dedup_key_from_governance_entry() {
-        let payload = serde_json::json!({
-            "type": "channel_created",
-            "channel_id": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
-            "name": "general",
-            "channel_type": "text",
-            "record_key": "VLD0:abc",
-            "category_id": null,
-            "position": 0,
-            "lamport": 42
-        });
-        let signed = SignedEnvelope {
-            community_id: "c".into(),
-            sender_pseudonym: "aabb".into(),
-            envelope_bytes: serde_json::to_vec(&payload).unwrap(),
-            signature: vec![0; 64],
-            ttl: 5,
-        };
-        let key = extract_dedup_key(&signed);
-        assert_eq!(key, "channel_created:42");
-    }
-
-    #[test]
-    fn extract_dedup_key_fallback_to_hash() {
-        let signed = SignedEnvelope {
-            community_id: "c".into(),
-            sender_pseudonym: "aabb".into(),
-            envelope_bytes: vec![0xFF, 0xFE], // not valid JSON
-            signature: vec![0; 64],
-            ttl: 5,
-        };
-        let key = extract_dedup_key(&signed);
-        // Should be a hex-encoded BLAKE2b hash
-        assert_eq!(key.len(), 32); // 16 bytes = 32 hex chars
-    }
-
-    #[test]
-    fn hash_deterministic() {
-        let h1 = hash_envelope_bytes(b"hello");
-        let h2 = hash_envelope_bytes(b"hello");
-        assert_eq!(h1, h2);
-    }
-
-    #[test]
-    fn hash_differs() {
-        let h1 = hash_envelope_bytes(b"hello");
-        let h2 = hash_envelope_bytes(b"world");
-        assert_ne!(h1, h2);
-    }
-}
+#[path = "dedup_tests.rs"]
+mod tests;

@@ -1,0 +1,378 @@
+//! Route tests on the simulated network (plan VU2 items 3 and 11). Veilid
+//! 0.5.8 tests each of a node's own routes by a loopback question sent out
+//! over the route and back in through it (`routing_table/tasks/ping_validator.rs`,
+//! `route_spec_store/route_stats.rs:523-564` `record_loopback_result`). A
+//! route that carries traffic end to end passes; one that does not
+//! ([`crate::Fault::LoopbackFailures`], or an Unordered route once its node's
+//! network blocks UDP, [`crate::Fault::UdpBlocked`]) fails, and the run of
+//! failures kills it:
+//! - **when tested:** a published route is tested once it needs testing
+//!   (`routing_domains/public_internet/controller/private_route_management.rs:114-121`): idle for
+//!   [`ROUTE_MIN_IDLE`] since it was last known valid, or at once after a
+//!   failure (`route_stats.rs:144-158`) or a question lost on it, which
+//!   enqueues an out-of-band test (`rpc_processor/mod.rs:1586-1600`). The
+//!   management task runs every [`ROUTE_TEST_TICK`]
+//!   (`routing_domains/public_internet/controller/mod.rs:23`). A broken
+//!   route receives nothing, so it was last valid when it broke: its first
+//!   test comes [`ROUTE_MIN_IDLE`] later, or sooner after a lost question.
+//! - **how long a failing test takes:** its answer wait, Veilid's RPC
+//!   timeout ([`crate::RPC_TIMEOUT`]; the routed allowance of 10 % per hop
+//!   past 4, `rpc_processor/mod.rs:100-117`, is left out), then the next
+//!   tick.
+//! - **death:** a run of 3 failures on an Ordered route, 5 on an
+//!   Unordered one (`route_spec_store/mod.rs:51-63`), kills it
+//!   (`route_stats.rs:19-29` `means_route_dead`); it is released and the
+//!   owner hears `dead_routes` (`route_stats.rs:716-756`). A send failure
+//!   at the first hop is not death ([`crate::Fault::RouteLinkFailure`]).
+//! - **offline never blames:** while the node is Offline a failure is
+//!   deferred and retested (`ping_validator.rs:813-829`); here a node that
+//!   is detached, DHT-offline or not ready runs no test.
+//! - **silent death** ([`crate::Fault::RouteSilentDeath`], live finding
+//!   75): the route breaks while the node's online detector says Offline,
+//!   so each failed test is deferred, not counted (`ping_validator.rs:815-826`:
+//!   Offline defers without the cap that bounds Degraded), and no one hears
+//!   of it. It ends one of two ways: the owner releases the route (its run
+//!   goes with it), or the detector leaves Offline, which takes an answer
+//!   to a question sent after it went Offline
+//!   (`network_manager/online_detector.rs:1338-1350`), here the round trip
+//!   that proves a returned readiness or a reattach ([`crate::attach`]), or
+//!   a replica's answer to a DHT question the node sent while Offline
+//!   (`rpc_processor/mod.rs:1711-1728`, `SimDht::network`).
+//!   From then on the failures count, and 3 (Ordered) or 5 (Unordered)
+//!   kill the route (`route_spec_store/mod.rs:51-63`).
+//! - **remote route tests** (plan RV1, F9 N2): each node also tests the
+//!   routes it imported, on the same task
+//!   (`private_route_management.rs:396-414`): an entry the cache still
+//!   lists (not expired, `route_spec_store_cache.rs:315-326`) needs a test
+//!   when no test has proven it for [`ROUTE_MIN_IDLE`], or before its first
+//!   (`route_stats.rs:672-681` `remote_needs_testing`). The test is one
+//!   status question over the route (`ping_validator.rs:705-716`): a route
+//!   that takes traffic from outside answers it (`record_remote_test_pass`,
+//!   `route_stats.rs:685-692`); one its owner released, one dead from
+//!   outside ([`crate::Fault::OutsideDead`]) or one failing end to end
+//!   ([`crate::Fault::LoopbackFailures`]) gets no answer, and at the end of
+//!   the answer wait ([`crate::RPC_TIMEOUT`]) Veilid removes it from the
+//!   importer's cache (`ping_validator.rs:741-744`, `release_route` of a
+//!   remote id, `route_spec_store_cache.rs:397-415`) and reports it to the
+//!   importer alone as `dead_remote` (`mod.rs:235-251`). While the
+//!   importer's blame is suppressed (its detector Offline) the failure is
+//!   deferred and retested (`ping_validator.rs:733-739`); a node that is
+//!   detached, DHT-offline, not ready or asleep runs no test. An answered
+//!   call over the route proves it as a passed test does
+//!   (`rpc_processor/mod.rs:1821-1827`, `route_stats.rs:489-498`
+//!   `record_answer_received` sets `last_known_valid_ts`), so its next
+//!   test waits [`ROUTE_MIN_IDLE`] from that answer
+//!   ([`Network::remote_route_answered`]).
+//! - **the listing touches:** each tick lists the cache
+//!   (`mod.rs:313-324` `list_remote_routes`), which skips expired entries
+//!   (`route_spec_store_cache.rs:315-326`) and peeks every other one, and
+//!   `peek_remote_route` touches it (`route_spec_store_cache.rs:348-357`).
+//!   So while the task runs no import expires; one expires only when the
+//!   task has not run for 5 minutes ([`crate::routes`]). The task runs only
+//!   at the stages past published peer info
+//!   (`public_internet/controller/tasks.rs:113-122`), here a node that is
+//!   attached, DHT-online, ready and awake. A test whose answer comes
+//!   back past the wait on a live, slow route is lost
+//!   ([`crate::Fault::RemoteTestLost`]). Not modelled: a test lost to a
+//!   partition or a drop.
+
+use std::time::Duration;
+
+use rekindle_records::port::{PortEvent, RouteClass};
+
+use crate::network::Network;
+use crate::routes::RouteOrdering;
+
+/// A published route is tested after this long without being known valid
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:46` `ROUTE_MIN_IDLE_TIME_MS`).
+pub(crate) const ROUTE_MIN_IDLE: Duration = Duration::from_secs(30);
+
+/// The private route management task's period
+/// (Veilid 0.5.8 `routing_domains/public_internet/controller/mod.rs:23`).
+pub(crate) const ROUTE_TEST_TICK: Duration = Duration::from_secs(1);
+
+/// A run of failing loopback tests on one own route.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LoopbackRun {
+    /// Consecutive failed tests so far.
+    pub failures: usize,
+    /// When the next test runs.
+    pub next_test: tokio::time::Instant,
+    /// The run comes from [`crate::Fault::UdpBlocked`], and ends when UDP
+    /// is unblocked: the next test passes.
+    pub udp: bool,
+}
+
+impl LoopbackRun {
+    /// A run on a route that broke now: first tested [`ROUTE_MIN_IDLE`]
+    /// later.
+    pub(crate) fn new(udp: bool) -> Self {
+        Self {
+            failures: 0,
+            next_test: tokio::time::Instant::now() + ROUTE_MIN_IDLE,
+            udp,
+        }
+    }
+}
+
+/// The run of loopback failures that kills a route of `ordering`
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:51-63`).
+pub(crate) fn threshold(ordering: RouteOrdering) -> usize {
+    match ordering {
+        RouteOrdering::Ordered => 3,
+        RouteOrdering::Unordered => 5,
+    }
+}
+
+impl Network {
+    /// Run the route tests that are due: each fails, and a route whose run
+    /// reaches its threshold dies, reported to its owner as `dead_routes`.
+    pub(crate) fn tick_route_tests(&self) {
+        let now = tokio::time::Instant::now();
+        let mut dead: Vec<(usize, String)> = Vec::new();
+        {
+            let mut guard = self.inner.lock();
+            let inner = &mut *guard;
+            let mut ids: Vec<String> = inner.faults.loopback.keys().cloned().collect();
+            ids.sort();
+            for id in ids {
+                let Some(route) = inner.routes.get(&id).cloned() else {
+                    inner.faults.loopback.remove(&id);
+                    continue;
+                };
+                let offline = inner.faults.detached.contains(&route.node)
+                    || inner.faults.dht_offline.contains(&route.node)
+                    || inner.faults.not_ready.contains(&route.node);
+                let Some(run) = inner.faults.loopback.get_mut(&id) else {
+                    continue;
+                };
+                if offline || now < run.next_test {
+                    continue;
+                }
+                run.next_test = now + crate::RPC_TIMEOUT + ROUTE_TEST_TICK;
+                if inner.faults.detector_offline.contains(&route.node) {
+                    // Deferred and retested (`ping_validator.rs:815-826`).
+                    continue;
+                }
+                run.failures += 1;
+                if run.failures >= threshold(route.ordering) {
+                    inner.faults.loopback.remove(&id);
+                    inner.routes.remove(&id);
+                    dead.push((route.node, id));
+                }
+            }
+        }
+        for (node, id) in dead {
+            self.send(
+                node,
+                node,
+                "RouteChange",
+                PortEvent::RouteChange {
+                    dead: vec![id],
+                    dead_remote: Vec::new(),
+                },
+                false,
+            );
+        }
+    }
+
+    /// Run each node's due remote route tests ([module docs](self)): a
+    /// failed one, its answer wait over and blame not suppressed, removes
+    /// the importer's entry and tells the importer `dead_remote`.
+    pub(crate) fn tick_remote_route_tests(&self) {
+        let now = self.now_us();
+        let wait = u64::try_from(crate::RPC_TIMEOUT.as_micros()).unwrap_or(u64::MAX);
+        let idle = u64::try_from(ROUTE_MIN_IDLE.as_micros()).unwrap_or(u64::MAX);
+        let mut dead: Vec<(usize, String)> = Vec::new();
+        let mut taken: Vec<(usize, String)> = Vec::new();
+        {
+            let mut guard = self.inner.lock();
+            let inner = &mut *guard;
+            let faults = &inner.faults;
+            let routes = &inner.routes;
+            for (node, slot) in inner.nodes.iter_mut().enumerate() {
+                if faults.detached.contains(&node)
+                    || faults.dht_offline.contains(&node)
+                    || faults.not_ready.contains(&node)
+                    || faults.asleep.contains(&node)
+                {
+                    continue;
+                }
+                let suppressed = faults.detector_offline.contains(&node);
+                let mut ids: Vec<String> = slot.imported.keys().cloned().collect();
+                ids.sort();
+                for id in ids {
+                    let lost = faults.test_lost.contains(&(node, id.clone()));
+                    let answers = routes.contains_key(&id)
+                        && !faults.outside_dead.contains(&id)
+                        && !faults.loopback.contains_key(&id)
+                        && !lost;
+                    let Some(entry) = slot.imported.get_mut(&id) else {
+                        continue;
+                    };
+                    if entry.expired(now) {
+                        continue;
+                    }
+                    // `peek_remote_route` touches without LRU action.
+                    entry.touched = now;
+                    match entry.failing {
+                        Some(at) if now >= at => {
+                            entry.failing = None;
+                            if !suppressed {
+                                slot.imported.remove(&id);
+                                dead.push((node, id));
+                            }
+                        }
+                        None if entry.valid.is_none_or(|v| now.saturating_sub(v) > idle) => {
+                            if answers {
+                                entry.valid = Some(now);
+                            } else {
+                                entry.failing = Some(now.saturating_add(wait));
+                                if lost {
+                                    taken.push((node, id.clone()));
+                                }
+                            }
+                        }
+                        // A test in flight, or none due.
+                        Some(_) | None => {}
+                    }
+                }
+            }
+        }
+        {
+            let lost = &mut self.inner.lock().faults.test_lost;
+            for key in &taken {
+                lost.remove(key);
+            }
+        }
+        for (node, id) in dead {
+            self.inner
+                .lock()
+                .trace
+                .push(node, crate::routes::RELEASES_PEER_ROUTE.to_string());
+            self.send(
+                node,
+                node,
+                "RouteChange",
+                PortEvent::RouteChange {
+                    dead: Vec::new(),
+                    dead_remote: vec![id],
+                },
+                false,
+            );
+        }
+    }
+
+    /// [`crate::Fault::LoopbackFailures`]: `node`'s live route of `class`
+    /// breaks now.
+    pub(crate) fn break_route(&self, node: usize, class: RouteClass) {
+        let tag = crate::routes::class_tag(class);
+        let mut inner = self.inner.lock();
+        let mut ids: Vec<String> = inner
+            .routes
+            .iter()
+            .filter(|(id, r)| r.node == node && crate::routes::is_class(id, node, tag))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.sort();
+        for id in ids {
+            inner.faults.loopback.insert(id, LoopbackRun::new(false));
+        }
+    }
+
+    /// [`crate::Fault::RouteDead`]: Veilid releases `node`'s route `id`
+    /// and reports it to `node` alone as `dead_routes` (`route_stats.rs:716-755`).
+    pub(crate) fn kill_route(&self, node: usize, id: &str) {
+        {
+            let mut inner = self.inner.lock();
+            if inner.routes.get(id).is_none_or(|r| r.node != node) {
+                return;
+            }
+            inner.routes.remove(id);
+            inner.faults.loopback.remove(id);
+        }
+        self.send(
+            node,
+            node,
+            "RouteChange",
+            PortEvent::RouteChange {
+                dead: vec![id.to_string()],
+                dead_remote: Vec::new(),
+            },
+            false,
+        );
+    }
+
+    /// [`crate::Fault::RouteSilentDeath`]: `node`'s live route of `class`
+    /// breaks now, and its online detector says Offline.
+    pub(crate) fn silence_route(&self, node: usize, class: RouteClass) {
+        self.break_route(node, class);
+        self.inner.lock().faults.detector_offline.insert(node);
+    }
+
+    /// [`crate::Fault::UdpBlocked`]: `node`'s live Unordered routes break
+    /// (or, unblocked, the runs UDP caused end: their next test passes).
+    pub(crate) fn block_udp(&self, node: usize, blocked: bool) {
+        let mut guard = self.inner.lock();
+        let inner = &mut *guard;
+        crate::toggle(&mut inner.faults.udp_blocked, node, blocked);
+        let mut ids: Vec<String> = inner
+            .routes
+            .iter()
+            .filter(|(_, r)| r.node == node && r.ordering == RouteOrdering::Unordered)
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.sort();
+        for id in ids {
+            if blocked {
+                inner
+                    .faults
+                    .loopback
+                    .entry(id)
+                    .or_insert_with(|| LoopbackRun::new(true));
+            } else if inner.faults.loopback.get(&id).is_some_and(|r| r.udp) {
+                inner.faults.loopback.remove(&id);
+            }
+        }
+    }
+
+    /// [`crate::Fault::OutsideDead`]: `node`'s live route of `class` stops
+    /// taking traffic from outside now; its loopback keeps passing, so it
+    /// never enters a loopback-failure run.
+    pub(crate) fn kill_outside(&self, node: usize, class: RouteClass) {
+        let tag = crate::routes::class_tag(class);
+        let mut inner = self.inner.lock();
+        let ids: Vec<String> = inner
+            .routes
+            .iter()
+            .filter(|(id, r)| r.node == node && crate::routes::is_class(id, node, tag))
+            .map(|(id, _)| id.clone())
+            .collect();
+        inner.faults.outside_dead.extend(ids);
+    }
+
+    /// [`crate::Fault::RemoteTestLost`]: `importer`'s next remote test of
+    /// `owner`'s live route of `class` loses its answer.
+    pub(crate) fn lose_remote_test(&self, importer: usize, owner: usize, class: RouteClass) {
+        let tag = crate::routes::class_tag(class);
+        let mut inner = self.inner.lock();
+        let ids: Vec<String> = inner
+            .routes
+            .iter()
+            .filter(|(id, r)| r.node == owner && crate::routes::is_class(id, owner, tag))
+            .map(|(id, _)| id.clone())
+            .collect();
+        (inner.faults.test_lost).extend(ids.into_iter().map(|id| (importer, id)));
+    }
+
+    /// Whether route `id` is dead from outside ([`crate::Fault::OutsideDead`]).
+    pub(crate) fn outside_dead(&self, id: &str) -> bool {
+        self.inner.lock().faults.outside_dead.contains(id)
+    }
+
+    /// Whether route `id` fails end to end (its loopback tests fail):
+    /// nothing sent over it or to it arrives.
+    pub(crate) fn route_broken(&self, id: &str) -> bool {
+        self.inner.lock().faults.loopback.contains_key(id)
+    }
+}

@@ -1,0 +1,506 @@
+//! Golden JSON shape of every DTO a Host call answers (plan E1.1, recipe
+//! step 2): the GUI, the CLI and the TUI decode these, and the TypeScript
+//! side (`src/ipc/commands/dto.ts`) types them by hand. One sample per
+//! shape (and per enum variant), every key camelCase, and the JSON equal to
+//! `tests/golden/dto.json` (`UPDATE_GOLDEN=1` after a deliberate change).
+
+mod community_profile;
+mod dm;
+#[path = "../common/json.rs"]
+mod json;
+mod lobby;
+mod local_search;
+mod onboarding;
+mod servers;
+mod skin;
+mod thread;
+
+use std::path::PathBuf;
+
+use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
+use rekindle_types::dto::community::{
+    CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+};
+use rekindle_types::dto::friends::{
+    BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
+    SafetyNumberView,
+};
+use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
+use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
+use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, NotJoinableReason};
+use rekindle_types::intent::{
+    IntentClass, IntentId, IntentKind, IntentReview, Notifies, ProofRequired, Reversibility,
+    Subject, UndoOffer,
+};
+use rekindle_types::preferences::Preferences;
+use rekindle_types::presence::{IdleState, SessionStatus};
+use serde_json::{json, Map, Value};
+
+fn pk(digit: char) -> String {
+    digit.to_string().repeat(64)
+}
+
+fn intent_id() -> IntentId {
+    serde_json::from_value(json!("01900000-0000-7000-8000-000000000001")).unwrap()
+}
+
+fn game() -> OwnGame {
+    OwnGame {
+        game_id: 4181,
+        game_name: "Counter-Strike 2".into(),
+        elapsed_seconds: 90,
+        server_address: Some("10.0.0.1:27015".into()),
+        icon_key: Some("xfire/8507".into()),
+    }
+}
+
+fn review() -> IntentReview {
+    IntentReview {
+        intent_id: intent_id(),
+        kind: IntentKind::DeleteIdentity,
+        class: IntentClass::Protected,
+        subject: Subject::OwnIdentity { name: "Me".into() },
+        facts: Vec::new(),
+        escalations: Vec::new(),
+        reversibility: Reversibility::Never,
+        notifies: Notifies::Nobody,
+        proof: ProofRequired::Passphrase,
+        expires_at_ms: 1_700_000_300_000,
+        acknowledgement: None,
+        cancel_sends: false,
+    }
+}
+
+fn to(value: impl serde::Serialize) -> Value {
+    serde_json::to_value(value).expect("serialize sample")
+}
+
+/// One sample per DTO shape and enum variant.
+fn samples() -> Map<String, Value> {
+    let mut out = Map::new();
+    let mut add = |id: &str, value: Value| {
+        assert!(out.insert(id.to_owned(), value).is_none(), "duplicate {id}");
+    };
+    add(
+        "channel.message",
+        to(rekindle_types::dto::channel_message::ChannelMessageView {
+            id: 7,
+            sender_id: pk('b'),
+            body: "hello channel".into(),
+            decryption_failed: false,
+            undecryptable: None,
+            automod_blurred: false,
+            timestamp: 1_760_000_000,
+            is_own: false,
+            server_message_id: Some("msg_1".into()),
+            reactions: Some(vec![rekindle_types::dto::channel_message::ReactionGroup {
+                emoji: "+1".into(),
+                count: 1,
+                reactors: vec![pk('c')],
+            }]),
+            pinned: None,
+            poll: Some(rekindle_types::dto::channel_message::MessagePoll {
+                poll_id: "00".repeat(16),
+                question: "Pick one".into(),
+                answers: vec![rekindle_types::dto::channel_message::MessagePollAnswer {
+                    index: 0,
+                    text: "A".into(),
+                    vote_count: 1,
+                    voters: vec![pk('c')],
+                }],
+                multi_select: false,
+                expires_at: None,
+                closed: false,
+                selected_answers: vec![],
+            }),
+            forwarded_from_author: None,
+            forwarded_from_name: None,
+            attachment: Some(rekindle_types::dto::channel_message::MessageAttachment {
+                attachment_id: "att_1".into(),
+                filename: "a.png".into(),
+                mime_type: "image/png".into(),
+                total_size: 10,
+                chunk_count: 1,
+                downloaded: false,
+            }),
+            flags: 0,
+            send_state: rekindle_types::message::SendState::Delivered,
+            failure_reason: None,
+            edited_at: None,
+            removed_by: None,
+            history_gap_through: None,
+        }),
+    );
+    add(
+        "channel.voice_message_audio",
+        to(
+            rekindle_types::dto::channel_message::VoiceMessageAudioView {
+                audio: b"OggS".to_vec(),
+                duration_ms: 2_340,
+                waveform: vec![0, 128, 255],
+            },
+        ),
+    );
+    add(
+        "identity.summary",
+        to(IdentitySummary {
+            public_key: pk('a'),
+            display_name: "Ann".into(),
+            created_at: 1_700_000_000_000,
+        }),
+    );
+    add(
+        "identity.view",
+        to(IdentityView {
+            public_key: pk('a'),
+            display_name: "Ann".into(),
+        }),
+    );
+    add(
+        "identity.shown",
+        to(Some(IdentityShown {
+            public_key: pk('a'),
+            display_name: "Ann".into(),
+            profile_dht_key: Some(format!("VLD0:{}", "p".repeat(43))),
+            mailbox_dht_key: Some(format!("VLD0:{}", "m".repeat(43))),
+            friend_list_dht_key: Some(format!("VLD0:{}", "f".repeat(43))),
+            communities: 2,
+        })),
+    );
+    add("identity.shown.locked", to(None::<IdentityShown>));
+    add(
+        "presence.view.playing",
+        to(OwnPresenceView {
+            status: SessionStatus::Busy,
+            status_message: "fragging".into(),
+            game: Some(game()),
+            idle: IdleState::Active,
+        }),
+    );
+    add(
+        "presence.view.autoAway",
+        to(OwnPresenceView {
+            status: SessionStatus::Away,
+            status_message: String::new(),
+            game: None,
+            idle: IdleState::AutoAway,
+        }),
+    );
+    add(
+        "presence.view.invisible",
+        to(OwnPresenceView {
+            status: SessionStatus::Invisible,
+            status_message: String::new(),
+            game: None,
+            idle: IdleState::Unavailable,
+        }),
+    );
+    add(
+        "audit.verified.intact",
+        to(AuditVerified::Intact { length: 12 }),
+    );
+    add(
+        "audit.verified.broken",
+        to(AuditVerified::Broken {
+            length: 12,
+            at: Some(7),
+            detail: "entry 7: recomputed MAC does not match".into(),
+        }),
+    );
+    add(
+        "audit.entry",
+        to(AuditEntryView {
+            cursor: 7,
+            prev_mac: "ab".repeat(32),
+            mac: "cd".repeat(32),
+            at_ms: 1_700_000_000_000,
+            actor_pub: pk('a'),
+            kind: "VaultUnlocked".into(),
+            payload: json!({ "first_time": false }),
+        }),
+    );
+    add(
+        "command.done.undo",
+        to(Done {
+            value: game(),
+            undo: Some(UndoOffer {
+                id: intent_id(),
+                inverse: IntentKind::ClearGamePresence,
+                expires_at_ms: 1_700_000_010_000,
+            }),
+        }),
+    );
+    add(
+        "command.done",
+        to(Done {
+            value: (),
+            undo: None,
+        }),
+    );
+    add(
+        "command.error.failed",
+        to(CommandError::Failed {
+            code: 401,
+            message: "Wrong passphrase".into(),
+            remediation: None,
+        }),
+    );
+    add(
+        "command.error.intentRequired",
+        to(CommandError::IntentRequired(review())),
+    );
+    add("command.error.cancelled", to(CommandError::Cancelled));
+    // `SetReadReceiptsEnabled` answers the identity's preferences (plan E2.5).
+    add(
+        "preferences",
+        to(Preferences {
+            read_receipts_enabled: true,
+            ..Preferences::default()
+        }),
+    );
+    friend_samples(&mut add);
+    onboarding::samples(&mut add);
+    skin::samples(&mut add);
+    community_profile::samples(&mut add);
+    dm::samples(&mut add);
+    servers::samples(&mut add, &pk('b'));
+    local_search::samples(&mut add, &pk('c'));
+    lobby::samples(&mut add, &pk('c'));
+    thread::samples(&mut add);
+    out
+}
+
+/// The friend and DM DTOs (plan E2.1).
+fn friend_samples(add: &mut impl FnMut(&str, Value)) {
+    let mut accepted = FriendState::new(pk('b'), "Bob".into(), FriendshipState::Accepted);
+    accepted.nickname = Some("Bobby".into());
+    accepted.status = SessionStatus::Busy;
+    accepted.status_message = Some("raiding".into());
+    accepted.group_id = Some(7);
+    accepted.group = Some("Raid team".into());
+    accepted.identity_pin_mismatch = true;
+    accepted.last_seen_at = Some(1_700_000_000_000);
+    accepted.game_info = Some(GameInfoState {
+        game_id: 4181,
+        game_name: "Counter-Strike 2".into(),
+        server_info: None,
+        elapsed_seconds: 90,
+        server_address: Some("10.0.0.1:27015".into()),
+        icon_key: Some("xfire/8507".into()),
+        joinable: true,
+        joinable_reason: None,
+    });
+    add("friends.friend.accepted", to(Friend::of(&accepted)));
+    add(
+        "friends.gameInfo.cannotLaunch",
+        to(GameInfoState {
+            game_id: 4300,
+            game_name: "Minecraft".into(),
+            server_info: None,
+            elapsed_seconds: 30,
+            server_address: Some("10.0.0.1:25565".into()),
+            icon_key: Some("xfire/6216".into()),
+            joinable: false,
+            joinable_reason: Some(NotJoinableReason::CannotLaunch),
+        }),
+    );
+    add(
+        "presence.gameTotals",
+        to(vec![GameTotalView {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            icon_key: Some("xfire/8507".into()),
+            total_secs: 9000,
+            last_played: 1_700_000_000_000,
+        }]),
+    );
+    add(
+        "presence.hiddenGames",
+        to(vec![HiddenGameView {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            icon_key: Some("xfire/8507".into()),
+        }]),
+    );
+    let mut pending = FriendState::new(pk('c'), "Cy".into(), FriendshipState::PendingOut);
+    pending.status = SessionStatus::Online;
+    pending.handshake_error = Some("their accept carried no session data".into());
+    add("friends.friend.pendingOut", to(Friend::of(&pending)));
+    add(
+        "friends.pendingRequest",
+        to(PendingRequest {
+            public_key: pk('d'),
+            display_name: "Dee".into(),
+            message: "remember me from LAN night?".into(),
+            received_at: 1_700_000_000_000,
+        }),
+    );
+    add(
+        "friends.blockedUser",
+        to(BlockedUser {
+            public_key: pk('e'),
+            display_name: "Eve".into(),
+            blocked_at: 1_700_000_000_000,
+        }),
+    );
+    add(
+        "friends.outgoingInvite",
+        to(OutgoingInvite {
+            invite_id: "3f2a7c1e-0000-4000-8000-000000000001".into(),
+            url: "rekindle://abc".into(),
+            created_at: 1_700_000_000_000,
+            expires_at: 1_700_172_800_000,
+            status: "responded".into(),
+            accepted_by: Some(pk('f')),
+        }),
+    );
+    add(
+        "friends.inviteCreated",
+        to(InviteCreated {
+            url: "rekindle://abc".into(),
+            invite_id: "3f2a7c1e-0000-4000-8000-000000000001".into(),
+            created_at: 1_700_000_000_000,
+            expires_at: 1_700_604_800_000,
+        }),
+    );
+    add(
+        "friends.friendCode",
+        to(FriendCodeView {
+            url: format!(
+                "rekindle://add/{}/VLD0:abc/{}",
+                pk('a'),
+                rekindle_test_fixtures::FRIEND_TOKEN
+            ),
+            public_key: pk('a'),
+            profile_key: "VLD0:abc".into(),
+            token: rekindle_test_fixtures::FRIEND_TOKEN.into(),
+            qr_rows: vec!["101".into(), "010".into(), "101".into()],
+        }),
+    );
+    add(
+        "friends.safetyNumber",
+        to(SafetyNumberView {
+            peer_key: pk('b'),
+            digits: "123456789012345678901234567890123456789012345678901234567890".into(),
+            scannable: vec![0x08, 0x02],
+            qr_rows: vec!["101".into(), "010".into(), "101".into()],
+            verified: false,
+            verified_at: None,
+            changed: true,
+        }),
+    );
+    let member = |digit, label: &str| GroupDmViewMember {
+        key: pk(digit),
+        label: label.into(),
+    };
+    add(
+        "groupDm.view.pending",
+        to(GroupDmView {
+            group_id: "0f".repeat(16),
+            name: "raid night".into(),
+            members: vec![
+                member('b', "bob"),
+                member('a', "aaaa aaaa"),
+                member('c', "carol"),
+            ],
+            epoch: 0,
+            pending: true,
+            origin_peer: None,
+            favourite: false,
+            rename_refused: Some("accept the invite first".into()),
+            invite_refused: Some("accept the invite first".into()),
+            call_refused: Some("accept the invite first".into()),
+        }),
+    );
+    add(
+        "community.auditEntry",
+        to(CommunityAuditEntry {
+            action: "member_banned".into(),
+            actor_pseudonym: pk('a'),
+            actor_name: "aaaa aaaa".into(),
+            target: Some(pk('b')),
+            target_name: Some("Bea".into()),
+            details: Some("spam".into()),
+            timestamp: 7,
+        }),
+    );
+    add(
+        "community.banView",
+        to(CommunityBanView {
+            pseudonym_key: pk('b'),
+            display_name: "Bea".into(),
+        }),
+    );
+    add(
+        "community.inviteCreated",
+        to(CommunityInviteCreated {
+            invite_id: "0a".repeat(16),
+            code_hash: "ab".repeat(32),
+            url: "rekindle://invite/VLD0:g/VLD0:s/0b0b".into(),
+            expires_at: Some(1_700_604_800),
+        }),
+    );
+    add(
+        "community.inviteView.ours",
+        to(CommunityInviteView {
+            invite_id: "0a".repeat(16),
+            code_hash: "ab".repeat(32),
+            created_by: pk('a'),
+            max_uses: 5,
+            uses: 2,
+            expires_at: None,
+            created_at: Some(1_700_000_000_000),
+            url: Some("rekindle://invite/VLD0:g/VLD0:s/0b0b".into()),
+            fingerprint: "ab12".repeat(16),
+        }),
+    );
+}
+
+fn golden_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/dto.json")
+}
+
+/// Keys inside `payload` are the audit record's own, written before the
+/// DTO existed; everything else is the DTOs' shape.
+#[test]
+fn every_key_is_camel_case() {
+    let mut bad = Vec::new();
+    for (id, mut value) in samples() {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("payload");
+        }
+        json::collect_bad_keys(&value, &format!("[{id}] $"), &mut bad);
+    }
+    assert!(
+        bad.is_empty(),
+        "keys that are not camelCase:\n{}",
+        bad.join("\n")
+    );
+}
+
+#[test]
+fn json_matches_the_golden_file() {
+    json::check_golden(&golden_path(), &samples(), "DTO");
+}
+
+/// Every DTO round-trips: what a frontend decodes is what the host sent.
+#[test]
+fn dtos_round_trip() {
+    let samples = samples();
+    let back: Done<OwnGame> = serde_json::from_value(samples["command.done.undo"].clone()).unwrap();
+    assert_eq!(back.value, game());
+    let error: CommandError =
+        serde_json::from_value(samples["command.error.intentRequired"].clone()).unwrap();
+    assert_eq!(error, CommandError::IntentRequired(review()));
+    let view: OwnPresenceView =
+        serde_json::from_value(samples["presence.view.playing"].clone()).unwrap();
+    assert_eq!(view.game, Some(game()));
+    let verified: AuditVerified =
+        serde_json::from_value(samples["audit.verified.broken"].clone()).unwrap();
+    assert!(matches!(
+        verified,
+        AuditVerified::Broken { at: Some(7), .. }
+    ));
+}

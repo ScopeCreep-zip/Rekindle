@@ -6,22 +6,35 @@
 //!
 //! * 5-second response timeout.
 //! * 256 KB body cap (read up to that, then stop).
-//! * `User-Agent: Rekindle-LinkPreview/1.0 (+https://rekindle.app)`.
-//! * `https` only ([`https_url`]); redirects limited to 5 hops.
+//! * A neutral `User-Agent` ([`USER_AGENT`]): a previewed site must not
+//!   learn that the sender runs Rekindle. No cookies, no `Accept-Language`.
+//! * Only a [`fetchable_url`]: `https`, and no single-label host, no
+//!   `.onion`, `.i2p`, localhost, reserved, local-network (`.local`,
+//!   `.internal`, `.lan`, `.home.arpa`, `.alt`) or mixed-script (IDN
+//!   homograph) name, and no IP literal that is not global unicast
+//!   (`host`). Every redirect hop is re-checked the same way
+//!   ([`redirect_allowed`]), at most 5 redirects.
+//! * No proxy from the environment or the OS: `HTTP(S)_PROXY` and
+//!   `ALL_PROXY` would receive every fetch and resolve the target where
+//!   [`SsrfGuardedResolver`] cannot see it. Rekindle has no proxy setting
+//!   of its own; when one is added it is applied with `Proxy::all` and its
+//!   address goes through the same resolver.
 //! * No `og:image`: receivers would fetch it and reveal their IP.
 //! * Returns plain text/html only.
 //! * SSRF guard ([`SsrfGuardedResolver`]): every resolved address — the
 //!   initial request and each of the up-to-5 redirect hops, since
-//!   reqwest re-resolves on each one — is checked against loopback,
-//!   private, link-local (which covers the `169.254.169.254` cloud
-//!   metadata endpoint), unspecified, and multicast ranges before a
-//!   connection is made. This is sender-side: the composing user's own
+//!   reqwest re-resolves on each one — must be global unicast before a
+//!   connection is made (so no loopback, private, CGNAT, link-local or
+//!   cloud metadata `169.254.169.254`, and no NAT64, 6to4 or Teredo
+//!   address carrying one). This is sender-side: the composing user's own
 //!   client is what fetches a URL they typed, gated by the `EMBED_LINKS`
 //!   permission; without this guard that client could be pointed at an
 //!   internal service or cloud metadata endpoint, directly or via a
 //!   public URL that redirects.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+mod host;
+
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,7 +47,12 @@ const MAX_BODY_BYTES: usize = 256 * 1024;
 /// Longest URL Rekindle fetches, shows or opens.
 pub const MAX_URL_LEN: usize = 2048;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-const USER_AGENT: &str = "Rekindle-LinkPreview/1.0 (+https://rekindle.app)";
+/// The User-Agent every preview fetch sends. Signal sends this string so a
+/// previewed site serves its OpenGraph tags without learning which app
+/// fetched them (prod research batch 7, L4).
+pub const USER_AGENT: &str = "WhatsApp/2";
+/// Most redirects a preview fetch follows.
+const MAX_REDIRECTS: usize = 5;
 
 #[derive(Debug, Error)]
 pub enum LinkPreviewError {
@@ -46,6 +64,10 @@ pub enum LinkPreviewError {
     TooLong { got: usize },
     #[error("URL has no host")]
     NoHost,
+    #[error("host {0} is never fetched")]
+    RefusedHost(String),
+    #[error("more than {MAX_REDIRECTS} redirects")]
+    TooManyRedirects,
     #[error("HTTP fetch failed: {0}")]
     Http(String),
     #[error("response is not text/html")]
@@ -54,11 +76,9 @@ pub enum LinkPreviewError {
     BodyTooLarge,
 }
 
-/// DNS resolver that refuses to hand back addresses in loopback,
-/// private, link-local, unspecified, or multicast ranges — the classic
-/// SSRF targets. `169.254.169.254` (the AWS/GCP/Azure cloud metadata
-/// endpoint) falls under IPv4 link-local, so `is_link_local()` alone
-/// covers it without a separate special case.
+/// DNS resolver that hands back only global unicast addresses
+/// (`host::is_public`): the classic SSRF targets, the cloud metadata
+/// endpoint `169.254.169.254` among them, are all outside it.
 ///
 /// `reqwest::Client::dns_resolver` is called for the initial request
 /// AND for every redirect hop, so wiring the check in here (rather than
@@ -77,42 +97,18 @@ impl Resolve for SsrfGuardedResolver {
                 .collect();
             let safe: Vec<SocketAddr> = resolved
                 .into_iter()
-                .filter(|addr| !is_disallowed_target(&addr.ip()))
+                .filter(|addr| host::is_public(&addr.ip()))
                 .collect();
             if safe.is_empty() {
                 return Err(format!(
-                    "SSRF guard: {host} resolved only to disallowed (loopback/private/\
-                     link-local/unspecified/multicast) addresses — refusing to connect"
+                    "SSRF guard: {host} resolved only to addresses that are not global \
+                     unicast — refusing to connect"
                 )
                 .into());
             }
             Ok(Box::new(safe.into_iter()) as Addrs)
         })
     }
-}
-
-/// Whether `ip` falls in a range link-preview fetches must never reach.
-fn is_disallowed_target(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => is_disallowed_v4(v4),
-        IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_multicast()
-                || v6.is_unique_local() // fc00::/7
-                || v6.is_unicast_link_local() // fe80::/10
-                || v6.to_ipv4_mapped().is_some_and(|v4| is_disallowed_v4(&v4))
-        }
-    }
-}
-
-fn is_disallowed_v4(v4: &Ipv4Addr) -> bool {
-    v4.is_loopback()
-        || v4.is_private()
-        || v4.is_link_local() // covers 169.254.169.254 cloud metadata
-        || v4.is_unspecified()
-        || v4.is_multicast()
-        || v4.is_broadcast()
 }
 
 /// Parse a URL Rekindle may fetch, show or open: `https`, with a host, at
@@ -130,6 +126,58 @@ pub fn https_url(url: &str) -> Result<Url, LinkPreviewError> {
         return Err(LinkPreviewError::NoHost);
     }
     Ok(parsed)
+}
+
+/// Parse a URL a link preview may fetch: an [`https_url`] whose host is
+/// not refused. Refused: an IP literal that is not global unicast (reqwest
+/// connects to an IP literal without asking [`SsrfGuardedResolver`]), and
+/// a name `host::refused_domain` refuses (single-label, a refused TLD or
+/// suffix, a label mixing scripts).
+pub fn fetchable_url(url: &str) -> Result<Url, LinkPreviewError> {
+    let parsed = https_url(url)?;
+    let refused = match parsed.host() {
+        Some(url::Host::Ipv4(v4)) => !host::is_public(&IpAddr::V4(v4)),
+        Some(url::Host::Ipv6(v6)) => !host::is_public(&IpAddr::V6(v6)),
+        Some(url::Host::Domain(domain)) => host::refused_domain(domain),
+        None => true,
+    };
+    if refused {
+        return Err(LinkPreviewError::RefusedHost(
+            parsed.host_str().unwrap_or_default().to_string(),
+        ));
+    }
+    Ok(parsed)
+}
+
+/// Whether a fetch that has requested `previous` URLs (reqwest's
+/// `Attempt::previous`, which counts the first request) may follow one
+/// more redirect to `next`: at most [`MAX_REDIRECTS`] redirects, and
+/// `next` a [`fetchable_url`].
+pub fn redirect_allowed(previous: usize, next: &Url) -> Result<(), LinkPreviewError> {
+    if previous > MAX_REDIRECTS {
+        return Err(LinkPreviewError::TooManyRedirects);
+    }
+    fetchable_url(next.as_str()).map(drop)
+}
+
+/// The client every preview fetch uses: the neutral User-Agent, the
+/// timeout, the redirect policy, the SSRF resolver, and no proxy, so
+/// neither the environment nor the OS can route a fetch around the
+/// resolver.
+fn preview_client() -> Result<reqwest::Client, LinkPreviewError> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .timeout(REQUEST_TIMEOUT)
+        .user_agent(USER_AGENT)
+        .redirect(reqwest::redirect::Policy::custom(
+            |attempt| match redirect_allowed(attempt.previous().len(), attempt.url()) {
+                Ok(()) => attempt.follow(),
+                Err(e) => attempt.error(e),
+            },
+        ))
+        .dns_resolver(Arc::new(SsrfGuardedResolver))
+        .build()
+        .map_err(|e| LinkPreviewError::Http(e.to_string()))
 }
 
 /// Longest preview title kept, in chars.
@@ -176,15 +224,9 @@ pub async fn fetch_link_preview(
     url: &str,
     message_id: &str,
 ) -> Result<LinkPreview, LinkPreviewError> {
-    let parsed = https_url(url)?;
+    let parsed = fetchable_url(url)?;
 
-    let client = reqwest::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .user_agent(USER_AGENT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .dns_resolver(Arc::new(SsrfGuardedResolver))
-        .build()
-        .map_err(|e| LinkPreviewError::Http(e.to_string()))?;
+    let client = preview_client()?;
 
     let response = client
         .get(parsed.clone())
@@ -352,152 +394,4 @@ fn now_unix_ms() -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extracts_basic_open_graph() {
-        let html = r#"
-            <html><head>
-                <title>Page Title</title>
-                <meta property="og:title" content="OG Title">
-                <meta property="og:description" content="OG Description">
-                <meta property="og:image" content="https://example.com/image.png">
-                <meta property="og:site_name" content="Example Site">
-            </head></html>
-        "#;
-        let m = extract_open_graph(html);
-        assert_eq!(m.title.as_deref(), Some("OG Title"));
-        assert_eq!(m.description.as_deref(), Some("OG Description"));
-        assert_eq!(m.site_name.as_deref(), Some("Example Site"));
-    }
-
-    #[test]
-    fn falls_back_to_title_tag_and_meta_description() {
-        let html = r#"
-            <html><head>
-                <title>Plain Title</title>
-                <meta name="description" content="Plain description">
-            </head></html>
-        "#;
-        let m = extract_open_graph(html);
-        assert_eq!(m.title.as_deref(), Some("Plain Title"));
-        assert_eq!(m.description.as_deref(), Some("Plain description"));
-    }
-
-    #[test]
-    fn handles_attribute_order_swapped() {
-        let html = r#"<meta content="Swapped" property="og:title">"#;
-        let m = extract_open_graph(html);
-        assert_eq!(m.title.as_deref(), Some("Swapped"));
-    }
-
-    #[test]
-    fn handles_single_quotes() {
-        let html = r"<meta property='og:title' content='Single'>";
-        let m = extract_open_graph(html);
-        assert_eq!(m.title.as_deref(), Some("Single"));
-    }
-
-    #[test]
-    fn decodes_basic_html_entities() {
-        let html = r#"<meta property="og:title" content="Tom &amp; Jerry"#.to_owned() + r#"">"#;
-        let m = extract_open_graph(&html);
-        assert_eq!(m.title.as_deref(), Some("Tom & Jerry"));
-    }
-
-    #[test]
-    fn ssrf_guard_blocks_loopback_private_link_local_and_metadata() {
-        let disallowed: &[&str] = &[
-            "127.0.0.1",              // IPv4 loopback
-            "127.53.1.9",             // IPv4 loopback, full 127.0.0.0/8 range
-            "10.0.0.1",               // IPv4 private
-            "172.16.5.5",             // IPv4 private
-            "192.168.1.1",            // IPv4 private
-            "169.254.169.254",        // cloud metadata endpoint (IPv4 link-local)
-            "169.254.1.1",            // IPv4 link-local, general
-            "0.0.0.0",                // IPv4 unspecified
-            "224.0.0.1",              // IPv4 multicast
-            "255.255.255.255",        // IPv4 broadcast
-            "::1",                    // IPv6 loopback
-            "::",                     // IPv6 unspecified
-            "fc00::1",                // IPv6 unique-local
-            "fe80::1",                // IPv6 link-local
-            "ff02::1",                // IPv6 multicast
-            "::ffff:169.254.169.254", // IPv4-mapped IPv6 metadata endpoint
-        ];
-        for ip in disallowed {
-            let parsed: IpAddr = ip.parse().expect("valid test IP literal");
-            assert!(
-                is_disallowed_target(&parsed),
-                "{ip} should be disallowed but was not"
-            );
-        }
-    }
-
-    #[test]
-    fn ssrf_guard_allows_ordinary_public_addresses() {
-        let allowed: &[&str] = &[
-            "93.184.216.34",        // example.com-class public IPv4
-            "8.8.8.8",              // public IPv4
-            "2606:4700:4700::1111", // public IPv6 (Cloudflare)
-        ];
-        for ip in allowed {
-            let parsed: IpAddr = ip.parse().expect("valid test IP literal");
-            assert!(
-                !is_disallowed_target(&parsed),
-                "{ip} should be allowed but was disallowed"
-            );
-        }
-    }
-
-    #[test]
-    fn https_url_accepts_only_bounded_https() {
-        assert!(https_url("https://example.com/a?b=c").is_ok());
-        assert!(matches!(
-            https_url("http://example.com"),
-            Err(LinkPreviewError::BadScheme)
-        ));
-        assert!(matches!(
-            https_url("javascript:alert(1)"),
-            Err(LinkPreviewError::BadScheme)
-        ));
-        assert!(matches!(
-            https_url("file:///etc/hosts"),
-            Err(LinkPreviewError::BadScheme)
-        ));
-        assert!(matches!(
-            https_url("not a url"),
-            Err(LinkPreviewError::InvalidUrl(_))
-        ));
-        let long = format!("https://example.com/{}", "a".repeat(MAX_URL_LEN));
-        assert!(matches!(
-            https_url(&long),
-            Err(LinkPreviewError::TooLong { .. })
-        ));
-        assert_eq!(
-            https_url("https://exаmple.com/").unwrap().host_str(),
-            Some("xn--exmple-4nf.com"),
-            "IDN hosts surface in punycode"
-        );
-    }
-
-    #[test]
-    fn accept_inbound_normalizes_or_drops() {
-        let preview = |url: &str| LinkPreview {
-            message_id: "m".into(),
-            url: url.into(),
-            title: Some(format!("  Hi\u{202E}there\u{7} {}", "x".repeat(400))),
-            description: Some("   ".into()),
-            site_name: None,
-            fetched_at: 1,
-        };
-        assert!(accept_inbound(preview("http://example.com")).is_none());
-        assert!(accept_inbound(preview("javascript:alert(1)")).is_none());
-        let ok = accept_inbound(preview("https://example.com/a")).unwrap();
-        let title = ok.title.unwrap();
-        assert!(title.starts_with("Hithere "));
-        assert_eq!(title.chars().count(), MAX_TITLE_CHARS);
-        assert_eq!(ok.description, None);
-    }
-}
+mod tests;

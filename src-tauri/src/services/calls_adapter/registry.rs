@@ -17,11 +17,17 @@ use rekindle_calls::state::CallState;
 
 pub struct ActiveCallRegistry {
     inner: Arc<Mutex<HashMap<String, CallState>>>,
+    /// Removed calls by id, until their invite's `expires_at_ms`
+    /// (`CallRegistry::ended_recently`, plan CE3).
+    ended: Mutex<HashMap<String, u64>>,
 }
 
 impl ActiveCallRegistry {
     pub fn new(inner: Arc<Mutex<HashMap<String, CallState>>>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            ended: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -35,11 +41,26 @@ impl CallRegistry for ActiveCallRegistry {
     }
 
     fn remove(&self, call_id: &str) -> Option<CallState> {
-        self.inner.lock().remove(call_id)
+        let removed = self.inner.lock().remove(call_id)?;
+        let now = rekindle_utils::timestamp_ms();
+        let mut ended = self.ended.lock();
+        ended.retain(|_, expires_at| *expires_at > now);
+        if removed.expires_at_ms > now {
+            ended.insert(call_id.to_string(), removed.expires_at_ms);
+        }
+        Some(removed)
     }
 
     fn contains(&self, call_id: &str) -> bool {
         self.inner.lock().contains_key(call_id)
+    }
+
+    fn ended_recently(&self, call_id: &str) -> bool {
+        let now = rekindle_utils::timestamp_ms();
+        self.ended
+            .lock()
+            .get(call_id)
+            .is_some_and(|expires_at| *expires_at > now)
     }
 
     fn outgoing_to_peer(&self, peer_pubkey_hex: &str) -> Option<CallState> {
@@ -95,6 +116,10 @@ impl GroupCallRegistry for ActiveGroupCallRegistry {
         }
     }
 
+    fn list_ids(&self) -> Vec<String> {
+        self.inner.lock().keys().cloned().collect()
+    }
+
     fn snapshot(&self, call_id: &str) -> Option<GroupCallSnapshot> {
         let guard = self.inner.lock();
         let call = guard.get(call_id)?;
@@ -105,6 +130,7 @@ impl GroupCallRegistry for ActiveGroupCallRegistry {
             participants: call.participants.clone(),
             accepted_count: call.accepted.len(),
             status: call.status,
+            group_id: call.group_id.clone(),
         })
     }
 }

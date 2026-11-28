@@ -1,160 +1,196 @@
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::passphrase::Passphrase;
+use rekindle_types::preferences::Preferences;
 use serde::{Deserialize, Serialize};
+use tauri::State;
 use tauri_plugin_autostart::ManagerExt as _;
-use tauri_plugin_store::StoreExt;
 
+use crate::host_call;
+use crate::state::SharedState;
+
+/// The preferences as the settings window edits them: the identity's
+/// stored preferences plus launch-at-login, which is the OS login item's
+/// state (read back from the autostart plugin, never stored).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Preferences {
-    pub notifications_enabled: bool,
-    pub notification_sound: bool,
-    pub start_minimized: bool,
+pub struct PreferencesDto {
+    #[serde(flatten)]
+    pub prefs: Preferences,
     pub auto_start: bool,
-    pub game_detection_enabled: bool,
-    pub game_scan_interval_secs: u32,
-    /// Selected input device name (None = system default).
-    #[serde(default)]
-    pub input_device: Option<String>,
-    /// Selected output device name (None = system default).
-    #[serde(default)]
-    pub output_device: Option<String>,
-    /// Selected camera deviceId (WebView MediaDevices). None = system default.
-    #[serde(default)]
-    pub video_device_id: Option<String>,
-    /// Selected camera LABEL — WebKit deviceIds are origin/data-store
-    /// salted and rotate across reinstalls; the label is the stable
-    /// key. Selection resolves id-first, then label, then default.
-    #[serde(default)]
-    pub video_device_label: Option<String>,
-    /// Input volume multiplier (0.0–1.0).
-    #[serde(default = "default_volume")]
-    pub input_volume: f32,
-    /// Input-channel choice per input device name, 0-based (plan C7.24b,
-    /// Mumble's input channel mask). A device without an entry averages
-    /// all its channels.
-    #[serde(default)]
-    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
-    /// Output volume multiplier (0.0–1.0).
-    #[serde(default = "default_volume")]
-    pub output_volume: f32,
-    /// Whether noise suppression is enabled.
-    #[serde(default = "default_true")]
-    pub noise_suppression: bool,
-    /// Whether echo cancellation is enabled.
-    #[serde(default = "default_true")]
-    pub echo_cancellation: bool,
-    /// Minutes of inactivity before auto-away (0 = disabled).
-    #[serde(default = "default_auto_away")]
-    pub auto_away_minutes: u32,
-    /// W11.3 — when ON, accepting a friend request also volunteers a
-    /// Strand Relay route for that friend so they can route via you
-    /// when their direct route is unavailable. OFF by default
-    /// (explicit consent per `feedback_vulnerable_users_no_creative_paths.md`).
-    /// Per-friend, never network-wide — chiral §28.4 invite-gated
-    /// model. The toggle does not retroactively volunteer for
-    /// existing friends; users opt those in via the friend context
-    /// menu.
-    #[serde(default)]
-    pub auto_volunteer_relay_for_new_friends: bool,
-    /// Wave 12 W12.2 — gates the synthesized incoming-call ring and
-    /// outgoing ringback. Independent of `notification_sound` (which
-    /// covers message dings) so the user can silence one without the
-    /// other. Default ON.
-    #[serde(default = "default_true")]
-    pub ringtone_enabled: bool,
-    /// Wave 12 W12.2 — linear volume for ringtone / ringback / busy
-    /// tone, [0, 1]. Default 0.4 (matches the synth lib's clamp).
-    #[serde(default = "default_ringtone_volume")]
-    pub ringtone_volume: f32,
-    /// Wave 12 W12.2 — when ON, suppresses OS notifications and
-    /// message-arrival sounds while a call is active so a noisy chat
-    /// doesn't distract participants. In-app modals still surface.
-    #[serde(default = "default_true")]
-    pub in_call_dnd_auto_enable: bool,
 }
 
-fn default_ringtone_volume() -> f32 {
-    0.4
-}
-
-fn default_volume() -> f32 {
-    1.0
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_auto_away() -> u32 {
-    10
-}
-
-impl Default for Preferences {
-    fn default() -> Self {
-        Self {
-            notifications_enabled: true,
-            notification_sound: true,
-            start_minimized: false,
-            auto_start: false,
-            game_detection_enabled: true,
-            game_scan_interval_secs: 15,
-            input_device: None,
-            input_channels: std::collections::BTreeMap::new(),
-            output_device: None,
-            video_device_id: None,
-            video_device_label: None,
-            input_volume: 1.0,
-            output_volume: 1.0,
-            noise_suppression: true,
-            echo_cancellation: true,
-            auto_away_minutes: 10,
-            auto_volunteer_relay_for_new_friends: false,
-            ringtone_enabled: true,
-            ringtone_volume: 0.4,
-            in_call_dnd_auto_enable: true,
-        }
-    }
-}
-
-/// The OS login-item registration is the source of truth for
-/// `auto_start` — the user can also toggle it in System Settings /
-/// their desktop session — so it is read back from the autostart plugin
-/// rather than trusted from the store.
+/// The unlocked identity's preferences and the OS login item's state. The
+/// session's copy is read again from the database first: the Host writes
+/// the read-receipt setting (`SetReadReceiptsEnabled`) there.
 #[tauri::command]
-pub async fn get_preferences(app: tauri::AppHandle) -> Result<Preferences, String> {
-    let mut prefs = read_stored_preferences(&app)?;
-    prefs.auto_start = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;
-    Ok(prefs)
-}
-
-/// The stored preferences, defaults when none are saved yet.
-fn read_stored_preferences(app: &tauri::AppHandle) -> Result<Preferences, String> {
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    match store.get("preferences") {
-        Some(val) => serde_json::from_value(val).map_err(|e| e.to_string()),
-        None => Ok(Preferences::default()),
-    }
-}
-
-/// The stored preferences for backend decisions (OS notifications). An
-/// unreadable store is logged and read as the defaults.
-pub fn load_preferences(app: &tauri::AppHandle) -> Preferences {
-    read_stored_preferences(app).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "preferences unreadable — using defaults");
-        Preferences::default()
+pub async fn get_preferences(
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<PreferencesDto, String> {
+    let pool = state.db.current()?;
+    let owner = crate::state_helpers::current_owner_key(state.inner())?;
+    crate::services::preferences::load(state.inner(), &pool, &owner).await?;
+    Ok(PreferencesDto {
+        prefs: crate::services::preferences::current(state.inner()),
+        auto_start: app.autolaunch().is_enabled().map_err(|e| e.to_string())?,
     })
 }
 
-/// Persist preferences, applying `auto_start` to the OS login items
-/// first so a failed registration is reported instead of being stored
-/// as if it had taken effect.
+/// Save the preferences, applying `auto_start` to the OS login items
+/// first so a failed registration is reported instead of being stored as
+/// if it had taken effect.
 #[tauri::command]
-pub async fn set_preferences(prefs: Preferences, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn set_preferences(
+    prefs: PreferencesDto,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
     apply_auto_start(&app, prefs.auto_start)?;
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())?;
-    Ok(())
+    crate::services::preferences::update(state.inner(), |stored| *stored = prefs.prefs).await
+}
+
+/// Turn DM read receipts on or off (`IpcRequest::SetReadReceiptsEnabled`, a
+/// trust-changing intent the Host reviews): the preferences come back.
+#[tauri::command]
+pub async fn set_read_receipts_enabled(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetReadReceiptsEnabled { enabled }).await
+}
+
+/// Share our game totals with friends or stop (`IpcRequest::SetShareGameTotals`,
+/// plan E7.2, a trust-changing intent the Host reviews): the preferences
+/// come back.
+#[tauri::command]
+pub async fn set_share_game_totals(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetShareGameTotals { enabled }).await
+}
+
+/// Scan for games or stop (`IpcRequest::SetGameDetection`, plan E7.2):
+/// local only, taking effect at once; the preferences come back.
+#[tauri::command]
+pub async fn set_game_detection(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetGameDetection { enabled }).await
+}
+
+/// Auto-away's threshold, minutes, 0 off (`IpcRequest::SetAutoAway`, plan
+/// E7.4): local only, applied at once; the preferences come back.
+#[tauri::command]
+pub async fn set_auto_away(
+    minutes: u32,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetAutoAway { minutes }).await
+}
+
+/// Show friends our current game or stop (`IpcRequest::SetShareCurrentGame`,
+/// plan E7.2, a trust-changing intent the Host reviews): the preferences
+/// come back.
+#[tauri::command]
+pub async fn set_share_current_game(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetShareCurrentGame { enabled }).await
+}
+
+/// What arming or disarming the quick wipe answers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickWipeState {
+    pub armed: bool,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+}
+
+/// Arm the quick wipe (`IpcRequest::QuickWipeArm`, plan E7.1: Protected,
+/// the Host reviews it with exactly what a trigger destroys and asks for
+/// the identity's passphrase). The panic shortcut is parsed, and refused
+/// when this desktop cannot deliver it (`panic_shortcut::route`: a Wayland
+/// session without the GlobalShortcuts portal), before the Host sees it
+/// ([`arm_checked`]). The shell registers it when the arming commits, on the
+/// Host's `QuickWipeChanged` (`shell_session::unlocked`), and alerts when
+/// the OS or the portal refuses it, so the user never believes an inert
+/// shortcut is armed.
+#[tauri::command]
+pub async fn quick_wipe_arm(
+    duress_passphrase: Passphrase,
+    shortcut: Option<String>,
+    state: State<'_, SharedState>,
+) -> Result<Done<QuickWipeState>, CommandError> {
+    arm_checked(shortcut, crate::shortcuts::panic_route(), |shortcut| {
+        host_call::call(
+            &state,
+            IpcRequest::QuickWipeArm {
+                duress_passphrase,
+                shortcut,
+            },
+        )
+    })
+    .await
+}
+
+/// What a refused chord tells the user besides the reason: nothing was
+/// armed, the duress passphrase included, and how to arm it alone (plan
+/// E7.1; the Linux finding of a chord refused on COSMIC that left the
+/// duress passphrase silently unarmed).
+pub(crate) const NOTHING_ARMED: &str =
+    "Nothing was armed. Arm the duress passphrase without a shortcut to use it alone.";
+
+/// Check the chord, then arm through `arm`. A chord the plugin cannot parse,
+/// or one this desktop cannot deliver (`route`, awaited only when a chord is
+/// given), is refused with its reason verbatim and [`NOTHING_ARMED`], and
+/// `arm` never runs: nothing is half-armed. The refusal is logged without
+/// the chord or any identifier.
+async fn arm_checked<R, A, F>(
+    shortcut: Option<String>,
+    route: R,
+    arm: A,
+) -> Result<Done<QuickWipeState>, CommandError>
+where
+    R: std::future::Future<Output = rekindle_node::host::panic_shortcut::PanicRoute>,
+    A: FnOnce(Option<String>) -> F,
+    F: std::future::Future<Output = Result<Done<QuickWipeState>, CommandError>>,
+{
+    // The log names the kind of refusal only: never the chord, which is
+    // the user's panic trigger.
+    let refused = |kind: &str, message: String| {
+        tracing::warn!(
+            refusal = kind,
+            "quick wipe arming refused before the Host: nothing armed"
+        );
+        CommandError::Failed {
+            code: 400,
+            message,
+            remediation: Some(NOTHING_ARMED.to_owned()),
+        }
+    };
+    crate::shortcuts::parse_panic_chord(shortcut.as_deref())
+        .map_err(|reason| refused("unparsable chord", reason))?;
+    if shortcut.is_some() {
+        if let rekindle_node::host::panic_shortcut::PanicRoute::Unavailable(reason) = route.await {
+            return Err(refused("undeliverable chord", reason.to_owned()));
+        }
+    }
+    arm(shortcut).await
+}
+
+/// Disarm the quick wipe (`IpcRequest::QuickWipeDisarm`, Protected): the
+/// duress passphrase forgotten; the shell releases the panic shortcut when
+/// it commits, on the Host's `QuickWipeChanged`.
+#[tauri::command]
+pub async fn quick_wipe_disarm(
+    state: State<'_, SharedState>,
+) -> Result<Done<QuickWipeState>, CommandError> {
+    host_call::call(&state, IpcRequest::QuickWipeDisarm).await
 }
 
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
@@ -189,3 +225,7 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
 
     Ok(has_update)
 }
+
+#[cfg(test)]
+#[path = "settings_tests.rs"]
+mod tests;

@@ -7,6 +7,12 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
   }
 
+  .chat-message-select-hit {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+  }
+
   .chat-message-select-checkbox {
     position: absolute;
     left: 8px;
@@ -37,7 +43,7 @@
   }
 
   .attachment-card-icon-ready {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
 
@@ -58,7 +64,7 @@
     padding: 4px 10px;
     border-radius: 3px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .attachment-card-btn:hover:not(:disabled) {
@@ -90,7 +96,7 @@
   }
 
   .attachment-card-pin-btn-active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     border-color: var(--color-xfire-accent);
   }
 
@@ -109,11 +115,36 @@
 
   .message-input-attach-btn:hover,
   .message-input-mic-btn:hover {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .message-input-mic-btn-active {
-    color: #c0392b;
+    color: var(--color-xfire-danger-text);
+  }
+
+  /* Xfire's Send button (plan E7.7.7): a text button at the field's end,
+   * on the input shell's ground; a skin paints it (`chat.send-button`). */
+  .message-input-send-btn {
+    align-self: center;
+    margin: 0 4px;
+    padding: 2px 10px;
+    background: transparent;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 0.25rem;
+    color: var(--color-xfire-text);
+    font-family: var(--font-family-xfire);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .message-input-send-btn:hover:not(:disabled) {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .message-input-send-btn:disabled {
+    color: var(--color-xfire-text-dim);
+    cursor: default;
   }
 
   /* Architecture §32 a11y — opacity fade replaces the original
@@ -123,6 +154,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .message-input-mic-btn-active {
       --pulse-min-opacity: 0.55;
+
       animation: opacity-pulse 1s ease-in-out infinite;
     }
   }
@@ -148,7 +180,7 @@
   .voice-message-play-btn {
     background: var(--color-xfire-accent);
     border: none;
-    color: white;
+    color: var(--color-xfire-accent-fg);
     width: 28px;
     height: 28px;
     border-radius: 50%;
@@ -190,24 +222,21 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Architecture §17.4 — raid alert overlay rendered at the top of
-   * `CommunityWindow` while the backend's raid detector is firing.
-   * Higher visual weight than the plate-gate banner because the
-   * threat surface (join floods) is more time-sensitive. */
-  .raid-alert-banner {
+  /* ─── Own removal (plan E3.2 S9): the community is read-only history ─── */
+  .removal-banner {
     display: flex;
     align-items: center;
-    gap: 12px;
     padding: 8px 12px;
     background: color-mix(in srgb, var(--color-xfire-busy) 30%, var(--color-xfire-bg-dark));
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
     font-size: 11px;
   }
 
-  .raid-alert-banner-text {
+  .removal-banner-text {
     flex: 1;
     line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
   /* ─── Plate Gate (architecture §15) admin banner ─── */
@@ -243,7 +272,7 @@
   .plate-gate-banner-btn {
     background: var(--color-xfire-accent);
     border: none;
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-size: 11px;
     padding: 6px 14px;
     border-radius: 3px;
@@ -276,14 +305,14 @@
   }
 
   .message-forwarded-icon {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Forward message dialog ─── */
   .forward-dialog-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 55%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -296,7 +325,7 @@
     border-radius: 6px;
     width: 320px;
     max-width: 90vw;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
   }
 
   .forward-dialog-header {
@@ -343,7 +372,7 @@
   }
 
   .forward-dialog-select {
-    background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
+    background-color: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
     color: var(--color-xfire-text);
     font-size: 11px;
@@ -394,8 +423,8 @@
 
   /* ─── Message highlight (jump to pinned message) ─── */
   .message-highlight {
-    background: rgba(27, 161, 253, 0.2);
-    transition: background 1.5s ease-out;
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    transition: background var(--motion-duration-slow) ease-out;
   }
 
   /* ─── Pin panel jump button ─── */
@@ -407,7 +436,7 @@
   .pin-panel-jump-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     cursor: pointer;
     font-size: 10px;
     padding: 2px 6px;
@@ -430,7 +459,7 @@
   .sidebar-server-join-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 10px;
     cursor: pointer;
     padding: 1px 6px;
@@ -440,6 +469,34 @@
 
   .sidebar-server-join-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+
+  .governance-publication {
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    font-size: 10px;
+    border-left: 2px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .governance-publication-pending {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .governance-publication-failed,
+  .community-device-notice {
+    color: var(--color-xfire-danger-text);
+  }
+
+  /* This device's standing (CommunityDeviceStatus.tsx, ADR 0022 rule 4):
+   * the notice and its action on one line, wrapping when narrow. */
+  .community-device-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 10px;
   }
 
 }

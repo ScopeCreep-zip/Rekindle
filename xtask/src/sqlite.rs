@@ -28,14 +28,9 @@ const OWNERS: &[&str] = &[
 /// named. The list only shrinks.
 const SHRINKING: &[(&str, &str)] = &[
     (
-        "crates/rekindle-dm",
-        "E2.3 deletes the rekindle-dm 1:1 path",
-    ),
-    (
         "crates/rekindle-analytics",
         "E5 moves its aggregate queries into rekindle-db",
     ),
-    ("crates/rekindle-e2e-server", "F1 makes it a bus bridge"),
     (
         "src-tauri",
         "the E phase moves each domain's SQL with the domain",
@@ -160,30 +155,5 @@ pub(crate) fn check_sqlite(root: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::is_sql_shaped;
-
-    #[test]
-    fn sql_shapes() {
-        for s in [
-            "SELECT role_ids FROM community_members WHERE owner_key = ?1",
-            "INSERT OR IGNORE INTO friends (owner_key) VALUES (?1)",
-            "UPDATE communities SET name = ?1",
-            "DELETE FROM identity WHERE public_key = ?1",
-            "CREATE TABLE IF NOT EXISTS t (a TEXT)",
-            "CREATE VIRTUAL TABLE messages_fts USING fts5(body)",
-            "PRAGMA journal_mode=WAL;",
-        ] {
-            assert!(is_sql_shaped(s), "{s}");
-        }
-        for s in [
-            "select a friend from the list",
-            "failed to update the friend list",
-            "Delete from your device?",
-            "SELECT",
-            "the INSERT key",
-        ] {
-            assert!(!is_sql_shaped(s), "{s}");
-        }
-    }
-}
+#[path = "sqlite_tests.rs"]
+mod tests;

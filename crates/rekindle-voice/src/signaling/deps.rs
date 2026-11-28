@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_types::subscription_events::{JoinHandshake, VoiceMediaReady};
 
 use crate::transport::VoiceTransport;
 
@@ -33,12 +34,8 @@ pub struct StageChannelInfo {
     pub moderator: Option<String>,
 }
 
-/// One roster-event participant: pseudonym + handshake-carried name.
-#[derive(Debug, Clone)]
-pub struct VoiceRosterParticipant {
-    pub pseudonym_key: String,
-    pub display_name: Option<String>,
-}
+/// One roster-event participant: pseudonym + the Host's shown name.
+pub use rekindle_types::subscription_events::VoiceParticipant as VoiceRosterParticipant;
 
 /// Frontend events the signaling handlers emit. The adapter maps each
 /// variant to its concrete src-tauri `CommunityEvent` payload and
@@ -50,9 +47,8 @@ pub enum CommunityVoiceEvent {
         channel_id: String,
         pseudonym_key: String,
         route_blob: Vec<u8>,
-        /// Name carried by the handshake — frontends render it without
-        /// waiting for the registry scan.
-        display_name: Option<String>,
+        /// The member's shown name from the Host.
+        display_name: String,
     },
     VoiceLeave {
         community_id: String,
@@ -71,15 +67,17 @@ pub enum CommunityVoiceEvent {
     /// receipt, leave, or presence reconcile. Authoritative for
     /// session membership: media arrival must never gate roster state
     /// (a VAD-silent peer sends no packets but is fully present).
-    /// `remote_count` is the roster size captured at mutation time so
-    /// consumers don't re-lock the transport.
+    /// `roster` is the whole remote roster captured at mutation time
+    /// (plan C7.29): consumers publish it as the call's current state, so
+    /// a window that subscribes late is handed it, and never re-lock the
+    /// transport.
     VoiceRosterChanged {
         community_id: String,
         channel_id: String,
         pseudonym_key: String,
         present: bool,
-        display_name: Option<String>,
-        remote_count: usize,
+        display_name: String,
+        roster: Vec<VoiceRosterParticipant>,
     },
     /// Local three-way join handshake progressed (announced → seen →
     /// connected). `peer`/`display_name` identify the member whose
@@ -87,8 +85,8 @@ pub enum CommunityVoiceEvent {
     VoiceJoinHandshake {
         community_id: String,
         channel_id: String,
-        /// "seen" | "connected" — wire string, backend-owned vocabulary.
-        state: String,
+        state: JoinHandshake,
+        media_ready: Option<VoiceMediaReady>,
         peer: Option<String>,
         display_name: Option<String>,
     },
@@ -141,11 +139,8 @@ pub enum CommunityVoiceEvent {
 /// Permission bit mask values needed by signaling. Mirrors
 /// `rekindle_types::permissions::*` constants so the trait method
 /// callers don't need to depend on `rekindle-types` directly.
-pub mod perms {
-    pub const MANAGE_MESSAGES: u64 = rekindle_types::permissions::MANAGE_MESSAGES;
-    pub const ADMINISTRATOR: u64 = rekindle_types::permissions::ADMINISTRATOR;
-    pub const USE_SOUNDBOARD: u64 = rekindle_types::permissions::USE_SOUNDBOARD;
-}
+#[path = "deps_perms.rs"]
+pub mod perms;
 
 #[async_trait]
 pub trait VoiceSignalingDeps: Send + Sync + 'static {
@@ -253,26 +248,27 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
         channel_id: &str,
     ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
 
-    /// Seal our media `secret` to `recipient` (pseudonym hex) under our
-    /// community pseudonym (`rekindle_secrets::media_sender_key::seal`),
-    /// or `None` when the pseudonym key or the recipient key is unusable.
-    fn seal_media_key(
+    /// Our community pseudonym's signature over our session key for
+    /// `(community, channel)` (`rekindle_secrets::media_sender_key::session::
+    /// session_key_message`; plan C7.29), or `None` without a pseudonym key.
+    fn sign_media_session_key(
         &self,
         community_id: &str,
-        recipient: &str,
-        aad: &[u8],
-        secret: &[u8; 32],
+        channel_id: &str,
+        session_key: &[u8],
     ) -> Option<Vec<u8>>;
 
-    /// Open a media key `sender` (pseudonym hex) sealed to us, or `None`
-    /// when it was not sealed by that sender to us under this AAD.
-    fn open_media_key(
+    /// Our community pseudonym's signature over a media key we sealed
+    /// (`session::sealed_key_message`; plan C7.29), or `None` without a
+    /// pseudonym key.
+    fn sign_sealed_media_key(
         &self,
         community_id: &str,
-        sender: &str,
-        aad: &[u8],
+        channel_id: &str,
+        recipient: &str,
+        key_index: u64,
         sealed: &[u8],
-    ) -> Option<zeroize::Zeroizing<[u8; 32]>>;
+    ) -> Option<Vec<u8>>;
 
     /// Send `envelope` to the peer at `route_blob` by `app_call` and
     /// return its decoded reply (plan C7.22: media keys go point to point
@@ -283,6 +279,10 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
         route_blob: &[u8],
         envelope: &CommunityEnvelope,
     ) -> Option<CommunityEnvelope>;
+
+    /// The host's outbox `media_key` streams (plan E2.5): every media key
+    /// we send is queued there, sealed, and delivered by the outbox.
+    fn media_key_outbox(&self) -> Arc<dyn crate::signaling::MediaKeyOutbox>;
 
     /// Send a gossip envelope to the community mesh. Phase 20
     /// (rekindle-gossip) eventually owns this; today the adapter
@@ -308,6 +308,9 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// Our self-sovereign display name, carried in VoiceJoinAck so the
     /// joiner learns who saw them without a registry-scan round trip.
     fn my_display_name(&self) -> Option<String>;
+
+    /// The name shown by the Host for this member in this community.
+    fn member_shown_name(&self, community_id: &str, pseudonym: &str) -> String;
 
     /// Persist our own hand-raise state on a SpeakResponse. Phase 19
     /// (rekindle-channel) eventually owns this; today the adapter

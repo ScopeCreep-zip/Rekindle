@@ -64,9 +64,26 @@ vulnerable-user platform.
 ### 1.3 Receiver anonymity (private routes)
 
 A node creates a `private_route` and publishes the route blob. Anyone
-holding the blob can send to the route, but **only the originator's
-node** knows that blob → real network identity. The publisher's IP /
-node identity is never revealed.
+holding the blob can send to the route without learning the
+originator's node identity from the blob itself. What protects the
+receiver is the route's **depth**:
+
+- The blob carries the entry hop's full PeerInfo (node ids and dial
+  info, i.e. its IP addresses) in the clear, and the hop adjacent to
+  the owner connects to it directly and knows it is the last hop
+  (`~/veilid` `route_assemble.rs:199-216`, `privacy.rs:94-96`,
+  `rpc_route.rs:97, 395-397`).
+- At **1 hop** those are the same node: every caller holding our blob
+  can name the one node that knows our IP. This is Tor's
+  "NonAnonymous" single-onion configuration.
+- At **3 hops** the blob names only the entry; locating the owner needs
+  all three hops or end-to-end correlation across them.
+
+**Today Rekindle's inbound routes are 1 hop** (Veilid's
+`default_route_hop_count`). The target, plan Phase RH, is 3 hops on
+both route classes, set per route through `PrivateSpec.hop_count`,
+with the hop adjacent to us pinned so loss alone never redraws it
+(threat model L2).
 
 Routes expire (~120 s of inactivity); the presence service periodically
 refreshes route blobs in the registry, which doubles as a liveness
@@ -122,26 +139,57 @@ Every byte of user content is encrypted by Rekindle before it touches
 the DHT or `app_message` transport:
 
 - 1:1 friend messages → Signal Protocol per-message keys
-- DM / group DM messages → ECDH-derived MEK + ratchet
+- Group DM messages → a random group MEK wrapped per recipient in the
+  `GroupDmInvite` and stepped forward by HKDF (plan E2.6 replaces it
+  with sender-owned keys)
 - Community channel messages → per-channel MEK
 - File chunks → per-file FEK (wrapped under channel MEK)
-- Voice frames → per-channel MEK or per-call key
+- Voice and video frames → sender-owned SFrame keys (RFC 9605 §5.1,
+  ADR 0016): each participant's own random key, delivered pairwise;
+  DM calls use a fresh ephemeral X25519 per call. Call media is never
+  under a channel MEK.
 - Cross-device sync subkeys → per-subkey HKDF-derived key
 
 Layer 4 in the stack — see [`overview.md`](overview.md).
 
+### Group rendezvous metadata (plan decision 67)
+
+A group's rendezvous record is readable by anyone who learns its key, and
+the key travels only in the members' invites. What it shows: which rows
+hold a value (that member `i` made a first contact to member `j`), each
+value's size and seq, and when it changed; the values are PreKeyInit
+datagrams, encrypted to their one recipient. Slots, not identities, name
+the rows: mapping a slot to a member needs the creator's signed plan, held
+by the members only. Every write is signed by the row's one-time writer,
+never an identity key, and reaches the DHT over our safety route. A member
+can write only its own row; the creator (who minted the writers) and a
+departed member (whose writer a newcomer may reuse) can junk-write a row,
+which denies the durable path but forges nothing (the receiver opens only
+a PreKeyInit from the member the plan gives that row; threat model D9).
+
 ### 2.3 Forward secrecy
 
-- **1:1 messaging:** Signal's Double Ratchet — every message is
-  encrypted with a unique key derived from the ratchet state. A
-  long-term key compromise does not retrospectively decrypt prior
-  messages.
+- **1:1 messaging:** the spec Double Ratchet (DR rev. 4), seeded by a
+  PQXDH handshake (X25519 + ML-KEM-768). Every message gets its own
+  key from the sending chain, and each reply starts a new X25519 DH
+  step, so a compromised key heals on the next round trip. Message
+  keys are erased once used; keys skipped by out-of-order delivery
+  are kept for at most the 30-day delivery horizon. A long-term key
+  compromise does not retrospectively decrypt prior messages.
 - **Communities:** MEK rotation on every member departure. A departed
   member cannot decrypt content sent after their departure.
-- **Voice channels:** MEK rotates on every join and every leave —
-  late joiners cannot decrypt earlier frames; departing participants
-  cannot decrypt later frames.
-- **DM:** ratchet step every 100 messages or 24 hours.
+- **Voice channels and calls (ADR 0016, plan C7.29):** there is no voice
+  MEK.
+  - *A leaver cannot decrypt frames sent more than ~10 s after leaving:*
+    each sender starts a new key generation when someone leaves, used
+    after 5 s, with at most one rotation pending. A member who leaves
+    the community (kicked, banned, departed) always triggers it, in a
+    stage channel too.
+  - *Late joiners cannot decrypt earlier frames:* a join ratchets the
+    sender's key one step and the joiner gets only the new step.
+  - *A device seized later does not open recorded calls:* media keys
+    are sealed (HPKE Base) to a per-session X25519 key, erased when the
+    session ends, never to the long-lived community pseudonym.
 
 ### 2.4 Reader-validates governance
 
@@ -181,23 +229,44 @@ Game detection uses a JSON database that ships with the binary — no
 remote service is queried. Output goes only to friends with explicit
 presence visibility. The user's process list never leaves the device.
 
+Friend presence itself is not public (plan E2.5): the profile's STATUS
+and GAME_INFO subkeys are AES-256-GCM-sealed under a 32-byte friends key
+(`rekindle_secrets::friend_presence`, AAD `rekindle-friend-presence-v1 ‖
+epoch ‖ subkey ‖ owner`) that each accepted friend receives inside the
+Double Ratchet as `FriendsKey` (0x0106), because the profile record is
+readable by anyone who learns its key. A new epoch is minted and sent to
+the remaining friends on every unfriend or block, so a removed peer reads
+nothing written after; a value that does not open is dropped, never shown.
+
 ### 2.8 Opt-in, content-free push relay
 
-Mobile push relay sends only `{type: "wake", ts}` — no content, no
+Mobile push relay sends only `{ "t": "wake", "ts" }` — no content, no
 record-key reference, no community ID. The platform vendor (Apple,
 Google) sees only that the device might have had something happen at
-time T. The relay daemon sees which DHT keys the device cares about
-(metadata leak), which is the cost of timely notification on a fully
-suspended device. The feature is **opt-in** and **self-hostable** so
-users can decide their own threshold.
+time T. In today's code the relay daemon sees which DHT keys the device
+cares about, which leaks community membership to its operator, and the
+registration leaves through the identity-bearing DM frame path
+(`src-tauri/src/services/push_relay.rs:62`), so the relay also learns the
+identity. The target (plan E5.2, E5.6) closes that: the device registers
+under a `device_relay_key`, a key derived for that relay alone and never its
+identity key (distinct from `relay_pseudonym`, which stays the relay's own
+address), and names opaque watch tokens, never
+raw record keys (SimpleX NTF). A registration expires unless it is
+re-signed within 14 days, and the wake carries no timestamp
+(`{ "t": "wake" }`). The feature
+is **opt-in** and **self-hostable** so users can decide their own
+threshold.
 
 ### 2.9 No telemetry
 
-There is no analytics, crash reporting, A/B testing, engagement
+There is no usage analytics, crash reporting, A/B testing, engagement
 tracking, or "diagnostic ping" of any kind. The app does not call out
 to scopecreep.zip or anywhere else for any reason during normal
 operation. The only outbound traffic is Veilid network bootstrap,
-peer connections, and explicit user actions.
+peer connections, and explicit user actions. *Community insights*
+(the admin view once called "analytics", gated by `VIEW_INSIGHTS`)
+are aggregates computed on the device from data it already holds,
+issue no network request of their own, and never leave the device.
 
 ### 2.10 Memory hygiene
 
@@ -311,3 +380,7 @@ transports for Veilid are upstream work, not Rekindle's.
 - [`../protocol/relay.md`](../protocol/relay.md) — strand and push relay properties
 - [Veilid developer book](https://veilid.gitlab.io/developer-book/)
 - [Signal Protocol specifications](https://signal.org/docs/)
+
+## Read receipts
+
+Read receipts are reciprocal and off by default: a `ReadUpTo` marker goes only to an accepted friend while our own setting is on, after a uniform 2–10 s delay, never while we are Invisible, and a received one is ignored while our setting is off (plan E2.5).

@@ -1,4 +1,4 @@
-import { Component, createSignal, Show } from "solid-js";
+import { type Component, createSignal, Show } from "solid-js";
 import { handleCheckForUpdates } from "../../actions/settings.actions";
 
 const AboutTab: Component = () => {
@@ -21,8 +21,8 @@ const AboutTab: Component = () => {
     <>
       <div class="settings-section-title">Rekindle</div>
       <div class="settings-about-text">
-        A faithful recreation of the classic Xfire gaming chat client,
-        rebuilt with modern technology for the decentralized era.
+        A faithful recreation of a classic gaming chat client, rebuilt with modern technology for
+        the decentralized era.
       </div>
       <div class="settings-about-row">
         <span class="form-field-label">Version</span>
@@ -39,6 +39,7 @@ const AboutTab: Component = () => {
       <div class="settings-section-title">Updates</div>
       <div class="update-check-row">
         <button
+          type="button"
           class="form-btn-secondary"
           onClick={handleCheckUpdates}
           disabled={checkingUpdates()}
@@ -47,7 +48,9 @@ const AboutTab: Component = () => {
         </button>
         <Show when={updateResult()}>
           {(result) => (
-            <span class={result().includes("available") ? "update-status-available" : "update-status"}>
+            <span
+              class={result().includes("available") ? "update-status-available" : "update-status"}
+            >
               {result()}
             </span>
           )}

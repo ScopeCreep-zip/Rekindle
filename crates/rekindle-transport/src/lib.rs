@@ -5,35 +5,38 @@
 #![deny(clippy::string_slice)]
 //! Unified network transport layer for Rekindle.
 //!
-//! This crate is the **sole boundary** between Rekindle and the Veilid network.
-//! No other crate in the workspace imports `veilid_core`.
+//! The transport runs on the Veilid-free ports of `rekindle_records::port`
+//! (plan C9.1): records through `RecordPort`, peers' routes and our own
+//! through `RoutePort`, app messages and calls through `AppMessagePort`,
+//! and inbound network events as `PortEvent`s. It names no Veilid type;
+//! `rekindle_protocol::ports` implements the ports over Veilid, and a
+//! simulator can implement them in memory.
 //!
 //! # Module Boundaries
 //!
-//! - `broadcast/` — ALL outbound Veilid I/O: sends, DHT writes, route management,
-//!   node lifecycle. The only module that imports `veilid_core` for outbound ops.
-//! - `subscriptions/` — ALL inbound Veilid I/O: event dispatch, DHT watches,
-//!   value change routing. The only module that imports `veilid_core` for inbound ops.
-//! - Everything else (operations, payload, crypto, session, config, etc.) contains
-//!   zero `veilid_core` imports — pure business logic and type definitions.
+//! - `broadcast/` — all outbound I/O: sends, DHT writes, route management,
+//!   node lifecycle.
+//! - `subscriptions/` — all inbound I/O: event dispatch, DHT watches,
+//!   value change routing.
+//! - Everything else (operations, payload, crypto, session, config, etc.) is
+//!   business logic and type definitions over those two.
 
-// ── Veilid boundary modules (sole veilid_core importers) ───────────────
+// ── I/O modules (over the ports) ───────────────────────────────────────
 pub mod broadcast;
 pub mod subscriptions;
 
-// ── Business logic (zero veilid imports) ───────────────────────────────
+// ── Business logic ─────────────────────────────────────────────────────
 pub mod config;
 pub mod crypto;
-pub mod envelope_queue;
-pub mod envelope_store;
 pub mod error;
 pub mod frame;
 pub mod gossip;
 pub mod handler;
+pub mod liveness;
 pub mod operations;
 pub mod payload;
 pub mod query;
-pub mod seq_tracker;
+pub mod route_trace;
 pub mod session;
 pub mod shared;
 
@@ -44,8 +47,9 @@ mod tests;
 
 // Core lifecycle (from broadcast/)
 pub use broadcast::node::TransportNode;
-pub use broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot, PeerTarget};
-pub use broadcast::send::{BroadcastReport, Caller, Sender};
+pub use broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot};
+pub use broadcast::send::{AppCaller, BroadcastReport, Sender};
+pub use rekindle_records::port::PeerTarget;
 
 // Inbound handler trait
 pub use handler::{InboundHandler, TransportEvent, VerifiedSender};
@@ -63,44 +67,22 @@ pub use error::TransportError;
 pub use crypto::mek::MekCacheEntrySnapshot;
 pub use shared::{AttachmentState, SharedState, TransportNotification, TransportSnapshot};
 
-// Crypto — pseudonym, Signal, prekeys
+// Crypto — pseudonym, prekeys (the 1:1 ratchet is `rekindle_db::ratchet`,
+// plan E2.3)
 pub use crypto::prekeys::PreKeyBundle;
 pub use crypto::pseudonym::derive_community_pseudonym;
-pub use crypto::signal_session::{SessionInitInfo, SignalSessionManager};
-pub use crypto::signal_store::{
-    IdentityKeyStore, MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore, PreKeyStore,
-    SessionStore,
-};
 
 // Session state
-pub use session::{CommunityMembership, PendingFriendRequest, Session, SessionIdentity};
-
-// W16.1 — envelope reliability primitive contract + default impls
-pub use envelope_store::{
-    EnvelopeKind, EnvelopeStore, JsonEnvelopeStore, MemoryEnvelopeStore, PendingEnvelope,
-    PersistedCallState, StoreError,
-};
-
-// W16.2 — envelope retry queue (fire-and-forget + expect-reply)
-pub use envelope_queue::{EnvelopeQueue, QueueError, RetryConfig, DEFAULT_REPLY_TIMEOUT};
-
-// W16.3 — receiver-side dedup
-pub use seq_tracker::SeqTracker;
-
-// Track A.1 — Receive-path friend authority (Phase 2 DHT-Inbox Pivot)
+pub use session::{CommunityMembership, Session, SessionIdentity};
 
 // Query engine
 pub use query::{
     community_detail, list_communities, ChannelOverviewDisplay, CommunityDetail,
-    CommunityMetaSummary, CommunityOverview, DecryptedMessageDisplay, DmMessageDisplay,
-    DmThreadDisplay, FriendDisplay, QueryEngine, RoleDisplay,
+    CommunityMetaSummary, CommunityOverview, DecryptedMessageDisplay, QueryEngine, RoleDisplay,
 };
 
 // Frame
 pub use frame::TypeId;
-
-// Time utilities
-pub use rekindle_utils::{timestamp_ms, timestamp_secs};
 
 // Crypto (for app-layer use)
 pub use crypto::envelope::{recipient_bytes, sign_payload, verify_signed_payload, Addressing};
@@ -114,11 +96,6 @@ pub use subscriptions::SubscriptionManager;
 pub use broadcast::BroadcastManager;
 
 // Payload types
-pub use payload::dm::DmPayload;
 pub use payload::rpc::{
     CallResponse, ChannelEntrySummary, CommunityLeaveNotification, InboundCall, MekTransferPayload,
-    SyncRequest, SyncResponse,
 };
-
-// Re-export node::deserialize_keypair for daemon use
-pub use broadcast::node::deserialize_keypair;

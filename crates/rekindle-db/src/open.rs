@@ -1,5 +1,5 @@
-//! Opening the database: pragmas, the schema-version check, and the reset
-//! when the schema changed.
+//! Opening an identity's database: the key, pragmas and the schema-version
+//! check (plan D1).
 
 use std::path::Path;
 
@@ -12,13 +12,21 @@ use crate::Db;
 pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 
 /// Bump this every time `schema/001_init.sql` changes, or when a DHT record
-/// layout is renumbered: the reset also wipes Veilid storage, so stale
-/// records written under the old layout cannot be read back with the new
-/// indices. On mismatch the database is dropped and recreated; the app is
-/// not live yet.
+/// layout is renumbered. It is also the data root's layout version
+/// (`crate::reset`): a root stamped with another value is reset at startup,
+/// Veilid storage included, so stale records written under the old layout
+/// cannot be read back with the new indices. The app is not live yet.
 ///
-/// 83: `dht_outbox`, the durable record writes a logout left unsent
-/// (plan C7.6h); the next login of the same identity re-pushes them.
+/// 110: `group_dm_invites`, the verified group invites we have not
+/// answered, held for `DELIVERY_HORIZON`, and `group_dm_chains`, each
+/// member's announced group chain (plan E2.6 G2b).
+///
+/// 108: group DMs (plan E2.6 G1): the `group_dms` and
+/// `group_dm_sender_keys` tables, `'group_dm'` in
+/// `messages.conversation_type` and in `outbox.kind`.
+///
+/// 83: the durable record writes a logout left unsent (plan C7.6h); the
+/// next login of the same identity re-pushes them (outbox rows since 103).
 ///
 /// 81: the friend-list DHT record. `FriendEntry` gained `dm_log_key`
 /// and `profileDhtKey`/`dmLogKey` joined `schemas/friend.capnp`, which
@@ -94,7 +102,188 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// entry set that cannot express `ApprovalRequired` — the variant was
 /// merged, validated and Cap'n Proto encoded, and nothing ever wrote it,
 /// so the mode was unreachable and every community was `Open`.
-pub const SCHEMA_VERSION: i64 = 83;
+/// 84: `app_settings.link_previews_enabled` defaults to 0, so a row
+/// another setting creates no longer turns link previews (an IP leak to
+/// the linked site) on (plan C7.28).
+///
+/// 85: the identity store (plan D1). One encrypted database per identity;
+/// the identity's record owner keypairs moved to its vault (their
+/// `identity` columns and `friends.local_conversation_keypair` dropped);
+/// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` hold
+/// the daemon's friend-inbox protocol until E2.1.
+///
+/// 86: `messages.send_state` (D22's delivery vocabulary) and the held
+/// write's record slot a queued post waited on, plan D1 / C7.14.
+///
+/// 87: the preferences move from the plugin store into `app_settings`
+/// columns and `app_input_channels` (plan D1).
+///
+/// 91: the daemon's friend inbox and DM logs go (plan E2.1):
+/// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` are
+/// dropped; friend requests and DMs travel as `'D'` envelopes on both hosts.
+///
+/// 92 (plan E2.3): the 1:1 ratchet's tables `ratchet_sessions`,
+/// `signal_prekeys`, `signal_identities` and `unprocessed`; the
+/// envelope-store family goes with the daemon's dead call orchestration
+/// (`pending_envelopes`, `seen_envelopes`, `outbound_seqs`,
+/// `active_call_states`).
+///
+/// 93 (plan E2.4): the prekey record's `identity.prekey_record_key`,
+/// `signal_prekeys.retired_at`, `prekey_lr_inits`, `prekey_rejections`
+/// and `prekey_slots_used`.
+///
+/// 94 (audit 2026-10-20, F3): `idx_messages_dedup` covers only rows with
+/// no client id (two DMs in one millisecond were one), the client-id index
+/// names the sender; CHECK constraints on `identity.device_id` (32 hex), the 32-byte
+/// keys of `signal_identities` and `unprocessed.header_dh`, and the
+/// counters; `unprocessed.quarantined_at`; each vault owner entry holds its
+/// record key with the keypair.
+///
+/// 96 (plan E2.5, D22): the outbox's `outbox`, `outbox_streams` and `received` tables.
+///
+/// 97 (plan E2.5): `presence_keys` and `friends.presence_epoch`/`presence_key`
+/// (the friends key of profile STATUS and GAME_INFO).
+///
+/// 98 (plan E2.5, D24): the send log `message_send_log` and the retry
+/// requests `retry_requests`/`retry_request_sends`.
+///
+/// 99 (plan E2.5, D17): `identity.friend_request_token`, the friend code's
+/// request token.
+///
+/// 100 (plan E2.5, r10): `app_settings.read_receipts_enabled`, off by default.
+///
+/// 101 (plan E2.5, D17): `outgoing_invites.inbox_key`, the invite's
+/// single-use request inbox.
+///
+/// 102 (plan E2.5, r10): `messages.stream_seq`, each DM's place in its stream
+/// (ours at enqueue, the sender's when received), which `ReadUpTo` names.
+///
+/// 103 (plan E2.5, D22): `pending_messages` is gone; the friend handshake,
+/// removal and lifecycle frames are `friend_handshake` outbox rows.
+///
+/// 104 (plan E2.5, D22): the outbox's `dht_write` stream absorbs C7.6h's
+/// unsent-write table.
+///
+/// 105 (plan E2.5, D22): a channel post waits on its `channel_post` outbox
+/// row; the held record slot columns of `messages` are gone.
+///
+/// 106 (plan E2.5, D23): `stream_cursors`, and `friends.participant_record_key`
+/// and `peer_participant_record_key`, the dm participant records whose chains
+/// carry each direction of a conversation.
+///
+/// 107 (plan E2.5, D23/D24): `chain_entries`, which chain seq each `dm` row
+/// went to (for `retire_through`), and `messages.history_gap_through`, the
+/// stored `HistoryGap` marker.
+///
+/// 109 (plan E2.6, G4): the SMPL group DM tables `dms`, `dm_messages` and
+/// `dm_messages_fts` are gone; a group DM is `group_dms`.
+///
+/// 111 (plan E3.1, G1): `read_markers` (D25) replaces
+/// `channel_read_state`; `messages.mentions_me`.
+///
+/// 113 (plan E3.1, F3h): `community_held_threads`, the threads held at
+/// receipt, so a hold survives a restart.
+///
+/// 115 (plan E3.2, S4): `governance_ops` and `governance_heads`, the signed
+/// op set and each author's head, replace `governance_entries_cache`;
+/// the outbox's `governance_op` stream kind.
+///
+/// 116 (plan E3.2, S5): `communities.genesis_cert`, the pinned cert.
+///
+/// 117 (plan E3.1, FX2): `idx_messages_sender_time`, a sender's posts by
+/// time, for the slowmode gate's nearest earlier post.
+///
+/// 118 (plan E2.5, live A/B finding 42): `outbox.peer_ack`, an ack that
+/// arrived before its row's send landed.
+///
+/// 119 (plan E2.5, live A/B finding 71 refined): `chain_entries.appended_at`
+/// is NULL while an entry is pending, `chain_entries.frame` holds its sealed
+/// hint until it lands, and `friends.dm_chain_head` is the highest seq
+/// assigned.
+/// 120 (live finding 79): `friends.nickname` is gone; `friend_nicknames`
+/// binds a nickname to the key it was given for, cleared when the
+/// friendship ends.
+/// 121: `app_settings.notification_content` (E5.2): what an OS notification
+/// shows (name and message, name only, or nothing).
+/// 122 (plan E3.2, review RV7 M1): `communities.my_role_ids` and
+/// `community_members.role_ids` are dropped. Role ids, ours and every
+/// member's, are the merged governance's role assignments; no row caches
+/// them.
+/// 123 (plan VU1): Veilid 0.5.8's table-store migration is one-way; the bump
+/// resets DB, vault and Veilid storage together.
+/// 124 (plan E2.5i, R1-3): `stream_applied`, the seqs of a writer's chain
+/// applied past a gap, so the cursor absorbs them when the gap fills.
+/// 125 (plan E3.2 S7l, D16): `outbox.kind` admits `mek_transfer`, the
+/// sealed community key to one member, receipted and retried.
+/// 126 (plan E3.2 S9, R5-2): `communities.removed_by_name`, the remover's
+/// name as known when our removal merged, kept across teardown and restart.
+/// 127 (plan E2.5, R5-5): the DM participant record is DFLT(1): the chain's
+/// retire mark rides in `ChainHead`, the `RETIRE_THROUGH` subkey is gone.
+/// 128 (plan E7.7.2): `app_settings.skin_id` and `sound_bank` with their
+/// GLOB CHECK constraints, and the identity skin library `skin_packages`.
+/// 129 (plan E3.2 S7l, F9-1): `outbox.state` and `messages.send_state`
+/// admit `awaiting_key`, a channel post queued until its community key comes.
+/// 130 (plan E3.2 S9, F9-3): `messages.failure_reason`, why our own post
+/// failed (removed from the community, the key did not arrive), kept for a reload.
+/// 131 (plan E3.2 S7c.6): `governance_checkpoints`, each checkpoint digest
+/// a community holds with its state and, while usable, its snapshot.
+/// 132 (plan E3.2 S7c.8): `governance_partial`, a community joined from a
+/// checkpoint hint until its backfill ends.
+/// 133 (plan E3.2 S8): `community_invites.uses` dropped.
+/// 134 (plan E3.2 S8): `communities.governance_key` dropped; the community
+/// id is the anchor `A`'s key (ADR 0011).
+/// 135 (plan E3.2 S9): `community_roles.role_id` is the full 16-byte role
+/// id as 32 hex characters, no longer a truncated integer.
+/// 136 (plan E3.2 S10, D15): no SQL change; a governance op's signature
+/// and hash cover its Cap'n Proto canonical form without `sig`, so ops
+/// stored by older builds no longer verify.
+/// 137 (plan E3.2 S10, invite proof): no SQL change; an invite's
+/// `code_hash` is the public half of its join key and a `MemberJoined`
+/// invite proof is that key's signature, so stored invites and joins of
+/// older builds no longer verify.
+/// 143 (plan E7.2 slices 7-11): `identity.bio` and `friends.bio`,
+/// `identity.share_current_game`, `hidden_games` and `favourite_servers`.
+/// 146 (plan E7.1 disappearing messages, E3.4 S1): `friends`/`group_dms.disappearing_seconds`,
+/// `messages.expire_seconds`/`expire_at`/`timer_notice_seconds`, the send log's and
+/// unprocessed rows' `client_id`, `communities.beat_seq`.
+/// 147 (plan E2.6, GC1): stored group rosters (`group_dms.roster` JSON) carry each
+/// member's `displayName`; rows of older builds lack it.
+/// 148 (plan E3.2 LV1): `communities.my_member_record`, our own member record's key
+/// stored at join/create (never read back from our merged membership).
+/// 149 (plan E2.6 G4): `stream_cursors.stream_seq`, the author's outbox stream seq of the
+/// entry the cursor was committed on (a retired group stretch held by hint is no gap).
+/// 150 (plan E3.2 S8-H/S8-I): `communities` drops `dht_owner_keypair`, `dht_record_key`,
+/// `manifest_key` and the never-advanced `lamport_clock`.
+/// 151 (plan E3.2 S7s.3 + S7d-keys K1): `creator_invites` and `pending_creations`
+/// (with `answered`); `governance_ops.{device_seq, device_key, signed_here}`, `governance_heads`
+/// keyed by device, `governance_devices`.
+/// 152 (plan E3.2 IV1b): `community_invites.url`, the link as minted.
+/// 153 (round 23: HOL1 + plan E7.15 IV1/IV2 + ADR 0017 2026-11-22): `outbox.depends_on`, a
+/// row's named dependency; `activity_log` and `activity_seen`; `app_settings.keep_activity_log`;
+/// and the veilid-core pin moves to fork rev `bc741633`, so the DB, vault and Veilid storage
+/// reset together.
+/// 154 (plan E7.2 G7 + G12): `group_dms.origin_peer`, the friend whose chat the room was created
+/// from, and `group_dms.favourite`, our "Chat Rooms" flag; `transfers`, each download's state and
+/// resume checkpoint.
+/// 155 (plan E3.4 S6): `community_members.custom_status`; the row's `display_name` and
+/// `custom_status` are the member's verified card, written only from `read_card`.
+/// 156 (plan E7.2 G3): `recent_servers`, the servers we visited, for the Servers view.
+/// 157 (plan RV1): `route_budget`, the identity's persisted new-route budget.
+/// 158 (plan RV2): `friends.reply_inbox_key`, `friends.peer_reply_inbox_key`/`peer_reply_writer`,
+/// `pending_friend_requests.reply_inbox_key`/`reply_writer`: a request's reply inbox.
+/// 160 (plan RV2e): `route_budget.kind`, keyed `(owner_key, kind)`: the friend code slot's
+/// roll budget is persisted beside the route budget.
+/// 161 (plan E7.2 G6): `group_lobbies` and `group_lobby_members`, each group's game lobbies.
+/// 162 (owed item GD): `messages.reply_to_client_id`, a DM's or group DM's parent client id
+/// as carried, served whether or not the parent is held.
+/// 163 (plan E3.2 S7d-keys.8): `communities.departing`, a leave that took effect locally
+/// before its `MemberLeft` was signed.
+/// 164 (plan FX3 follow-up KP): `messages.undecryptable_reason`, a channel message stored without
+/// its body (`'damaged'`): its signed outbox entry names a key we hold and the body does not open.
+/// 165 (plan decision 67 item 3): `group_dm_rendezvous`, each member's place in its group's
+/// rendezvous record.
+/// 167 (SEC5): `thread_messages` scopes each reply id to its verified author.
+pub const SCHEMA_VERSION: i64 = 167;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
@@ -105,122 +294,88 @@ pub enum DbError {
         context: &'static str,
         source: rusqlite::Error,
     },
+    /// The key does not decrypt the identity database.
+    #[error("the database key does not open this database")]
+    WrongKey,
+    /// The identity database was written for another schema version.
+    #[error("the database is at schema version {found}, not {expected}", expected = SCHEMA_VERSION)]
+    VersionMismatch { found: i64 },
+    /// A file operation on the database failed.
+    #[error("database file: {0}")]
+    Io(std::io::Error),
 }
 
 fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
     move |source| DbError::Sqlite { context, source }
 }
 
-/// The opened database, and whether its schema was recreated.
-pub struct DbOpenResult {
-    pub db: Db,
-    /// `true` when the stored schema version differed and every table was
-    /// dropped and recreated. The caller wipes the storage that has to
-    /// stay in step with it (vault files, Veilid storage).
-    pub schema_reset: bool,
-}
-
-/// Open (or create) the plaintext database at `path`: WAL, foreign keys,
-/// and the schema recreated when its version is not [`SCHEMA_VERSION`].
-/// `":memory:"` opens an in-memory database.
+/// Open an identity's encrypted database (plan D1): keyed with the
+/// vault-derived `key` (SQLCipher), verified, WAL, foreign keys and
+/// `secure_delete` on, `synchronous=FULL` with `fullfsync` and
+/// `checkpoint_fullfsync` (macOS: `F_FULLFSYNC`, so a committed ratchet
+/// step survives a power loss before the message it keys goes out), and
+/// `journal_size_limit=0`, so a WAL reset truncates the file instead of
+/// keeping old frames (old ratchet records, erased prekey secrets) in it,
+/// and `wal_autocheckpoint=1000`, which bounds what the erase checkpoint
+/// (`crate::erase`) copies. A new database gets the schema; a database at
+/// another schema version is an error, never a silent reset — the layout
+/// check (`crate::reset::check_layout`) already cleared a root laid out for
+/// another version.
 ///
 /// # Errors
-/// [`DbError`] naming the step that failed, including an unreadable
-/// `user_version` (which used to be read as 0 and silently reset the
-/// database).
-pub fn open(path: &Path) -> Result<DbOpenResult, DbError> {
+/// [`DbError::WrongKey`] when `key` does not decrypt it,
+/// [`DbError::VersionMismatch`], or the SQLite step that failed.
+pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
+    rekindle_asql::init_sqlite();
     let conn = Connection::open(path).map_err(sqlite("open database"))?;
-    conn.execute_batch("PRAGMA journal_mode=WAL;")
-        .map_err(sqlite("set WAL mode"))?;
-    conn.execute_batch("PRAGMA foreign_keys=ON;")
-        .map_err(sqlite("enable foreign keys"))?;
-
-    let current: i64 = conn
+    conn.pragma_update(None, "key", format!("x'{}'", hex_lower(key)))
+        .map_err(sqlite("key database"))?;
+    let tables: i64 = conn
+        .query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
+        .map_err(|e| match e.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::NotADatabase | rusqlite::ErrorCode::OutOfMemory) => {
+                DbError::WrongKey
+            }
+            _ => DbError::Sqlite {
+                context: "verify key",
+                source: e,
+            },
+        })?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; \
+         PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA checkpoint_fullfsync=ON; \
+         PRAGMA journal_size_limit=0; PRAGMA wal_autocheckpoint=1000;",
+    )
+    .map_err(sqlite("set pragmas"))?;
+    let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(sqlite("read schema version"))?;
-    let schema_reset = current != SCHEMA_VERSION;
-    if schema_reset {
-        if current != 0 {
-            tracing::info!(
-                old = current,
-                new = SCHEMA_VERSION,
-                "schema version mismatch — recreating database"
-            );
-        }
-        drop_all_tables(&conn)?;
+    if version == 0 && tables == 0 {
         conn.execute_batch(SCHEMA).map_err(sqlite("apply schema"))?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)
             .map_err(sqlite("set schema version"))?;
+    } else if version != SCHEMA_VERSION {
+        return Err(DbError::VersionMismatch { found: version });
     }
-
-    Ok(DbOpenResult {
-        db: Db::from(rekindle_asql::Connection::from(conn)),
-        schema_reset,
-    })
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(DbError::Io)?;
+    }
+    Ok(Db::from(rekindle_asql::Connection::from(conn)))
 }
 
-/// Drop every user table so the schema can be re-applied.
-///
-/// Virtual tables (FTS5) go first: they own shadow tables (`<name>_data`,
-/// `<name>_idx`, …) that SQLite refuses to drop directly. They are the rows
-/// whose `sql` starts `CREATE VIRTUAL`; shadow tables have a NULL `sql`.
-fn drop_all_tables(conn: &Connection) -> Result<(), DbError> {
-    conn.execute_batch("PRAGMA foreign_keys=OFF;")
-        .map_err(sqlite("disable foreign keys"))?;
-    for kind in ["CREATE VIRTUAL%", "CREATE TABLE%"] {
-        for table in tables_whose_sql_is_like(conn, kind)? {
-            conn.execute_batch(&format!("DROP TABLE IF EXISTS \"{table}\";"))
-                .map_err(sqlite("drop table"))?;
-        }
-    }
-    conn.execute_batch("PRAGMA foreign_keys=ON;")
-        .map_err(sqlite("re-enable foreign keys"))
-}
-
-fn tables_whose_sql_is_like(conn: &Connection, pattern: &str) -> Result<Vec<String>, DbError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT name FROM sqlite_master \
-             WHERE type = 'table' AND sql LIKE ?1 AND name NOT LIKE 'sqlite_%'",
-        )
-        .map_err(sqlite("list tables"))?;
-    let names = stmt
-        .query_map([pattern], |row| row.get(0))
-        .map_err(sqlite("list tables"))?
-        .collect::<Result<Vec<String>, _>>()
-        .map_err(sqlite("list tables"))?;
-    Ok(names)
+fn hex_lower(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, b| {
+            let _ = write!(out, "{b:02x}");
+            out
+        })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn a_new_database_gets_the_schema_and_its_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rekindle.db");
-        let first = open(&path).unwrap();
-        assert!(first.schema_reset, "a new file has no schema yet");
-        let version: i64 = first
-            .db
-            .call(|c| c.pragma_query_value(None, "user_version", |r| r.get(0)))
-            .await
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        drop(first);
-        assert!(!open(&path).unwrap().schema_reset, "reopening keeps it");
-    }
-
-    #[test]
-    fn a_stale_version_recreates_every_table() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rekindle.db");
-        drop(open(&path).unwrap());
-        let conn = Connection::open(&path).unwrap();
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
-            .unwrap();
-        drop(conn);
-        assert!(open(&path).unwrap().schema_reset);
-    }
-}
+#[path = "open_tests.rs"]
+mod tests;

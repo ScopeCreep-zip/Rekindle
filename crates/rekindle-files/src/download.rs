@@ -15,7 +15,7 @@
 //! Voice messages play from [`assemble_attachment`]'s bytes and never touch
 //! the filesystem outside the chunk cache.
 //!
-//! Parameterised over `FilesDeps`. The src-tauri `FilesAdapter`
+//! Parameterised over `FilesDeps`. The Host's `HostFiles`
 //! supplies the concrete DHT + transport + DB + cache + governance
 //! wiring.
 
@@ -26,14 +26,14 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::permissions;
 use uuid::Uuid;
 
-use crate::deps::{FilesDeps, FilesEvent};
+use crate::deps::{ChannelPost, FilesDeps, FilesEvent};
 use crate::dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};
 use crate::error::FilesError;
 use crate::fek::unwrap_fek_for_offer;
 use crate::manifest::validate_offer;
 use crate::verify::{verify_chunk, verify_merkle_root};
-use rekindle_codec::community::channel_record::ChannelAttachmentCached;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
+use rekindle_types::message::PostEntry;
 
 /// An attachment whose chunks are all in the local cache, with the key
 /// that decrypts them.
@@ -56,7 +56,7 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     channel_id: &str,
     attachment_id_hex: &str,
 ) -> Result<FetchedAttachment, FilesError> {
-    deps.require_permission(community_id, permissions::READ_HISTORY)?;
+    deps.require_permission(community_id, Some(channel_id), permissions::READ_HISTORY)?;
     deps.ensure_cache_open(community_id)?;
 
     let offer = fetch_offer(deps, community_id, channel_id, attachment_id_hex).await?;
@@ -85,6 +85,9 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
         })?;
         bitmap.ok_or_else(|| FilesError::NotFound(format!("cache for {community_id}")))?
     };
+    // The checkpoint is what the cache holds, even when it holds every
+    // chunk already (a transfer resumed after its last chunk was cached).
+    chunk_cached(deps, community_id, &offer, &have);
     if have.is_complete() {
         return Ok(FetchedAttachment { offer, fek });
     }
@@ -98,48 +101,17 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
         ));
     }
 
-    // Walk sources in arrival order; for each, request the chunks they
-    // have that we still need.
+    // Walk sources in arrival order (§28.9: every advertising peer is
+    // asked); for each, request the chunks they have that we still need.
+    // A source that is offline or does not answer is recorded and the walk
+    // moves on to the next one, so the attempt fails only when no source
+    // completes it.
+    let mut failed_sources = 0usize;
     for src in &sources {
-        let needed: Vec<u32> = src.bitmap.intersect(&inverse(&have));
-        if needed.is_empty() {
-            continue;
-        }
-        let response =
-            send_chunk_request(deps, community_id, channel_id, attachment_id, &needed, src).await?;
-        for chunk in response {
-            // Decrypt then verify against the offer's plaintext SHA-256.
-            let plaintext = fek.decrypt(&chunk.data).map_err(|e| {
-                FilesError::Decrypt(format!("chunk {} decrypt: {e}", chunk.chunk_index))
-            })?;
-            let expected = offer.chunk_hashes.get(chunk.chunk_index as usize).ok_or(
-                FilesError::ChunkIndexOutOfRange {
-                    index: chunk.chunk_index,
-                    chunk_count,
-                },
-            )?;
-            if let Err(e) = verify_chunk(&plaintext, expected) {
-                tracing::warn!(
-                    community = %community_id,
-                    peer = %src.pseudonym,
-                    chunk = chunk.chunk_index,
-                    error = %e,
-                    "dropping malformed chunk; will re-request"
-                );
-                continue;
-            }
-            // Re-encrypt with FEK for cache storage (so we can serve the
-            // same wire format back to other peers without re-keying).
-            let stored = fek
-                .encrypt(&plaintext)
-                .map_err(|e| FilesError::Encrypt(format!("re-encrypt cache: {e}")))?;
-            let chunk_index = chunk.chunk_index;
-            deps.with_cache_mut(community_id, &mut |cache, pinned| {
-                cache
-                    .insert(attachment_uuid, chunk_index, &stored, pinned)
-                    .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
-            })?;
-            have.set(chunk.chunk_index);
+        let answered =
+            fetch_from_source(deps, community_id, channel_id, &offer, &fek, src, &mut have).await?;
+        if !answered {
+            failed_sources += 1;
         }
         if have.is_complete() {
             break;
@@ -147,32 +119,31 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     }
 
     if !have.is_complete() {
+        tracing::debug!(
+            failed_sources,
+            sources = sources.len(),
+            have = have.count(),
+            total = chunk_count,
+            "attachment download attempt incomplete after asking every source"
+        );
         return Err(FilesError::DownloadIncomplete {
             have: have.count(),
             total: chunk_count,
         });
     }
 
-    // Advertise full possession to the swarm.
-    let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
-    let slot_keypair = deps.slot_keypair(community_id)?;
-    let slot_index = deps.my_subkey_index(community_id)?;
-    let sender_pseudonym = deps.my_pseudonym(community_id)?;
-    let cached = ChannelAttachmentCached {
-        attachment_id,
-        chunk_bitmap: AttachmentBitmap::full(chunk_count).as_bytes().to_vec(),
-        chunk_count,
-        author_pseudonym: sender_pseudonym,
-        lamport_ts: deps.increment_lamport(community_id)?,
+    // Advertise full possession to the swarm: an `AttachmentCached`
+    // entry on our channel outbox (plan E3.3 slice 7).
+    let possession = ChannelPost {
+        community: community_id.to_owned(),
+        channel: channel_id.to_owned(),
+        message: format!("cached-{}", Uuid::new_v4()),
+        entry: PostEntry::Cached {
+            attachment_id,
+            chunk_count,
+        },
     };
-    deps.write_attachment_cached_to_smpl(
-        community_id,
-        &channel_log_key,
-        slot_index,
-        &slot_keypair,
-        &cached,
-    )
-    .await?;
+    deps.queue_post(&possession).await?;
 
     Ok(FetchedAttachment { offer, fek })
 }
@@ -255,6 +226,123 @@ pub async fn download_attachment<D: FilesDeps>(
     Ok(())
 }
 
+/// Ask one source for the chunks it advertises that we still lack, until
+/// it delivers nothing new. One reply carries only the chunks that fit
+/// Veilid's app-call limit (`serve_attachment_request`), so a source is
+/// asked again while it still delivers chunks we lack.
+///
+/// `Ok(false)` records a source that failed (offline, the call failed or
+/// timed out, or its reply did not decode); the caller asks the next one.
+/// `Err` is a local failure (our pseudonym, encoding, the cache) that no
+/// other source can fix. Each chunk is verified against the offer's
+/// plaintext SHA-256 before it is cached; a chunk that does not decrypt,
+/// is out of range or fails its hash is dropped and stays missing.
+async fn fetch_from_source<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+    offer: &AttachmentOffer,
+    fek: &MediaEncryptionKey,
+    src: &DiscoveredSource,
+    have: &mut AttachmentBitmap,
+) -> Result<bool, FilesError> {
+    let attachment_uuid = Uuid::from_bytes(offer.attachment_id);
+    loop {
+        let needed: Vec<u32> = src.bitmap.intersect(&inverse(have));
+        if needed.is_empty() {
+            return Ok(true);
+        }
+        let held_before = have.count();
+        let request =
+            encode_chunk_request(deps, community_id, channel_id, offer.attachment_id, &needed)?;
+        let response = match ask_source(deps, community_id, src, request).await {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::debug!(
+                    reason = source_failure_kind(&e),
+                    "attachment source failed; asking the next source"
+                );
+                return Ok(false);
+            }
+        };
+        for chunk in response {
+            let Some(plaintext) = verified_plaintext(offer, fek, &chunk) else {
+                continue;
+            };
+            // Re-encrypt with FEK for cache storage (so we can serve the
+            // same wire format back to other peers without re-keying).
+            let stored = fek
+                .encrypt(&plaintext)
+                .map_err(|e| FilesError::Encrypt(format!("re-encrypt cache: {e}")))?;
+            let chunk_index = chunk.chunk_index;
+            deps.with_cache_mut(community_id, &mut |cache, pinned| {
+                cache
+                    .insert(attachment_uuid, chunk_index, &stored, pinned)
+                    .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
+            })?;
+            have.set(chunk_index);
+            chunk_cached(deps, community_id, offer, have);
+        }
+        if have.count() == held_before {
+            return Ok(true);
+        }
+    }
+}
+
+/// Tell the deps the fetch's checkpoint: `have`'s chunks, and their bytes
+/// (every chunk is `chunk_size` but the last, so the held bytes are capped
+/// by `total_size`).
+fn chunk_cached<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    offer: &AttachmentOffer,
+    have: &AttachmentBitmap,
+) {
+    let chunks_done = have.count();
+    deps.emit_event(FilesEvent::ChunkCached {
+        community_id: community_id.to_owned(),
+        attachment_id_hex: hex::encode(offer.attachment_id),
+        chunks_done,
+        chunk_count: offer.chunk_count,
+        bytes_done: (u64::from(chunks_done) * u64::from(offer.chunk_size)).min(offer.total_size),
+        total: offer.total_size,
+    });
+}
+
+/// A served chunk's plaintext, if it decrypts under the FEK, is in range
+/// and matches the offer's plaintext SHA-256; `None` drops it.
+fn verified_plaintext(
+    offer: &AttachmentOffer,
+    fek: &MediaEncryptionKey,
+    chunk: &ChunkResponse,
+) -> Option<Vec<u8>> {
+    let Some(expected) = offer.chunk_hashes.get(chunk.chunk_index as usize) else {
+        tracing::warn!("dropping out-of-range attachment chunk");
+        return None;
+    };
+    let plaintext = match fek.decrypt(&chunk.data) {
+        Ok(plaintext) => plaintext,
+        Err(e) => {
+            tracing::warn!(error = %e, "dropping attachment chunk that does not decrypt");
+            return None;
+        }
+    };
+    if let Err(e) = verify_chunk(&plaintext, expected) {
+        tracing::warn!(error = %e, "dropping malformed attachment chunk; will re-request");
+        return None;
+    }
+    Some(plaintext)
+}
+
+/// The failure class of a source, for logs that carry no identifiers.
+fn source_failure_kind(e: &FilesError) -> &'static str {
+    match e {
+        FilesError::NotFound(_) => "offline",
+        FilesError::Transport(_) => "transport",
+        _ => "other",
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ChunkResponse {
     chunk_index: u32,
@@ -273,8 +361,8 @@ fn inverse(bm: &AttachmentBitmap) -> AttachmentBitmap {
     out
 }
 
-/// Fetch the offer for an attachment from the channel SMPL record by
-/// scanning all 255 member subkeys for a Message entry carrying it.
+/// Fetch the offer for an attachment from the channel's entries: a
+/// Message entry carrying it.
 async fn fetch_offer<D: FilesDeps>(
     deps: &D,
     community_id: &str,
@@ -282,8 +370,7 @@ async fn fetch_offer<D: FilesDeps>(
     attachment_id_hex: &str,
 ) -> Result<AttachmentOffer, FilesError> {
     let target_attachment_id = parse_attachment_id_hex(attachment_id_hex)?;
-    let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
-    let entries = deps.scan_channel_subkeys(&channel_log_key).await?;
+    let entries = deps.channel_entries(community_id, channel_id).await?;
     fetch_offer_in_entries(&entries, target_attachment_id).ok_or_else(|| {
         FilesError::NotFound(format!(
             "attachment {attachment_id_hex} not found in channel {channel_id}"
@@ -292,7 +379,7 @@ async fn fetch_offer<D: FilesDeps>(
 }
 
 /// Discover peers advertising chunks of an attachment via
-/// `AttachmentCached` entries across all 255 member subkeys.
+/// the channel's `AttachmentCached` entries.
 async fn discover_sources<D: FilesDeps>(
     deps: &D,
     community_id: &str,
@@ -300,8 +387,7 @@ async fn discover_sources<D: FilesDeps>(
     attachment_id: [u8; 16],
     chunk_count: u32,
 ) -> Result<Vec<DiscoveredSource>, FilesError> {
-    let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
-    let entries = deps.scan_channel_subkeys(&channel_log_key).await?;
+    let entries = deps.channel_entries(community_id, channel_id).await?;
     Ok(discover_sources_in_entries(
         &entries,
         attachment_id,
@@ -309,41 +395,42 @@ async fn discover_sources<D: FilesDeps>(
     ))
 }
 
-/// Ask a single peer for a subset of chunks. Encodes the
-/// `RequestAttachment` envelope, app_calls the peer's route, decodes
-/// the reply, and unwraps the chunks.
-async fn send_chunk_request<D: FilesDeps>(
+/// Encode the `RequestAttachment` envelope for `requested_chunks`.
+fn encode_chunk_request<D: FilesDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     attachment_id: [u8; 16],
     requested_chunks: &[u32],
-    source: &DiscoveredSource,
-) -> Result<Vec<ChunkResponse>, FilesError> {
-    let route_blob = deps
-        .peer_route_blob(community_id, &source.pseudonym)
-        .ok_or_else(|| {
-            FilesError::NotFound(format!(
-                "source peer {} not online — cannot app_call",
-                source.pseudonym
-            ))
-        })?;
-
+) -> Result<Vec<u8>, FilesError> {
     let requester_pseudonym = deps.my_pseudonym(community_id)?;
-    let payload = CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+    let payload = CommunityEnvelope::control(ControlPayload::RequestAttachment {
         channel_id: channel_id.to_string(),
         attachment_id,
         requested_chunks: requested_chunks.to_vec(),
         requester_pseudonym,
     });
-    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
-        .map_err(|e| FilesError::Transport(format!("encode RequestAttachment: {e}")))?;
+    rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
+        .map_err(|e| FilesError::Transport(format!("encode RequestAttachment: {e}")))
+}
 
-    let reply = deps.app_call_peer(&route_blob, bytes).await?;
+/// Ask a single peer for a subset of chunks: app_call the peer's route
+/// with the encoded request, decode the reply, and unwrap the chunks.
+/// Every error is the source's (offline, call failed, reply undecodable).
+async fn ask_source<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    source: &DiscoveredSource,
+    request: Vec<u8>,
+) -> Result<Vec<ChunkResponse>, FilesError> {
+    let route_blob = deps
+        .peer_route_blob(community_id, &source.pseudonym)
+        .ok_or_else(|| FilesError::NotFound("source peer not online".into()))?;
+    let reply = deps.app_call_peer(&route_blob, request).await?;
     let envelope = rekindle_codec::capnp_envelope::decode_community_envelope(&reply)
         .map_err(|e| FilesError::Transport(format!("decode reply: {e}")))?;
-    match envelope {
-        CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) => Ok(chunks
+    match envelope.into_control() {
+        Some(ControlPayload::MultiAttachmentChunk { chunks }) => Ok(chunks
             .into_iter()
             .filter_map(|c| match c {
                 ControlPayload::AttachmentChunk {
@@ -364,109 +451,8 @@ fn parse_attachment_id_hex(hex_str: &str) -> Result<[u8; 16], FilesError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_mock::MockDeps;
-    use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+mod sources_tests;
 
-    fn build_offer_entry(attachment_id: [u8; 16], chunk_count: u32) -> ChannelRecordEntry {
-        ChannelRecordEntry::Message(ChannelMessage {
-            sequence: 1,
-            sender_pseudonym: "owner".into(),
-            ciphertext: Vec::new(),
-            mek_generation: 0,
-            timestamp: 0,
-            reply_to: None,
-            lamport_ts: 1,
-            message_id: Some("m1".into()),
-            attachment: Some(AttachmentOffer {
-                attachment_id,
-                filename: "f.bin".into(),
-                mime_type: "application/octet-stream".into(),
-                total_size: 0,
-                chunk_count,
-                chunk_size: 0,
-                merkle_root: [0u8; 32],
-                chunk_hashes: vec![[0u8; 32]; chunk_count as usize],
-                wrapped_fek: Vec::new(),
-                fek_mek_generation: 0,
-            }),
-            flags: 0,
-            mentioned_pseudonyms: Vec::new(),
-            mentioned_roles: Vec::new(),
-        })
-    }
-
-    #[tokio::test]
-    async fn invalid_attachment_id_hex_is_rejected() {
-        let deps = MockDeps::new("c1", "11111111111111111111111111111111");
-        let err = download_attachment(
-            &deps,
-            "c1",
-            "11111111111111111111111111111111",
-            "not-hex",
-            std::path::Path::new("/tmp/x"),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, FilesError::InvalidAttachmentId(_)));
-    }
-
-    #[tokio::test]
-    async fn offer_not_found_returns_not_found() {
-        let deps = MockDeps::new("c1", "11111111111111111111111111111111"); // no entries
-        let err = download_attachment(
-            &deps,
-            "c1",
-            "11111111111111111111111111111111",
-            &"de".repeat(16),
-            std::path::Path::new("/tmp/x"),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, FilesError::NotFound(msg) if msg.contains("not found")));
-    }
-
-    #[tokio::test]
-    async fn permission_denied_blocks_download() {
-        let mut deps = MockDeps::new("c1", "11111111111111111111111111111111");
-        deps.permission_pass = false;
-        let err = download_attachment(
-            &deps,
-            "c1",
-            "11111111111111111111111111111111",
-            &"00".repeat(16),
-            std::path::Path::new("/tmp/x"),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, FilesError::PermissionDenied(_)));
-    }
-
-    #[tokio::test]
-    async fn offer_with_corrupt_merkle_root_rejected() {
-        // Pre-populate entries with a Message carrying an offer whose
-        // chunk_hashes are all-zero but merkle_root claims something
-        // else → verify_merkle_root fails.
-        let aid = [3u8; 16];
-        let deps = MockDeps::new("c1", "11111111111111111111111111111111")
-            .with_entries(vec![build_offer_entry(aid, 2)]);
-        // Tamper: make the offer's merkle_root non-zero so it doesn't
-        // match the empty-hash recomputation.
-        if let Some(ChannelRecordEntry::Message(msg)) = deps.channel_entries.lock().get_mut(0) {
-            if let Some(o) = msg.attachment.as_mut() {
-                o.merkle_root = [99u8; 32];
-            }
-        }
-        let err = download_attachment(
-            &deps,
-            "c1",
-            "11111111111111111111111111111111",
-            &hex::encode(aid),
-            std::path::Path::new("/tmp/x"),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, FilesError::OfferInvalid(_)));
-    }
-}
+#[cfg(test)]
+#[path = "download_tests.rs"]
+mod tests;

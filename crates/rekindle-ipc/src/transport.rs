@@ -63,175 +63,12 @@ pub use unix::{connect, extract_ucred, Listener, Stream};
 pub use windows::{connect, Listener, Stream, PIPE_SECURITY_DESCRIPTOR};
 
 #[cfg(unix)]
-mod unix {
-    use std::path::Path;
-
-    use tokio::net::{UnixListener, UnixStream};
-
-    use super::{IpcError, PeerCredentials, Result};
-
-    /// A connected bus stream.
-    pub type Stream = UnixStream;
-
-    /// Extract peer credentials from a connected Unix domain socket.
-    ///
-    /// tokio reads `SO_PEERCRED` on Linux and `getpeereid` (UID) plus
-    /// `LOCAL_PEEREPID` (PID) on macOS. A missing UID is an error — the
-    /// caller MUST reject the connection [RC-6]; a missing PID is not.
-    pub fn extract_ucred(stream: &UnixStream) -> Result<PeerCredentials> {
-        let cred = stream.peer_cred().map_err(IpcError::UcredFailed)?;
-        Ok(PeerCredentials {
-            uid: cred.uid(),
-            pid: cred.pid().and_then(|p| u32::try_from(p).ok()),
-        })
-    }
-
-    /// The bus listener.
-    pub struct Listener(UnixListener);
-
-    impl Listener {
-        /// Bind at `path`: owner-only parent directory, a stale socket
-        /// removed, the socket itself `0600`. [RC-4][RC-6]
-        ///
-        /// Only the holder of the data root's node lock calls this, so a
-        /// socket found here is never a live daemon's.
-        pub fn bind(path: &Path) -> Result<Self> {
-            use std::os::unix::fs::PermissionsExt;
-
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| IpcError::DirectoryCreate {
-                    path: parent.display().to_string(),
-                    source: e,
-                })?;
-                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).map_err(
-                    |e| IpcError::DirectoryCreate {
-                        path: parent.display().to_string(),
-                        source: e,
-                    },
-                )?;
-            }
-
-            match std::fs::remove_file(path) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => {
-                    return Err(IpcError::SocketBind {
-                        path: path.display().to_string(),
-                        source: e,
-                    });
-                }
-            }
-
-            let bind_error = |e| IpcError::SocketBind {
-                path: path.display().to_string(),
-                source: e,
-            };
-            let listener = UnixListener::bind(path).map_err(bind_error)?;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .map_err(bind_error)?;
-            Ok(Self(listener))
-        }
-
-        /// The next connection from a process running as our own user.
-        /// Connections that fail the UID check are dropped here.
-        pub async fn accept(&self) -> std::io::Result<Option<(Stream, PeerCredentials)>> {
-            let (stream, _addr) = self.0.accept().await?;
-            let peer = match extract_ucred(&stream) {
-                Ok(creds) => creds,
-                Err(e) => {
-                    tracing::error!(error = %e, "rejecting: UCred extraction failed");
-                    return Ok(None);
-                }
-            };
-            let my_uid = PeerCredentials::local().uid;
-            if peer.uid != my_uid {
-                tracing::error!(peer_uid = peer.uid, my_uid, "rejecting: UID mismatch");
-                return Ok(None);
-            }
-            Ok(Some((stream, peer)))
-        }
-    }
-
-    /// Connect to the bus at `path`, returning the server's credentials.
-    pub async fn connect(path: &Path) -> Result<(Stream, PeerCredentials)> {
-        let stream = UnixStream::connect(path)
-            .await
-            .map_err(|e| IpcError::SocketBind {
-                path: path.display().to_string(),
-                source: e,
-            })?;
-        let server = extract_ucred(&stream)?;
-        Ok((stream, server))
-    }
-}
+#[path = "transport_unix.rs"]
+mod unix;
 
 #[cfg(windows)]
-mod windows {
-    use std::path::Path;
-
-    use interprocess::os::windows::named_pipe::pipe_mode::Bytes;
-    use interprocess::os::windows::named_pipe::tokio::{DuplexPipeStream, PipeListener};
-    use interprocess::os::windows::named_pipe::PipeListenerOptions;
-    use interprocess::os::windows::security_descriptor::SecurityDescriptor;
-
-    use super::{IpcError, PeerCredentials, Result};
-
-    /// The pipe's security descriptor (SDDL): a protected DACL (`D:P`, no
-    /// inherited entries) granting full access (`GA`) to the pipe's owner
-    /// (`OW`, Owner Rights — "the current owner of the object") and
-    /// LocalSystem (`SY`). The per-user form of the descriptor the Docker
-    /// daemon puts on its pipe (`D:P(A;;GA;;;BA)(A;;GA;;;SY)`).
-    pub const PIPE_SECURITY_DESCRIPTOR: &str = "D:P(A;;GA;;;OW)(A;;GA;;;SY)";
-
-    /// A connected bus stream.
-    pub type Stream = DuplexPipeStream<Bytes>;
-
-    /// The bus listener.
-    pub struct Listener(PipeListener<Bytes, Bytes>);
-
-    impl Listener {
-        /// Create the pipe at `path` with [`PIPE_SECURITY_DESCRIPTOR`],
-        /// refusing remote clients.
-        pub fn bind(path: &Path) -> Result<Self> {
-            let bind_error = |e| IpcError::SocketBind {
-                path: path.display().to_string(),
-                source: e,
-            };
-            let sddl = widestring::U16CString::from_str(PIPE_SECURITY_DESCRIPTOR)
-                .map_err(|e| bind_error(std::io::Error::other(e)))?;
-            let descriptor = SecurityDescriptor::deserialize(&sddl).map_err(bind_error)?;
-            let listener = PipeListenerOptions::new()
-                .path(path.as_os_str())
-                .security_descriptor(Some(descriptor))
-                .accept_remote(false)
-                .create_tokio_duplex::<Bytes>()
-                .map_err(bind_error)?;
-            Ok(Self(listener))
-        }
-
-        /// The next connection. The pipe's DACL has already admitted only
-        /// our own account (or LocalSystem); the client's PID is recorded
-        /// for the Noise prologue.
-        pub async fn accept(&self) -> std::io::Result<Option<(Stream, PeerCredentials)>> {
-            let stream = self.0.accept().await?;
-            let pid = stream.client_process_id().ok();
-            Ok(Some((stream, PeerCredentials { uid: 0, pid })))
-        }
-    }
-
-    /// Connect to the bus pipe at `path`, returning the server's credentials.
-    pub async fn connect(path: &Path) -> Result<(Stream, PeerCredentials)> {
-        let connect_error = |e| IpcError::SocketBind {
-            path: path.display().to_string(),
-            source: e,
-        };
-        let stream = DuplexPipeStream::<Bytes>::connect_by_path(path.as_os_str())
-            .await
-            .map_err(connect_error)?;
-        let pid = stream.server_process_id().ok();
-        Ok((stream, PeerCredentials { uid: 0, pid }))
-    }
-}
+#[path = "transport_windows.rs"]
+mod windows;
 
 /// Resolve the platform-appropriate IPC socket path.
 ///
@@ -275,7 +112,7 @@ pub fn socket_path() -> Result<PathBuf> {
     }
 }
 
-/// Resolve the runtime directory for IPC key files (`bus.pub`, `bus.key`).
+/// Resolve the runtime directory for the bus socket and `bus.pub`.
 ///
 /// On Unix it is the socket's directory (`$XDG_RUNTIME_DIR/rekindle/` on
 /// Linux). A Windows pipe has no directory, so there it is
@@ -320,14 +157,5 @@ fn home_dir() -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn local_credentials_are_valid() {
-        let creds = PeerCredentials::local();
-        assert!(creds.pid.is_some_and(|pid| pid > 0));
-        #[cfg(unix)]
-        assert!(creds.uid < u32::MAX); // Not the sentinel value
-    }
-}
+#[path = "transport_tests.rs"]
+mod tests;

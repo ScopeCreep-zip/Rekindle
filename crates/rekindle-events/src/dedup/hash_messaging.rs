@@ -36,6 +36,7 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             community,
             channel,
             message_id,
+            ..
         } => {
             h.update(b"deleted|");
             h.update(community.as_bytes());
@@ -43,6 +44,70 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(channel.as_bytes());
             h.update(b"|");
             h.update(message_id.as_bytes());
+        }
+        ChannelMessageEvent::ChannelSendStatus {
+            community,
+            channel,
+            message_id,
+            state,
+            reason: _,
+        } => {
+            h.update(b"channel_send_status|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(message_id.as_bytes());
+            h.update(b"|");
+            h.update(state.as_str().as_bytes());
+        }
+        ChannelMessageEvent::ChannelHistoryGap {
+            community,
+            channel,
+            sender_pseudonym,
+            through_seq,
+        } => {
+            h.update(b"channel_gap|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(sender_pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
+        ChannelMessageEvent::ChannelHistoryGapClosed {
+            community,
+            sender_pseudonym,
+            through_seq,
+        } => {
+            h.update(b"channel_gap_closed|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(sender_pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
+        ChannelMessageEvent::AttachmentDownloaded {
+            community,
+            channel,
+            attachment_id,
+        } => {
+            h.update(b"attachment_downloaded|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(attachment_id.as_bytes());
+        }
+        ChannelMessageEvent::ExpressionAssetReady {
+            community,
+            expression_id,
+        } => {
+            h.update(b"expression_asset_ready|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(expression_id.as_bytes());
         }
         ChannelMessageEvent::DirectMessageReceived {
             peer_key,
@@ -55,22 +120,62 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             // Bucketize to 1-second granularity to tolerate clock skew across pathways
             h.update(&(timestamp / 1000).to_le_bytes());
         }
-        ChannelMessageEvent::DirectMessageAcknowledged {
-            message_id,
+        ChannelMessageEvent::DirectMessageSent {
             conversation_id,
+            message,
+            ..
         } => {
-            h.update(b"dm_ack|");
+            // One stored row per client id: its id names it.
+            h.update(b"dm_sent|");
             h.update(conversation_id.as_bytes());
             h.update(b"|");
-            h.update(&message_id.to_le_bytes());
+            h.update(&message.id.to_le_bytes());
         }
-        ChannelMessageEvent::DirectConversationInvited {
-            from, record_key, ..
+        ChannelMessageEvent::DmSendStatus {
+            client_id,
+            conversation_id,
+            state,
+            retry,
         } => {
-            h.update(b"dm_invite|");
-            h.update(from.as_bytes());
+            h.update(b"dm_state|");
+            // Each retry is its own change: the attempt count tells them apart.
+            if let Some(retry) = retry {
+                h.update(&retry.attempts.to_le_bytes());
+            }
+            h.update(conversation_id.as_bytes());
             h.update(b"|");
-            h.update(record_key.as_bytes());
+            h.update(client_id.as_bytes());
+            h.update(b"|");
+            h.update(state.as_str().as_bytes());
+        }
+        ChannelMessageEvent::DisappearingTimerChanged {
+            context, client_id, ..
+        } => {
+            // One stored notice row per change (plan E7.1): its id names it.
+            h.update(b"dm_timer|");
+            h.update(context.id().as_bytes());
+            h.update(b"|");
+            h.update(client_id.as_bytes());
+        }
+        ChannelMessageEvent::MessagesExpired {
+            context,
+            client_ids,
+        } => {
+            h.update(b"dm_expired|");
+            h.update(context.id().as_bytes());
+            for id in client_ids {
+                h.update(b"|");
+                h.update(id.as_bytes());
+            }
+        }
+        ChannelMessageEvent::DmHistoryGap {
+            peer_key,
+            through_seq,
+        } => {
+            h.update(b"dm_gap|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
         }
         ChannelMessageEvent::ConversationFocusRequested {
             peer_key, reason, ..
@@ -83,10 +188,10 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
     }
 }
 
-pub(super) fn hash_typing(h: &mut blake3::Hasher, t: &TypingEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 5; // 5-second bucketing
+pub(super) fn hash_typing(h: &mut blake3::Hasher, t: &TypingEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 5; // 5-second bucketing
     match t {
-        TypingEvent::Started { context, who } => {
+        TypingEvent::Started { context, who, .. } => {
             h.update(b"start|");
             hash_typing_context(h, context);
             h.update(b"|");
@@ -117,17 +222,40 @@ fn hash_typing_context(h: &mut blake3::Hasher, ctx: &TypingContext) {
             h.update(b"dm:");
             h.update(peer_key.as_bytes());
         }
+        TypingContext::GroupDm { group_id } => {
+            h.update(b"gdm:");
+            h.update(group_id.as_bytes());
+        }
     }
 }
 
-pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 30; // 30-second bucketing
-                                                            // Every variant hashes subject + status + game identity + bucket.
-                                                            // `elapsed_seconds` is deliberately excluded: it advances on every
-                                                            // scan, so folding it in would give each tick a distinct hash and
-                                                            // dedup would never fire. Game *identity* is what makes a new
-                                                            // event; the elapsed count rides along on whichever emission wins.
-    let snapshot = p.snapshot();
+pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 30; // 30-second bucketing
+                                         // Every variant hashes subject + status + game identity + bucket.
+                                         // `elapsed_seconds` is deliberately excluded: it advances on every
+                                         // scan, so folding it in would give each tick a distinct hash and
+                                         // dedup would never fire. Game *identity* is what makes a new
+                                         // event; the elapsed count rides along on whichever emission wins.
+    let snapshot = match p {
+        // Our own profile change is published once, by the host, and never
+        // arrives over a peer path, so nothing repeats it to dedup.
+        PresenceEvent::SelfProfileChanged {
+            public_key,
+            display_name,
+            avatar_changed,
+        } => {
+            h.update(b"self-profile|");
+            h.update(public_key.as_bytes());
+            h.update(b"|");
+            h.update(display_name.as_deref().unwrap_or("").as_bytes());
+            h.update(&[u8::from(*avatar_changed)]);
+            h.update(&now_bucket.to_le_bytes());
+            return;
+        }
+        PresenceEvent::CommunityMemberChanged { snapshot, .. }
+        | PresenceEvent::FriendChanged { snapshot, .. }
+        | PresenceEvent::SelfChanged { snapshot, .. } => snapshot,
+    };
     match p {
         PresenceEvent::CommunityMemberChanged {
             community,
@@ -147,6 +275,7 @@ pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
             h.update(b"friend|");
             h.update(peer_key.as_bytes());
         }
+        PresenceEvent::SelfProfileChanged { .. } => {}
     }
     h.update(b"|");
     h.update(snapshot.status.as_deref().unwrap_or("").as_bytes());
@@ -156,4 +285,81 @@ pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
     h.update(&snapshot.game_id().unwrap_or(0).to_le_bytes());
     h.update(b"|");
     h.update(&now_bucket.to_le_bytes());
+}
+
+/// A group-DM event: its group, its kind and what tells two apart (the
+/// member, the epoch, the send and its state).
+pub(super) fn hash_group_dm(
+    h: &mut blake3::Hasher,
+    e: &rekindle_types::subscription_events::GroupDmEvent,
+) {
+    use rekindle_types::subscription_events::GroupDmEvent;
+    h.update(e.group_id().as_bytes());
+    h.update(b"|");
+    match e {
+        GroupDmEvent::Invited { inviter, .. } => {
+            h.update(b"inv|");
+            h.update(inviter.public_key.as_bytes());
+        }
+        GroupDmEvent::Joined { member, .. } => {
+            h.update(b"join|");
+            h.update(member.public_key.as_bytes());
+        }
+        GroupDmEvent::Left { member, .. } => {
+            h.update(b"left|");
+            h.update(member.public_key.as_bytes());
+        }
+        GroupDmEvent::KeyRotated { member, epoch, .. } => {
+            h.update(b"rot|");
+            h.update(member.public_key.as_bytes());
+            h.update(&epoch.to_be_bytes());
+        }
+        GroupDmEvent::SendStatus {
+            client_id,
+            state,
+            retry,
+            ..
+        } => {
+            h.update(b"send|");
+            // Each retry is its own change: the attempt count tells them apart.
+            if let Some(retry) = retry {
+                h.update(&retry.attempts.to_le_bytes());
+            }
+            h.update(client_id.as_bytes());
+            h.update(state.as_str().as_bytes());
+        }
+        GroupDmEvent::Message {
+            sender, message_id, ..
+        } => {
+            h.update(b"msg|");
+            h.update(sender.public_key.as_bytes());
+            h.update(message_id.as_bytes());
+        }
+        GroupDmEvent::MessageSent { message, .. } => {
+            // One stored row per client id: its id names it.
+            h.update(b"sent|");
+            h.update(&message.id.to_le_bytes());
+        }
+        GroupDmEvent::Renamed { name, .. } => {
+            h.update(b"name|");
+            h.update(name.as_bytes());
+        }
+        GroupDmEvent::Lobby { lobby, .. } => {
+            h.update(b"lobby|");
+            if let Some(l) = lobby {
+                h.update(l.lobby_id.as_bytes());
+                h.update(format!("{:?}|{}", l.state, l.members.join(",")).as_bytes());
+            }
+        }
+        GroupDmEvent::HistoryGap {
+            member,
+            through_seq,
+            ..
+        } => {
+            h.update(b"gap|");
+            h.update(member.public_key.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
+    }
 }

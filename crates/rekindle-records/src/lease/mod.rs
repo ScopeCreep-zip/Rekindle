@@ -1,9 +1,9 @@
 //! Lease bookkeeping for DHT records (plan C7.1, D4). Pure: no Veilid.
 //!
-//! veilid-core keeps **one** open-record entry per record per node, with no
+//! veilid-core 0.5.8 keeps **one** open-record entry per record per node, with no
 //! refcount: a re-open replaces the writer and the safety selection in
 //! place, and a close is node-wide and cancels the record's watch
-//! (`storage_manager/open_record.rs:155-169`, `close_record.rs:9-35`). Two
+//! (`storage_manager/open_record.rs:195-204`, `close_record.rs:9-35,116-120`). Two
 //! parts of the app that each open and close a record therefore close it
 //! under each other, and a read-only re-open of a record held writable
 //! downgrades it. The table below is the refcount Veilid does not keep: the
@@ -18,9 +18,7 @@
 //!   watcher goes, the watch is cancelled.
 //! - The **last release closes.**
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-
-use rekindle_types::id::ChannelId;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One borrow of a record. Handed to code that must not see Veilid types
 /// (the deps traits), and to the pool, which keeps the Veilid side.
@@ -227,23 +225,25 @@ impl<W: Clone> LeaseTable<W> {
     }
 }
 
-/// veilid-core 0.5.7 `storage_manager/types/mod.rs:14`: no subkey holds more.
+/// veilid-core 0.5.8 `veilid_api/types/dht/mod.rs:36` (`MAX_SUBKEY_SIZE`):
+/// no subkey holds more.
 pub const VEILID_MAX_SUBKEY_SIZE: usize = 32_768;
-/// veilid-core 0.5.7 `storage_manager/types/mod.rs:16`: a record's total.
+/// veilid-core 0.5.8 `veilid_api/types/dht/mod.rs:38`
+/// (`MAX_RECORD_DATA_SIZE`): a record's total.
 pub const VEILID_MAX_RECORD_DATA_SIZE: usize = 1_048_576;
 
 /// A record schema, as far as its size limit depends on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaShape {
     /// Every subkey: DFLT `o_cnt`, or SMPL `o_cnt + Σ m_cnt`
-    /// (`veilid_api/types/dht/schema/smpl.rs:126-139`).
+    /// (0.5.8 `veilid_api/types/dht/schema/smpl.rs:126-139`).
     pub subkey_count: u32,
 }
 
 /// The largest value one subkey of `shape` accepts:
-/// `min(32768, 1 MiB / subkey_count)` (`storage_manager/schema.rs:59-64` for
-/// DFLT, `:100-104` for SMPL). Veilid adds no encryption overhead to it: the
-/// cap is plaintext bytes (`record_encryption.rs:23-50`).
+/// `min(32768, 1 MiB / subkey_count)` (0.5.8 `veilid_api/types/dht/derivation.rs:144-147`
+/// for DFLT, `:186-189` for SMPL). Veilid adds no encryption overhead to it: the
+/// cap is plaintext bytes (`record_encryption.rs:31-61`).
 #[must_use]
 pub const fn max_subkey_bytes(shape: SchemaShape) -> usize {
     if shape.subkey_count == 0 {
@@ -261,9 +261,9 @@ pub const fn max_subkey_bytes(shape: SchemaShape) -> usize {
 /// member leaves or logs out.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommunityLeases {
-    pub governance: Option<LeaseId>,
+    /// The anchor `A` (ADR 0011).
+    pub anchor: Option<LeaseId>,
     pub registry: Option<LeaseId>,
-    pub channels: HashMap<ChannelId, LeaseId>,
     /// Plate Gate segment records (governance and registry per segment).
     pub segments: Vec<LeaseId>,
     /// `GovernanceOverflow` pages this member wrote or follows.
@@ -273,9 +273,8 @@ pub struct CommunityLeases {
 /// Which slot of a [`CommunityLeases`] a held record fills.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeldKind {
-    Governance,
+    Anchor,
     Registry,
-    Channel,
     Segment,
     Overflow,
 }
@@ -291,10 +290,9 @@ pub struct Merged {
 impl CommunityLeases {
     /// Every lease, for release.
     pub fn all(&self) -> impl Iterator<Item = LeaseId> + '_ {
-        self.governance
+        self.anchor
             .iter()
             .chain(self.registry.iter())
-            .chain(self.channels.values())
             .chain(self.segments.iter())
             .chain(self.overflow.iter())
             .copied()
@@ -320,19 +318,14 @@ impl CommunityLeases {
                 false
             }
         };
-        if let Some(lease) = incoming.governance {
-            if take(lease, HeldKind::Governance, &mut merged) {
-                self.governance = Some(lease);
+        if let Some(lease) = incoming.anchor {
+            if take(lease, HeldKind::Anchor, &mut merged) {
+                self.anchor = Some(lease);
             }
         }
         if let Some(lease) = incoming.registry {
             if take(lease, HeldKind::Registry, &mut merged) {
                 self.registry = Some(lease);
-            }
-        }
-        for (channel, lease) in incoming.channels {
-            if take(lease, HeldKind::Channel, &mut merged) {
-                self.channels.insert(channel, lease);
             }
         }
         for lease in incoming.segments {

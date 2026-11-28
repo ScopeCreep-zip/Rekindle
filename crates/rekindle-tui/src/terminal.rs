@@ -85,7 +85,11 @@ impl Tui {
             let _ = tx.send(Event::Init);
 
             loop {
+                // Biased, cancel first: a cancel beside a ready event sends
+                // nothing more. Neither interval starves the input stream:
+                // each is pending between its periods.
                 let event = tokio::select! {
+                    biased;
                     () = token.cancelled() => break,
                     _ = tick_interval.tick() => Event::Tick,
                     _ = render_interval.tick() => Event::Render,

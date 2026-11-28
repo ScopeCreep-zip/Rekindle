@@ -17,45 +17,88 @@
 //! Modules land in subsequent Phase 18 tasks (#152-#156):
 //! - `apply` (task #152) — write_entry pipeline
 //! - `origin` (task #153) — community creation
-//! - `bootstrap` (task #154) — build bootstrap response
+//! - `bootstrap` — the join's bootstrap exchange (`bootstrapResponseV2`)
 //! - `segments` (task #155) — Plate Gate
 //! - `join` + `join_stages` (task #156) — joiner flow
 
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod anchor_walk;
+pub mod anti_entropy;
 pub mod apply;
+pub mod audit;
 pub mod bootstrap;
+pub mod bootstrap_peers;
 pub mod channels;
+pub mod checkpoint_hint;
+pub mod checkpoint_rows;
+pub mod checkpoint_state;
+pub mod checkpointing;
 pub mod deps;
+pub mod device_ops;
+pub mod device_signer;
 pub mod dht_hydration;
 pub mod error;
 pub mod event;
+pub mod frontier_exchange;
+pub mod genesis;
+pub mod hint_chain;
+pub mod hinted_walk;
 pub mod invite_secrets;
 pub mod invites;
 pub mod join;
+pub mod join_deps;
 pub mod join_flow;
+pub mod join_frontier;
 pub mod join_gate;
 pub mod join_stages;
+pub mod join_walk;
+pub mod member_card;
+pub mod member_history_ad;
+pub mod member_routes;
 pub mod membership_events;
 pub mod moderation;
+pub mod op_log;
+pub mod op_receive;
+pub mod op_walk;
 pub mod origin;
+pub mod origin_reserve;
 pub mod overflow;
-pub mod ownership;
+pub mod own_frontier;
+pub mod partial;
+pub mod quarantine;
+pub mod rebuild_flight;
 pub(crate) mod records;
 pub mod roles;
 pub mod roster;
+pub mod seen_frontiers;
 pub mod segments;
+pub mod successor;
+pub mod successor_invites;
+pub mod transfer;
+pub mod unlock_barrier;
+mod unlock_hold;
+pub mod verify_cache;
+pub mod watch_ring;
 
-pub use apply::write_entry;
-pub use bootstrap::build_bootstrap_response;
+#[cfg(test)]
+mod test_member;
+#[cfg(test)]
+mod test_world;
+
+pub use apply::{write_checkpoint_queued, write_entry, write_entry_queued, write_invite_created};
+pub use bootstrap::{
+    answer_bootstrap_request, encode_refusal, request_bootstrap, BootstrapAnswer, BootstrapJoiner,
+};
 pub use deps::{
-    CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
+    CardText, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
+    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, OpLanding,
+    OpOutcome, OpPublication, UserStatusKind,
 };
 pub use dht_hydration::{
-    hydrate_community_state_from_dht, open_and_track_one_community, open_community_dht_records,
-    rebuild_governance_from_dht, republish_active_records,
+    hydrate_one_community, open_and_track_one_community, rebuild_governance,
+    republish_active_records,
 };
 pub use error::GovernanceRuntimeError;
 pub use event::{GovernanceRuntimeEvent, JoinStageStatus};
@@ -70,17 +113,17 @@ pub use join_stages::{
     claim_registry_slot, collect_initial_presence_state, load_governance_snapshot, ClaimedSlot,
     GovernanceSnapshot, SlotClaimCtx,
 };
-pub use membership_events::{
-    process_admin_keypair_grant, process_join_accepted, process_member_roles_changed,
-    process_onboarding_answers, process_peer_assisted_join, process_slot_keypair_grant,
-    JoinAcceptedInput, MemberUpsertRow, MembershipEventDeps, SlotGrantUpdate,
+pub use membership_events::{process_onboarding_answers, MembershipEventDeps};
+pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
+pub use origin::{create_community, create_successor_community, finish_community};
+pub use origin_reserve::{
+    release_reserved, reserve_community, CoCreatorAcceptance, ReservedCommunity,
 };
-pub use origin::create_community;
 pub use overflow::{
     partition_into_pages, read_governance_with_overflow, read_my_chain, MAX_OVERFLOW_PAGES,
     OVERFLOW_PAGE_BUDGET, PRIMARY_PAGE_BUDGET,
 };
 pub use segments::{
-    channel_record_keys_per_segment, ensure_channel_segment_record, expand_community_segment,
-    highest_segment_full, open_new_segments, segment_descriptors, SegmentDescriptor, MAX_SEGMENTS,
+    expand_community_segment, highest_segment_full, open_new_segments, segment_descriptors,
+    SegmentDescriptor, MAX_SEGMENTS,
 };

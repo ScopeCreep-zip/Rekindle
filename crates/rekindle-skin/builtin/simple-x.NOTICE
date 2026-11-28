@@ -1,0 +1,182 @@
+builtin:simple-x: imported by `cargo xtask import-skin --format xfire-ini`
+(plan E7.7.3 item 2; rekindle-skin::import::xfire_ini).
+
+Provenance
+  LongName: Simple X
+  Version (the skin's own revision): 1
+  skin file: SimpleX.ini
+  theme file: Themes.ini
+  source tree BLAKE3: 7f5880e0454c55590e45da6aca0ebe2196de4292ce3476d2a8ccf9ec1b56ebe5
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT OR Apache-2.0 licence does not cover this pack.
+
+Colour groups (55 defined)
+  ScrollbarColor RGBA(0,0,0,0) -> image shift (baked)
+  ScrollbarColorBG RGBA(0,0,0,0) -> token scrollbar.track
+  TooltipCG RGBA(153,153,153,0) -> token tooltip.bg
+  TooltipTextCG RGBA(0,0,0,0) -> token tooltip.text
+  InnerBevelBkCg RGBA(0,0,0,0) -> image shift (baked)
+  BevelCG RGBA(0,0,0,0) -> image shift (baked)
+  MainCG RGBA(0,0,0,0) -> image shift (baked)
+  MainDeActivatedCG RGBA(0,0,0,0) -> image shift (baked)
+  ChatMainCG RGBA(0,0,0,0) -> image shift (baked)
+  ChatMainDeactivatedCG RGBA(0,0,0,0) -> image shift (baked)
+  AdAreaCG RGBA(0,0,0,0) -> dropped: the AdView class is dropped
+  BottomBarCG RGBA(0,0,0,0) -> image shift (baked)
+  StatusWrapCG RGBA(0,0,0,0) -> image shift (baked)
+  ButtonCG RGBA(0,0,0,0) -> image shift (baked)
+  BorderCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  LogoCG RGBA(0,0,0,0) -> image shift (baked)
+  LogoDown RGBA(30,30,30,0) -> image shift (baked)
+  LogoHover RGBA(-30,-30,-30,0) -> image shift (baked)
+  Hilight RGBA(0,0,0,0) -> image shift (baked)
+  HilightDown RGBA(0,0,0,0) -> image shift (baked)
+  HilightHover RGBA(0,0,0,0) -> image shift (baked)
+  UserNameBkCG RGBA(0,0,0,0) -> image shift (baked)
+  UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
+  MenuBarCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuHoverCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuDownCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuTextCG RGBA(255,255,255,0) -> token menubar.text
+  ChatViewCG RGBA(0,0,0,0) -> token bg.panel
+  ChatOtherCG RGBA(255,255,255,0) -> not mapped: no registry role chat.peer.name yet
+  ChatOtherTextCG RGBA(255,255,255,0) -> not mapped: no registry role chat.peer.text yet
+  ChatPersonalCG RGBA(255,255,255,0) -> not mapped: no registry role chat.self.name yet
+  ChatPersonalTextCG RGBA(255,255,255,0) -> not mapped: no registry role chat.self.text yet
+  TypingNotificationCG RGBA(0,0,0,0) -> not mapped: no registry role chat.typing.text yet
+  HeaderText RGBA(255,255,255,0) -> token text.secondary
+  HeaderColor RGBA(0,0,0,0) -> image shift (baked)
+  BuddyViewBG RGBA(0,0,0,0) -> token bg.primary
+  BuddyViewFriendText RGBA(255,255,255,0) -> token text.base
+  BuddyViewFofText RGBA(255,255,255,0) -> dropped: friends of friends (E7.8 research)
+  BuddyViewOfflineText RGBA(255,255,255,0) -> token status.offline-text
+  BuddyViewSelected RGBA(102,102,102,0) -> token accent.fill
+  BuddyViewNonFocus RGBA(102,102,102,0) -> not mapped: no registry role list.selected.bg.inactive yet
+  BuddyViewSelectedText RGBA(0,0,0,0) -> token selection.text
+  InfoBackDropCG RGBA(0,0,0,0) -> image shift (baked)
+  InfoOuterCG RGBA(0,0,0,0) -> image shift (baked)
+  InfoViewBG RGBA(0,0,0,0) -> token bg.secondary
+  InfoViewText RGBA(255,255,255,0) -> not mapped: no registry role profile.text yet
+  InfoViewFriendText RGBA(255,255,255,0) -> not mapped: no registry role profile.friend-text yet
+  InfoViewFofText RGBA(255,255,255,0) -> dropped: friends of friends (E7.8 research)
+  InfoViewOfflineText RGBA(255,255,255,0) -> not mapped: no registry role profile.offline-text yet
+  InfoViewHyperlink RGBA(164,164,164,0) -> not mapped: no registry role profile.link yet
+  StatusBackgroundCG RGBA(0,0,0,0) -> token bg.status
+  StatusCG RGBA(255,255,255,0) -> token text.status
+  StatusArrowCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(255,255,255,0) -> dropped: server browser
+  AllServersText RGBA(255,255,255,0) -> dropped: server browser
+Colour roles by reference (7)
+  [StatusEdit] text.color=StatusCG -> text.status kept: its role-named colour wins
+  [StatusEdit] text.background=StatusBackgroundCG -> bg.status kept: its role-named colour wins
+  [BuddyView] colorgroup=BuddyViewBG -> bg.primary kept: its role-named colour wins
+  [ChatArea] colorgroup=ChatViewCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatViewCG -> token bg.input
+  [ChatArea] colorgroup=ChatViewCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatViewCG -> bg.input kept: an earlier reference set it
+
+Regions
+  window.frame: [Top] [Middle] [Bottom], nine-slice 126/92/126/90, transparent middle
+    Normal: 272x377 px
+    WindowInactive not emitted: missing [Middle] Disabled.left, [Middle] Disabled.right, [Bottom] Disabled.bottomleft, [Bottom] Disabled.bottom, [Bottom] Disabled.bottomright
+  buddylist.infobar: [UserNameField], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
+  community.sidebar-header: [UserNameField], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
+  statusbar: [StatusWrapper], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
+  statusbar.arrow: [DownArrow], 22x22 px, Stretch; states normal, hover, down
+  titlebar.btn.close: [CloseBox], 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: [MinimizeBox], 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.maximize: [MaximizeBox], 24x24 px, Stretch; states normal, hover, down
+  buddylist.group-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
+  community.category-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
+  community.member-group-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
+  buddylist.action-button: [AddButton], 59x22 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  scrollbar.button-up: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: [DefaultScrollbar], 10x6 px, NineSlice(Insets { top: 2, right: 0, bottom: 2, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: [DefaultScrollbar], 6x10 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal, hover, down
+  scrollbar.track: [DefaultScrollbar], 10x3 px, NineSlice(Insets { top: 1, right: 0, bottom: 1, left: 0 }); states normal
+  scrollbar.track-horizontal: [DefaultScrollbar], 3x10 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  scrollbar.corner: [DefaultScrollbar], 10x10 px, Stretch; states normal
+
+Dropped
+  images with no region slot: 120
+  other keys (classes, sizes, cursors, sounds): 203
+  other skin files (chat, group chat, in-game): 4
+  text styles: 77
+  window layout: 283
+  lines Windows reads no value from (8):
+    SimpleX.ini: [MainWindow] Window4.IndentRight (line 45)
+    SimpleX.ini: [MainWindow] Window5.IndentRight (line 54)
+    SimpleX.ini: [MainWindow] Window6.IndentRight (line 63)
+    SimpleX.ini: [MainWindow] Window12.IndentRight (line 102)
+    SimpleX.ini: [MainWindow] Window13.IndentRight (line 110)
+    SimpleX.ini: [StatusEdit] Text.bold (line 348)
+    SimpleX.ini: [InfoViewButton] Skin.X (line 458)
+    SimpleX.ini: [SearchFiles] Cursor (line 825)
+  files not read (59):
+    CScroll/Thumbs.db
+    CScroll/scroll-gripper-grips-horz.gif
+    CScroll/scroll-gripper-grips-vert.gif
+    GroupChatInfoskin.ini
+    Groupchatskin.ini
+    InGameMainSkin.ini
+    InGameSkin.ini
+    buttons/Thumbs.db
+    buttons/button-afav-disabled.gif
+    buttons/button-chat-Send-disabled.gif
+    buttons/button-game-disabled.gif
+    buttons/button-im-disabled.gif
+    buttons/button-profile-disabled.gif
+    buttons/button-refresh-disabled.gif
+    buttons/info-join-disabled.gif
+    buttons/info-voice-disabled.gif
+    chatskin/ChatLogo-down.gif
+    chatskin/ChatLogo-hover.gif
+    chatskin/ChatLogo.gif
+    chatskin/Thumbs.db
+    chatskin/textbg.gif
+    infoskin/Thumbs.db
+    infoskin/icon_mic_green.gif
+    infoskin/icon_mic_grey.gif
+    infoskin/icon_speaker_green.gif
+    infoskin/icon_speaker_grey.gif
+    infoskin/icon_voice_server.gif
+    ingamegraphics/Thumbs.db
+    ingamegraphics/ig_chatwindow_left.gif
+    ingamegraphics/ig_chatwindow_middle.gif
+    ingamegraphics/ig_chatwindow_right.gif
+    ingamegraphics/igm-bg.gif
+    ingamegraphics/igm-bottom-left.gif
+    ingamegraphics/igm-bottom-middle.gif
+    ingamegraphics/igm-bottom-right.gif
+    ingamegraphics/igm-left.gif
+    ingamegraphics/igm-logo.gif
+    ingamegraphics/igm-right.gif
+    ingamegraphics/igm-top-left.gif
+    ingamegraphics/igm-top-middle.gif
+    ingamegraphics/igm-top-right.gif
+    ingamegraphics/ingame-bg.gif
+    ingamegraphics/ingame-bottom-left.gif
+    ingamegraphics/ingame-bottom-middle.gif
+    ingamegraphics/ingame-bottom-right.gif
+    ingamegraphics/ingame-left.gif
+    ingamegraphics/ingame-right.gif
+    ingamegraphics/ingame-top-left.gif
+    ingamegraphics/ingame-top-middle.gif
+    ingamegraphics/ingame-top-right.gif
+    mainskin/BVBG.gif
+    mainskin/Thumbs.db
+    mainskin/arrow_down.gif
+    mainskin/arrow_right.gif
+    mainskin/listview-header-arrowdown.gif
+    mainskin/listview-header-arrowup.gif
+    mainskin/mainbg.gif
+    mainskin/toolbar.gif
+    strings.ini
+
+Contrast changes (minimal Oklab-lightness walk) (1 made)
+  selection.text: #000000 -> #e4e4e4 (1.4.3 selection.text on accent.fill: 3.65:1 -> 4.51:1, required 4.50:1)

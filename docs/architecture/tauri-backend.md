@@ -1,5 +1,7 @@
 # Tauri Application Shell
 
+> **ADR [0020](../decisions/0020-domain-logic-in-host-and-tier-crates.md) supersedes ADR 0008:** new domain code goes to its tier crate and `rekindle-node::host`; `src-tauri` commands are `HostApi` calls, and the shell's unported stages hang on the shrinking `ShellHooks` seam until their ports. What follows describes the code as it is during the migration.
+
 The `src-tauri/` directory contains the Tauri 2 application shell that
 bridges the pure Rust crates to the SolidJS frontend. It manages
 application state, IPC commands, event emission, background services,
@@ -33,6 +35,12 @@ The `run()` function:
    window-close (buddy list hides to tray; closing login while no buddy
    list is visible exits the app) and `RunEvent::Exit` (delegates to
    `shutdown::handle_exit`).
+6. SIGTERM and SIGINT (Ctrl-C on Windows) take the same path: `setup()`
+   first installs the daemon's `rekindle_node::host::signals::StopSignals`
+   (`stop_signals.rs`), and the first signal calls `AppHandle::exit(0)`,
+   so `RunEvent::Exit` runs `handle_exit` once. A desktop logout stops
+   each app's systemd scope with SIGTERM (SIGKILL after 90 s), so a
+   logout is a clean quit; later signals during the shutdown are logged.
 
 `AppState` is the central state container, shared as `SharedState =
 Arc<AppState>`. Fields use `Arc<RwLock<T>>` for read-heavy access and
@@ -48,14 +56,13 @@ are registered in this order:
 | Order | Plugin | Rationale |
 |-------|--------|-----------|
 | 1 | `single-instance` | Must be first — prevents duplicate processes; deep links re-route to existing instance |
-| 2 | `store` | Persistent user preferences |
-| 3 | `opener` | Opens confirmed https links (`open_external_url`) and reveals downloads, from Rust; its JS link interception is off |
-| 4 | `dialog` | Native file and confirmation dialogs, from Rust |
-| 5 | `deep-link` | `rekindle://` URL scheme (consent flow in `deep_links.rs`) |
-| 6 | `autostart` | Launch at system boot (LaunchAgent on macOS); applied by `set_preferences`, read back by `get_preferences` |
-| 7 | `global-shortcut` | Registered in `setup()` for state access |
+| 2 | `opener` | Opens confirmed https links (`open_external_url`) and reveals downloads, from Rust; its JS link interception is off |
+| 3 | `dialog` | Native file and confirmation dialogs, from Rust |
+| 4 | `deep-link` | `rekindle://` URL scheme (consent flow in `deep_links.rs`) |
+| 5 | `autostart` | Launch at system boot (LaunchAgent on macOS); applied by `set_preferences`, read back by `get_preferences` |
+| 6 | `global-shortcut` | Registered in `setup()` for state access |
 
-Plugins are driven from Rust; the webview holds only the specific plugin
+Preferences are the unlocked identity's, in its database (`services::preferences`, plan D1); there is no store plugin. Plugins are driven from Rust; the webview holds only the specific plugin
 permissions its window uses (no `*:default` bundles), granted in the
 per-window `capabilities/app-*.json` files — see
 [`../security/threat-model.md` §5b W4](../security/threat-model.md) and
@@ -103,22 +110,22 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 | Module | Approx commands | Highlights |
 |--------|---------|-----------|
 | `auth.rs` | 6 | `create_identity`, `login`, `logout`, `list_identities`, `delete_identity`, `get_identity` |
-| `chat.rs` | 5 | `prepare_chat_session`, `send_message`, `send_typing`, `get_message_history`, `mark_read` |
-| `friends.rs` | 17 | Add / remove / accept / reject, groups, invites, block / unblock, presence emit |
-| `dm.rs` | 6 | `list_dms`, `start_dm`, `accept_dm_invite`, `decline_dm_invite`, `send_dm_message`, `get_dm_messages` |
+| `chat.rs` | 5 | `send_message`, `resend_message`, `send_typing`, `get_message_history`, `mark_read` |
+| `friends.rs` | 23 | Add / remove / accept / reject, groups, invites, block / unblock |
+| `dm.rs` | 3 | `send_dm_video_frame`, `register_dm_video_channel`, `unregister_dm_video_channel` |
 | `calls.rs` | 12 | `start_dm_call`, `accept_dm_call`, `decline_dm_call`, `end_dm_call`, `send_call_media_state`, `send_call_reaction`, `mute_caller_temp`, `start_group_call`, `accept_group_call`, `decline_group_call`, `end_group_call`, `get_missed_calls` |
 | `voice.rs` | 12 | Join / leave channel, mute, deafen, devices, mode, server-mute, stage hand-raise |
 | `community/` | ~127 across 32 submodules | CRUD, channels, channel_admin, messaging, roles, moderation, mek, invites, notifications, reactions_pins, audit, analytics, automod, polls, expressions, files, link_previews, threads, events, game_servers, unread, presence, onboarding, segments, video, background_sync, diagnostics, profile_blobs, policy |
 | `status.rs` | 5 | Set status / nickname / avatar / status message / get avatar |
-| `game.rs` | 3 | `get_game_status`, `get_game_name`, `launch_game_to_server` |
+| `game.rs` | 4 | `get_game_status`, `get_game_name`, `launch_game` (Host `GameLaunch`), `get_installed_games` |
 | `relay.rs` | 4 | Strand Relay volunteer / revoke / list (received / volunteered) |
-| `search.rs` | 1 | `search_messages` — FTS5 over `messages_fts` / `thread_messages_fts` / `dm_messages_fts` |
+| `search.rs` | 1 | `search_messages` — FTS5 over `messages_fts` / `thread_messages_fts` |
 | `sync.rs` | 10 | Personal sync record, pairing, read / write manifest / read_state / preferences / paired_devices |
 | `push_relay.rs` | 3 | Register / unregister / list push relay |
 | `settings.rs` | 3 | Get / set preferences, `check_for_updates` (stub — auto-updater not yet wired) |
 | `vault.rs` | several | Vault unlock / lock, passphrase change, audit verify / export |
 | `event.rs` | several | Event resume / cursor for Phase 10 reconnect replay |
-| `window.rs` | 7 | `show_buddy_list`, `open_chat_window`, `open_dm_window`, `open_settings_window`, `open_community_window`, `open_profile_window`, `get_network_status` |
+| `window.rs` | 6 | `show_buddy_list`, `open_chat_window`, `open_settings_window`, `open_community_window`, `open_profile_window`, `get_network_status` |
 
 `invoke.rs` registers the union of these — the file is the canonical
 source of truth for the IPC surface.
@@ -130,13 +137,14 @@ Events are the Rust → Frontend push mechanism, emitted through
 frontend. All event enums use
 `#[serde(rename_all = "camelCase", tag = "type", content = "data")]`.
 
-### `chat-event` (`channels/chat_channel.rs`)
+### `chat-event` (`rekindle_types::subscription_events`)
 
-`MessageReceived`, `TypingIndicator`, `MessageAck`, `FriendRequest`,
-`FriendRequestAccepted`, `FriendRequestRejected`, `FriendAdded`,
-`FriendRemoved`, `FriendRequestDelivered`, `DirectMessageInvite`,
-`IncomingCall`, plus the call-state ack variants emitted by
-`rekindle-calls`.
+The shared `SubscriptionEvent` vocabulary only, externally tagged: DMs,
+typing and send states (`ChannelMessage`, `Typing` in a DM context),
+`Friend`, `Call`, `GroupDm` and DM/friend-request `UnreadChanged`
+(`event_dispatch::subscription_channel`). The desktop's legacy
+`{ type, data }` channel-message shape is gone; a community channel post
+arrives on `community-event` as `ChannelMessageEvent::New`.
 
 ### `presence-event` (`channels/presence_channel.rs`)
 
@@ -154,6 +162,7 @@ governance, channel messages, threads, events, voice / stage / video,
 expressions, files, link previews, audit, automod, raid detection.
 
 ### `notification-event` + `network-status`
+
 (`channels/notification_channel.rs`)
 
 `NotificationEvent { MessageReceived, SystemAlert, UpdateAvailable, SessionResetRequested,
@@ -220,15 +229,19 @@ Windows are created via helper functions in `src-tauri/src/windows.rs`:
 |----------|--------|----------|
 | `open_login()` | Login | Destroys existing, supports `?account=` preselect |
 | `open_buddy_list()` | Buddy list | Destroys existing, narrow vertical (320 × 650) |
-| `open_chat_window()` | Chat | Show existing or create new, label `chat-{key prefix}` |
-| `open_dm_window()` | DM | Show existing or create new, label `dm-{record key prefix}` |
+| `open_chat_window()` | Chat | Show existing or create new: a `ChatTarget::Peer` labels `chat-{key prefix}`, a `ChatTarget::Group` `chat-{record key prefix}` |
 | `open_community_window()` | Community | Show existing or create new, label `community-{id}` |
 | `open_settings_window()` | Settings | Single instance |
 | `open_profile_window()` | Profile | Show existing or create new, label `profile-{key prefix}` |
 | `open_call_window()` | Call | Show existing or create new, label `call-{id}` |
 
 All windows use `decorations: false` and `transparent: true` for the
-frameless Xfire look with custom titlebars.
+frameless Xfire look with custom titlebars. Every window is built hidden
+and shown once built (`windows/first_show.rs`, plan WL2): tao 0.37.1 maps a
+window before it removes the decorations and sets the Wayland CSD titlebar,
+so a window built visible opens with GTK's titlebar height added (37 px on
+GTK Wayland); built hidden, GTK first realizes it undecorated and the
+content area is the declared inner size.
 
 The buddy list hides to tray on close (`api.prevent_close()`). Closing
 the login window while no buddy list is visible triggers `app.exit(0)`.
@@ -259,7 +272,7 @@ catalogued in [`tauri-modules.md`](tauri-modules.md):
 - Guards are `!Send` — clone data out before `.await` points.
 - `tokio_rusqlite::Connection` for the database pool (async wrapper
   over `rusqlite` on a dedicated background thread). All access goes
-  through `db_helpers::{db_call, db_call_or_default, db_fire}`.
+  through `db_helpers::{db_call, db_fire}`.
 - `rusqlite` 0.37 is used (not `sqlx`) to match `veilid-core`'s
   dependency on the same version and avoid `libsqlite3-sys` build
   conflicts.

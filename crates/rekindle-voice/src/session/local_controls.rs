@@ -30,6 +30,19 @@ pub fn set_local_deafen<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, deafened: b
     deps.set_voice_engine_deafened(deafened);
 }
 
+/// Our signed session key for the channel, announced in our `VoiceJoin`
+/// (plan C7.29).
+fn our_session_key<D: VoiceSessionDeps + ?Sized>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+) -> rekindle_codec::community::envelope::MediaSessionKey {
+    crate::signaling::media_keys::announced_session_key(
+        &deps.channel_sender_keys(community_id, channel_id),
+        |key| deps.sign_media_session_key(community_id, channel_id, key),
+    )
+}
+
 /// User clicked Join on a voice channel. Brings up the voice session
 /// then (for community channels) broadcasts VoiceJoin so other
 /// participants add us as a peer + records analytics. Wraps
@@ -52,10 +65,11 @@ pub async fn join_voice_channel<D: VoiceSessionDeps + ?Sized>(
 
     if let (Some(cid), Some(route_blob)) = (community_id, route_blob) {
         deps.log_voice_membership(cid, channel_id, true);
-        let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        let envelope = CommunityEnvelope::control(ControlPayload::VoiceJoin {
             channel_id: channel_id.to_string(),
             route_blob,
             display_name: deps.my_display_name(),
+            session_key: our_session_key(&**deps, cid, channel_id),
         });
         deps.send_community_envelope(cid, &envelope);
     }
@@ -86,10 +100,11 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
         );
         return;
     };
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceJoin {
         channel_id: channel_id.clone(),
         route_blob,
         display_name: deps.my_display_name(),
+        session_key: our_session_key(&**deps, &cid, &channel_id),
     });
     deps.send_community_envelope(&cid, &envelope);
     tracing::info!(
@@ -99,20 +114,37 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
     );
 }
 
-/// User clicked Leave. Reads the current channel/community off the
-/// engine, broadcasts VoiceLeave (community channels only),
-/// tears down the voice session, emits UserLeft.
+/// Tell the channel we are leaving: `VoiceLeave` to every rostered peer,
+/// awaited until handed to Veilid, then the same envelope to the
+/// community mesh for members not on the call. No-op outside a community
+/// voice channel. The Leave button and the end of a session (quit,
+/// logout) share it, so a peer that quits leaves the roster at once
+/// instead of after 180 s of presence staleness (plan C7.27).
+///
+/// The channel session ends first (its keys, its queued key deliveries,
+/// plans C7.20, C7.29): no media key of the session is attempted once
+/// its leave is on the wire, so a peer never receives one after the
+/// leave that removed us. `shutdown_voice` ending it again is a no-op.
+pub async fn announce_leave<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
+    let (channel_id, community_id) = deps.active_channel_info();
+    let Some(cid) = community_id else {
+        return;
+    };
+    deps.end_channel_session(&cid, &channel_id).await;
+    deps.log_voice_membership(&cid, &channel_id, false);
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceLeave {
+        channel_id: channel_id.clone(),
+    });
+    deps.send_channel_envelope_now(&cid, &channel_id, &envelope)
+        .await;
+    deps.send_community_envelope(&cid, &envelope);
+}
+
+/// User clicked Leave. Announces the leave, tears down the voice session,
+/// emits UserLeft.
 pub async fn leave_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Result<(), VoiceError> {
     let public_key = deps.owner_key().unwrap_or_default();
-    let (channel_id, community_id) = deps.active_channel_info();
-
-    if let Some(ref cid) = community_id {
-        deps.log_voice_membership(cid, &channel_id, false);
-        let envelope = CommunityEnvelope::Control(ControlPayload::VoiceLeave {
-            channel_id: channel_id.clone(),
-        });
-        deps.send_community_envelope(cid, &envelope);
-    }
+    announce_leave(deps).await;
 
     crate::session::shutdown_voice(deps, &VoiceShutdownOpts::FULL).await;
 
@@ -151,7 +183,6 @@ pub async fn change_audio_devices<D: VoiceSessionDeps + ?Sized>(
     deps.set_voice_engine_devices(Some(targets.input.id), Some(targets.output.id));
     deps.set_voice_engine_input_channels(prefs.input_channels);
     crate::session::restart_loops(deps)
-        .await
         .inspect_err(|e| crate::session::device_monitor::report_reopen_failure(deps, e))?;
     Ok(())
 }

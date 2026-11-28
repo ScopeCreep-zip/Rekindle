@@ -43,7 +43,7 @@ pub enum GossipError {
     #[error("community not found: {0}")]
     CommunityNotFound(String),
     #[error("encode envelope: {0}")]
-    EncodeFailed(String),
+    EncodeFailed(#[from] rekindle_codec::CodecError),
 }
 
 /// Bag of operations the crate needs from its host. Implemented
@@ -62,6 +62,10 @@ pub trait GossipDeps: Send + Sync + 'static {
     /// The scope fan-out sends run in; it ends with the session that
     /// owns the identity (plan C4).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
+    /// The host's generator (plan C9.2): every send's fresh message id
+    /// (`SignedEnvelope::message_id`), so a seeded host fixes the trace.
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource>;
 
     // === Dedup (interior mutability) ===
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str);
@@ -99,16 +103,7 @@ pub trait GossipDeps: Send + Sync + 'static {
     /// next periodic SQLite flush.
     fn record_peer_reliability(&self, community_id: &str, peer_key: &str, success: bool);
 
-    // === Persistence (async) ===
-    /// Upsert a `message_delivery` row tagged with the attempt outcome.
-    async fn record_delivery(
-        &self,
-        message_id: &str,
-        community_id: &str,
-        recipient: &str,
-        status: &str,
-    );
-
+    // === Route resolution (async) ===
     /// Look up the peer's fresh route_blob via the community member
     /// registry. Returns `None` if no valid blob is published.
     async fn resolve_peer_route_from_dht(

@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_types::group_dm::GroupCallRoster;
 use x25519_dalek::StaticSecret;
 
 use super::mocks::*;
@@ -27,6 +28,9 @@ struct EmptyNameDeps(Arc<MockDeps>);
 
 #[async_trait]
 impl CallSignalingDeps for EmptyNameDeps {
+    async fn group_roster(&self, _group_id: &str) -> Result<GroupCallRoster, CallError> {
+        Ok(GroupCallRoster::Unknown)
+    }
     fn owner_key(&self) -> Result<String, CallError> {
         self.0.owner_key()
     }
@@ -49,14 +53,38 @@ impl CallSignalingDeps for EmptyNameDeps {
     fn local_video_decode_codecs(&self) -> Vec<String> {
         self.0.local_video_decode_codecs()
     }
-    async fn send_to_peer(&self, p: &str, msg: MessagePayload) -> Result<(), CallError> {
-        self.0.send_to_peer(p, msg).await
+    async fn send_to_peer(&self, p: &str, body: DirectBody) -> Result<(), CallError> {
+        self.0.send_to_peer(p, body).await
+    }
+    async fn commit_call_end(&self, p: &str, body: DirectBody, d: u64) -> Result<(), CallError> {
+        self.0.commit_call_end(p, body, d).await
+    }
+    async fn commit_call_invite(
+        &self,
+        p: &str,
+        c: &str,
+        body: DirectBody,
+        d: u64,
+    ) -> Result<(), CallError> {
+        self.0.commit_call_invite(p, c, body, d).await
+    }
+    async fn settle_call_invite(&self, c: &str, answered: bool) {
+        self.0.settle_call_invite(c, answered).await;
+    }
+    fn now_ms(&self) -> u64 {
+        self.0.now_ms()
+    }
+    fn last_inbound_media_ms(&self, c: &str) -> Option<u64> {
+        self.0.last_inbound_media_ms(c)
+    }
+    fn spawn_consent_watch(&self, c: String, since: u64) {
+        self.0.spawn_consent_watch(c, since);
     }
     async fn start_voice_session(&self, c: &str, p: &str, kind: CallKind) -> Result<(), CallError> {
         self.0.start_voice_session(c, p, kind).await
     }
-    async fn shutdown_voice_session(&self) {
-        self.0.shutdown_voice_session().await;
+    async fn shutdown_voice_session(&self, c: &str) {
+        self.0.shutdown_voice_session(c).await;
     }
     fn voice_active(&self) -> bool {
         self.0.voice_active()
@@ -182,6 +210,7 @@ async fn group_accept_from_non_invitee_ignored() {
 
     deps.group_registry.insert(GroupCallState {
         call_id: "group-3".into(),
+        group_id: None,
         initiator_pubkey: initiator.clone(),
         kind: 0,
         participants: vec![initiator, p1],

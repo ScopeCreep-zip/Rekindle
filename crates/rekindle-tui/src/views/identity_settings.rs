@@ -13,7 +13,7 @@
 //! │  Display Name  alice                                        │
 //! │  Status        online                                       │
 //! │  Route         allocated (39s)                              │
-//! │  Prekeys       47/50 available                              │
+//! │  Prekeys       97/100 fresh slots                           │
 //! │                                                             │
 //! │  ▸ DHT Records                                              │
 //! │  ▸ Security                                                 │
@@ -52,17 +52,19 @@ pub struct IdentitySettingsView {
     route_allocated: bool,
     route_age_secs: Option<u64>,
     attachment: String,
-    /// Subscription system.
-    active_watches: usize,
     community_count: usize,
     friend_count: usize,
     /// DHT record keys.
     profile_dht_key: String,
     mailbox_dht_key: String,
     friend_list_dht_key: String,
-    friend_inbox_key: String,
     /// Security.
     signing_key_loaded: bool,
+    /// The `crypto.prekeys` check's reading (plan E2.4): the fresh slots,
+    /// or what the prekey maintenance is failing to keep.
+    prekeys: String,
+    /// Our friend code and its QR (plan E2.5), once loaded.
+    friend_code: Option<rekindle_types::dto::friends::FriendCodeView>,
     /// Which sections are expanded.
     expanded: [bool; 4],
     /// Whether data has been loaded.
@@ -81,14 +83,14 @@ impl IdentitySettingsView {
             route_allocated: false,
             route_age_secs: None,
             attachment: "unknown".into(),
-            active_watches: 0,
             community_count: 0,
             friend_count: 0,
             profile_dht_key: String::new(),
             mailbox_dht_key: String::new(),
             friend_list_dht_key: String::new(),
-            friend_inbox_key: String::new(),
             signing_key_loaded: false,
+            prekeys: "unknown".into(),
+            friend_code: None,
             expanded: [false; 4],
             loaded: false,
             use_unicode,
@@ -102,17 +104,13 @@ impl IdentitySettingsView {
         self.route_allocated = snapshot.route_allocated;
         self.route_age_secs = snapshot.route_age_secs;
         self.attachment.clone_from(&snapshot.attachment);
-        self.active_watches = snapshot.active_watches;
         self.community_count = snapshot.community_count;
         self.friend_count = snapshot.friend_count;
         self.signing_key_loaded = snapshot.checks.iter().any(|c| {
             c.id == "crypto.signing_key" && c.status == rekindle_types::display::CheckStatus::Pass
         });
-        // DHT keys come from identity checks
-        for check in &snapshot.checks {
-            if check.id == "identity.public_key" {
-                // Already have this from identity_public_key field
-            }
+        if let Some(check) = snapshot.checks.iter().find(|c| c.id == "crypto.prekeys") {
+            self.prekeys.clone_from(&check.value);
         }
         self.loaded = true;
     }
@@ -136,7 +134,15 @@ impl IdentitySettingsView {
             "not allocated".into()
         };
         items.push(Self::kv_item("  Route", &route_str));
-        items.push(Self::kv_item("  Watches", &self.active_watches.to_string()));
+        items.push(Self::kv_item("  Prekeys", &self.prekeys));
+        if let Some(code) = &self.friend_code {
+            items.push(Self::kv_item("  Friend Code", &code.url));
+            let qr = rekindle_types::dto::friends::qr_text(&code.qr_rows);
+            items.extend(
+                qr.lines()
+                    .map(|row| ListItem::new(Line::raw(format!("  {row}")))),
+            );
+        }
         items.push(ListItem::new(Line::raw("")));
 
         // ── DHT Records section ──────────────────────────────
@@ -153,7 +159,6 @@ impl IdentitySettingsView {
             items.push(Self::kv_item("    Profile", &self.profile_dht_key));
             items.push(Self::kv_item("    Mailbox", &self.mailbox_dht_key));
             items.push(Self::kv_item("    Friend List", &self.friend_list_dht_key));
-            items.push(Self::kv_item("    Friend Inbox", &self.friend_inbox_key));
         }
 
         // ── Security section ─────────────────────────────────
@@ -173,7 +178,10 @@ impl IdentitySettingsView {
                 "not loaded (locked)"
             };
             items.push(Self::kv_item("    Signing Key", key_status));
-            items.push(Self::kv_item("    Keyring", "OS keyring + disk fallback"));
+            items.push(Self::kv_item(
+                "    Key store",
+                "vault (passphrase-sealed, this device)",
+            ));
         }
 
         // ── Network section ──────────────────────────────────
@@ -192,10 +200,6 @@ impl IdentitySettingsView {
                 &self.community_count.to_string(),
             ));
             items.push(Self::kv_item("    Friends", &self.friend_count.to_string()));
-            items.push(Self::kv_item(
-                "    Active Watches",
-                &self.active_watches.to_string(),
-            ));
         }
 
         // ── Actions section ──────────────────────────────────
@@ -220,7 +224,7 @@ impl IdentitySettingsView {
             ])));
             items.push(ListItem::new(Line::from(vec![
                 Span::styled("    [D] ", Style::new().dim()),
-                Span::raw("Destroy identity"),
+                Span::raw("Delete identity"),
                 Span::styled("  (irreversible)", Style::new().dim()),
             ])));
         }
@@ -352,6 +356,9 @@ impl View for IdentitySettingsView {
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
         if let CommandResult::StatusLoaded { ref snapshot } = result {
             self.load_from_snapshot(snapshot);
+        }
+        if let CommandResult::FriendCodeLoaded { ref view } = result {
+            self.friend_code = Some(view.clone());
         }
         // Also populate DHT keys from IdentityLoaded
         if let CommandResult::IdentityLoaded {

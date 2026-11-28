@@ -46,7 +46,7 @@ export interface MediaCapabilities {
 /// `crates/rekindle-video/src/lib.rs::EncoderConstraints`). Width /
 /// height are in pixels so the WebCodecs `VideoEncoder.configure` call
 /// doesn't need a square-root of `maxPixelCount`.
-export interface EncoderConstraints {
+interface EncoderConstraints {
   codec: Codec;
   maxWidth: number;
   maxHeight: number;
@@ -58,7 +58,7 @@ export interface EncoderConstraints {
 /// (mirrors `crates/rekindle-video/src/lib.rs::DecoderConstraints`).
 /// Carries NO codec: decoders are created from the per-frame codec
 /// tag, never from session config.
-export interface DecoderConstraints {
+interface DecoderConstraints {
   optimizeForLatency: boolean;
 }
 
@@ -121,7 +121,7 @@ export interface PairingAccept {
   assignedDeviceId: string;
 }
 
-export interface SyncCommunityRef {
+interface SyncCommunityRef {
   communityId: string;
   joinedAt: number;
   displayName: string;
@@ -130,16 +130,6 @@ export interface SyncCommunityRef {
 export interface SyncManifest {
   communities: SyncCommunityRef[];
   lamport: number;
-}
-
-export interface SyncReadStateEntry {
-  communityId: string;
-  channelId: string;
-  lastReadLamport: number;
-}
-
-export interface SyncReadState {
-  entries: SyncReadStateEntry[];
 }
 
 export interface SyncPreferences {
@@ -151,7 +141,7 @@ export interface SyncPreferences {
   lamport: number;
 }
 
-export interface DeviceListEntry {
+interface DeviceListEntry {
   deviceId: string;
   devicePublicKey: string;
   displayName: string;
@@ -164,7 +154,7 @@ export interface DeviceList {
   lamport: number;
 }
 
-export interface DailySample {
+interface DailySample {
   dayUnixMs: number;
   value: number;
 }
@@ -173,7 +163,7 @@ export interface DailyTimeseries {
   samples: DailySample[];
 }
 
-export interface MemberMetrics {
+interface MemberMetrics {
   totalMembers: number;
   active7d: number;
   active30d: number;
@@ -185,7 +175,7 @@ export interface MemberMetrics {
   leavesPerDay: DailyTimeseries;
 }
 
-export interface ChannelMetrics {
+interface ChannelMetrics {
   channelId: string;
   messages7d: number;
   uniquePosters7d: number;
@@ -194,16 +184,16 @@ export interface ChannelMetrics {
   uniquePostersPerDay: DailyTimeseries;
 }
 
-export interface GrowthSample {
+interface GrowthSample {
   dayUnixMs: number;
   memberCount: number;
 }
 
-export interface GrowthMetrics {
+interface GrowthMetrics {
   samples: GrowthSample[];
 }
 
-export interface ActivityByHour {
+interface ActivityByHour {
   /** 24-element array indexed by UTC hour 0..=23. */
   hourCounts: number[];
 }
@@ -218,7 +208,7 @@ export interface CommunityAnalytics {
   computedInMs: number;
 }
 
-export interface StorageUsage {
+interface StorageUsage {
   totalBytes: number;
   messageBytes: number;
   threadMessageBytes: number;
@@ -229,18 +219,11 @@ export interface StorageUsage {
   metadataBytes: number;
 }
 
-export type HasFilter =
-  | "link"
-  | "file"
-  | "image"
-  | "video"
-  | "embed"
-  | "poll"
-  | "voice_message";
+export type HasFilter = "link" | "file" | "image" | "video" | "embed" | "poll" | "voice_message";
 
 export type SearchSort = "relevance" | "newest" | "oldest";
 
-export interface SearchFilters {
+interface SearchFilters {
   from?: string;
   /**
    * Architecture §32 Phase 7 W23 line 4111 — community-scoped search.
@@ -266,7 +249,7 @@ export interface MessageSearch {
   offset?: number;
 }
 
-export type SearchScope = "channel" | "thread" | "dm";
+type SearchScope = "channel" | "thread" | "dm";
 
 export interface SearchHit {
   scope: SearchScope;
@@ -284,27 +267,6 @@ export interface SearchResult {
   hits: SearchHit[];
   totalReturned: number;
   queryMs: number;
-}
-
-export interface DmConversation {
-  recordKey: string;
-  isGroup: boolean;
-  initiatorPublicKey: string;
-  initiatorPseudonym: string;
-  mySubkey: number;
-  participants: { pseudonym: string; subkey: number; publicKey: string }[];
-  mekGeneration: number;
-  createdAt: number;
-  lastMessageAt: number | null;
-}
-
-export interface DmMessageRecord {
-  id: number;
-  senderPseudonym: string;
-  body: string;
-  timestamp: number;
-  sequence: number;
-  mekGeneration: number;
 }
 
 /**

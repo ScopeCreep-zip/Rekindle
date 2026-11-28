@@ -1,16 +1,38 @@
-//! Tauri commands for local FTS5 message search (architecture §23).
+//! Local FTS5 message search (architecture §23), answered by the Host
+//! (plan E3.1 E3b), and the view-scoped local search (plan E7.2 G11).
 
+use rekindle_ipc::protocol::PinRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::local_search::{LocalSearchResult, LocalSearchScope};
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::search::{MessageSearch, SearchResult};
 use tauri::State;
 
-use crate::services::search;
+use crate::host_call;
 use crate::state::SharedState;
-use rekindle_types::search::{MessageSearch, SearchResult};
 
 #[tauri::command]
 pub async fn search_messages(
     request: MessageSearch,
     state: State<'_, SharedState>,
-) -> Result<SearchResult, String> {
-    let pool = state.db.current()?;
-    search::search_messages(state.inner(), &pool, request).await
+) -> Result<Done<SearchResult>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Pins(PinRequest::MessageSearch {
+            request,
+        })),
+    )
+    .await
+}
+
+/// Search what we already hold, scoped by the window's view (plan E7.2
+/// G11, SK2-G §8): friends, groups and members, our servers, our held
+/// files, or one direct conversation's messages; never the network.
+#[tauri::command]
+pub async fn local_search(
+    scope: LocalSearchScope,
+    query: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<LocalSearchResult>, CommandError> {
+    host_call::call(&state, IpcRequest::LocalSearch { scope, query }).await
 }

@@ -5,6 +5,11 @@
 /// An encoding or decoding failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CodecError {
+    /// A governance arm this build does not read: an unknown kind or a
+    /// retired (`obsolete…`) arm. The caller quarantines the community
+    /// with this reason rather than skipping the op.
+    #[error("unknown governance arm: {0}")]
+    UnknownGovernanceArm(String),
     #[error("serialization error: {0}")]
     Serialization(String),
 
@@ -20,4 +25,9 @@ pub enum CodecError {
 
     #[error("verification failed: {0}")]
     Verification(String),
+
+    /// A length past what the wire format can carry (a Cap'n Proto list or
+    /// a `u32` length prefix): refused, never written clamped.
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
 }

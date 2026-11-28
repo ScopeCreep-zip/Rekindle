@@ -1,16 +1,16 @@
 @layer components {
   .voice-btn:hover {
-    background: color-mix(in srgb, white 15%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 15%, transparent);
   }
 
   .voice-btn-active {
-    background: color-mix(in srgb, var(--color-xfire-busy) 60%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill), transparent);
+    color: var(--color-xfire-danger-fg);
   }
 
   .voice-btn-disconnect {
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
+    color: var(--color-xfire-danger-fg);
   }
 
   .voice-participants {
@@ -104,7 +104,7 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.65);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 65%, transparent);
     z-index: var(--z-modal-backdrop);
   }
 
@@ -118,6 +118,16 @@
     pointer-events: none;
   }
 
+  /* The U1 review's own layer (`--z-review*`, `global.css`): above every
+   * other modal, so it never draws behind the form that raised it. */
+  .modal-overlay.intent-overlay {
+    z-index: var(--z-review-backdrop);
+  }
+
+  .modal-overlay-positioner.intent-overlay-positioner {
+    z-index: var(--z-review);
+  }
+
   .modal-container {
     pointer-events: auto;
     background: var(--color-xfire-bg-panel);
@@ -128,7 +138,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+    box-shadow: 0 25px 50px -12px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
   }
 
   .modal-container-sm { max-width: 360px; }
@@ -160,7 +170,7 @@
   .soundboard-panel-count {
     font-size: 10px;
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     padding: 1px 6px;
     border-radius: 8px;
   }
@@ -168,7 +178,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
     gap: 6px;
-    padding: 6px 10px 10px 10px;
+    padding: 6px 10px 10px;
   }
   .soundboard-panel-clip {
     background: var(--color-xfire-bg-input);
@@ -180,31 +190,10 @@
     cursor: pointer;
     text-align: center;
     overflow: hidden;
+    width: 100%;
   }
   .soundboard-panel-clip:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-input));
-  }
-  .soundboard-panel-clip-name {
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Plan §Failure 5 — DM call action bar */
-  .dm-call-bar {
-    display: flex;
-    gap: 8px;
-    padding: 6px 10px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
-    background: var(--color-xfire-bg-panel);
-    align-items: center;
-  }
-
-  .dm-call-bar-label {
-    flex: 1;
-    color: var(--color-xfire-text-secondary);
-    font-size: 12px;
   }
 
   /* Plan §Failure 5 — incoming-call modal */
@@ -222,7 +211,10 @@
     text-transform: capitalize;
     margin-bottom: 6px;
   }
-  .incoming-call-display-name {
+  /* The forum title and thread name share these (they read the former
+   * undefined `--color-xfire-text-0`, now `text-primary`; plan E7.7.0). */
+  .incoming-call-display-name,
+  .forum-channel-title {
     font-size: 18px;
     font-weight: 700;
     color: var(--color-xfire-text-primary);
@@ -314,7 +306,8 @@
     box-shadow: var(--shadow-elevated);
     min-width: 200px;
   }
-  .outgoing-call-panel-name {
+  .outgoing-call-panel-name,
+  .forum-channel-thread-name {
     font-size: 15px;
     font-weight: 700;
     color: var(--color-xfire-text-primary);
@@ -357,7 +350,8 @@
     border: none;
     height: 100%;
   }
-  .active-call-panel-header {
+  .active-call-panel-header,
+  .toast-with-action {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -368,13 +362,13 @@
     height: 36px;
     border-radius: 50%;
     background: var(--color-xfire-accent);
-    color: #fff;
+    color: var(--color-xfire-accent-fg);
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
     border: 2px solid transparent;
-    transition: border-color 80ms ease-out;
+    transition: border-color var(--motion-duration-fast) ease-out;
   }
   .active-call-peer-avatar-speaking {
     border-color: var(--color-xfire-online);
@@ -390,6 +384,9 @@
   .active-call-peer-name {
     font-weight: 700;
     color: var(--color-xfire-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .active-call-peer-meta {
     display: flex;
@@ -398,10 +395,10 @@
     color: var(--color-xfire-text-secondary);
     text-transform: capitalize;
   }
-  .active-call-status-online { color: var(--color-xfire-online); }
-  .active-call-status-away   { color: var(--color-xfire-away); }
-  .active-call-status-busy   { color: var(--color-xfire-busy); }
-  .active-call-status-offline { color: var(--color-xfire-offline); }
+  .active-call-status-online { color: var(--color-xfire-online-text); }
+  .active-call-status-away   { color: var(--color-xfire-away-text); }
+  .active-call-status-busy   { color: var(--color-xfire-danger-text); }
+  .active-call-status-offline { color: var(--color-xfire-offline-text); }
   .active-call-timer {
     margin-left: auto;
     font-variant-numeric: tabular-nums;
@@ -448,15 +445,15 @@
   .call-control-btn-active {
     background: var(--color-xfire-accent);
     border-color: var(--color-xfire-accent);
-    color: #fff;
+    color: var(--color-xfire-accent-fg);
   }
   .call-control-btn-hangup {
-    background: var(--color-xfire-busy);
-    border-color: var(--color-xfire-busy);
-    color: #fff;
+    background: var(--color-xfire-danger);
+    border-color: var(--color-xfire-danger);
+    color: var(--color-xfire-danger-fg);
   }
   .call-control-btn-hangup:hover {
-    filter: brightness(1.15);
+    background: color-mix(in srgb, var(--color-xfire-danger) 85%, var(--color-xfire-fill-shade));
   }
 
   .active-call-devices {
@@ -483,10 +480,53 @@
   }
   .active-call-device-row select {
     flex: 1;
-    background: var(--color-xfire-bg-tertiary);
+    background-color: var(--color-xfire-bg-tertiary);
     color: var(--color-xfire-text-primary);
     border: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 25%, transparent);
     border-radius: 3px;
     padding: 2px 4px;
+  }
+
+  /* The skin's local search (plan E7.2 G11, LocalSearchPanel): one field and
+   * its results on the modal's ground; a result is a row button showing what
+   * it names and what kind of item it is (`.local-search` itself is grouped
+   * with the other flex-column dialog bodies in 04-member-profile-popup.css). */
+  .local-search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 320px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+  .local-search-hit {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-xfire-text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .local-search-hit:hover,
+  .local-search-hit:focus-visible {
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+  }
+  /* The row's full width, so a long name or message ends in an ellipsis. */
+  .local-search-hit-label {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .local-search-hit-kind {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
   }
 }

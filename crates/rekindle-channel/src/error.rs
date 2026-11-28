@@ -32,14 +32,27 @@ pub enum ChannelError {
     #[error("permission denied: {0}")]
     PermissionDenied(String),
 
+    /// We were removed from the community (plan E3.2 S9 own removal): it is
+    /// read-only history; rejoining takes a new invite.
+    #[error("you were {} this community", if *banned { "banned from" } else { "removed from" })]
+    Removed { banned: bool },
+
     #[error("slowmode active — wait {wait_ms}ms before sending again")]
     SlowmodeActive { wait_ms: u64 },
 
     #[error("message body exceeds max size ({size} > {max})")]
     BodyTooLarge { size: usize, max: usize },
 
+    /// An outbox entry no sealed page holds alone (plan E3.3).
+    #[error("channel entry exceeds max size ({size} > {max})")]
+    EntryTooLarge { size: usize, max: usize },
+
     #[error("invalid invite/thread/expression id: {0}")]
     InvalidId(String),
+
+    /// A forum post the forum does not take (plan E3.3, FT1).
+    #[error("forum post refused: {0}")]
+    InvalidForumPost(String),
 
     #[error("encrypt failed: {0}")]
     Encrypt(String),
@@ -55,6 +68,10 @@ pub enum ChannelError {
 
     #[error("adapter error: {0}")]
     Adapter(String),
+
+    /// An edit or a delete the rules refuse (plan E3.3 E1–E3).
+    #[error("message change refused: {0}")]
+    ChangeRefused(crate::changes::ChangeRefusal),
 }
 
 impl ChannelError {

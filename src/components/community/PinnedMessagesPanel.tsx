@@ -1,8 +1,8 @@
-import { Component, For, Show, createMemo } from "solid-js";
+import { type Component, createMemo, For, Show } from "solid-js";
 import type { Message } from "../../stores/chat.store";
-import MessageBubble from "../chat/MessageBubble";
-import { ICON_CLOSE, ICON_PIN } from "../../icons";
 import { formatDateFromSecs } from "../../utils/formatting";
+import MessageBubble from "../chat/MessageBubble";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface PinInfo {
   messageId: string;
@@ -21,19 +21,26 @@ interface PinnedMessagesPanelProps {
 
 const PinnedMessagesPanel: Component<PinnedMessagesPanelProps> = (props) => {
   const pinnedMessages = createMemo(() => {
-    return props.pins.map((pin) => {
-      const msg = props.messages.find((m) => m.serverMessageId === pin.messageId);
-      return { ...pin, message: msg };
-    }).filter((p) => p.message);
+    return props.pins
+      .map((pin) => {
+        const msg = props.messages.find((m) => m.serverMessageId === pin.messageId);
+        return { ...pin, message: msg };
+      })
+      .filter((p) => p.message);
   });
 
   return (
     <div class="pin-panel">
       <div class="pin-panel-header">
-        <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
+        <SkinGlyph name="pin" />
         Pinned Messages ({pinnedMessages().length})
-        <button class="modal-close-btn" onClick={props.onClose} aria-label="Close pinned messages panel">
-          <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+        <button
+          type="button"
+          class="modal-close-btn"
+          onClick={props.onClose}
+          aria-label="Close pinned messages panel"
+        >
+          <SkinGlyph name="close" />
         </button>
       </div>
       <div class="pin-panel-list">
@@ -51,9 +58,21 @@ const PinnedMessagesPanel: Component<PinnedMessagesPanelProps> = (props) => {
                 Pinned {formatDateFromSecs(pin.pinnedAt)}
                 <span class="pin-panel-item-actions">
                   <Show when={props.onJumpToMessage}>
-                    <button class="pin-panel-jump-btn" onClick={() => props.onJumpToMessage!(pin.messageId)}>Jump</button>
+                    <button
+                      type="button"
+                      class="pin-panel-jump-btn"
+                      onClick={() => props.onJumpToMessage!(pin.messageId)}
+                    >
+                      Jump
+                    </button>
                   </Show>
-                  <button class="pin-panel-unpin-btn" onClick={() => props.onUnpin(pin.messageId)}>Unpin</button>
+                  <button
+                    type="button"
+                    class="pin-panel-unpin-btn"
+                    onClick={() => props.onUnpin(pin.messageId)}
+                  >
+                    Unpin
+                  </button>
                 </span>
               </div>
             </div>

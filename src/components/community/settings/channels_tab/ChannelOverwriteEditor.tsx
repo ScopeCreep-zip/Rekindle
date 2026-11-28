@@ -1,9 +1,9 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import type { Role } from "../../../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import { commands } from "../../../../ipc/commands";
-import { togglePermBit, PERMISSION_CATEGORIES } from "../../../../ipc/permissions";
+import { PERMISSION_CATEGORIES, togglePermBit } from "../../../../ipc/permissions";
+import type { Role } from "../../../../stores/community.store";
 import { addToast } from "../../../../stores/toast.store";
-import { ICON_SAVE, ICON_DELETE } from "../../../../icons";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 interface ChannelOverwriteEditorProps {
   communityId: string;
@@ -33,7 +33,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         overwriteTargetType(),
         targetId,
         Number(overwriteAllow()),
-        Number(overwriteDeny()),
+        Number(overwriteDeny())
       );
       addToast(`Permission overwrite saved for #${props.channelName}`, "success");
     } catch (e) {
@@ -50,7 +50,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         props.communityId,
         props.channelId,
         overwriteTargetType(),
-        targetId,
+        targetId
       );
       setOverwriteAllow(0n);
       setOverwriteDeny(0n);
@@ -81,9 +81,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         >
           <option value="">Select target...</option>
           <For each={props.roles}>
-            {(role) => (
-              <option value={String(role.id)}>{role.name}</option>
-            )}
+            {(role) => <option value={String(role.id)}>{role.name}</option>}
           </For>
         </select>
       </div>
@@ -127,11 +125,11 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
           </For>
         </div>
         <div class="form-field-row">
-          <button class="form-btn-primary" onClick={handleSaveOverwrite}>
-            <span class="nf-icon">{ICON_SAVE}</span> Save Overwrite
+          <button type="button" class="form-btn-primary" onClick={handleSaveOverwrite}>
+            <SkinGlyph name="save" /> Save Overwrite
           </button>
-          <button class="form-btn-danger" onClick={handleDeleteOverwrite}>
-            <span class="nf-icon">{ICON_DELETE}</span> Remove Overwrite
+          <button type="button" class="form-btn-danger" onClick={handleDeleteOverwrite}>
+            <SkinGlyph name="delete" /> Remove Overwrite
           </button>
         </div>
       </Show>

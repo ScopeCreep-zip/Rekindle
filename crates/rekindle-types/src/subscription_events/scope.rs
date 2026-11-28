@@ -21,7 +21,7 @@ pub enum EventScope {
     /// This device and identity as a whole: own presence, network state,
     /// device-level notifications, invites into new conversations.
     Device,
-    /// One community, by governance key.
+    /// One community, by anchor key.
     Community(String),
     /// A community being joined. No view of it exists yet, so it belongs
     /// to wherever the join was started.
@@ -68,22 +68,29 @@ impl SubscriptionEvent {
                     EventScope::Community(community.clone())
                 }
                 TypingContext::Dm { peer_key } => EventScope::Peer(peer_key.clone()),
+                TypingContext::GroupDm { group_id } => EventScope::Conversation(group_id.clone()),
             },
             Self::Presence(e) => match e {
                 PresenceEvent::CommunityMemberChanged { community, .. } => {
                     EventScope::Community(community.clone())
                 }
                 PresenceEvent::FriendChanged { peer_key, .. } => EventScope::Peer(peer_key.clone()),
-                PresenceEvent::SelfChanged { .. } => EventScope::Device,
+                PresenceEvent::SelfChanged { .. } | PresenceEvent::SelfProfileChanged { .. } => {
+                    EventScope::Device
+                }
             },
             Self::Membership(e) => match e {
+                // Our forget outlives the community's scope: every
+                // frontend holding the list drops it.
+                MembershipEvent::Forgotten { .. } => EventScope::Device,
                 MembershipEvent::JoinProgress { community, .. } => {
                     EventScope::CommunityJoin(community.clone())
                 }
                 MembershipEvent::JoinRequested { community, .. }
-                | MembershipEvent::JoinAccepted { community, .. }
-                | MembershipEvent::JoinRejected { community, .. }
                 | MembershipEvent::Joined { community, .. }
+                | MembershipEvent::SelfJoined { community, .. }
+                | MembershipEvent::JoinWithdrawn { community, .. }
+                | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
                 | MembershipEvent::Removed { community, .. }
                 | MembershipEvent::Kicked { community, .. }
@@ -100,41 +107,58 @@ impl SubscriptionEvent {
                     EventScope::Community(community.clone())
                 }
             },
-            Self::Friend(e) => EventScope::Peer(friend_peer(e).to_owned()),
+            // A co-creation's end belongs to the creation, not to a peer.
+            Self::Friend(e) => {
+                friend_peer(e).map_or(EventScope::Device, |peer| EventScope::Peer(peer.to_owned()))
+            }
+            // An invite is into a conversation no view holds yet; the rest
+            // belong to the group's conversation.
+            Self::GroupDm(crate::subscription_events::GroupDmEvent::Invited { .. }) => {
+                EventScope::Device
+            }
+            Self::GroupDm(e) => EventScope::Conversation(e.group_id().to_owned()),
             Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }
                 | CryptoEvent::MekRequested { community, .. }
-                | CryptoEvent::MekTransferred { community, .. }
-                | CryptoEvent::AdminKeypairGranted { community }
-                | CryptoEvent::SlotKeypairGranted { community, .. } => {
+                | CryptoEvent::MekTransferred { community, .. } => {
                     EventScope::Community(community.clone())
                 }
-                CryptoEvent::PqBundlePublished { .. } => EventScope::Device,
+                CryptoEvent::PrekeyRecordPublished { .. } => EventScope::Device,
             },
             // Device changes (`scope() == None`) are machine-wide.
             Self::Voice(e) => e.scope().map_or(EventScope::Device, EventScope::voice),
             Self::Governance(e) => EventScope::Community(e.community().to_owned()),
             Self::Social(e) => EventScope::Community(social_community(e).to_owned()),
-            Self::Call(e) => EventScope::Call(e.call_id().to_owned()),
+            // Our own mute names no call: it is this device's.
+            Self::Call(e) => e
+                .call_id()
+                .map_or(EventScope::Device, |id| EventScope::Call(id.to_owned())),
             // A notification is about something, but surfacing it is the
             // device's job: one OS toast, one inbox, whatever the source.
-            Self::Notification(_) | Self::Network(_) => EventScope::Device,
+            // A review is the identity's, whichever window or client acts.
+            // A transfer is the device's: its file is on this machine.
+            Self::Notification(_)
+            | Self::Network(_)
+            | Self::IntentPending(_)
+            | Self::Transfer(_) => EventScope::Device,
             Self::System(e) => match e {
-                SystemEvent::Announcement { community, .. } => community
-                    .clone()
-                    .map_or(EventScope::Device, EventScope::Community),
-                SystemEvent::RaidAlert { community, .. }
-                | SystemEvent::RaidDetected { community, .. }
+                SystemEvent::RaidDetected { community, .. }
                 | SystemEvent::AutoModAlert { community, .. }
-                | SystemEvent::ChannelLockdown { community, .. }
-                | SystemEvent::Kicked { community }
                 | SystemEvent::BootstrapRequested { community, .. }
-                | SystemEvent::BootstrapReceived { community }
-                | SystemEvent::SyncRequested { community, .. }
-                | SystemEvent::SyncReceived { community, .. } => {
+                | SystemEvent::BootstrapReceived { community } => {
                     EventScope::Community(community.clone())
                 }
-                SystemEvent::AuditChainBroken { .. } => EventScope::Device,
+                SystemEvent::AuditChainBroken { .. }
+                | SystemEvent::SkinChanged { .. }
+                | SystemEvent::SkinTrialChanged { .. }
+                | SystemEvent::SkinApplyFailed { .. }
+                | SystemEvent::QuickWipeChanged { .. }
+                | SystemEvent::ActivityAppended { .. }
+                | SystemEvent::Infoview(_)
+                | SystemEvent::FavouriteServerAdded { .. }
+                | SystemEvent::ServersViewChanged { .. }
+                | SystemEvent::SkinSignals { .. }
+                | SystemEvent::SkinShell { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {
                 UnreadContext::Channel { community, .. } => {
@@ -151,25 +175,43 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
     match e {
         ChannelMessageEvent::New { community, .. }
         | ChannelMessageEvent::Edited { community, .. }
-        | ChannelMessageEvent::Deleted { community, .. } => EventScope::Community(community.clone()),
+        | ChannelMessageEvent::Deleted { community, .. }
+        | ChannelMessageEvent::ChannelSendStatus { community, .. }
+        | ChannelMessageEvent::ChannelHistoryGap { community, .. }
+        | ChannelMessageEvent::ChannelHistoryGapClosed { community, .. }
+        | ChannelMessageEvent::AttachmentDownloaded { community, .. }
+        | ChannelMessageEvent::ExpressionAssetReady { community, .. } => {
+            EventScope::Community(community.clone())
+        }
         ChannelMessageEvent::DirectMessageReceived {
             peer_key,
             conversation_id,
             ..
         } => EventScope::direct(peer_key, conversation_id),
-        ChannelMessageEvent::DirectMessageAcknowledged {
+        ChannelMessageEvent::DirectMessageSent {
+            conversation_id, ..
+        }
+        | ChannelMessageEvent::DmSendStatus {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
-        // An invitation names a conversation we do not show yet; it is
-        // answered from the device-wide inbox.
-        ChannelMessageEvent::DirectConversationInvited { .. }
+        ChannelMessageEvent::DmHistoryGap { peer_key, .. } => EventScope::Peer(peer_key.clone()),
+        ChannelMessageEvent::DisappearingTimerChanged { context, .. }
+        | ChannelMessageEvent::MessagesExpired { context, .. } => match context {
+            super::channel::ConversationContext::GroupDm { group_id } => {
+                EventScope::Conversation(group_id.clone())
+            }
+            super::channel::ConversationContext::Dm { peer_key } => {
+                EventScope::Peer(peer_key.clone())
+            }
+        },
         // Bringing a conversation forward is the device's decision.
-        | ChannelMessageEvent::ConversationFocusRequested { .. } => EventScope::Device,
+        ChannelMessageEvent::ConversationFocusRequested { .. } => EventScope::Device,
     }
 }
 
-fn friend_peer(e: &FriendEvent) -> &str {
-    match e {
+fn friend_peer(e: &FriendEvent) -> Option<&str> {
+    Some(match e {
+        FriendEvent::CoCreationFinished { .. } => return None,
         FriendEvent::RequestReceived { from_key, .. } => from_key,
         FriendEvent::RequestAcknowledged { peer_key }
         | FriendEvent::Accepted { peer_key, .. }
@@ -178,8 +220,23 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::Removed { peer_key }
         | FriendEvent::RemoveAcknowledged { peer_key }
         | FriendEvent::ProfileKeyRotated { peer_key, .. }
-        | FriendEvent::NicknameChanged { peer_key, .. } => peer_key,
-    }
+        | FriendEvent::NicknameChanged { peer_key, .. }
+        | FriendEvent::DisplayNameChanged { peer_key, .. }
+        | FriendEvent::BioChanged { peer_key, .. }
+        | FriendEvent::GroupChanged { peer_key, .. }
+        | FriendEvent::KeyChanged { peer_key, .. }
+        | FriendEvent::HandshakeFailed { peer_key, .. }
+        | FriendEvent::HandshakeRetrying { peer_key }
+        | FriendEvent::Reachability { peer_key, .. }
+        | FriendEvent::IdentityPinMismatch { peer_key, .. }
+        | FriendEvent::IdentityPinRestored { peer_key }
+        | FriendEvent::VerificationChanged { peer_key, .. }
+        | FriendEvent::BlockChanged { peer_key, .. }
+        | FriendEvent::GameInvite { peer_key, .. }
+        | FriendEvent::CreatorInvited { peer_key, .. }
+        | FriendEvent::CreatorInviteWithdrawn { peer_key, .. }
+        | FriendEvent::CoCreatorStatus { peer_key, .. } => peer_key,
+    })
 }
 
 fn social_community(e: &SocialEvent) -> &str {
@@ -188,6 +245,7 @@ fn social_community(e: &SocialEvent) -> &str {
         | SocialEvent::ReactionRemoved { community, .. }
         | SocialEvent::MessagePinned { community, .. }
         | SocialEvent::MessageUnpinned { community, .. }
+        | SocialEvent::PollChanged { community, .. }
         | SocialEvent::ThreadCreated { community, .. }
         | SocialEvent::ThreadMessagePosted { community, .. }
         | SocialEvent::ThreadArchiveChanged { community, .. }
@@ -202,70 +260,5 @@ fn social_community(e: &SocialEvent) -> &str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::subscription_events::{CallEvent, NotificationEvent, VoiceEvent};
-
-    #[test]
-    fn direct_messages_scope_by_peer_or_record() {
-        let one_to_one =
-            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
-                peer_key: "pk".into(),
-                timestamp: 1,
-                sender_name: None,
-                body: None,
-                decryption_failed: false,
-                automod_blurred: false,
-                conversation_id: "pk".into(),
-                server_message_id: None,
-                reply_to_id: None,
-            });
-        assert_eq!(one_to_one.scope(), EventScope::Peer("pk".into()));
-        let group = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
-            peer_key: "pk".into(),
-            timestamp: 1,
-            sender_name: None,
-            body: None,
-            decryption_failed: false,
-            automod_blurred: false,
-            conversation_id: "VLD0:rec".into(),
-            server_message_id: None,
-            reply_to_id: None,
-        });
-        assert_eq!(group.scope(), EventScope::Conversation("VLD0:rec".into()));
-        let ack =
-            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageAcknowledged {
-                message_id: 7,
-                conversation_id: "pk".into(),
-            });
-        assert_eq!(ack.scope(), EventScope::Peer("pk".into()));
-    }
-
-    #[test]
-    fn joins_calls_voice_and_notifications() {
-        let join = SubscriptionEvent::Membership(MembershipEvent::MembersRefreshed {
-            community: "c".into(),
-        });
-        assert_eq!(join.scope(), EventScope::Community("c".into()));
-        let call = SubscriptionEvent::Call(CallEvent::Ringing {
-            call_id: "id".into(),
-        });
-        assert_eq!(call.scope(), EventScope::Call("id".into()));
-        let dm_voice = SubscriptionEvent::Voice(VoiceEvent::LocalJoined {
-            scope: VoiceScope::Dm {
-                peer_key: "pk".into(),
-            },
-        });
-        assert_eq!(dm_voice.scope(), EventScope::Peer("pk".into()));
-        let alert = SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
-            title: "t".into(),
-            body: "b".into(),
-        });
-        assert_eq!(alert.scope(), EventScope::Device);
-        let nick = SubscriptionEvent::Friend(FriendEvent::NicknameChanged {
-            peer_key: "pk".into(),
-            nickname: None,
-        });
-        assert_eq!(nick.scope(), EventScope::Peer("pk".into()));
-    }
-}
+#[path = "scope_tests.rs"]
+mod tests;

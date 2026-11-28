@@ -2,8 +2,7 @@ use serde::Serialize;
 
 mod dto;
 pub use dto::{
-    EventInfoDto, EventRsvpInfoDto, GameServerInfoDto, NativeVideoErrorEvent, RoleDto,
-    ThreadInfoDto, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
+    NativeVideoErrorEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
     VideoEnvelopeRejectedEvent, VideoKeyframeRequestEvent, VideoSessionConfigEvent,
     VideoTopologyChangeEvent,
 };
@@ -89,5 +88,3 @@ pub enum CommunityEvent {
 
 #[cfg(test)]
 mod wire_tests;
-
-pub mod onboarding_dto;

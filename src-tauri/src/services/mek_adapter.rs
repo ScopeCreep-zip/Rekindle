@@ -14,7 +14,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_mek_rotation::{
     ChannelMekCache, MekDistributeDeps, MekPersist, MekRotationError, MekRotationEvent,
     RotationRecipient,
@@ -25,52 +24,6 @@ use rekindle_types::id::PseudonymKey;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
-
-/// Persists MEKs into the vault, per scope and generation
-/// (`keystore::persist_mek` / `load_mek_generation`). `MekPersist`
-/// takes/returns the raw 32-byte key material; we reconstruct
-/// `MediaEncryptionKey` on either side.
-pub struct KeystoreMekPersist {
-    state: Arc<AppState>,
-}
-
-#[async_trait]
-impl MekPersist for KeystoreMekPersist {
-    async fn store_mek_for_generation(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-        key_bytes: Vec<u8>,
-    ) -> Result<(), MekRotationError> {
-        let key_bytes: [u8; 32] = key_bytes
-            .try_into()
-            .map_err(|_| MekRotationError::Persist("MEK bytes must be 32 long".into()))?;
-        let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
-        let guard = self.state.keystore.lock();
-        let ks = guard
-            .as_ref()
-            .ok_or_else(|| MekRotationError::Persist("keystore locked".into()))?;
-        crate::keystore::persist_mek(ks, community_id, scope, &mek)
-            .map_err(MekRotationError::Persist)
-    }
-
-    async fn load_mek_for_generation(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-    ) -> Result<Option<Vec<u8>>, MekRotationError> {
-        let guard = self.state.keystore.lock();
-        let ks = guard
-            .as_ref()
-            .ok_or_else(|| MekRotationError::Persist("keystore locked".into()))?;
-        Ok(
-            crate::keystore::load_mek_generation(ks, community_id, scope, generation)
-                .map(|m| m.as_bytes().to_vec()),
-        )
-    }
-}
 
 /// MEK rotation domain adapter — produced once per command/dispatch.
 pub struct MekAdapter {
@@ -86,9 +39,9 @@ impl MekAdapter {
     pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         let cache: Arc<dyn ChannelMekCache> =
             Arc::new(state_helpers::LiveMekCache::new(Arc::clone(&state)));
-        let persist: Arc<dyn MekPersist> = Arc::new(KeystoreMekPersist {
-            state: Arc::clone(&state),
-        });
+        let persist: Arc<dyn MekPersist> = Arc::new(
+            rekindle_node::host::adapters::mek::VaultMekPersist::new(state.keystore.clone()),
+        );
         Arc::new(Self {
             state,
             app_handle,
@@ -103,6 +56,10 @@ impl MekAdapter {
 impl MekDistributeDeps for MekAdapter {
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         crate::state_helpers::login_scope_or_closed(&self.state)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::clone(&self.state.rng)
     }
 
     fn cache(&self) -> Arc<dyn ChannelMekCache> {
@@ -124,33 +81,28 @@ impl MekDistributeDeps for MekAdapter {
             .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }
 
-    fn online_recipients(
+    async fn online_recipients(
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,
     ) -> Vec<RotationRecipient> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
+        // Every roster member with an `M`/6 route, from the Host (plan
+        // E3.4 S4; E3.5 moves the whole rotation into the Host); a route
+        // not cached yet is read once first.
+        let Ok(governance) = state_helpers::host_governance(&self.state) else {
             return Vec::new();
         };
         let excluded = exclude_pseudonym.unwrap_or_default();
-        community
-            .gossip
-            .as_ref()
-            .map(|gossip| {
-                gossip
-                    .online_members
-                    .iter()
-                    .filter(|(pseudonym, member)| {
-                        !member.route_blob.is_empty() && pseudonym.as_str() != excluded
-                    })
-                    .map(|(pseudonym, member)| RotationRecipient {
-                        pseudonym_hex: pseudonym.clone(),
-                        route_blob: member.route_blob.clone(),
-                    })
-                    .collect()
+        governance.fill_member_routes(community_id).await;
+        governance
+            .routed_members(community_id)
+            .into_iter()
+            .filter(|(pseudonym, _)| pseudonym != excluded)
+            .map(|(pseudonym_hex, route_blob)| RotationRecipient {
+                pseudonym_hex,
+                route_blob,
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     async fn broadcast_to_peer(
@@ -229,15 +181,8 @@ impl MekDistributeDeps for MekAdapter {
         );
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        state_helpers::next_governance_lamport(&self.state, community_id)
-    }
-
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        state_helpers::identity_secret(&self.state)
+        state_helpers::identity_secret_bytes(&self.state)
     }
 
     fn apply_received_mek_to_state(
@@ -246,33 +191,25 @@ impl MekDistributeDeps for MekAdapter {
         scope: KeyScope,
         mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
     ) -> bool {
-        // Centralized downgrade-refuse + same-generation split-brain
-        // resolution (lowest election rank wins). Refused → don't touch
-        // generation state / media-ready either.
-        if !state_helpers::install_mek(&self.state, community_id, scope, mek.clone()) {
-            return false;
-        }
-        crate::services::community::mek_rotation_support::update_generation_state(
-            &self.state,
-            community_id,
-            scope,
-            mek.generation(),
-        );
-        true
+        // A key this shell's own rotation minted (`rotate.rs`), installed
+        // as the Host installs every key (finding CB3): the convergence rule
+        // (downgrade refused, lowest election rank at an equal generation),
+        // the shell's live keys and generation through
+        // `ShellHooks::on_mek_installed`, the vault, the waiting posts, and
+        // the outbox catch-up.
+        state_helpers::host_governance(&self.state)
+            .is_ok_and(|host| host.install_transferred_mek(community_id, scope, mek))
     }
 
+    /// Already stored: the Host's install above wrote it to the vault the
+    /// shell shares with the Host (`AppState::keystore`, handed to the Host
+    /// as its vault), so a second write here would only repeat it.
     fn persist_received_mek(
         &self,
-        community_id: &str,
-        scope: KeyScope,
-        mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+        _community_id: &str,
+        _scope: KeyScope,
+        _mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
     ) {
-        crate::services::community::mek_rotation_support::persist_mek(
-            &self.state,
-            community_id,
-            scope,
-            mek,
-        );
     }
 
     fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64) {
@@ -299,7 +236,9 @@ impl MekDistributeDeps for MekAdapter {
         community_id: &str,
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), rekindle_mek_rotation::MekRotationError> {
-        crate::services::community::send_to_mesh(&self.state, community_id, envelope)
+        crate::state_helpers::host_governance(&self.state)
+            .map(|host| host.send_to_mesh_impl(community_id, envelope))
+            .map_err(|e| e.to_string())
             .map_err(rekindle_mek_rotation::MekRotationError::InvalidInput)
     }
 }

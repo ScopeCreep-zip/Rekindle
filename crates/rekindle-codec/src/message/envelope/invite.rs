@@ -16,10 +16,10 @@ pub struct InviteBlob {
     pub mailbox_dht_key: String,
     /// Sender's private profile DHT record key (for presence watching).
     pub profile_dht_key: String,
-    /// Sender's current route blob (for immediate contact, may be stale).
-    pub route_blob: Vec<u8>,
-    /// Sender's Signal `PreKeyBundle` (serialized JSON).
-    pub prekey_bundle: Vec<u8>,
+    /// The invite's single-use request inbox (plan E2.5, D17): the
+    /// requester writes its sealed `FriendRequest` there, so the invite
+    /// carries no route.
+    pub inbox: InboxCapability,
     /// Correlation token linking this invite to tracked outgoing invites.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invite_id: Option<String>,
@@ -30,8 +30,37 @@ pub struct InviteBlob {
     /// as stale by [`check_invite_recency`] — no legacy fallback.
     #[serde(default)]
     pub issued_at: u64,
-    /// Ed25519 signature over the JSON of all fields above.
+    /// Ed25519 signature over `FRIEND_INVITE_SIG ‖` the JSON of all fields
+    /// above.
+    #[serde(with = "rekindle_types::base64_bytes")]
     pub signature: Vec<u8>,
+}
+
+/// A friend invite's request inbox: the `SMPL(o_cnt: 1, [oneTimeWriter])`
+/// record (`rekindle_types::dht_layout::request_inbox`) and the keypair
+/// text of its one-time writer, the capability to write it once. The
+/// writer's secret is wiped when the value is dropped.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxCapability {
+    /// The inbox's record key.
+    pub record_key: String,
+    /// The one-time writer's keypair text (`VLD0:<public>:<secret>`).
+    pub writer: String,
+}
+
+impl Drop for InboxCapability {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.writer);
+    }
+}
+
+impl std::fmt::Debug for InboxCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InboxCapability")
+            .field("record_key", &self.record_key)
+            .field("writer", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Create a signed invite blob from identity credentials.
@@ -46,8 +75,7 @@ pub fn create_invite_blob(
     display_name: &str,
     mailbox_dht_key: &str,
     profile_dht_key: &str,
-    route_blob: &[u8],
-    prekey_bundle: &[u8],
+    inbox: &InboxCapability,
     invite_id: Option<&str>,
     issued_at_ms: u64,
 ) -> InviteBlob {
@@ -55,31 +83,58 @@ pub fn create_invite_blob(
 
     let signing_key = SigningKey::from_bytes(secret_key);
 
-    // Build the signable payload (all fields except signature)
-    let signable = serde_json::json!({
-        "public_key": public_key,
-        "display_name": display_name,
-        "mailbox_dht_key": mailbox_dht_key,
-        "profile_dht_key": profile_dht_key,
-        "route_blob": route_blob,
-        "prekey_bundle": prekey_bundle,
-        "invite_id": invite_id,
-        "issued_at": issued_at_ms,
-    });
-    let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
-    let signature = signing_key.sign(&signable_bytes);
+    let signature = signing_key.sign(&signable_bytes(
+        public_key,
+        display_name,
+        mailbox_dht_key,
+        profile_dht_key,
+        inbox,
+        invite_id,
+        issued_at_ms,
+    ));
 
     InviteBlob {
         public_key: public_key.to_string(),
         display_name: display_name.to_string(),
         mailbox_dht_key: mailbox_dht_key.to_string(),
         profile_dht_key: profile_dht_key.to_string(),
-        route_blob: route_blob.to_vec(),
-        prekey_bundle: prekey_bundle.to_vec(),
+        inbox: inbox.clone(),
         invite_id: invite_id.map(str::to_string),
         issued_at: issued_at_ms,
         signature: signature.to_bytes().to_vec(),
     }
+}
+
+/// The bytes an invite's signature covers: the registered domain
+/// `FRIEND_INVITE_SIG`, then every field but the signature as JSON, with
+/// the inbox as its record key and writer text. The domain keeps
+/// an identity-key signature over invite JSON from ever verifying as any
+/// other identity-key signature, and the reverse.
+/// The invite carries no prekey bundle: B1's accepter starts the
+/// handshake from the FriendRequest's own bundle, and nothing read the
+/// invite's copy, which was ~75 % of the URL (plan C7.25).
+fn signable_bytes(
+    public_key: &str,
+    display_name: &str,
+    mailbox_dht_key: &str,
+    profile_dht_key: &str,
+    inbox: &InboxCapability,
+    invite_id: Option<&str>,
+    issued_at_ms: u64,
+) -> Vec<u8> {
+    let signable = serde_json::json!({
+        "public_key": public_key,
+        "display_name": display_name,
+        "mailbox_dht_key": mailbox_dht_key,
+        "profile_dht_key": profile_dht_key,
+        "inbox_key": inbox.record_key,
+        "inbox_writer": inbox.writer,
+        "invite_id": invite_id,
+        "issued_at": issued_at_ms,
+    });
+    let json = serde_json::to_vec(&signable).unwrap_or_default();
+    let domain = rekindle_types::domains::FRIEND_INVITE_SIG.as_bytes();
+    [domain, json.as_slice()].concat()
 }
 
 /// Verify the Ed25519 signature on an invite blob.
@@ -103,21 +158,18 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
         .map_err(|_| "signature must be 64 bytes".to_string())?;
     let signature = Signature::from_bytes(&sig_array);
 
-    // Reconstruct the signable payload
-    let signable = serde_json::json!({
-        "public_key": blob.public_key,
-        "display_name": blob.display_name,
-        "mailbox_dht_key": blob.mailbox_dht_key,
-        "profile_dht_key": blob.profile_dht_key,
-        "route_blob": blob.route_blob,
-        "prekey_bundle": blob.prekey_bundle,
-        "invite_id": blob.invite_id,
-        "issued_at": blob.issued_at,
-    });
-    let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
+    let signed = signable_bytes(
+        &blob.public_key,
+        &blob.display_name,
+        &blob.mailbox_dht_key,
+        &blob.profile_dht_key,
+        &blob.inbox,
+        blob.invite_id.as_deref(),
+        blob.issued_at,
+    );
 
     verifying_key
-        .verify_strict(&signable_bytes, &signature)
+        .verify_strict(&signed, &signature)
         .map_err(|e| {
             // Most signature failures users hit in practice are version
             // mismatches: the sender's build pre-dates the B11 issued_at
@@ -192,122 +244,5 @@ pub fn decode_invite_url(url: &str) -> Result<InviteBlob, String> {
 }
 
 #[cfg(test)]
-mod invite_blob_tests {
-    use super::*;
-
-    fn make_secret() -> [u8; 32] {
-        // Fixed test secret so the test is deterministic.
-        let mut s = [0u8; 32];
-        for (i, b) in s.iter_mut().enumerate() {
-            // i is bounded 0..32 by the iterator, fits in u8.
-            *b = u8::try_from(i).expect("i < 32").wrapping_add(1);
-        }
-        s
-    }
-
-    fn pubkey_hex(secret: &[u8; 32]) -> String {
-        use rekindle_secrets::ed25519_dalek::SigningKey;
-        let sk = SigningKey::from_bytes(secret);
-        hex::encode(sk.verifying_key().to_bytes())
-    }
-
-    #[test]
-    fn create_then_verify_round_trips_with_issued_at() {
-        let secret = make_secret();
-        let pk = pubkey_hex(&secret);
-        let blob = create_invite_blob(
-            &secret,
-            &pk,
-            "Alice",
-            "VLD0:mailbox-key",
-            "VLD0:profile-key",
-            &[1u8, 2, 3],
-            &[10u8, 20, 30, 40],
-            Some("inv-123"),
-            1_715_000_000_000,
-        );
-        verify_invite_blob(&blob).expect("freshly-minted blob must verify on the same build");
-        assert_eq!(blob.issued_at, 1_715_000_000_000);
-    }
-
-    #[test]
-    fn verify_rejects_pre_b11_blob_missing_issued_at() {
-        // Simulate a pre-B11 sender by signing without issued_at, then
-        // verifying with the new code path. The signature reconstruction
-        // includes issued_at:0 (serde default for missing field), so the
-        // canonical bytes differ from what the sender signed → mismatch.
-        // This is the no-legacy-compat behavior: the user must regenerate
-        // the invite on a current build.
-        use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
-        let secret = make_secret();
-        let signing = SigningKey::from_bytes(&secret);
-        let pk = pubkey_hex(&secret);
-        let pre_b11_signable = serde_json::json!({
-            "public_key": pk,
-            "display_name": "Alice",
-            "mailbox_dht_key": "VLD0:mailbox",
-            "profile_dht_key": "VLD0:profile",
-            "route_blob": &[1u8, 2, 3],
-            "prekey_bundle": &[10u8, 20],
-            "invite_id": Some("inv-old"),
-        });
-        let signable_bytes = serde_json::to_vec(&pre_b11_signable).unwrap();
-        let signature = signing.sign(&signable_bytes);
-        let blob = InviteBlob {
-            public_key: pk,
-            display_name: "Alice".to_string(),
-            mailbox_dht_key: "VLD0:mailbox".to_string(),
-            profile_dht_key: "VLD0:profile".to_string(),
-            route_blob: vec![1u8, 2, 3],
-            prekey_bundle: vec![10u8, 20],
-            invite_id: Some("inv-old".to_string()),
-            issued_at: 0, // pre-B11 sender didn't include this field
-            signature: signature.to_bytes().to_vec(),
-        };
-        let err = verify_invite_blob(&blob).expect_err("pre-B11 blob must be rejected");
-        // The error message hints at the version mismatch instead of
-        // showing the raw cryptographic error.
-        assert!(err.contains("older app version"), "got: {err}",);
-    }
-
-    #[test]
-    fn check_recency_within_window() {
-        let secret = make_secret();
-        let pk = pubkey_hex(&secret);
-        let blob = create_invite_blob(
-            &secret,
-            &pk,
-            "Alice",
-            "mb",
-            "pr",
-            &[],
-            &[],
-            None,
-            1_715_000_000_000,
-        );
-        // 1 day after issuance
-        let now = blob.issued_at + 24 * 3600 * 1000;
-        check_invite_recency(&blob, now, 7 * 24 * 3600).expect("within window");
-    }
-
-    #[test]
-    fn check_recency_rejects_zero_issued_at() {
-        let secret = make_secret();
-        let pk = pubkey_hex(&secret);
-        let mut blob = create_invite_blob(
-            &secret,
-            &pk,
-            "Alice",
-            "mb",
-            "pr",
-            &[],
-            &[],
-            None,
-            1_715_000_000_000,
-        );
-        blob.issued_at = 0;
-        let err = check_invite_recency(&blob, 1_715_000_000_000, 7 * 24 * 3600)
-            .expect_err("issued_at=0 must be rejected");
-        assert!(err.contains("missing issued_at"), "got: {err}",);
-    }
-}
+#[path = "invite_invite_blob_tests.rs"]
+mod invite_blob_tests;

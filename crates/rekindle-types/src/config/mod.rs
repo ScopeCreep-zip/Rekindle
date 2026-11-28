@@ -18,6 +18,31 @@ use serde::{Deserialize, Serialize};
 /// a Safe route with `hop_count == 0`, so the floor is always a valid route.
 pub const ANONYMITY_HOP_FLOOR: u8 = 3;
 
+/// Percent of `rpc.timeout_ms` Veilid allows per route hop past those the
+/// base timeout covers (`ROUTE_HOP_ALLOWANCE_PERCENT`, veilid-core 0.5.8
+/// `rpc_processor/mod.rs:102`).
+const ROUTE_HOP_ALLOWANCE_PERCENT: u64 = 10;
+
+/// Route hops the base RPC timeout already covers
+/// (`ROUTE_HOPS_IN_BASE_TIMEOUT`, `rpc_processor/mod.rs:104`).
+const ROUTE_HOPS_IN_BASE_TIMEOUT: u64 = 4;
+
+/// Veilid's wait for one answer at `profile`'s hop count, floor-clamped as
+/// the port clamps it: `routed_timeout(timeout, 2 * hops)`
+/// (`get_safety_selection_timeout`, veilid-core 0.5.8
+/// `rpc_processor/mod.rs:1985-1994`), which is `rpc.timeout_ms`
+/// (`crate::message::CALL_TIMEOUT_MS`) plus 10% of it for each effective hop (twice the
+/// safety route's) above four (`routed_timeout`, `:109-117`). At our 5 s
+/// timeout that is 500 ms a hop: 6 s at our 3-hop floor, 7 s at Veilid's
+/// 4-hop maximum (`max_route_hop_count`, `veilid_config.rs:945`).
+#[must_use]
+pub fn answer_wait(profile: &SafetyProfile) -> std::time::Duration {
+    let hops = u64::from(profile.hop_count.max(ANONYMITY_HOP_FLOOR));
+    let excess = (2 * hops).saturating_sub(ROUTE_HOPS_IN_BASE_TIMEOUT);
+    let allowance = crate::message::CALL_TIMEOUT_MS * ROUTE_HOP_ALLOWANCE_PERCENT / 100;
+    std::time::Duration::from_millis(crate::message::CALL_TIMEOUT_MS + allowance * excess)
+}
+
 /// How long a session's scope gets to stop at logout, lock or exit before
 /// its stragglers are aborted (`evidence/c4-live-findings.md` L1). Only
 /// tasks that make no Veilid call directly may be aborted: the DHT work of
@@ -25,6 +50,25 @@ pub const ANONYMITY_HOP_FLOOR: u8 = 3;
 /// released by its drain and are never aborted (an abort mid-commit wedges
 /// Veilid's record store; plan C7.6g, C7.6j).
 pub const SESSION_STOP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
+
+/// How long a client waits for the answer to a request that waits on
+/// Veilid network I/O (a community create, a send, an invite create).
+pub const NETWORK_COMMAND_DEADLINE: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// How long the Host waits on the network inside such a request before it
+/// answers: the client's deadline less a session's stop deadline, so the
+/// answer (a "not yet published" refusal included) reaches the client
+/// before it gives up.
+pub const NETWORK_ANSWER_DEADLINE: std::time::Duration =
+    NETWORK_COMMAND_DEADLINE.saturating_sub(SESSION_STOP_DEADLINE);
+
+/// How long a governance command waits for its op's first attempt before
+/// it answers `Pending` (plan E3.2 S6b, RV4 review M2): the per-attempt send
+/// timeout of Matrix's local echo (matrix-rust-sdk, research batch 9 AK).
+/// The op is applied, gossiped and queued by then, so the answer is a
+/// success either way; no existing deadline is this bound (`CALL_TIMEOUT_MS`
+/// is one RPC, `NETWORK_ANSWER_DEADLINE` the whole command budget).
+pub const GOVERNANCE_ANSWER_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +146,9 @@ pub struct VeilidStartupOptions {
     /// Enable UPnP/IGD automatic port mapping.
     ///
     /// Default `false`. The 0.5.3-era panic that motivated disabling it is
-    /// gone in 0.5.7, but the restart-on-IGD-failure loop is not, and the
+    /// gone since 0.5.7, but the restart-on-IGD-failure loop is not (0.5.8:
+    /// a failed mapping renew sets `network_needs_restart`,
+    /// `network_manager/network/native/tasks/upnp_task.rs:21-28`), and the
     /// original failure was never conclusively diagnosed — see
     /// `docs/contributor/veilid-0.5.7-gap-audit.md` §1.1. Flip only under
     /// attachment-flap monitoring.
@@ -113,8 +159,9 @@ pub struct VeilidStartupOptions {
     /// ProtectedStore instead of the OS keyring.
     ///
     /// Default `true`: keyring-manager 0.7.1 panicked on Linux
-    /// (blocking zbus inside our Tokio runtime). 0.5.7 resolves
-    /// keyring-manager 0.8.3, which is UNTESTED against that panic — see
+    /// (blocking zbus inside our Tokio runtime). 0.5.8 pins
+    /// keyring-manager `=0.10.0` (`veilid-core/Cargo.toml:194`), which is
+    /// UNTESTED against that panic — see
     /// migration-plan §2.3 for the retest protocol. Low stakes either
     /// way: this store only guards Veilid's own node/route secrets; user
     /// identity keys live in the SQLCipher vault.
@@ -127,19 +174,22 @@ pub struct VeilidStartupOptions {
     #[serde(default)]
     pub allow_insecure_fallback: bool,
 
-    /// Hops for inbound private routes
-    /// (`network.rpc.default_route_hop_count`).
+    /// Hops for inbound private routes and for Veilid's background
+    /// safety-route pool (`network.rpc.default_route_hop_count`).
     ///
-    /// Default `1` (the Veilid default). A message to us crosses the
-    /// sender's safety route, which every Rekindle send builds explicitly
-    /// at [`ANONYMITY_HOP_FLOOR`] (3) through `safety_selection` (never the
-    /// default context, whose safety route would also use this value: V19,
-    /// fixed in plan C7), then this private route: safety(3) + private(1) =
-    /// 4 hops, at/above the architecture §8 3-hop target. 3-hop inbound was tried and reverted pre-0.5.4 because
-    /// route round-trip testing exhausted the relay pool; 0.5.4's
-    /// "simplified route testing" removes that mechanism, so `3` is worth
-    /// re-testing — against the original failure symptoms (allocation
-    /// flap, empty presence blobs, voice rosters not forming).
+    /// Default [`ANONYMITY_HOP_FLOOR`] (3), the hop count every Rekindle
+    /// send asks for through `safety_selection` (plan RV1, VA1 audit).
+    /// Veilid keeps its tested pool of safety routes at this hop count:
+    /// `DESIRED_BACKGROUND_SAFETY_ROUTE_COUNT` routes per (hop count,
+    /// ordering) cell, each kept alive by a loopback keepalive every 10 s
+    /// (veilid-core 0.5.8 `private_route_management.rs:7`, `:143-150`), and
+    /// a send picks a pool route of its own hop count
+    /// (`route_select.rs:119-124`). At the Veilid default of 1 the pool held
+    /// 1–2-hop routes no send selected, and every send rode an untested
+    /// 3-hop route built on the spot. Our General and Media routes allocate
+    /// at this count too (`new_private_route`, a 0-hop custom spec,
+    /// `veilid_api/api.rs:763-857`), and Veilid tests each at allocation
+    /// (`api.rs:831`).
     #[serde(default = "default_route_hop_count")]
     pub route_hop_count: u8,
 
@@ -161,13 +211,16 @@ pub struct VeilidStartupOptions {
     /// also a storage node (developer book, "Configuring Veilid
     /// Applications"), and record survival depends on the nodes nearest a
     /// key holding it. At 128 the count cap binds long before
-    /// `remote_max_storage_space_mb` (256 MB): veilid-core 0.5.7's
-    /// `make_room_for_record` only makes room by bytes, so each record
-    /// past 128 is evicted by the LRU cache itself and logged as
-    /// `RecordIndex(remote): Consistency failure, not enough room made`.
-    /// With the count cap out of reach, eviction runs through the byte
-    /// accounting as designed (verified against veilid-core 0.5.7's
-    /// record-index tests; `evidence/veilid-remote-store-limits.md`).
+    /// `remote_max_storage_space_mb` (256 MB). veilid-core 0.5.7's
+    /// `make_room_for_record` made room by bytes only, so each record past
+    /// 128 was evicted by the LRU cache itself and logged as
+    /// `RecordIndex(remote): Consistency failure, not enough room made`
+    /// (verified against 0.5.7's record-index tests;
+    /// `evidence/veilid-remote-store-limits.md`). 0.5.8 also makes room by
+    /// count (`storage_manager/record_store/record_store_inner/record_index.rs:1724-1739`),
+    /// so the failure is gone, but at 128 records the count cap would still
+    /// bind long before the byte cap; with it out of reach, eviction runs
+    /// through the byte accounting as designed.
     ///
     /// While app nodes disable DHTV (plan C7.10, until veilid #492) this
     /// node stores no records for others, so the cap is not reached; it
@@ -250,7 +303,7 @@ pub enum StabilityPreference {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequencingPreference {
-    /// No ordering guarantee.
+    /// No ordering guarantee: Veilid's `PreferUnordered` (UDP first).
     NoPreference,
     /// Prefer ordered delivery (default).
     #[default]
@@ -307,6 +360,21 @@ impl Default for SafetyConfig {
     }
 }
 
+impl SafetyConfig {
+    /// The profile `class` is sent under: the one class-to-profile lookup
+    /// (one row per [`crate::message::MessageClass`], no other table).
+    #[must_use]
+    pub fn for_class(&self, class: crate::message::MessageClass) -> &SafetyProfile {
+        use crate::message::MessageClass;
+        match class {
+            MessageClass::Text => &self.text,
+            MessageClass::Voice => &self.voice,
+            MessageClass::Rpc => &self.rpc,
+            MessageClass::Dht => &self.dht,
+        }
+    }
+}
+
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
@@ -336,7 +404,7 @@ fn default_true() -> bool {
     true
 }
 fn default_route_hop_count() -> u8 {
-    1
+    ANONYMITY_HOP_FLOOR
 }
 fn default_remote_max_records() -> u32 {
     65_536
@@ -351,8 +419,12 @@ fn default_dht_write_retries() -> u32 {
 fn default_route_watchdog_secs() -> u64 {
     30
 }
+/// How long a peer's route blob is trusted before it is fetched again: the
+/// one peer-route cache's age (plan E2.1; `rekindle_route::lifecycle::
+/// PEER_ROUTE_CACHE_MAX_AGE`). A route that dies sooner is dropped when a
+/// send to it fails, or when Veilid reports it dead.
 fn default_route_cache_ttl_secs() -> u64 {
-    90
+    900
 }
 fn default_circuit_breaker_threshold() -> u32 {
     3
@@ -445,80 +517,5 @@ impl TransportConfig {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn network_section_round_trips_as_toml() {
-        let cfg = TransportConfig::default();
-        let text = toml::to_string(&cfg).unwrap();
-        assert!(
-            !text.contains("storage_dir"),
-            "the host sets the storage dir"
-        );
-        let parsed: TransportConfig = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.namespace, "rekindle");
-        assert_eq!(parsed.gossip_ttl, default_gossip_ttl());
-        assert!(parsed.validate().is_ok());
-    }
-
-    #[test]
-    fn network_keys_are_snake_case_and_strict() {
-        let parsed: TransportConfig = toml::from_str(
-            "gossip_ttl = 7\n[safety.voice]\nstability = \"low_latency\"\nsequencing = \"no_preference\"\n",
-        )
-        .unwrap();
-        assert_eq!(parsed.gossip_ttl, 7);
-        assert_eq!(parsed.safety.voice.hop_count, ANONYMITY_HOP_FLOOR);
-        assert!(toml::from_str::<TransportConfig>("gossipTtl = 1").is_err());
-        assert!(toml::from_str::<TransportConfig>("storage_dir = \"/x\"").is_err());
-        assert!(toml::from_str::<TransportConfig>("[safety.text]\nhops = 3").is_err());
-    }
-
-    #[test]
-    fn validation_refuses_hops_below_the_floor() {
-        let mut cfg = TransportConfig::default();
-        cfg.safety.dht.hop_count = ANONYMITY_HOP_FLOOR - 1;
-        let err = cfg.validate().unwrap_err();
-        assert_eq!(err.key(), "network.safety.dht.hop_count");
-        cfg.safety.dht.hop_count = MAX_ROUTE_HOP_COUNT + 1;
-        assert!(cfg.validate().is_err());
-        let mut cfg = TransportConfig {
-            namespace: "has space".into(),
-            ..TransportConfig::default()
-        };
-        assert!(cfg.validate().is_err());
-        cfg.namespace = "ok-name_1".into();
-        cfg.gossip_ttl = 0;
-        assert!(cfg.validate().is_err());
-    }
-
-    #[test]
-    fn safety_profile_defaults() {
-        let text = SafetyProfile::default_text();
-        assert_eq!(text.hop_count, ANONYMITY_HOP_FLOOR);
-        assert_eq!(text.stability, StabilityPreference::Reliable);
-
-        // Voice rides the same anonymity floor as text; only its
-        // stability/sequencing differ (lowest-latency *within* the floor).
-        let voice = SafetyProfile::default_voice();
-        assert_eq!(voice.hop_count, ANONYMITY_HOP_FLOOR);
-        assert_eq!(voice.stability, StabilityPreference::LowLatency);
-        assert_eq!(voice.sequencing, SequencingPreference::NoPreference);
-    }
-
-    #[test]
-    fn every_class_default_is_at_or_above_the_floor() {
-        for p in [
-            SafetyProfile::default_text(),
-            SafetyProfile::default_voice(),
-            SafetyProfile::default_dht(),
-            SafetyProfile::default_rpc(),
-        ] {
-            assert!(
-                p.hop_count >= ANONYMITY_HOP_FLOOR,
-                "no data class may route below the anonymity floor",
-            );
-        }
-    }
-}
+#[path = "mod_tests.rs"]
+mod tests;

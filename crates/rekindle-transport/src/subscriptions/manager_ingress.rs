@@ -1,15 +1,13 @@
-//! Inbound event ingress: gossip, DM, and DHT ValueChange routing
+//! Inbound event ingress: gossip and DHT ValueChange routing
 //! through the central enrich → state-effects → dedup → emit pipeline.
 
 use tracing::debug;
 
-use super::{state_effects, watches, SubscriptionManager};
+use super::{state_effects, SubscriptionManager};
 use crate::gossip::GossipAdmission;
-use crate::payload::dm::DmPayload;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use super::events::{self, SubscriptionEvent};
-use crate::payload::dht_types::SLOTS_PER_SEGMENT;
 
 impl SubscriptionManager {
     /// Route a verified gossip envelope. Called by the daemon's
@@ -45,26 +43,8 @@ impl SubscriptionManager {
         //
         // The guard is scoped so it drops before `process_event`, which
         // re-enters the manager.
-        let admission = {
-            let mut meshes = self.meshes().write();
-            match meshes.get_mut(community_id) {
-                Some(mesh) => mesh.admit_gossip(sender_pseudonym, lamport_ts),
-                // Gossip can arrive before `ensure_mesh` has run for this
-                // community. Nothing to meter it against, and the
-                // signature was already verified upstream, so admit it.
-                None => GossipAdmission::Accept,
-            }
-        };
-        match admission {
-            GossipAdmission::Accept => {}
-            GossipAdmission::RateLimited => {
-                debug!(
-                    community = community_id,
-                    sender = %sender_pseudonym,
-                    "sub: gossip dropped — sender over rate floor"
-                );
-                return;
-            }
+        if !self.admit(community_id, sender_pseudonym, lamport_ts) {
+            return;
         }
 
         // `None` for payloads that are not subscriber-facing — Mutual
@@ -77,20 +57,30 @@ impl SubscriptionManager {
         }
     }
 
-    /// Route a DM payload. Called by the daemon's InboundHandler.
-    ///
-    /// Pipeline: payload.into_event() → state_effects → dedup → emit
-    pub fn on_dm(&self, sender_key: &str, payload: DmPayload, timestamp: u64) {
-        debug!(
-            sender = %sender_key,
-            timestamp, "sub: on_dm"
-        );
-        // W16.4 — call signaling and DM invites return None (they
-        // surface via TransportNotification, not SubscriptionEvent).
-        // The receive dispatch (W16.7) routes them to the call state
-        // machine before reaching this layer.
-        if let Some(event) = payload.into_event(sender_key, timestamp) {
-            self.process_event(event);
+    /// The sender's per-mesh gossip rate limit and our Lamport merge: the
+    /// admission [`Self::on_gossip`] runs, and a `HeadAdvanced` hint's
+    /// before it is relayed (register S7l). `false` when over the floor.
+    pub fn admit(&self, community_id: &str, sender_pseudonym: &str, lamport_ts: u64) -> bool {
+        let admission = {
+            let mut meshes = self.meshes().write();
+            match meshes.get_mut(community_id) {
+                Some(mesh) => mesh.admit_gossip(sender_pseudonym, lamport_ts),
+                // Gossip can arrive before `ensure_mesh` has run for this
+                // community. Nothing to meter it against, and the
+                // signature was already verified upstream, so admit it.
+                None => GossipAdmission::Accept,
+            }
+        };
+        match admission {
+            GossipAdmission::Accept => true,
+            GossipAdmission::RateLimited => {
+                debug!(
+                    community = community_id,
+                    sender = %sender_pseudonym,
+                    "sub: gossip dropped — sender over rate floor"
+                );
+                false
+            }
         }
     }
 
@@ -98,15 +88,17 @@ impl SubscriptionManager {
     ///
     /// Single point of emission for ALL events regardless of source tier
     /// (watch, gossip, poll, or direct construction in on_value_change).
-    pub(super) fn process_event(&self, mut event: SubscriptionEvent) {
+    /// For gossip projected by the Host, admission precedes this call.
+    pub fn process_event(&self, mut event: SubscriptionEvent) {
         // Enrich: decrypt message bodies if MEK available, resolve display names
         self.enrich(&mut event);
+        let now_ms = self.clock.now_ms();
 
         // Apply state side-effects (unread, typing, presence, voice)
-        let extra_events = state_effects::apply(&mut self.state.write(), &event);
+        let extra_events = state_effects::apply(&mut self.state.write(), &event, now_ms);
 
         // Dedup gate: suppress duplicates from parallel tiers
-        if self.dedup.write().check(&event) {
+        if self.dedup.write().check(&event, now_ms) {
             let _ = self.event_tx.send(event);
         }
 
@@ -149,14 +141,11 @@ impl SubscriptionManager {
             ) if sender_name.is_none() => {
                 // Resolve display name from friend list in session
                 let guard = self.session.read();
-                if let Some(ref session) = *guard {
-                    if let Some(request) = session
-                        .pending_friend_requests
-                        .iter()
-                        .find(|r| r.public_key == *peer_key)
-                    {
-                        *sender_name = Some(request.display_name.clone());
-                    }
+                if let Some(friend) = guard
+                    .as_ref()
+                    .and_then(|s| s.friends.get(peer_key.as_str()))
+                {
+                    *sender_name = Some(friend.display_name.clone());
                 }
             }
             _ => {}
@@ -170,131 +159,11 @@ impl SubscriptionManager {
         changed_subkeys: Vec<u32>,
         _first_value: Option<Vec<u8>>,
     ) {
-        let watch_kind = self.watches.read().get(record_key).map(|e| e.kind.clone());
-        let Some(kind) = watch_kind else {
-            self.process_event(SubscriptionEvent::Network(
-                events::NetworkEvent::ValueChanged {
-                    record_key: record_key.into(),
-                    changed_subkeys,
-                },
-            ));
-            return;
-        };
-
-        match kind {
-            watches::WatchKind::FriendInbox => {
-                debug!(record_key, subkeys = ?changed_subkeys, "friend inbox changed");
-                // Update pending count from session
-                let pending_count = self.session.read().as_ref().map_or(0, |s| {
-                    u32::try_from(s.pending_friend_requests.len()).unwrap_or(u32::MAX)
-                });
-                self.state.write().unread.friend_requests = pending_count;
-                let count = pending_count;
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::FriendRequests,
-                    count,
-                });
-            }
-            watches::WatchKind::DmLog { peer_key } => {
-                debug!(peer = %peer_key, "DM log changed");
-                let count = self.state.write().unread.increment_dm(&peer_key);
-                self.process_event(SubscriptionEvent::ChannelMessage(
-                    events::ChannelMessageEvent::DirectMessageReceived {
-                        peer_key: peer_key.clone(),
-                        timestamp: rekindle_utils::timestamp_ms(),
-                        sender_name: None, // enriched from friend list
-                        // Still unenriched. Filling this means reading
-                        // the channel record and decrypting, which is
-                        // what the manager's `mek_cache` was for — it
-                        // was removed with the MEK-vault watch that was
-                        // its only reader, and this path will need it
-                        // back when the enrichment is implemented.
-                        body: None,
-                        // A watch fired; nothing was decrypted, so
-                        // there is no failure to report and nothing for
-                        // automod to have matched.
-                        decryption_failed: false,
-                        automod_blurred: false,
-                        // The DM log is per-peer, so the peer key is
-                        // the conversation.
-                        conversation_id: peer_key.clone(),
-                        server_message_id: None,
-                        reply_to_id: None,
-                    },
-                ));
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::Dm { peer_key },
-                    count,
-                });
-            }
-            watches::WatchKind::GovernanceRecord { community } => {
-                // A governance subkey changing means the member holding
-                // that slot wrote entries. Which entries, and what they
-                // mean, is only knowable after a re-merge — the subkey
-                // index says who wrote, never what.
-                //
-                // This used to map subkey 0/1/3/4/7 onto
-                // `MetadataChanged` / `ChannelsChanged` / `RolesChanged`
-                // / `BansChanged` / `InvitesChanged`, reading the v1.0
-                // manifest's section layout into what are now member
-                // slots. Members 0, 1, 3, 4 and 7 produced five
-                // confidently wrong events; everyone else produced none.
-                for subkey in &changed_subkeys {
-                    self.process_event(SubscriptionEvent::Governance(
-                        events::GovernanceEvent::GovernanceSubkeyUpdated {
-                            community: community.clone(),
-                            subkey_index: *subkey,
-                            lamport_ts: 0,
-                        },
-                    ));
-                }
-            }
-            watches::WatchKind::ChannelRecord {
-                community,
-                channel_id,
-                segment_index,
-            } => {
-                // PATH 3 fired: someone wrote a message to this
-                // channel's segment record. The changed subkey is the
-                // author's slot within the segment; the ciphertext is
-                // in the record, not in this notification, so the
-                // reader fetches and decrypts.
-                let count = self
-                    .state
-                    .write()
-                    .unread
-                    .increment_channel(&community, &channel_id);
-                for subkey in &changed_subkeys {
-                    self.process_event(SubscriptionEvent::ChannelMessage(
-                        events::ChannelMessageEvent::New {
-                            community: community.clone(),
-                            channel: channel_id.clone(),
-                            message_id: String::new(), // resolved by the reader
-                            // The global slot, not a pseudonym. A
-                            // segment record has 255 writers, so the
-                            // subkey names a slot; mapping that to its
-                            // holder needs the presence roster, which
-                            // lives a layer up. The reader resolves it
-                            // when it fetches the message.
-                            sender_pseudonym: format!(
-                                "slot:{}",
-                                segment_index * SLOTS_PER_SEGMENT + subkey
-                            ),
-                            sequence: 0,
-                            timestamp: rekindle_utils::timestamp_ms(),
-                            body: None,
-                            reply_to_sequence: None,
-                        },
-                    ));
-                }
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::Channel {
-                        community,
-                        channel: channel_id,
-                    },
-                    count,
-                });
-            }
-        }
+        self.process_event(SubscriptionEvent::Network(
+            events::NetworkEvent::ValueChanged {
+                record_key: record_key.into(),
+                changed_subkeys,
+            },
+        ));
     }
 }

@@ -1,0 +1,436 @@
+//! The intent gate (plan U1.3, ADR 0019; `realignment/r9-intents.md`
+//! §7.6): holds every action that is not Routine until a commit carrying
+//! the proof its class demands.
+//!
+//! - [`IntentGate::begin`] runs a Routine action at once and holds any
+//!   other, answering with the [`IntentReview`] every frontend renders.
+//! - [`IntentGate::commit`] re-derives the review from facts computed
+//!   again at commit time. If the class rose or a fact changed, it answers
+//!   with a fresh review under a new id and runs nothing ("ask them more
+//!   questions … before returning", GOV.UK); otherwise it checks the proof
+//!   and hands back the action exactly as reviewed, once.
+//! - [`IntentGate::commit_and_run`] runs a committed action once: a
+//!   repeated commit of the same id (a double click) gets the first run's
+//!   result (plan U1.9).
+//! - A wrong passphrase counts against the owner's identity in the shared
+//!   [`AttemptLimiter`]; a locked identity's commit is refused before the
+//!   passphrase is checked.
+//! - A held action belongs to the owner that began it (the host's
+//!   connection and identity), expires after [`INTENT_TTL_MS`], and at
+//!   most [`MAX_PENDING_PER_OWNER`] are held per owner. Lock, logout and
+//!   identity switch [`IntentGate::clear`] the owner's.
+//! - The backend may [`IntentGate::hold`] an action it began (a friend's
+//!   session-reset request, plan E2.1): always held, never run at once,
+//!   for [`BACKEND_HOLD_TTL_MS`], with the action Cancel sends instead.
+
+use std::collections::HashMap;
+use std::future::Future;
+use std::hash::Hash;
+use std::sync::Arc;
+use std::time::Duration;
+
+use rekindle_types::intent::{
+    acknowledgement, effective_class, Escalation, Fact, IntentClass, IntentId, IntentKind,
+    IntentProof, IntentReview, Notifies, ProofRequired, Reversibility, Subject,
+};
+
+use rekindle_utils::RandomSource;
+
+use crate::attempts::AttemptLimiter;
+use crate::cache::IdempotencyCache;
+
+/// How long a held action waits for its commit.
+pub const INTENT_TTL_MS: u64 = 5 * 60 * 1000;
+/// Held actions per owner.
+pub const MAX_PENDING_PER_OWNER: usize = 16;
+/// How long an action the backend holds waits (plan E2.1): a request that
+/// arrived while the user was away must still be there when they return.
+/// On expiry it is dropped and nothing is sent (an automatic answer would
+/// tell the requester the client was online and unattended).
+pub const BACKEND_HOLD_TTL_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// What the backend knows about a selected action when it is selected,
+/// and again at commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selection {
+    pub kind: IntentKind,
+    pub subject: Subject,
+    pub facts: Vec<Fact>,
+    pub escalations: Vec<Escalation>,
+    pub reversibility: Reversibility,
+    pub notifies: Notifies,
+}
+
+/// The answer to a selection.
+#[derive(Debug)]
+pub enum Gate<A> {
+    /// Routine (or self-proving): run it now.
+    Run(A),
+    /// Held: render this review.
+    Review(IntentReview),
+}
+
+/// The answer to a commit that ran or was sent back for review.
+#[derive(Debug, Clone)]
+pub enum Committed<R> {
+    /// The action ran; this is its result (the same for a repeated commit).
+    Ran(R),
+    /// The facts changed: render this review; nothing ran.
+    Review(IntentReview),
+}
+
+/// Why a commit or selection was refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GateError {
+    #[error("no held action with this id (expired, cancelled, already run or not ours)")]
+    UnknownIntent,
+    #[error("the proof does not match what the review asked for")]
+    WrongProof,
+    #[error("too many wrong passphrases; try again in {retry_after_ms} ms")]
+    Locked { retry_after_ms: u64 },
+    #[error("too many actions are waiting for review; finish or cancel one")]
+    TooManyPending,
+}
+
+/// Who holds an action: the gate binds it to its owner (connection and
+/// identity) and counts wrong passphrases per identity.
+pub trait GateOwner: Clone + PartialEq + Send + Sync + 'static {
+    type Identity: Clone + Eq + Hash + Send + Sync + 'static;
+    fn identity(&self) -> &Self::Identity;
+
+    /// Whether this caller may commit, cancel or read an action `held` by
+    /// that owner (plan D3.3: the same connection and identity, or any
+    /// connection of the identity for an action the backend began).
+    fn may_act_for(&self, held: &Self) -> bool;
+}
+
+/// Why a commit did not run, inside the shared run of `commit_and_run`.
+enum NotRun {
+    Review(IntentReview),
+    Refused(GateError),
+}
+
+struct Pending<A, O> {
+    owner: O,
+    selection: Selection,
+    review: IntentReview,
+    action: A,
+    /// What Cancel runs instead (a backend hold's answer).
+    on_cancel: Option<A>,
+    /// How long it is held from each review.
+    ttl_ms: u64,
+}
+
+/// Held actions of type `A`, owned by `O`, whose runs answer `R`.
+pub struct IntentGate<A, O: GateOwner, R: Clone + Send + Sync + 'static> {
+    pending: parking_lot::Mutex<HashMap<IntentId, Pending<A, O>>>,
+    limiter: Arc<AttemptLimiter<O::Identity>>,
+    /// Each run's owner and result, for a repeated commit of its id.
+    results: IdempotencyCache<(O, R)>,
+    /// The host's RNG port, for the ids it mints (plan C9.2).
+    rng: Arc<dyn RandomSource>,
+}
+
+/// A fresh time-ordered intent id for `now_ms`, from `rng` (plan C9.2:
+/// the host's clock and RNG ports, so a seed fixes it).
+#[must_use]
+pub fn mint_intent_id(now_ms: u64, rng: &dyn RandomSource) -> IntentId {
+    let mut random = [0u8; 10];
+    rng.fill(&mut random);
+    IntentId::v7(now_ms, random)
+}
+
+/// The review of `selection`, held `ttl_ms` from `now_ms`; `cancel_sends`
+/// when its Cancel runs an action of its own.
+fn review_of(
+    intent_id: IntentId,
+    selection: &Selection,
+    now_ms: u64,
+    ttl_ms: u64,
+    cancel_sends: bool,
+) -> IntentReview {
+    let class = effective_class(selection.kind, &selection.escalations);
+    IntentReview {
+        intent_id,
+        kind: selection.kind,
+        class,
+        subject: selection.subject.clone(),
+        facts: selection.facts.clone(),
+        escalations: selection.escalations.clone(),
+        reversibility: selection.reversibility,
+        notifies: selection.notifies,
+        proof: class.proof(),
+        expires_at_ms: now_ms + ttl_ms,
+        acknowledgement: (class.proof() == ProofRequired::Acknowledge)
+            .then(|| acknowledgement(&selection.facts, &selection.escalations).to_owned()),
+        cancel_sends,
+    }
+}
+
+impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
+    /// A gate whose passphrase failures count in `limiter` (shared with
+    /// the host's unlock) and whose ids come from `rng`.
+    #[must_use]
+    pub fn new(limiter: Arc<AttemptLimiter<O::Identity>>, rng: Arc<dyn RandomSource>) -> Self {
+        Self {
+            pending: parking_lot::Mutex::new(HashMap::new()),
+            limiter,
+            results: IdempotencyCache::new(4096, Duration::from_millis(INTENT_TTL_MS)),
+            rng,
+        }
+    }
+
+    /// Step 1, Select: run `action` now if it is Routine after escalations
+    /// (or proves itself), else hold it for `owner` and return its review.
+    ///
+    /// # Errors
+    /// `owner` already holds [`MAX_PENDING_PER_OWNER`] unexpired actions.
+    pub fn begin(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        now_ms: u64,
+    ) -> Result<Gate<A>, GateError> {
+        let class = effective_class(selection.kind, &selection.escalations);
+        if class == IntentClass::Routine || selection.kind.proves_itself() {
+            return Ok(Gate::Run(action));
+        }
+        self.insert(owner, selection, action, None, INTENT_TTL_MS, now_ms)
+            .map(Gate::Review)
+    }
+
+    /// Hold an action the backend began for `owner`'s review, never run at
+    /// once whatever its class: committed it runs `action`, cancelled it
+    /// runs `on_cancel`. Held for `ttl_ms` ([`BACKEND_HOLD_TTL_MS`]).
+    ///
+    /// # Errors
+    /// `owner` already holds [`MAX_PENDING_PER_OWNER`] unexpired actions.
+    pub fn hold(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        on_cancel: Option<A>,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<IntentReview, GateError> {
+        self.insert(owner, selection, action, on_cancel, ttl_ms, now_ms)
+    }
+
+    fn insert(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        on_cancel: Option<A>,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<IntentReview, GateError> {
+        let mut pending = self.pending.lock();
+        pending.retain(|_, p| p.review.expires_at_ms > now_ms);
+        if pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER {
+            return Err(GateError::TooManyPending);
+        }
+        let id = mint_intent_id(now_ms, self.rng.as_ref());
+        let review = review_of(id, &selection, now_ms, ttl_ms, on_cancel.is_some());
+        pending.insert(
+            review.intent_id,
+            Pending {
+                owner,
+                selection,
+                review: review.clone(),
+                action,
+                on_cancel,
+                ttl_ms,
+            },
+        );
+        Ok(review)
+    }
+
+    /// Step 3, Commit: with `fresh` = the selection recomputed now, either
+    /// a fresh review (the class rose or a fact changed; nothing runs) or
+    /// the held action, removed so it runs once. `passphrase_ok` verifies
+    /// a passphrase proof against the vault.
+    ///
+    /// # Errors
+    /// Unknown, expired or someone else's id; or a proof of the wrong
+    /// shape, a mistyped name or a wrong passphrase (the action stays held).
+    pub fn commit(
+        &self,
+        intent_id: IntentId,
+        owner: &O,
+        proof: &IntentProof,
+        fresh: Selection,
+        passphrase_ok: impl FnOnce(&str) -> bool,
+        now_ms: u64,
+    ) -> Result<Gate<A>, GateError> {
+        let mut pending = self.pending.lock();
+        let held = pending
+            .get(&intent_id)
+            .filter(|p| owner.may_act_for(&p.owner) && p.review.expires_at_ms > now_ms)
+            .ok_or(GateError::UnknownIntent)?;
+        if fresh != held.selection {
+            let Some(mut held) = pending.remove(&intent_id) else {
+                return Err(GateError::UnknownIntent);
+            };
+            let id = mint_intent_id(now_ms, self.rng.as_ref());
+            held.review = review_of(id, &fresh, now_ms, held.ttl_ms, held.on_cancel.is_some());
+            held.selection = fresh;
+            let review = held.review.clone();
+            pending.insert(review.intent_id, held);
+            return Ok(Gate::Review(review));
+        }
+        if !proof.satisfies(held.review.proof, &held.review.subject) {
+            return Err(GateError::WrongProof);
+        }
+        if let (ProofRequired::Passphrase, IntentProof::Passphrase(passphrase)) =
+            (held.review.proof, proof)
+        {
+            let identity = owner.identity();
+            if let Err(retry_after_ms) = self.limiter.check(identity, now_ms) {
+                return Err(GateError::Locked { retry_after_ms });
+            }
+            if !passphrase_ok(passphrase) {
+                self.limiter.fail(identity, now_ms);
+                return Err(GateError::WrongProof);
+            }
+            self.limiter.succeed(identity);
+        }
+        pending
+            .remove(&intent_id)
+            .map(|p| Gate::Run(p.action))
+            .ok_or(GateError::UnknownIntent)
+    }
+
+    /// Step 3 for hosts that answer with the run's result: commit, then
+    /// run the action once through `run`. Concurrent commits of one id
+    /// share that run, and a commit repeated within [`INTENT_TTL_MS`] gets
+    /// its result without running again. A refusal or a fresh review is
+    /// not remembered, so the user can correct the proof and commit again.
+    ///
+    /// # Errors
+    /// As [`Self::commit`]; a repeated commit by another owner is
+    /// [`GateError::UnknownIntent`].
+    pub async fn commit_and_run<F, Fut>(
+        &self,
+        intent_id: IntentId,
+        owner: &O,
+        proof: &IntentProof,
+        fresh: Selection,
+        passphrase_ok: impl FnOnce(&str) -> bool + Send,
+        now_ms: u64,
+        run: F,
+    ) -> Result<Committed<R>, GateError>
+    where
+        F: FnOnce(A) -> Fut + Send,
+        Fut: Future<Output = R> + Send,
+        A: Send,
+    {
+        let outcome = self
+            .results
+            .try_wrap(intent_id.0, || async {
+                match self.commit(intent_id, owner, proof, fresh, passphrase_ok, now_ms) {
+                    Ok(Gate::Run(action)) => Ok((owner.clone(), run(action).await)),
+                    Ok(Gate::Review(review)) => Err(NotRun::Review(review)),
+                    Err(e) => Err(NotRun::Refused(e)),
+                }
+            })
+            .await;
+        match outcome {
+            Ok((ran_for, result)) if owner.may_act_for(&ran_for) => Ok(Committed::Ran(result)),
+            Ok(_) => Err(GateError::UnknownIntent),
+            Err(not_run) => match &*not_run {
+                NotRun::Review(review) => Ok(Committed::Review(review.clone())),
+                NotRun::Refused(e) => Err(e.clone()),
+            },
+        }
+    }
+
+    /// The result of `intent_id`'s run, when it already ran for an owner
+    /// `owner` may act for: a repeated commit is answered from it (plan
+    /// U1.9) without the held action, which the run consumed.
+    pub async fn ran(&self, intent_id: IntentId, owner: &O) -> Option<R> {
+        self.results
+            .get(intent_id.0)
+            .await
+            .filter(|(ran_for, _)| owner.may_act_for(ran_for))
+            .map(|(_, result)| result)
+    }
+
+    /// The held action's selection, for recomputing its facts at commit.
+    pub fn selection(&self, intent_id: IntentId, owner: &O) -> Option<Selection> {
+        self.pending
+            .lock()
+            .get(&intent_id)
+            .filter(|p| owner.may_act_for(&p.owner))
+            .map(|p| p.selection.clone())
+    }
+
+    /// A copy of the held action, so the host recomputes its facts from the
+    /// request itself at commit (plan D3.3).
+    pub fn held_action(&self, intent_id: IntentId, owner: &O) -> Option<A>
+    where
+        A: Clone,
+    {
+        self.pending
+            .lock()
+            .get(&intent_id)
+            .filter(|p| owner.may_act_for(&p.owner))
+            .map(|p| p.action.clone())
+    }
+
+    /// Drop a held action; the action Cancel runs instead, if it has one
+    /// (the Cancel click is the user's act, so it is not reviewed again).
+    ///
+    /// # Errors
+    /// `UnknownIntent` when no held action has this id or `owner` cannot
+    /// act for it.
+    pub fn cancel(&self, intent_id: IntentId, owner: &O) -> Result<Option<A>, GateError> {
+        let mut pending = self.pending.lock();
+        if pending
+            .get(&intent_id)
+            .is_some_and(|p| owner.may_act_for(&p.owner))
+        {
+            if let Some(held) = pending.remove(&intent_id) {
+                return Ok(held.on_cancel);
+            }
+        }
+        Err(GateError::UnknownIntent)
+    }
+
+    /// Whether `owner` may hold one more action once the ones `replaced`
+    /// answers `true` for go: checked before a newer backend hold drops
+    /// the older one, so a full gate keeps the older (plan audit D-4).
+    pub fn has_room(&self, owner: &O, replaced: impl Fn(&A) -> bool, now_ms: u64) -> bool {
+        self.pending
+            .lock()
+            .values()
+            .filter(|p| {
+                p.owner == *owner && p.review.expires_at_ms > now_ms && !replaced(&p.action)
+            })
+            .count()
+            < MAX_PENDING_PER_OWNER
+    }
+
+    /// Keep only the held actions `keep` answers `true` for; the others go
+    /// without their Cancel action (a newer backend hold replaces an older
+    /// one of the same peer).
+    pub fn retain_held(&self, keep: impl Fn(&O, &A) -> bool) {
+        self.pending.lock().retain(|_, p| keep(&p.owner, &p.action));
+    }
+
+    /// Drop every action `owner` holds.
+    pub fn clear(&self, owner: &O) {
+        self.pending.lock().retain(|_, p| p.owner != *owner);
+    }
+
+    /// Drop every action whose owner `matches` (plan D3.3: lock, logout or
+    /// identity switch clears an identity's; a disconnect, a connection's).
+    pub fn clear_matching(&self, matches: impl Fn(&O) -> bool) {
+        self.pending.lock().retain(|_, p| !matches(&p.owner));
+    }
+}
+
+#[cfg(test)]
+mod tests;

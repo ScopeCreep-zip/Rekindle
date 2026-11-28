@@ -1,5 +1,10 @@
 # Veilid 0.5.4 → 0.5.7 gap audit
 
+> **Historical (2026-11-15).** This document describes the 0.5.3/0.5.4 → 0.5.7 upgrade. Rekindle now pins
+> veilid-core 0.5.8 plus two fixes from the fork (ADR 0017, rev `e1158844`); the 0.5.8 analysis is
+> `.claude/plans/standards-remediation/evidence/veilid-0.5.8/` (synthesis and slice reports 1–6) and plan step VU.
+> Line citations here are 0.5.7's.
+
 Triggered by the "Major upstream-project announcement (Veilid, …)"
 row in [`dependency-audit.md`](./dependency-audit.md): read the
 announcement, audit our use of the relevant feature, document it.

@@ -1,0 +1,157 @@
+//! The senders the Host installs per stream kind (plan E2.5): the outbox's
+//! attempt dispatches each row to its kind's sender. A kind with no sender
+//! installed is not attempted: its rows stay `queued` until one is.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use parking_lot::RwLock;
+use rekindle_outbox::{AttemptOutcome, OutboxRow, StreamKind};
+use rekindle_transport::operations::dm::outbox::Attempt;
+
+/// Sends one stream kind's rows (`dm::send`'s deliver, the friend
+/// handshake, the record pool's held write, …).
+#[async_trait]
+pub trait StreamSender: Send + Sync {
+    /// Send `row` once.
+    async fn send(&self, row: &OutboxRow) -> AttemptOutcome;
+
+    /// Send `rows`, the due rows of one stream in `stream_seq` order, once
+    /// each, stopping after the first that stays behind
+    /// (`rekindle_outbox::holds_back`): the outcomes of a prefix. A kind whose send can carry
+    /// several rows at once (the `dm` chain, plan E2.B F2) overrides it.
+    async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let mut outcomes = Vec::with_capacity(rows.len());
+        for row in rows {
+            let outcome = self.send(row).await;
+            let stop = rekindle_outbox::stops_stream(row, &outcome);
+            outcomes.push(outcome);
+            if stop {
+                break;
+            }
+        }
+        outcomes
+    }
+
+    /// Append `frames`, the entries an attempt handed off
+    /// ([`AttemptOutcome::Appending`]), to `stream`'s chain: the outcomes
+    /// of a prefix. Only a chain sender hands appends off.
+    async fn append(&self, stream: &str, frames: &[(Vec<u8>, i64)]) -> Vec<AttemptOutcome> {
+        frames
+            .iter()
+            .take(1)
+            .map(|_| AttemptOutcome::Wedged(format!("{stream} has no chain appender")))
+            .collect()
+    }
+
+    /// Run the call an attempt handed off ([`AttemptOutcome::Calling`]),
+    /// `frame` to `stream`'s peer: its outcome. Only a sender whose attempt
+    /// hands calls off (the `dm` stream's `StreamRecord`) is asked.
+    async fn call(&self, stream: &str, _frame: Vec<u8>) -> AttemptOutcome {
+        AttemptOutcome::Wedged(format!("{stream} has no call"))
+    }
+}
+
+/// The installed senders, by stream kind.
+#[derive(Default)]
+pub struct Senders {
+    by_kind: RwLock<HashMap<StreamKind, Arc<dyn StreamSender>>>,
+}
+
+impl Senders {
+    /// Install `sender` for `kind`, replacing any earlier one.
+    pub fn install(&self, kind: StreamKind, sender: Arc<dyn StreamSender>) {
+        self.by_kind.write().insert(kind, sender);
+    }
+
+    /// Remove `kind`'s sender (its owner stopped).
+    pub fn remove(&self, kind: StreamKind) {
+        self.by_kind.write().remove(&kind);
+    }
+
+    /// Send `rows` (one stream's, in `stream_seq` order) through their
+    /// kind's sender; each `Deferred` when none is installed.
+    pub(super) async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let sender = rows
+            .first()
+            .and_then(|row| self.by_kind.read().get(&row.kind).cloned());
+        if let Some(sender) = sender {
+            return sender.send_stream(rows).await;
+        }
+        let mut outcomes = Vec::with_capacity(rows.len());
+        for row in rows {
+            let outcome = self.send(row).await;
+            let stop = rekindle_outbox::stops_stream(row, &outcome);
+            outcomes.push(outcome);
+            if stop {
+                break;
+            }
+        }
+        outcomes
+    }
+
+    /// Append `frames` to `stream` through `kind`'s sender; the first
+    /// `Deferred` when none is installed (its owner stopped).
+    pub(super) async fn append(
+        &self,
+        kind: StreamKind,
+        stream: &str,
+        frames: &[(Vec<u8>, i64)],
+    ) -> Vec<AttemptOutcome> {
+        let sender = self.by_kind.read().get(&kind).cloned();
+        match sender {
+            Some(sender) => sender.append(stream, frames).await,
+            None => frames
+                .iter()
+                .take(1)
+                .map(|_| AttemptOutcome::Deferred)
+                .collect(),
+        }
+    }
+
+    /// Run `frame`'s call to `stream` through `kind`'s sender; `Deferred`
+    /// when none is installed (its owner stopped).
+    pub(super) async fn call(
+        &self,
+        kind: StreamKind,
+        stream: &str,
+        frame: Vec<u8>,
+    ) -> AttemptOutcome {
+        let sender = self.by_kind.read().get(&kind).cloned();
+        match sender {
+            Some(sender) => sender.call(stream, frame).await,
+            None => AttemptOutcome::Deferred,
+        }
+    }
+
+    /// Send `row` through its kind's sender; `Deferred` when none is
+    /// installed.
+    pub(super) async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
+        let sender = self.by_kind.read().get(&row.kind).cloned();
+        if let Some(sender) = sender {
+            return sender.send(row).await;
+        }
+        tracing::debug!(
+            kind = row.kind.as_str(),
+            stream_seq = row.stream_seq,
+            "no sender installed for the stream kind; the row stays queued"
+        );
+        AttemptOutcome::Deferred
+    }
+}
+
+/// A transport attempt's outcome as the engine takes it.
+pub(super) fn outcome(attempt: Attempt) -> AttemptOutcome {
+    match attempt {
+        Attempt::Sent => AttemptOutcome::Sent,
+        Attempt::Appending(frame) => AttemptOutcome::Appending(frame),
+        Attempt::Calling(frame) => AttemptOutcome::Calling(frame),
+        Attempt::Awaiting => AttemptOutcome::Awaiting,
+        Attempt::Receipted => AttemptOutcome::Receipted,
+        Attempt::Unanswered => AttemptOutcome::Unanswered,
+        Attempt::Deferred => AttemptOutcome::Deferred,
+        Attempt::Wedged(reason) => AttemptOutcome::Wedged(reason),
+        Attempt::Superseded(reason) => AttemptOutcome::Superseded(reason),
+    }
+}

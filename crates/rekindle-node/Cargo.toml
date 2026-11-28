@@ -1,9 +1,10 @@
 [package]
 name = "rekindle-node"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Rekindle daemon — IPC bus, state management, and Veilid bridge"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -12,14 +13,22 @@ workspace = true
 name = "rekindled"
 path = "src/bin/rekindled.rs"
 
+# The N = 40 netsim scenarios (plan E3.2 S7 Verify) run about 35 minutes,
+# so they build only with this feature, apart from `--test netsim`.
+[[test]]
+name = "netsim_scale"
+path = "tests/netsim_scale/main.rs"
+required-features = [ "netsim-scale" ]
+
 [dependencies]
-# Workspace crates — rekindle-transport is the SOLE Veilid boundary.
-# rekindle-node NEVER imports veilid-core directly.
+# Workspace crates. rekindle-node never imports veilid-core: it links Veilid
+# only through rekindle-transport (ADR 0014), which runs on the
+# Veilid-free ports of rekindle-records (plan C9.1).
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
 # The IPC bus (protocol, Noise, client/server, event router).
 rekindle-ipc = { path = "../rekindle-ipc" }
-rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub", "config" ] }
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub", "config", "paths" ] }
 # Tier-6 CRDT state type for the daemon's cached governance merge.
 rekindle-governance = { path = "../rekindle-governance" }
 # The v2.0 governance lifecycle (origin, bootstrap, join, segments,
@@ -28,11 +37,16 @@ rekindle-governance = { path = "../rekindle-governance" }
 rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # CommunityEnvelope only — the gossip payload type crossing the Deps
 # boundary. No veilid_core types are named from this crate.
-rekindle-db = { path = "../rekindle-db" }
-rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-audit = { path = "../rekindle-audit" }
+rekindle-channel = { path = "../rekindle-channel" }
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-db = { path = "../rekindle-db" }
+rekindle-events = { path = "../rekindle-events" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }
+# The new-route budget and death-rate rules the Host applies (plan RV1).
+rekindle-route = { path = "../rekindle-route" }
 # Tier 5. The shared gossip stack — Cap'n Proto `CommunityEnvelope`
 # over unframed `app_message`, the format the desktop already used.
 # Before this the daemon had its own postcard `GossipPayload` and the
@@ -43,12 +57,32 @@ rekindle-gossip = { path = "../rekindle-gossip" }
 # `CommunityPresenceDeps`, which is why the daemon had no roster and
 # read the v1.0 member index instead.
 rekindle-presence = { path = "../rekindle-presence" }
+# The pending-message retry's budget and loop (plan E2.1, until E2.5).
+rekindle-sync = { path = "../rekindle-sync" }
 # Deterministic-rotator MEK rotation (communities-channels.md). The
 # daemon implements its `MekDistributeDeps` so a departure rotates the
 # key on this track too; before this it only logged the intent.
 rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
+rekindle-outbox = { path = "../rekindle-outbox" }
 # MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-dm = { path = "../rekindle-dm" }
+# Local wall-clock time for the Host's words ("You're timed out until
+# 14:05."): the reason a disabled community control shows (plan E3.2 S9).
+chrono = { version = "0.4", features = [ "clock" ], default-features = false }
+rekindle-idempotency = { path = "../rekindle-idempotency" }
+rekindle-vault = { path = "../rekindle-vault" }
+# Our own presence's stages (plan E1.1): OS idle time for auto-away, the
+# game detector, and the https check `LinkOpen` validates with.
+rekindle-game-detect = { path = "../rekindle-game-detect" }
+rekindle-idle = { path = "../rekindle-idle" }
+rekindle-link-preview = { path = "../rekindle-link-preview" }
+# Avatars: decoded as their declared kind under limits, made a 128 px
+# WebP (plans E1.1, E7.11).
+rekindle-image = { path = "../rekindle-image" }
+# The skin library and login skin (plan E7.7.2): the helper, the built-ins.
+rekindle-files = { path = "../rekindle-files" }
+rekindle-skin = { path = "../rekindle-skin" }
 
 # Async runtime
 futures = { workspace = true }
@@ -90,14 +124,48 @@ parking_lot = { workspace = true }
 clap = { version = "4", features = [ "derive", "std", "help", "usage", "error-context" ] }
 tracing-appender = "0.2"
 
-# systemd integration (sd_notify READY=1, watchdog keepalive)
+base64 = "0.22"
+hex = "0.4"
+
+
+# `forked_random::ForkedRandom`: each 1:1 step's generator (audit C-1); netsim
+# scenarios' outsiders also sign and wrap with it as a peer would.
+rekindle-secrets = { path = "../rekindle-secrets" }
+# The temp root of the public Host test fixture (`test-fixtures` only).
+tempfile = { version = "3", optional = true }
+# The canonical test values `host::test_fixtures` creates its identities with.
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures", optional = true }
+
+# systemd integration (sd_notify READY=1, watchdog keepalive). systemd runs
+# only on Linux, and the crate builds only on unix (`std::os::unix`).
+[target.'cfg(target_os = "linux")'.dependencies]
 sd-notify = "0.4"
 
-# OS keyring for signing key storage
-hex = "0.4"
-keyring = { version = "3", default-features = false, features = [ "apple-native", "windows-native", "linux-native" ] }
-
+[features]
+# The public Host test fixture (`host::test_fixtures`, plan GI3) the
+# desktop's relay tests start a real Host with; only the desktop's
+# `[dev-dependencies]` turn it on, so no production build has it.
+test-fixtures = [ "dep:tempfile", "dep:rekindle-test-fixtures" ]
+# Builds the `netsim_scale` test target (see its `[[test]]`).
+netsim-scale = [  ]
+# The netsim's entry to one Host call to a member (plan E3.4 S4 netsim B,
+# `HostGovernance::netsim_call_member`); only this crate's own
+# dev-dependency below turns it on, so no production build has it.
+netsim-entry = [  ]
+# The real-app suite's damaged-post switch (plan E7.14,
+# `host::webdriver`): only `rekindle-desktop`'s own `webdriver-test`
+# feature turns it on, in a debug build (`lib.rs` compile_error!), never a
+# release one (`cargo xtask check-webdriver-release`).
+webdriver-test = [  ]
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
+# Itself, for the `netsim-entry` feature the netsim scenarios call.
+rekindle-node = { path = ".", features = [ "netsim-entry" ] }
+# The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).
+rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
+rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
+# The network simulator the netsim scenarios run real Hosts on (plan C9.3).
+rekindle-netsim = { path = "../rekindle-netsim" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

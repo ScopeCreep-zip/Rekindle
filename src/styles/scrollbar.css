@@ -1,21 +1,27 @@
-/* Custom dark scrollbar matching Xfire */
-::-webkit-scrollbar {
-  width: 8px;
-}
+/* Custom dark scrollbar matching Xfire. In `@layer components` like every
+ * other app rule: unlayered, it beat every layer, `a11y` included. */
+@layer components {
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
 
-::-webkit-scrollbar-track {
-  background: var(--color-xfire-bg-dark);
-}
+  /* The theme's scrollbar roles (plan ST1): Xfire's ScrollbarBGCG track
+   * and a thumb derived from it at 3:1; hover and press move the thumb
+   * toward the menu text. */
+  ::-webkit-scrollbar-track {
+    background: var(--color-xfire-scrollbar-track);
+  }
 
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
-  border-radius: 4px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-xfire-scrollbar-thumb);
+    border-radius: 4px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-xfire-scrollbar-thumb) 75%, var(--color-xfire-menubar-text));
+  }
 
-::-webkit-scrollbar-thumb:active {
-  background: color-mix(in srgb, var(--color-xfire-offline) 80%, transparent);
+  ::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--color-xfire-scrollbar-thumb) 55%, var(--color-xfire-menubar-text));
+  }
 }

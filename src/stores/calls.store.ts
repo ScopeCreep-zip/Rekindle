@@ -32,7 +32,7 @@ export interface CallEntry {
   };
 }
 
-export interface CallReactionFloat {
+interface CallReactionFloat {
   /** Unique key so the floater renders distinct nodes per reaction. */
   id: string;
   emoji: string;
@@ -42,7 +42,7 @@ export interface CallReactionFloat {
 }
 
 /// Wave 12 W12.9 — frontend mirror of GroupCallState.
-export interface GroupCallEntry {
+interface GroupCallEntry {
   callId: string;
   /** Pubkey of whoever started the call. Equal to local pubkey when
    *  we're the initiator. */
@@ -52,13 +52,15 @@ export interface GroupCallEntry {
   kind: "audio" | "video";
   /** All invited participants (hex Ed25519). Includes the initiator. */
   participants: string[];
+  /** The group the call is for (GV2), as the Host says; null outside one. */
+  groupId: string | null;
   /** Subset that have accepted so far. */
   accepted: string[];
   startedAtMs: number;
   expiresAtMs: number;
 }
 
-export interface CallsState {
+interface CallsState {
   /** Calls awaiting the local user's accept/decline decision. The
    *  IncomingCallModal reads `incomingCalls[0]` so multiple
    *  simultaneous offers are queued in arrival order. */
@@ -80,6 +82,9 @@ export interface CallsState {
   /** Wave 12 W12.9 — currently-active group call (we accepted or
    *  initiated and at least one peer accepted). */
   activeGroupCall: GroupCallEntry | null;
+  /** Our own group call still ringing its invitees (the Host's
+   *  `groupStarted`, GV3): its group's window offers Cancel. */
+  outgoingGroupCall: GroupCallEntry | null;
 }
 
 const [callsState, setCallsState] = createStore<CallsState>({
@@ -90,6 +95,7 @@ const [callsState, setCallsState] = createStore<CallsState>({
   recentReactions: [],
   incomingGroupCalls: [],
   activeGroupCall: null,
+  outgoingGroupCall: null,
 });
 
 export { callsState, setCallsState };

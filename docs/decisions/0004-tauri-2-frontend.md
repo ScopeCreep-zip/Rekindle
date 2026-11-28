@@ -69,6 +69,15 @@ Rust core. The WebView frontend gives us standard web tooling
 distribution sizes are dramatically smaller than Electron (typical
 Tauri app: ~10–20 MB vs Electron's ~80–150 MB).
 
+> **Amended 2026-11-19 (plan E7.14 S8):** the "Playwright E2E" above is
+> history. Playwright reaches a webview only over CDP, which WebView2
+> alone exposes; it cannot drive WKWebView or WebKitGTK
+> (<https://playwright.dev/docs/webview2>). The UI is now tested in the
+> real app with WebdriverIO through the app's embedded, token-guarded
+> WebDriver server (`pnpm test:app`, `e2e/app/`); the Playwright suites,
+> the mocked IPC and the `rekindle-e2e-server` bridge were removed. See
+> [`../contributor/testing.md`](../contributor/testing.md).
+
 SolidJS over React: SolidJS's fine-grained reactivity matches the
 shape of our state — many small reactive stores, frequent updates,
 no need for a virtual DOM diff. The component model is React-like
@@ -84,7 +93,8 @@ with `rekindle-vault` (SQLCipher-backed; see
 and `sql` with direct `rusqlite` to keep control of the dependency graph.
 
 Frameless transparent windows fall out of `decorations: false`
-+ `transparent: true` in `tauri.conf.json` and the
+
+- `transparent: true` in `tauri.conf.json` and the
 `WebviewWindowBuilder`. The custom titlebar is a SolidJS component
 with `data-tauri-drag-region`.
 

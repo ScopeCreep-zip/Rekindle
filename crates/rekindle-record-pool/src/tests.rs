@@ -1,0 +1,316 @@
+//! The pool on a small in-memory backend, on tokio's paused clock: the watch
+//! re-arm's backoff and forgiveness run on `tokio::time`, so a test (and the
+//! netsim) drives them without waiting.
+
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use rekindle_lifecycle::SessionScope;
+use rekindle_records::port::{
+    DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordReport,
+    RecordSchema, RecordValue, ReportScope, ValueChange, WriterKey,
+};
+
+use crate::{RecordCloser, RecordPool};
+
+const LEASED_RECORD: &str = "record-a";
+
+/// Opens every key with four subkeys, stores nothing, counts watch calls,
+/// and refuses the first `open_failures` opens with `TryAgain`.
+#[derive(Default)]
+struct TestDht {
+    watches: AtomicU32,
+    opens: AtomicU32,
+    open_failures: u32,
+    /// Refuse the first this many watch requests.
+    watch_failures: u32,
+}
+
+#[async_trait::async_trait]
+impl DhtBackend for TestDht {
+    fn parse_writer(&self, text: &str) -> Result<WriterKey, DhtCallError> {
+        Ok(WriterKey::new(
+            text.to_owned(),
+            rekindle_secrets::record_writer::RecordWriterSecret::from_text(text),
+        ))
+    }
+
+    fn check_key(&self, key: &str) -> Result<String, DhtCallError> {
+        Ok(key.to_string())
+    }
+
+    async fn create(
+        &self,
+        _schema: &RecordSchema,
+        _owner: Option<&WriterKey>,
+    ) -> Result<RecordDescriptor, DhtCallError> {
+        Err(DhtCallError {
+            kind: DhtErrorKind::Unimplemented,
+            message: "the test backend creates nothing".into(),
+        })
+    }
+
+    async fn open(
+        &self,
+        key: &str,
+        _writer: Option<&WriterKey>,
+        _intent: OpenIntent,
+    ) -> Result<RecordDescriptor, DhtCallError> {
+        if self.opens.fetch_add(1, Ordering::SeqCst) < self.open_failures {
+            return Err(DhtCallError {
+                kind: DhtErrorKind::TryAgain,
+                message: "offline".into(),
+            });
+        }
+        Ok(RecordDescriptor {
+            key: key.to_string(),
+            owner: None,
+            owner_public: "VLD0:test-owner".into(),
+            subkey_count: 4,
+        })
+    }
+
+    async fn close(&self, _key: &str) -> Result<(), DhtCallError> {
+        Ok(())
+    }
+
+    async fn get(
+        &self,
+        _key: &str,
+        _subkey: u32,
+        _force_refresh: bool,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(None)
+    }
+
+    async fn get_newest(
+        &self,
+        _key: &str,
+        _subkey: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(None)
+    }
+
+    async fn set(
+        &self,
+        _key: &str,
+        _subkey: u32,
+        _data: Vec<u8>,
+        _writer: Option<&WriterKey>,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(None)
+    }
+
+    async fn set_above(
+        &self,
+        _key: &str,
+        _subkey: u32,
+        _data: Vec<u8>,
+        _writer: Option<&WriterKey>,
+        _min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(None)
+    }
+
+    async fn inspect(
+        &self,
+        _key: &str,
+        _subkeys: Option<&[u32]>,
+        _scope: ReportScope,
+    ) -> Result<RecordReport, DhtCallError> {
+        Ok(RecordReport {
+            subkeys: Vec::new(),
+            local_seqs: Vec::new(),
+            network_seqs: Vec::new(),
+            offline_subkeys: Vec::new(),
+        })
+    }
+
+    async fn watch(
+        &self,
+        _key: &str,
+        _subkeys: Option<&[u32]>,
+        _expiration_us: Option<u64>,
+        _count: Option<u32>,
+    ) -> Result<bool, DhtCallError> {
+        if self.watches.fetch_add(1, Ordering::SeqCst) < self.watch_failures {
+            return Err(DhtCallError {
+                kind: DhtErrorKind::TryAgain,
+                message: "no node accepted the watch".into(),
+            });
+        }
+        Ok(true)
+    }
+
+    async fn cancel_watch(
+        &self,
+        _key: &str,
+        _subkeys: Option<&[u32]>,
+    ) -> Result<bool, DhtCallError> {
+        Ok(false)
+    }
+}
+
+fn pool_on(backend: Arc<TestDht>) -> Arc<RecordPool> {
+    let (_ready_tx, ready) = tokio::sync::watch::channel(true);
+    RecordPool::new(
+        backend,
+        SessionScope::new("pool test", Arc::new(|_| {})),
+        ready,
+        RecordCloser::new(),
+        Arc::new(|_| {}),
+    )
+}
+
+fn death() -> ValueChange {
+    ValueChange {
+        key: LEASED_RECORD.to_string(),
+        subkeys: Vec::new(),
+        count: 0,
+        value: None,
+    }
+}
+
+/// Lets the paused clock run `d` forward with every ready task run first.
+async fn pass(d: Duration) {
+    tokio::time::sleep(d).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dead_watch_re_arms_with_backoff_and_is_forgiven_after_five_minutes() {
+    let backend = Arc::new(TestDht::default());
+    let pool = pool_on(Arc::clone(&backend));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open");
+    pool.watch_all(lease).await.expect("watch");
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
+
+    // First death: re-armed after 1 s, not before.
+    assert!(pool.on_value_change(&death()).watch_died);
+    pass(Duration::from_millis(990)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
+    pass(Duration::from_millis(20)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 2);
+
+    // Second death soon after: the delay doubles to 2 s.
+    pool.on_value_change(&death());
+    pass(Duration::from_millis(1990)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 2);
+    pass(Duration::from_millis(20)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 3);
+
+    // Up for longer than five minutes: forgiven, back to 1 s.
+    pass(Duration::from_secs(301)).await;
+    pool.on_value_change(&death());
+    pass(Duration::from_millis(1010)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_watch_released_during_its_backoff_is_not_re_armed() {
+    let backend = Arc::new(TestDht::default());
+    let pool = pool_on(Arc::clone(&backend));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open");
+    pool.watch_all(lease).await.expect("watch");
+    pool.on_value_change(&death());
+    pool.release(lease).await;
+    pass(Duration::from_secs(5)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
+}
+
+/// A logout drains the pool during a re-arm's backoff: the ending session
+/// re-arms nothing (live R1-2).
+#[tokio::test(start_paused = true)]
+async fn a_drain_during_the_backoff_cancels_the_re_arm() {
+    let backend = Arc::new(TestDht::default());
+    let pool = pool_on(Arc::clone(&backend));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open");
+    pool.watch_all(lease).await.expect("watch");
+    pool.on_value_change(&death());
+    pool.drain();
+    pool.admit_teardown();
+    pass(Duration::from_secs(5)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_open_retries_transient_errors_one_second_apart_within_the_budget() {
+    let backend = Arc::new(TestDht {
+        open_failures: 3,
+        ..TestDht::default()
+    });
+    let pool = pool_on(Arc::clone(&backend));
+    let started = tokio::time::Instant::now();
+    pool.acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open after retries");
+    assert_eq!(backend.opens.load(Ordering::SeqCst), 4);
+    assert_eq!(started.elapsed(), Duration::from_secs(3));
+
+    let failing = Arc::new(TestDht {
+        open_failures: u32::MAX,
+        ..TestDht::default()
+    });
+    let pool = pool_on(Arc::clone(&failing));
+    let err = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect_err("budget spent");
+    assert!(matches!(
+        err,
+        rekindle_records::port::PortError::Unreachable(_)
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn owner_of_names_the_opened_descriptor_s_owner_while_the_lease_is_held() {
+    let pool = pool_on(Arc::new(TestDht::default()));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .unwrap();
+    assert_eq!(pool.owner_of(lease).unwrap(), "VLD0:test-owner");
+    pool.release(lease).await;
+    assert!(matches!(
+        pool.owner_of(lease),
+        Err(rekindle_records::port::PortError::LeaseNotHeld(_))
+    ));
+}
+
+/// A watch Veilid refused was never set: the pool re-arms it with the
+/// dead-watch backoff (one second, then two), and a second `watch_all`
+/// applies it again rather than finding it unchanged.
+#[tokio::test(start_paused = true)]
+async fn a_refused_watch_is_not_recorded_as_set_and_the_pool_re_arms_it() {
+    let backend = Arc::new(TestDht {
+        watch_failures: 2,
+        ..TestDht::default()
+    });
+    let pool = pool_on(Arc::clone(&backend));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Check)
+        .await
+        .expect("open");
+    pool.watch_all(lease).await.expect_err("refused");
+    pool.watch_all(lease)
+        .await
+        .expect_err("refused again, not unchanged");
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 2);
+    pass(Duration::from_secs(5)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 3);
+    pass(Duration::from_secs(120)).await;
+    assert_eq!(
+        backend.watches.load(Ordering::SeqCst),
+        3,
+        "armed, so no more re-arms"
+    );
+}

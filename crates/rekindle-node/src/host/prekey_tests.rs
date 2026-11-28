@@ -1,0 +1,309 @@
+//! First contact through the Host (plan E2.4 Verify). A forged
+//! `PreKeyRejected` changes nothing (B6): Ann's first contact to Bob is a
+//! PreKeyInit nobody has answered, and only Bob's signed rejection naming
+//! its base key discards it. One sealed by another friend, even naming the
+//! right base key, and one from Bob naming a base key Ann never sent, both
+//! leave the pending init as it was. And a request is never sent before
+//! the profile it names is published.
+
+use rekindle_codec::capnp_codec::direct::{
+    DirectBody, FrameBody, FriendAccept, PreKeyInitBody, PreKeyRejected,
+};
+use rekindle_crypto::signal::prekey_record::{base_key_hash, mint_set};
+use rekindle_crypto::signal::PreKeyBundle;
+use rekindle_crypto::Identity;
+use rekindle_db::ratchet::{discard_pending_init, PeerAddress};
+use rekindle_transport::operations::direct::receive;
+use rekindle_transport::operations::dm::{frame, wire};
+use rekindle_transport::operations::friend::FriendHost;
+
+use super::adapters::friends::HostFriends;
+use super::direct_tests::{ann, befriend, history, text, unapplied};
+use super::Host;
+
+/// Bob's bundle from his record's head and first slot, as Ann's pick
+/// assembles it.
+pub(super) fn bundle_of(bob: &Identity) -> PreKeyBundle {
+    let now = rekindle_utils::timestamp_ms_i64();
+    let set = mint_set(bob, &rekindle_utils::OsRandom, now);
+    PreKeyBundle::from_record(
+        &bob.public_key_bytes(),
+        &set.head.record,
+        Some(&set.slots[0].record),
+        now,
+    )
+    .unwrap()
+}
+
+/// `from`'s sealed rejection of `init`, naming `hash` as its base key's,
+/// as the datagram that reaches Ann.
+pub(super) fn rejection(
+    from: &Identity,
+    ann: [u8; 32],
+    init: &PreKeyInitBody,
+    hash: [u8; 32],
+) -> Vec<u8> {
+    let body = DirectBody::PreKeyRejected(PreKeyRejected {
+        signed_prekey_id: init.signed_prekey_id,
+        one_time_prekey_id: init.one_time_prekey_id,
+        pq_prekey: init.pq_prekey,
+        base_key_hash: hash,
+    });
+    let mut nonce = [0u8; 16];
+    rekindle_utils::RandomSource::fill(&rekindle_utils::OsRandom, &mut nonce);
+    let sealed =
+        frame::seal_presession(from, &ann, &body, nonce, rekindle_utils::timestamp_ms()).unwrap();
+    wire(&sealed).unwrap()
+}
+
+/// Whether Ann's init to Bob is still unanswered: the discard B6 makes
+/// for a genuine rejection still finds it (and makes it).
+async fn discard(host: &Host, owner: [u8; 32], bob: [u8; 32], hash: [u8; 32]) -> bool {
+    let db = host.ctx.db.current().unwrap();
+    let now = rekindle_utils::timestamp_ms_i64();
+    discard_pending_init(&db, &owner, &PeerAddress::sole_device(bob), hash, now)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_forged_prekey_rejection_leaves_the_pending_init() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let (bob, mallory) = (Identity::generate(), Identity::generate());
+    befriend(&host, owner, bob.public_key_bytes()).await;
+    befriend(&host, owner, mallory.public_key_bytes()).await;
+
+    let bob_hex = hex::encode(bob.public_key_bytes());
+    let first_contact = || async {
+        let accept = DirectBody::FriendAccept(FriendAccept {
+            profile_dht_key: String::new(),
+            route_blob: Vec::new(),
+            mailbox_dht_key: String::new(),
+            friends_key: rekindle_codec::capnp_codec::direct::FriendsKey {
+                epoch: 1,
+                key: [7; 32],
+            },
+            chain_record_key: format!("VLD0:{}", "A".repeat(43)),
+        });
+        let sent = frame::initiate_frame(
+            &friends,
+            &bob_hex,
+            bundle_of(&bob),
+            &accept,
+            frame::Position::default(),
+        )
+        .await
+        .unwrap();
+        let FrameBody::PreKeyInit(init) = sent.body else {
+            panic!("a first contact is a PreKeyInit");
+        };
+        init
+    };
+
+    // Another friend's rejection naming the right base key, and Bob's
+    // naming one Ann never sent: the init is still pending after both.
+    let init = first_contact().await;
+    let hash = base_key_hash(&init.base_key);
+    receive(&friends, &rejection(&mallory, owner, &init, hash)).await;
+    receive(&friends, &rejection(&bob, owner, &init, [0x5A; 32])).await;
+    assert!(
+        discard(&host, owner, bob.public_key_bytes(), hash).await,
+        "the forged rejections left the init pending"
+    );
+
+    // Bob's genuine rejection of the next init does discard it, so the
+    // forgeries were refused for what they are.
+    let init = first_contact().await;
+    let hash = base_key_hash(&init.base_key);
+    receive(&friends, &rejection(&bob, owner, &init, hash)).await;
+    assert!(
+        !discard(&host, owner, bob.public_key_bytes(), hash).await,
+        "the genuine rejection discarded the pending init"
+    );
+}
+
+/// A friend request names our profile, whose device list leads to our
+/// prekey record: before the own-records stage has published it (here:
+/// never, on a host with no network), adding a friend waits for the stage
+/// (plan E2.5 FC2: no fixed deadline) and stores nothing meanwhile, rather
+/// than send a request the peer could never open a session from; a stage
+/// that ends without the records answers its failure and still stores
+/// nothing.
+#[tokio::test(start_paused = true)]
+async fn adding_a_friend_waits_for_our_published_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let bob = hex::encode(Identity::generate().public_key_bytes());
+    let code = rekindle_types::friend_code::FriendCode::parse(&format!(
+        "rekindle://add/{bob}/VLD0:{}/{}",
+        "a".repeat(43),
+        rekindle_secrets::friend_token::mint(&rekindle_utils::OsRandom)
+    ))
+    .unwrap();
+    let stored = || {
+        let o = hex::encode(owner);
+        let db = host.ctx.db.current().unwrap();
+        async move {
+            db.call(move |conn| rekindle_db::repo::friends::load_all(conn, &o))
+                .await
+                .unwrap()
+        }
+    };
+
+    let adding = tokio::spawn(async move {
+        rekindle_transport::operations::friend::add(&friends, &code, "hi").await
+    });
+    tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+    assert!(
+        !adding.is_finished(),
+        "the add answered before our records were held"
+    );
+    assert!(stored().await.is_empty(), "no friend stored while waiting");
+
+    host.ctx.friend_stores.own_records.send_replace(
+        rekindle_transport::operations::friend::OwnRecordsStage::Failed("no record pool".into()),
+    );
+    let added = adding.await.unwrap();
+    assert!(
+        matches!(
+            &added,
+            Err(rekindle_transport::operations::friend::FriendError::Failed(why))
+                if why.contains("no record pool")
+        ),
+        "{added:?}"
+    );
+    assert!(stored().await.is_empty(), "no friend stored");
+}
+
+/// Ann's prekeys, minted and stored as her own-records stage does (an
+/// offline host never runs it), as the bundle a peer's pick assembles.
+pub(super) async fn own_bundle(host: &Host, owner: [u8; 32]) -> PreKeyBundle {
+    let local = HostFriends::of(&host.ctx).local_party().unwrap();
+    let now = rekindle_utils::timestamp_ms_i64();
+    let set = mint_set(&local.identity, &rekindle_utils::OsRandom, now);
+    let (head, slot) = (set.head.record.clone(), set.slots[0].record.clone());
+    let db = host.ctx.db.current().unwrap();
+    rekindle_db::prekeys::store_set(&db, &owner, set)
+        .await
+        .unwrap();
+    PreKeyBundle::from_record(&owner, &head, Some(&slot), now).unwrap()
+}
+
+/// Ann's fresh and consumed one-time prekeys.
+async fn prekey_counts(host: &Host, owner: [u8; 32]) -> (u32, u32) {
+    let db = host.ctx.db.current().unwrap();
+    let row = rekindle_db::prekeys::status(&db, &owner, rekindle_utils::timestamp_ms_i64())
+        .await
+        .unwrap()
+        .unwrap();
+    (row.fresh_slots, row.consumed_slots)
+}
+
+/// Audit G1: a PreKeyInit from a stranger is refused by its own rule
+/// before any prekey is looked up, whatever allowed first payload it
+/// carries: no prekey is consumed, no session opened, nothing recorded,
+/// and their identity is not pinned.
+#[tokio::test]
+async fn a_strangers_prekey_init_consumes_nothing() {
+    let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host, owner) = ann(&dir).await;
+    let (stranger, mallory) = ann(&theirs).await;
+    let (friends, sender) = (HostFriends::of(&host.ctx), HostFriends::of(&stranger.ctx));
+    let bundle = own_bundle(&host, owner).await;
+    let before = prekey_counts(&host, owner).await;
+    assert!(before.0 > 0, "Ann has slots to consume");
+
+    let accept = DirectBody::FriendAccept(FriendAccept {
+        profile_dht_key: String::new(),
+        route_blob: Vec::new(),
+        mailbox_dht_key: String::new(),
+        friends_key: rekindle_codec::capnp_codec::direct::FriendsKey {
+            epoch: 1,
+            key: [7; 32],
+        },
+        chain_record_key: format!("VLD0:{}", "A".repeat(43)),
+    });
+    for first in [accept, text(9)] {
+        let sent = frame::initiate_frame(
+            &sender,
+            &hex::encode(owner),
+            bundle.clone(),
+            &first,
+            frame::Position::default(),
+        )
+        .await
+        .unwrap();
+        receive(&friends, &wire(&sent).unwrap()).await;
+    }
+
+    assert_eq!(prekey_counts(&host, owner).await, before);
+    assert_eq!(unapplied(&host, owner).await, 0);
+    assert_eq!(history(&host, owner, mallory).await, 0);
+    let pinned = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::signal_identities::get(conn, &owner, &mallory))
+        .await
+        .unwrap();
+    assert!(pinned.is_none(), "the stranger's identity is not pinned");
+
+    // The same init from a friend does open the session and consume the
+    // slot, so the stranger's was refused for who sent it.
+    befriend(&host, owner, mallory).await;
+    let sent = frame::initiate_frame(
+        &sender,
+        &hex::encode(owner),
+        bundle,
+        &text(10),
+        frame::Position::default(),
+    )
+    .await
+    .unwrap();
+    receive(&friends, &wire(&sent).unwrap()).await;
+    assert_ne!(prekey_counts(&host, owner).await, before);
+    assert_eq!(history(&host, owner, mallory).await, 1);
+}
+
+/// Plan E2.5: a stream entry that opens a session (the first message after
+/// a rotation, or any send with no session) carries its seq in the init's
+/// content, so the friend acknowledges that copy; with seq 0 it was never
+/// acknowledged and its row waited for a resend, holding its stream.
+#[tokio::test]
+async fn a_first_message_keeps_its_stream_seq() {
+    let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host, owner) = ann(&dir).await;
+    let (other, bob) = ann(&theirs).await;
+    let (friends, sender) = (HostFriends::of(&host.ctx), HostFriends::of(&other.ctx));
+    befriend(&host, owner, bob).await;
+    let bundle = own_bundle(&host, owner).await;
+    let first = text(11);
+    let id = rekindle_transport::operations::dm::ack::acknowledged_id(&first).unwrap();
+    let sent = frame::initiate_frame(
+        &sender,
+        &hex::encode(owner),
+        bundle,
+        &first,
+        frame::Position {
+            stream_seq: 4,
+            chain_seq: 0,
+        },
+    )
+    .await
+    .unwrap();
+    receive(&friends, &wire(&sent).unwrap()).await;
+    let (o, b) = (hex::encode(owner), hex::encode(bob));
+    let seq = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::messages::received_stream_seq(conn, &o, &b, &id))
+        .await
+        .unwrap();
+    assert_eq!(seq, Some(4));
+}

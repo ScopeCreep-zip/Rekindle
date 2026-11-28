@@ -5,17 +5,18 @@
 
 use std::sync::Arc;
 
+use rekindle_protocol::dht::pool::keepalive::WarmRecord;
+
 use super::dispatch::DaemonContext;
 
-/// Start the community's keepalive, once per community per unlock.
+/// Start the community's keepalive; the hand-over
+/// (`community_records_ready_impl`) calls it once per community per unlock.
 pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
-    if !ctx.community_runtime.start_keepalive_once(community_id) {
-        return;
-    }
     let Some(node) = ctx.transport.read().clone() else {
         return;
     };
-    let runtime = Arc::clone(&ctx.community_runtime);
+    let runtime = Arc::clone(&ctx.communities);
+    let rng = Arc::clone(&ctx.rng);
     let id = community_id.to_string();
     ctx.community_scope(community_id).spawn_with_token_or_drop(
         "community DHT keepalive",
@@ -24,16 +25,22 @@ pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
             rekindle_protocol::dht::pool::keepalive::run(
                 move || pool_node.records(),
                 move || {
-                    Some(
-                        runtime
-                            .held_leases(&id)
-                            .into_iter()
-                            .filter_map(|lease| {
-                                rekindle_transport::broadcast::dht_writes::key_of(&node, lease)
-                            })
-                            .collect(),
-                    )
+                    let mut keys: Vec<String> = runtime
+                        .held_leases(&id)
+                        .into_iter()
+                        .filter_map(|lease| {
+                            rekindle_transport::broadcast::dht_writes::key_of(&node, lease)
+                        })
+                        .collect();
+                    keys.extend(runtime.warm_member_records(&id));
+                    keys.sort_unstable();
+                    keys.dedup();
+                    let mut records: Vec<WarmRecord> =
+                        keys.into_iter().map(WarmRecord::mutable).collect();
+                    records.extend(runtime.warm_sealed_pages(&id));
+                    Some(records)
                 },
+                rng,
                 stop,
             )
             .await;

@@ -1,14 +1,16 @@
 import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
-import { setFriendsState, friendsState } from "../stores/friends.store";
+import { type FriendCodeView, isCancelled } from "../ipc/commands/dto";
 import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
-import { transformFriendMap } from "../utils/transformers";
+import { friendsState, setFriendsState } from "../stores/friends.store";
+import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
-import { withTimeout, DHT_WRITE_TIMEOUT_MS } from "../utils/request-timeout";
+import { foldFriendSnapshot } from "../utils/transformers";
 
+/** Open the chat with a friend; a refusal or failure says so in the Host's words, never silently. */
 export function handleDoubleClickFriend(publicKey: string): void {
-  commands.openChatWindow(publicKey);
+  commands.openChatWindow(publicKey).catch((e: unknown) => addToast(errorMessage(e), "error"));
 }
 
 export async function handleRemoveFriend(publicKey: string): Promise<void> {
@@ -21,27 +23,11 @@ export async function handleRemoveFriend(publicKey: string): Promise<void> {
   }
 }
 
-/// B6 — explicit Signal session reset for a friend. The user must
-/// confirm because resetting the session means: (1) the next encrypted
-/// send to this peer will fail with "no session" until both sides
-/// re-handshake, (2) old undecryptable messages stay undecryptable,
-/// (3) the new session may be MitM'd if the peer's safety number isn't
-/// verified out-of-band first. Returns null on success, or the error
-/// string for the caller's toast.
-export async function handleResetSignalSession(
-  publicKey: string,
-  displayName?: string,
-): Promise<string | null> {
-  const name = displayName ?? publicKey.slice(0, 12);
-  const confirmed = window.confirm(
-    `Reset secure session with ${name}?\n\n` +
-      `This will delete the current Signal session. Both of you will need ` +
-      `to re-handshake on the next message exchange. Old undecryptable ` +
-      `messages stay lost.\n\n` +
-      `Verify their safety number out-of-band before resuming sensitive ` +
-      `conversations after the new session is established.`,
-  );
-  if (!confirmed) return null;
+/// B6 — explicit Signal session reset for a friend. The Host's review
+/// (TrustChanging, plan E2.1) is the confirmation: it names whose session
+/// it is, and the friend compares safety numbers before accepting. Returns
+/// null on success, or the error string for the caller's toast.
+export async function handleResetSignalSession(publicKey: string): Promise<string | null> {
   try {
     await commands.resetSignalSession(publicKey);
     return null;
@@ -50,37 +36,60 @@ export async function handleResetSignalSession(
   }
 }
 
-export async function handleAddFriend(
-  publicKey: string,
-  message: string,
+/// Send a friend request to the identity a friend code names
+/// (`rekindle://add/...`, plan E2.5 D17).
+export async function handleAddFriendFromCode(
+  code: string,
+  message: string
 ): Promise<string | null> {
   try {
-    const displayName = publicKey.slice(0, 12) + "...";
-    // Architecture §32 a11y — a friend request writes to the peer's
-    // inbox DHT record, which blocks on Veilid bootstrap or NAT punch
-    // retries. Without a bound the button spins forever with nothing
-    // to tell the user; `RequestTimeoutError` reaches them through the
-    // same `errorMessage` path as any other failure.
-    await withTimeout(
-      commands.addFriend(publicKey, displayName, message),
-      DHT_WRITE_TIMEOUT_MS,
-      "Friend request",
-    );
+    // The Host names them from its own rows (audit U-7). Not time-bounded here: the Host's review may be on screen, and the
+    // Host bounds its own wait for our route (plan E2.1).
+    await commands.addFriendFromCode(code, message);
     return null;
   } catch (e) {
     return errorMessage(e);
   }
 }
 
+/// Our friend code and its QR, or the error to show in its place.
+export async function handleGetFriendCode(): Promise<FriendCodeView | string> {
+  try {
+    return await commands.getFriendCode();
+  } catch (e) {
+    return errorMessage(e);
+  }
+}
+
+/// Rotate our friend-request token through the Host's review
+/// (Consequential, plan E2.5 D17): codes already shared stop working and
+/// friends are untouched. Resolves with the new code, null when the user
+/// cancelled the review, or the error to show.
+export async function handleRotateFriendToken(): Promise<FriendCodeView | string | null> {
+  try {
+    return await commands.rotateFriendToken();
+  } catch (e) {
+    if (isCancelled(e)) return null;
+    return errorMessage(e);
+  }
+}
+
+/// B7 — retry the first contact whose secure session did not open. The
+/// Host re-sends it and publishes HandshakeRetrying, then HandshakeFailed
+/// again if it cannot; the row follows those events.
+export async function handleRetryHandshake(publicKey: string): Promise<void> {
+  try {
+    await commands.retryHandshake(publicKey);
+  } catch (e) {
+    console.error("Retry of the secure session failed:", errorMessage(e));
+  }
+}
+
 export async function handleAcceptRequest(publicKey: string): Promise<string | null> {
   try {
-    // Look up the display name from the pending request
-    const pending = friendsState.pendingRequests.find((r) => r.publicKey === publicKey);
-    const displayName = pending?.displayName ?? publicKey.slice(0, 12) + "...";
-    await commands.acceptRequest(publicKey, displayName);
-    setFriendsState("pendingRequests", (reqs) =>
-      reqs.filter((r) => r.publicKey !== publicKey),
-    );
+    // The Host names them from their request (audit U-7).
+    await commands.acceptRequest(publicKey);
+    setFriendsState("pendingRequests", (reqs) => reqs.filter((r) => r.publicKey !== publicKey));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -90,9 +99,7 @@ export async function handleAcceptRequest(publicKey: string): Promise<string | n
 export async function handleRejectRequest(publicKey: string): Promise<string | null> {
   try {
     await commands.rejectRequest(publicKey);
-    setFriendsState("pendingRequests", (reqs) =>
-      reqs.filter((r) => r.publicKey !== publicKey),
-    );
+    setFriendsState("pendingRequests", (reqs) => reqs.filter((r) => r.publicKey !== publicKey));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -108,7 +115,7 @@ export async function handleLoadPendingRequests(): Promise<void> {
         publicKey: r.publicKey,
         displayName: r.displayName,
         message: r.message,
-      })),
+      }))
     );
   } catch (e) {
     console.error("Failed to load pending requests:", e);
@@ -125,7 +132,7 @@ export function handleToggleAddFriend(): void {
 
 export async function handleCreateFriendGroup(name: string): Promise<number> {
   try {
-    const groupId = await commands.createFriendGroup(name);
+    const { groupId } = await commands.createFriendGroup(name);
     return groupId;
   } catch (e) {
     console.error("Failed to create friend group:", e);
@@ -133,14 +140,10 @@ export async function handleCreateFriendGroup(name: string): Promise<number> {
   }
 }
 
-export async function handleRenameFriendGroup(
-  groupId: number,
-  name: string,
-): Promise<void> {
+export async function handleRenameFriendGroup(groupId: number, name: string): Promise<void> {
   try {
+    // The Host announces each relabelled friend (`groupChanged`).
     await commands.renameFriendGroup(groupId, name);
-    // Refresh friends to update group names in the store
-    await handleRefreshFriends();
   } catch (e) {
     console.error("Failed to rename friend group:", e);
   }
@@ -148,28 +151,25 @@ export async function handleRenameFriendGroup(
 
 export async function handleMoveFriendToGroup(
   publicKey: string,
-  groupId: number | null,
+  groupId: number | null
 ): Promise<void> {
   try {
+    // The Host announces the move (`groupChanged`).
     await commands.moveFriendToGroup(publicKey, groupId);
-    // Refresh friends to update the group assignment
-    await handleRefreshFriends();
   } catch (e) {
     console.error("Failed to move friend to group:", e);
   }
 }
 
-export async function handleBlockUser(publicKey: string, displayName?: string): Promise<string | null> {
+export async function handleBlockUser(publicKey: string): Promise<string | null> {
   try {
-    await commands.blockUser(publicKey, displayName);
+    await commands.blockUser(publicKey);
     // Remove from friends store
     const next = { ...friendsState.friends };
     delete next[publicKey];
     setFriendsState("friends", reconcile(next));
     // Remove from pending requests store
-    setFriendsState("pendingRequests", (reqs) =>
-      reqs.filter((r) => r.publicKey !== publicKey),
-    );
+    setFriendsState("pendingRequests", (reqs) => reqs.filter((r) => r.publicKey !== publicKey));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -189,12 +189,11 @@ export async function handleGenerateInvite(): Promise<{ url: string; inviteId: s
   try {
     const result = await commands.generateInvite();
     // Append to store so the invite list updates immediately
-    const now = Date.now();
     const newInvite: OutgoingInvite = {
       inviteId: result.inviteId,
       url: result.url,
-      createdAt: now,
-      expiresAt: now + 48 * 60 * 60 * 1000, // 48h default
+      createdAt: result.createdAt,
+      expiresAt: result.expiresAt,
       status: "pending",
       acceptedBy: null,
     };
@@ -209,9 +208,7 @@ export async function handleGenerateInvite(): Promise<{ url: string; inviteId: s
 export async function handleCancelInvite(inviteId: string): Promise<string | null> {
   try {
     await commands.cancelInvite(inviteId);
-    setFriendsState("outgoingInvites", (prev) =>
-      prev.filter((inv) => inv.inviteId !== inviteId),
-    );
+    setFriendsState("outgoingInvites", (prev) => prev.filter((inv) => inv.inviteId !== inviteId));
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -230,7 +227,7 @@ export async function handleLoadOutgoingInvites(): Promise<void> {
         expiresAt: inv.expiresAt,
         status: inv.status,
         acceptedBy: inv.acceptedBy,
-      })),
+      }))
     );
   } catch (e) {
     console.error("Failed to load outgoing invites:", e);
@@ -239,11 +236,8 @@ export async function handleLoadOutgoingInvites(): Promise<void> {
 
 export async function handleAddFriendFromInvite(inviteString: string): Promise<string | null> {
   try {
-    await withTimeout(
-      commands.addFriendFromInvite(inviteString),
-      DHT_WRITE_TIMEOUT_MS,
-      "Invite redemption",
-    );
+    // Reviewed with the inviter's fingerprint first: not time-bounded.
+    await commands.addFriendFromInvite(inviteString);
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -262,10 +256,16 @@ export async function handleCancelRequest(publicKey: string): Promise<string | n
   }
 }
 
+// Only the newest read lands: two accepts in a row each re-read the list,
+// and an older answer arriving last dropped the second friend (GC3).
+let refreshSeq = 0;
+
 export async function handleRefreshFriends(): Promise<void> {
+  const seq = ++refreshSeq;
   try {
     const friends = await commands.getFriends();
-    setFriendsState("friends", reconcile(transformFriendMap(friends)));
+    if (seq !== refreshSeq) return;
+    setFriendsState("friends", reconcile(foldFriendSnapshot(friends, friendsState.friends)));
   } catch (e) {
     console.error("Failed to refresh friends:", e);
   }

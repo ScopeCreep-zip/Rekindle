@@ -1,15 +1,15 @@
 //! Shared private helpers for the thread pipeline.
 
-use rekindle_codec::community::channel_record::ChannelMessage;
-use rekindle_records::lease::CommunityLeases;
-use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::{ChannelId, ThreadId};
+use std::collections::HashSet;
 
-use crate::deps::{ChannelMessagingDeps, ThreadStateSnapshot};
+use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::id::ChannelId;
+
+use crate::deps::{ChannelMessagingDeps, OutboxItem, PendingThreadReply};
 use crate::error::ChannelError;
-use crate::send::{
-    build_channel_message, channel_message_subkey, BodyPosition, BuildChannelMessageParams,
-};
+use crate::outbox_seal::open_entry_body;
+use crate::send::BodyPosition;
 
 pub(super) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
     hex::decode(hex_str)
@@ -40,218 +40,131 @@ pub(super) fn parent_thread_type<D: ChannelMessagingDeps>(
     })
 }
 
-pub(super) async fn ensure_thread_record_and_message<D: ChannelMessagingDeps>(
+/// The text scope a thread's replies are sealed under: its parent
+/// channel's (plan E3.3 "Channel tag": a thread is a stream of its parent's
+/// key, tagged by its own id).
+pub(super) fn thread_scope<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    parent_channel_id: &str,
+) -> Option<KeyScope> {
+    let channel = ChannelId::from_hex(parent_channel_id)?;
+    Some(deps.keys().scope_for_text(community_id, channel))
+}
+
+pub(super) struct ThreadReplies {
+    pub verified: Vec<(OutboxItem, ChannelMessage)>,
+    pub pending: Vec<PendingThreadReply>,
+    pub my_pseudonym: Option<String>,
+}
+
+/// The replies of `thread_id`: each message entry of the thread's stream
+/// across its authors' outboxes, naming its own author.
+pub(super) async fn thread_replies<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     thread_id: &str,
-    body: &str,
-) -> Result<(String, ChannelMessage), ChannelError> {
-    let thread = deps
-        .thread_state(community_id, thread_id)
-        .ok_or_else(|| ChannelError::Adapter("thread not found".into()))?;
-    let record_key = match thread.record_key.clone() {
-        Some(key) => key,
-        None => create_lazy_thread_record(deps, community_id, thread_id, &thread).await?,
+) -> Result<ThreadReplies, ChannelError> {
+    let my_pseudonym = deps.my_pseudonym_hex(community_id);
+    // Read the durable echoes before the network, so a reply landing
+    // during the read remains visible. Prefer its verified copy if read.
+    let mut pending = if my_pseudonym.is_some() {
+        deps.pending_thread_replies(community_id, thread_id).await?
+    } else {
+        Vec::new()
     };
-    // The body is bound to the subkey the reply is actually written to:
-    // our slot in the thread record, from the same context the write uses.
-    let slot_index = thread_write_context(deps, community_id, &record_key)?.slot_index;
-    let message = build_thread_message(
-        deps,
-        community_id,
-        &thread.parent_channel_id_hex,
-        &record_key,
-        slot_index,
-        body,
-    )?;
-    Ok((record_key, message))
-}
-
-pub(super) async fn create_lazy_thread_record<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    thread_id: &str,
-    thread: &ThreadStateSnapshot,
-) -> Result<String, ChannelError> {
-    let slot_seed = deps
-        .slot_seed_bytes(community_id)
-        .ok_or_else(|| ChannelError::Adapter("no slot seed available for community".into()))?;
-    // Taken before the create, so nothing fails between it and the
-    // announcement that hands the record's lease to the host.
-    let lamport = deps.next_governance_lamport(community_id)?;
-    let (lease, record_key) = deps.create_smpl_thread_record(&slot_seed).await?;
-
-    let announced = deps
-        .write_governance_entry(
-            community_id,
-            GovernanceEntry::ThreadCreated {
-                thread_id: ThreadId(hex_to_id_16(thread_id)),
-                parent_channel_id: ChannelId(hex_to_id_16(&thread.parent_channel_id_hex)),
-                name: thread.name.clone(),
-                thread_type: thread.thread_type.clone(),
-                record_key: Some(record_key.clone()),
-                invited: thread.invited.clone(),
-                forum_tag: thread.forum_tag.clone(),
-                auto_archive_seconds: thread.auto_archive_seconds,
-                lamport,
-            },
-        )
-        .await;
-    if let Err(e) = announced {
-        deps.release_record(lease).await;
-        return Err(e);
+    let verified: Vec<_> = deps
+        .read_outbox_entries(community_id, thread_id)
+        .await
+        .into_iter()
+        .filter_map(|item| match &item.entry {
+            ChannelRecordEntry::Message(m) if m.sender_pseudonym == hex::encode(item.author.0) => {
+                let message = m.clone();
+                Some((item, message))
+            }
+            _ => None,
+        })
+        .collect();
+    if !pending.is_empty() {
+        let own_ids: HashSet<_> = verified
+            .iter()
+            .filter(|(_, message)| my_pseudonym.as_deref() == Some(&message.sender_pseudonym))
+            .filter_map(|(_, message)| message.message_id.as_deref())
+            .collect();
+        pending.retain(|reply| !own_ids.contains(reply.message_id.as_str()));
     }
-    deps.community_records_ready(
-        community_id,
-        CommunityLeases {
-            segments: vec![lease],
-            ..CommunityLeases::default()
-        },
-    )
-    .await;
-    Ok(record_key)
+    Ok(ThreadReplies {
+        verified,
+        pending,
+        my_pseudonym,
+    })
 }
 
-/// A thread reply, sealed under the parent channel's text key and bound
-/// to the thread record subkey it is written to.
-pub(super) fn build_thread_message<D: ChannelMessagingDeps>(
+/// A reply's body, opened under exactly its generation of the parent
+/// channel's text scope at `{anchor, thread, author, streamSeq}`. `None`
+/// when that key is not held or the body does not authenticate there.
+pub(super) fn open_thread_body<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
-    parent_channel_id: &str,
-    record_key: &str,
-    slot_index: u32,
-    body: &str,
-) -> Result<ChannelMessage, ChannelError> {
-    let lamport_ts = deps.increment_lamport(community_id)?;
-    let (ciphertext, mek_generation) = crate::text_keys::seal_text(
-        deps,
-        community_id,
-        parent_channel_id,
-        BodyPosition {
-            channel_record_key: record_key,
-            subkey_index: channel_message_subkey(slot_index),
-            lamport_ts,
-        },
-        body.as_bytes(),
-    )?;
-
-    let sender_hex = deps
-        .my_pseudonym_hex(community_id)
-        .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
-    let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
-        crate::mentions::resolve_outbound_mentions(deps, community_id, &sender_hex, body);
-    let timestamp_ms = rekindle_utils::timestamp_secs() * 1000;
-
-    Ok(build_channel_message(BuildChannelMessageParams {
-        sequence: deps.next_thread_sequence(community_id),
-        sender_pseudonym: sender_hex,
-        ciphertext,
-        mek_generation,
-        timestamp_ms: i64::try_from(timestamp_ms).unwrap_or(i64::MAX),
-        lamport_ts,
-        message_id: format!("tmsg_{}", uuid_simple()),
-        mention_flag_bits: mention_flags,
-        mentioned_pseudonyms,
-        mentioned_roles,
-    }))
-}
-
-/// A thread reply's body, opened under exactly its generation of the
-/// parent channel's text key at the subkey and Lamport position it was
-/// read from. `None` when that key is not held or the body does not
-/// authenticate there.
-pub(super) fn decrypt_thread_body<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    parent_channel_id: &str,
-    record_key: &str,
-    subkey_index: u32,
+    scope: KeyScope,
+    thread_id: &str,
+    item: &OutboxItem,
     message: &ChannelMessage,
 ) -> Option<String> {
-    crate::text_keys::open_text(
-        deps,
+    let at = BodyPosition {
+        anchor: community_id,
+        channel_id: thread_id,
+        author: &item.author.0,
+        stream_seq: item.stream_seq,
+    };
+    open_entry_body(
+        &*deps.keys(),
         community_id,
-        parent_channel_id,
+        scope,
         message.mek_generation,
-        BodyPosition {
-            channel_record_key: record_key,
-            subkey_index,
-            lamport_ts: message.lamport_ts,
-        },
+        at,
         &message.ciphertext,
     )
     .and_then(|plaintext| String::from_utf8(plaintext).ok())
 }
 
+/// A thread's activity as its replies leave it.
+pub(super) struct ThreadActivity {
+    /// The newest counted reply's activity time in seconds, or creation time.
+    pub last_activity: u64,
+    pub message_count: u32,
+    /// A reply names the standing archive passed in: the thread is live.
+    pub revived: bool,
+}
+
+/// The activity of `thread_id`, judging its replies against the standing
+/// manual archive `archived_op` (op hash hex).
 pub(super) async fn thread_activity<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
-    record_key: Option<&str>,
-) -> Result<(u64, u64, u32), ChannelError> {
-    let Some(record_key) = record_key else {
-        return Ok((0, 0, 0));
-    };
-    let messages = deps
-        .read_all_channel_messages(community_id, record_key)
-        .await?;
-    let last_lamport = messages.iter().map(|m| m.lamport_ts).max().unwrap_or(0);
-    let last_activity = messages
+    thread_id: &str,
+    archived_op: Option<&str>,
+    created_at: u64,
+) -> Result<ThreadActivity, ChannelError> {
+    let replies = thread_replies(deps, community_id, thread_id).await?;
+    let last_activity = replies
+        .verified
         .iter()
-        .map(|m| m.timestamp / 1000)
+        .map(|(item, _)| item.committed_at / 1000)
+        .chain(replies.pending.iter().map(|reply| reply.sent_at_ms / 1000))
         .max()
-        .unwrap_or(0);
-    Ok((
-        last_lamport,
+        .unwrap_or(created_at);
+    let revived = archived_op.is_some_and(|op| {
+        replies
+            .verified
+            .iter()
+            .any(|(_, message)| message.revives.as_deref() == Some(op))
+    });
+    Ok(ThreadActivity {
         last_activity,
-        u32::try_from(messages.len()).unwrap_or(u32::MAX),
-    ))
-}
-
-/// Build a write context that overrides `channel_key` to point at a
-/// thread's lazy SMPL record. Other slot fields are inherited from the
-/// community membership.
-pub(super) fn thread_write_context<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    thread_record_key: &str,
-) -> Result<crate::deps::ChannelWriteContext, ChannelError> {
-    // We don't have a real channel_id to feed channel_write_context, so
-    // we build the context from raw membership signals. The adapter
-    // sources slot_keypair_str + slot_index from CommunityState.
-    let creds_ctx = deps
-        .pseudonym_credentials(community_id)
-        .map(|_| ())
-        .ok()
-        .and(
-            deps.member_profile(community_id, "")
-                .role_ids
-                .first()
-                .copied(),
-        );
-    let _ = creds_ctx; // not actually needed — we only use the channel_key override
-
-    // The adapter's channel_write_context impl returns slot fields keyed
-    // by the supplied channel_id; here we want those slot fields for a
-    // thread, not a channel. The simplest path: call a tiny helper on
-    // the adapter side that produces the slot fields without a
-    // channel_id. For now, derive from any channel that exists.
-    //
-    // Stable fallback: use the first channel in governance state, then
-    // override the channel_key + channel_id fields. This is unergonomic
-    // but works because slot_keypair + slot_index are community-wide,
-    // not channel-specific.
-    let any_channel_id = deps
-        .governance_state(community_id)
-        .and_then(|gov| gov.channels.keys().next().map(|c| hex::encode(c.0)))
-        .ok_or_else(|| ChannelError::Adapter("no channel in governance state".into()))?;
-    let base = deps.channel_write_context(community_id, &any_channel_id)?;
-    Ok(crate::deps::ChannelWriteContext {
-        community_id: base.community_id,
-        channel_id: String::from("__thread__"),
-        channel_key: thread_record_key.to_string(),
-        slot_keypair_str: base.slot_keypair_str,
-        slot_index: base.slot_index,
-        segment_index: base.segment_index,
+        message_count: u32::try_from(replies.verified.len() + replies.pending.len())
+            .unwrap_or(u32::MAX),
+        revived,
     })
 }
 

@@ -2,10 +2,16 @@
 //!
 //! VENDORED VERBATIM from `tokio-rusqlite` 0.7.0 (MIT, © 2022 Eray Karatay;
 //! see the crate `LICENSE`). The only change vs upstream is the dependency
-//! pin (`rusqlite 0.37` → `0.38`) in `Cargo.toml` — upstream is unmaintained
-//! and its `rusqlite ^0.37` pin conflicts with veilid-core 0.5.3's sqlite
-//! chain (`rusqlite 0.38`). The source below is unmodified so it keeps
-//! upstream's battle-tested dedicated-thread + channel + close semantics; our
+//! pin (`rusqlite 0.37` → `0.39`) in `Cargo.toml` — upstream is unmaintained
+//! and its `rusqlite ^0.37` pin conflicts with veilid-core 0.5.8's sqlite
+//! chain (`keyvaluedb-sqlite` 0.2.6 → `async-sqlite` 0.5.7 → `rusqlite 0.39`). The source below keeps upstream's battle-tested
+//! dedicated-thread + channel + close semantics; its two additions are
+//! [`Connection::call_detached`] and the call watch (below), neither of which
+//! changes how a call runs. One fix: a successful close disconnects the queue
+//! before it resolves, so every later call sees the closed connection
+//! (finding AQ1; upstream 0.7.0 resolved first). Another: dropping the last
+//! handle waits for the thread to close the database (finding DB1; upstream
+//! left it detached, racing SQLCipher's exit handler). Our
 //! crates depend on it under the name `tokio_rusqlite` via a Cargo
 //! `package`-rename, so no call-sites change.
 //!
@@ -22,6 +28,16 @@
 //! is called: provided function is boxed, sent to the thread through mpsc
 //! channel and executed. Return value is then sent by oneshot channel from
 //! the thread and then returned from function.
+//!
+//! # Call watch
+//!
+//! The one addition to upstream's API: [`watch_calls`] installs a process-wide
+//! [`CallWatch`] told of every call queued on a connection's thread (open,
+//! call, detached call, close), and again once the call is queued. Production
+//! installs none, so a call costs two unset `OnceLock` reads. The network
+//! simulator installs one that blocks its runtime thread until the call has
+//! run, so its tasks resume in one order whatever the database thread's
+//! timing (plan E2.B S8, F11).
 //!
 //! # Example
 //!
@@ -111,20 +127,61 @@
     unreachable_pub
 )]
 
+mod init;
 #[cfg(test)]
 mod tests;
+mod worker;
 
 use crossbeam_channel::{Receiver, Sender};
 use std::{
     fmt::{self, Debug, Display},
     path::Path,
+    sync::{Arc, OnceLock},
     thread,
 };
 use tokio::sync::oneshot::{self};
+use worker::Worker;
+
+pub use init::{init_sqlite, sqlite_initialized};
 
 pub use rusqlite::{self, *};
 
 const BUG_TEXT: &str = "bug in tokio-rusqlite, please report";
+const CLOSED_TEXT: &str = "database connection should be open";
+
+/// Told of every call queued on a connection's background thread.
+pub trait CallWatch: Send + Sync {
+    /// A call is being queued. The token returned is dropped on the
+    /// background thread once the call has run and its result (if any) is
+    /// sent, or wherever the call is dropped unrun.
+    fn begin(&self) -> CallToken;
+
+    /// The call just begun is queued. Called on the queuing thread; a watch
+    /// may block it here until the call's token drops, so the caller resumes
+    /// with the result already sent. By default it returns at once.
+    fn queued(&self) {}
+}
+
+/// What a [`CallWatch`] holds for one call; dropping it ends the call.
+pub type CallToken = Option<Box<dyn Send>>;
+
+static CALL_WATCH: OnceLock<&'static dyn CallWatch> = OnceLock::new();
+
+/// Install the process-wide [`CallWatch`]. Returns `false` if one is
+/// already installed (the first stays).
+pub fn watch_calls(watch: &'static dyn CallWatch) -> bool {
+    CALL_WATCH.set(watch).is_ok()
+}
+
+fn begin() -> CallToken {
+    CALL_WATCH.get().and_then(|watch| watch.begin())
+}
+
+fn queued() {
+    if let Some(watch) = CALL_WATCH.get() {
+        watch.queued();
+    }
+}
 
 #[derive(Debug)]
 /// Represents the errors specific for this library.
@@ -137,12 +194,12 @@ pub enum Error<E = rusqlite::Error> {
     /// The connection to the SQLite has been closed and cannot be queried any more.
     ConnectionClosed,
 
-    /// An error occured while closing the SQLite connection.
+    /// An error occurred while closing the SQLite connection.
     /// This `Error` variant contains the [`Connection`], which can be used to retry the close operation
-    /// and the underlying [`rusqlite::Error`] that made it impossile to close the database.
+    /// and the underlying [`rusqlite::Error`] that made it impossible to close the database.
     Close((Connection, rusqlite::Error)),
 
-    /// An application-specific error occured.
+    /// An application-specific error occurred.
     Error(E),
 }
 
@@ -179,13 +236,28 @@ type CallFn = Box<dyn FnOnce(&mut rusqlite::Connection) + Send + 'static>;
 
 enum Message {
     Execute(CallFn),
-    Close(oneshot::Sender<std::result::Result<(), rusqlite::Error>>),
+    Close(
+        oneshot::Sender<std::result::Result<(), rusqlite::Error>>,
+        CallToken,
+    ),
 }
 
 /// A handle to call functions in background thread.
+///
+/// Dropping the last handle (finding DB1) waits for the background thread
+/// to finish the calls queued before it and close the SQLite connection,
+/// as dropping a `rusqlite::Connection` closes it before returning.
+/// Upstream left the thread detached, so a process could exit while it
+/// was still closing: SQLCipher's exit handler (`sqlcipher_extra_shutdown`,
+/// run by `atexit` and the image's terminator) frees its mutexes, private
+/// heap and crypto provider under a close still using them, and the
+/// process died after its last test had passed.
 #[derive(Clone)]
 pub struct Connection {
+    // Declared before `_worker` (held only for its drop), so the last handle disconnects the queue
+    // before it waits for the thread the disconnect stops.
     sender: Sender<Message>,
+    _worker: Arc<Worker>,
 }
 
 impl Connection {
@@ -313,13 +385,16 @@ impl Connection {
         R: Send + 'static,
     {
         let (sender, receiver) = oneshot::channel::<R>();
+        let token = begin();
 
         self.sender
             .send(Message::Execute(Box::new(move |conn| {
                 let value = function(conn);
                 let _ = sender.send(value);
+                drop(token);
             })))
             .map_err(|_| Error::ConnectionClosed)?;
+        queued();
 
         receiver.await.map_err(|_| Error::ConnectionClosed)
     }
@@ -336,9 +411,15 @@ impl Connection {
     where
         F: FnOnce(&mut rusqlite::Connection) + Send + 'static,
     {
+        let token = begin();
         self.sender
-            .send(Message::Execute(Box::new(function)))
-            .map_err(|_| Error::ConnectionClosed)
+            .send(Message::Execute(Box::new(move |conn| {
+                function(conn);
+                drop(token);
+            })))
+            .map_err(|_| Error::ConnectionClosed)?;
+        queued();
+        Ok(())
     }
 
     /// Call a function in background thread and get the result
@@ -348,22 +429,28 @@ impl Connection {
     /// it is a more user-friendly alternative to the [`Connection::call`] method.
     /// It should be safe if the connection is never explicitly closed (using the [`Connection::close`] call).
     ///
-    /// Calling this on a closed connection will cause a `panic`.
+    /// Calling this on a closed connection, or queuing it behind a `close`
+    /// that succeeds, will cause a `panic`.
     pub async fn call_unwrap<F, R>(&self, function: F) -> R
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
         let (sender, receiver) = oneshot::channel::<R>();
+        let token = begin();
 
         self.sender
             .send(Message::Execute(Box::new(move |conn| {
                 let value = function(conn);
                 let _ = sender.send(value);
+                drop(token);
             })))
-            .expect("database connection should be open");
+            .expect(CLOSED_TEXT);
+        queued();
 
-        receiver.await.expect(BUG_TEXT)
+        // The reply sender is dropped unsent only when the call is discarded
+        // unrun: it was queued behind a `close` that succeeded.
+        receiver.await.expect(CLOSED_TEXT)
     }
 
     /// Close the database connection.
@@ -375,8 +462,11 @@ impl Connection {
     /// If successful, any following `close` operations performed
     /// on `Connection` copies will succeed immediately.
     ///
-    /// On the other hand, any calls to [`Connection::call`] will return a [`Error::ConnectionClosed`],
-    /// and any calls to [`Connection::call_unwrap`] will cause a `panic`.
+    /// On the other hand, any calls to [`Connection::call`] (or
+    /// [`Connection::call_detached`]) will return a [`Error::ConnectionClosed`],
+    /// and any calls to [`Connection::call_unwrap`] will cause a `panic`. This
+    /// holds from the moment `close` resolves, and for every call queued
+    /// behind the close while it ran.
     ///
     /// # Failure
     ///
@@ -384,11 +474,14 @@ impl Connection {
     pub async fn close(self) -> Result<()> {
         let (sender, receiver) = oneshot::channel::<std::result::Result<(), rusqlite::Error>>();
 
-        if let Err(crossbeam_channel::SendError(_)) = self.sender.send(Message::Close(sender)) {
+        if let Err(crossbeam_channel::SendError(_)) =
+            self.sender.send(Message::Close(sender, begin()))
+        {
             // If the channel is closed on the other side, it means the connection closed successfully
             // This is a safeguard against calling close on a `Copy` of the connection
             return Ok(());
         }
+        queued();
 
         let result = receiver.await;
 
@@ -411,9 +504,12 @@ impl Debug for Connection {
 impl From<rusqlite::Connection> for Connection {
     fn from(conn: rusqlite::Connection) -> Self {
         let (sender, receiver) = crossbeam_channel::unbounded::<Message>();
-        thread::spawn(move || event_loop(conn, receiver));
+        let worker = Worker::new(thread::spawn(move || event_loop(conn, receiver)));
 
-        Self { sender }
+        Self {
+            sender,
+            _worker: worker,
+        }
     }
 }
 
@@ -423,27 +519,33 @@ where
 {
     let (sender, receiver) = crossbeam_channel::unbounded::<Message>();
     let (result_sender, result_receiver) = oneshot::channel();
+    let token = begin();
 
-    thread::spawn(move || {
+    let thread = thread::spawn(move || {
         let conn = match open() {
             Ok(c) => c,
             Err(e) => {
                 let _ = result_sender.send(Err(e));
+                drop(token);
                 return;
             }
         };
 
-        if let Err(_e) = result_sender.send(Ok(())) {
+        let sent = result_sender.send(Ok(()));
+        drop(token);
+        if let Err(_e) = sent {
             return;
         }
 
         event_loop(conn, receiver);
     });
+    let worker = Worker::new(thread);
+    queued();
 
-    result_receiver
-        .await
-        .expect(BUG_TEXT)
-        .map(|()| Connection { sender })
+    result_receiver.await.expect(BUG_TEXT).map(|()| Connection {
+        sender,
+        _worker: worker,
+    })
 }
 
 // The receiver is owned for the whole thread lifetime, not borrowed:
@@ -456,17 +558,29 @@ fn event_loop(mut conn: rusqlite::Connection, receiver: Receiver<Message>) {
     while let Ok(message) = receiver.recv() {
         match message {
             Message::Execute(f) => f(&mut conn),
-            Message::Close(s) => {
+            Message::Close(s, token) => {
                 let result = conn.close();
 
                 match result {
                     Ok(v) => {
+                        // Disconnect the queue BEFORE the closer learns of
+                        // the close (finding AQ1). Upstream sent first and
+                        // dropped the receiver only on return, so a call
+                        // made right after `close` resolved could still be
+                        // queued, then discarded unrun: `call_detached`
+                        // returned `Ok`, `call_unwrap` panicked with
+                        // `BUG_TEXT`. Dropping it here also discards every
+                        // call queued behind the close, each of which then
+                        // sees its reply sender dropped.
+                        drop(receiver);
                         s.send(Ok(v)).expect(BUG_TEXT);
-                        break;
+                        drop(token);
+                        return;
                     }
                     Err((c, e)) => {
                         conn = c;
                         s.send(Err(e)).expect(BUG_TEXT);
+                        drop(token);
                     }
                 }
             }

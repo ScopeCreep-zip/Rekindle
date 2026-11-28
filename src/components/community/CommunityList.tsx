@@ -1,7 +1,7 @@
-import { Component, For, Show } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
-import { communityState, Community } from "../../stores/community.store";
-import { ICON_SETTINGS, ICON_LOGOUT, ICON_COPY } from "../../icons";
+import { type Component, For, Show } from "solid-js";
+import { type Community, communityState } from "../../stores/community.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface CommunityListProps {
   selectedId?: string;
@@ -19,11 +19,14 @@ const CommunityList: Component<CommunityListProps> = (props) => {
 
   return (
     <div class="community-list">
-      <For each={list()} fallback={
-        <div class="empty-placeholder">
-          <div class="empty-placeholder-subtitle">No communities</div>
-        </div>
-      }>
+      <For
+        each={list()}
+        fallback={
+          <div class="empty-placeholder">
+            <div class="empty-placeholder-subtitle">No communities</div>
+          </div>
+        }
+      >
         {(community: Community) => (
           <ContextMenu>
             <ContextMenu.Trigger
@@ -31,12 +34,8 @@ const CommunityList: Component<CommunityListProps> = (props) => {
               class={`community-item ${props.selectedId === community.id ? "community-item-selected" : ""}`}
               onClick={() => props.onSelect(community.id)}
             >
-              <div class="community-icon">
-                {community.name.charAt(0).toUpperCase()}
-              </div>
-              <span class="community-name">
-                {community.name}
-              </span>
+              <div class="community-icon">{community.name.charAt(0).toUpperCase()}</div>
+              <span class="community-name">{community.name}</span>
               <Show when={unreads(community) > 0}>
                 <span class="community-unread-badge">{unreads(community)}</span>
               </Show>
@@ -48,7 +47,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
                     class="context-menu-item"
                     onSelect={() => props.onSettings!(community.id)}
                   >
-                    <span class="nf-icon context-menu-icon">{ICON_SETTINGS}</span>
+                    <SkinGlyph name="settings" class="context-menu-icon" />
                     Settings
                   </ContextMenu.Item>
                 </Show>
@@ -56,7 +55,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
                   class="context-menu-item"
                   onSelect={() => navigator.clipboard.writeText(community.id)}
                 >
-                  <span class="nf-icon context-menu-icon">{ICON_COPY}</span>
+                  <SkinGlyph name="copy" class="context-menu-icon" />
                   Copy ID
                 </ContextMenu.Item>
                 <Show when={props.onLeave}>
@@ -64,7 +63,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
                     class="context-menu-item context-menu-item-danger"
                     onSelect={() => props.onLeave!(community.id)}
                   >
-                    <span class="nf-icon context-menu-icon">{ICON_LOGOUT}</span>
+                    <SkinGlyph name="logout" class="context-menu-icon" />
                     Leave
                   </ContextMenu.Item>
                 </Show>

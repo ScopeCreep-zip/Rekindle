@@ -38,12 +38,12 @@
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    color: white;
-    background: var(--color-xfire-online);
+    color: var(--color-xfire-text-on-fill);
+    background: var(--color-xfire-success-fill);
   }
 
   .call-stage-join-btn:hover {
-    filter: brightness(1.08);
+    background: color-mix(in srgb, var(--color-xfire-success-fill) 88%, var(--color-xfire-fill-shade));
   }
 
   .call-stage-body {
@@ -103,11 +103,16 @@
     flex-shrink: 0;
   }
 
+  .call-stage-tile-spotlight-btn {
+    position: absolute;
+    inset: 0;
+  }
+
   .call-stage-tile {
     position: relative;
     aspect-ratio: 16 / 9;
     min-height: 0;
-    background: black;
+    background: var(--color-xfire-video-backing);
     border-radius: 8px;
     overflow: hidden;
     border: 2px solid transparent;
@@ -124,9 +129,7 @@
   }
 
   .call-stage-tile-video,
-  .call-stage-tile-canvas,
-
-  .call-stage-tile-video {
+  .call-stage-tile-canvas {
     transform: scaleX(-1); /* mirror own CAMERA preview, Discord-style */
   }
 
@@ -162,8 +165,8 @@
   }
 
   .call-stage-tile-name {
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-xfire-scrim) 60%, transparent);
+    color: var(--color-xfire-text-on-fill);
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 3px;
@@ -173,15 +176,19 @@
   }
 
   .call-stage-tile-badge {
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-xfire-scrim) 60%, transparent);
+    color: var(--color-xfire-text-on-fill);
     font-size: 11px;
     padding: 1px 4px;
     border-radius: 3px;
   }
 
+  /* Red on the 60% scrim over a white frame reads 1.53:1; the muted
+   * badge carries its own darker scrim. A scrim is dark on every base, so
+   * its red is the scrim's own, not the base's `danger-text`. */
   .call-stage-tile-badge-muted {
-    color: var(--color-xfire-busy);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 83%, transparent);
+    color: var(--color-xfire-scrim-danger-text);
   }
 
   /* Footer control bar, centred over the gallery (Element Call pattern). */
@@ -207,7 +214,7 @@
     border-radius: 10px;
     background: color-mix(in srgb, var(--color-xfire-bg-dark) 88%, transparent);
     border: 1px solid var(--color-xfire-border);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--color-xfire-shadow) 35%, transparent);
   }
 
   .call-control-bar .voice-btn {
@@ -237,7 +244,7 @@
   .call-control-g114 {
     margin-left: 6px;
     font-size: 10px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Architecture §24 — community analytics dashboard. */
@@ -291,7 +298,7 @@
     gap: 10px;
     align-items: center;
     padding: 6px 0;
-    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
   }
 
   .analytics-channel-name {
@@ -339,7 +346,7 @@
   .search-panel-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 50%, transparent);
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -356,7 +363,7 @@
     border-radius: 6px;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-xfire-shadow) 60%, transparent);
     overflow: hidden;
   }
 
@@ -428,14 +435,14 @@
   }
 
   .search-panel-chip-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
-    color: var(--color-xfire-accent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    color: var(--color-xfire-accent-text);
     border-color: var(--color-xfire-accent);
   }
 
   .search-panel-error {
     padding: 10px 14px;
-    color: #ff7373;
+    color: var(--color-xfire-danger-text);
     font-size: 12px;
   }
 
@@ -453,7 +460,7 @@
 
   .search-panel-hit {
     padding: 8px 14px;
-    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
   }
 
   .search-panel-hit-meta {

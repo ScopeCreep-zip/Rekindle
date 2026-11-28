@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-skin-editor",
+  "description": "App-command grants for the `skin-editor` window (plan E7.7.5, a Settings sub-window): the Host's report on a draft, Start from the current skin, region import and the draft and JSON Schema exports (each export through the OS save dialog). No other window holds them.",
+  "windows": [
+    "skin-editor"
+  ],
+  "permissions": [
+    "allow-export-skin-draft",
+    "allow-export-skin-schema",
+    "allow-import-skin-region",
+    "allow-skin-draft-start",
+    "allow-validate-skin-draft"
+  ]
+}

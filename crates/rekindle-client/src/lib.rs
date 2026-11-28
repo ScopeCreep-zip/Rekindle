@@ -11,11 +11,12 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod fmt;
+pub mod infoview;
 pub mod log;
 pub mod spawn;
 pub mod term;
 
-pub use client::DaemonClient;
+pub use client::{DaemonClient, Ran};
 
 /// The CLI's binary name, for hints any frontend prints. The CLI's own
 /// `env!("CARGO_BIN_NAME")` is tested equal to it.

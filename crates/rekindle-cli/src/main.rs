@@ -19,14 +19,23 @@ mod output;
 mod watch;
 
 mod channel;
+mod channel_message;
+mod channel_overwrite;
 mod community;
+mod community_ref;
+mod community_watch;
 mod dm;
+mod friend_ref;
 mod friends;
 mod governance;
+mod group_dm;
 mod identity;
+mod infoview;
 mod keys;
 mod network;
 mod presence;
+mod skin;
+mod transfer;
 mod voice;
 
 use clap::{CommandFactory, Parser};
@@ -55,6 +64,7 @@ async fn main() {
     helpers::set_no_input(cli.no_input);
 
     let mode = OutputMode::detect(cli.format.as_deref(), cli.script);
+    helpers::set_proof_flags(cli.yes, cli.confirm.clone(), mode.is_structured());
 
     if let Err(e) = run(cli, mode).await {
         let code = error::exit_code(&e);
@@ -148,9 +158,7 @@ async fn dispatch_node(
     match cmd {
         cli::NodeCmd::Start { .. } => unreachable!("node start is handled before connecting"),
         cli::NodeCmd::Stop => {
-            let value = client
-                .request_ok(rekindle_ipc::protocol::IpcRequest::Shutdown)
-                .await?;
+            let value = helpers::send(client, rekindle_ipc::protocol::IpcRequest::Shutdown).await?;
             if mode.is_structured() {
                 output::format::print_structured(&value, mode)
             } else {
@@ -175,19 +183,37 @@ async fn dispatch_command(
         Command::Init(args) => identity::cmd_init(&args, client, mode).await,
         Command::Unlock(args) => identity::cmd_unlock(&args, client, mode).await,
         Command::Lock => identity::cmd_lock(client, mode).await,
+        Command::Logout => identity::cmd_logout(client, mode).await,
         Command::Identity(cmd) => identity::dispatch(&cmd, client, mode).await,
         Command::Node(cmd) => dispatch_node(cmd, client, mode).await,
         Command::Network(cmd) => network::dispatch(&cmd, client, mode).await,
         Command::Friend(cmd) => friends::dispatch(&cmd, client, mode).await,
         Command::Dm(cmd) => dm::dispatch(&cmd, client, mode).await,
+        Command::Group(cmd) => group_dm::dispatch(&cmd, client, mode).await,
         Command::Community(cmd) => community::dispatch(&cmd, client, mode).await,
-        Command::Role(cmd) => governance::dispatch_role(&cmd, client, mode).await,
-        Command::Moderate(cmd) => governance::dispatch_moderate(&cmd, client, mode).await,
         Command::Channel(cmd) => channel::dispatch(&cmd, client, mode).await,
         Command::Voice(cmd) => voice::dispatch(&cmd, client, mode).await,
         Command::Key(cmd) => keys::dispatch(&cmd, client, mode).await,
         Command::Presence(cmd) => presence::dispatch(&cmd, client, mode).await,
+        Command::Profile(cmd) => presence::dispatch_profile(&cmd, client, mode).await,
+        Command::Settings(cmd) => presence::dispatch_settings(&cmd, client, mode).await,
+        Command::Skin(cmd) => helpers::send_and_print(client, skin::request(&cmd)?, mode).await,
+        Command::Transfer(cmd) => {
+            helpers::send_and_print(client, transfer::request(&cmd)?, mode).await
+        }
+        Command::Game(cmd) => presence::dispatch_game(&cmd, client, mode).await,
+        Command::Activity(cli::ActivityArgs { before, limit }) => {
+            let value = helpers::send(
+                client,
+                rekindle_ipc::protocol::IpcRequest::ActivityList { before, limit },
+            )
+            .await?;
+            output::format::print_structured(&value, mode)
+        }
+        Command::Infoview { subject } => infoview::dispatch(subject.as_ref(), client, mode).await,
+        Command::Audit(cmd) => presence::dispatch_audit(&cmd, client, mode).await,
+        Command::Undo { id } => presence::undo(&id, client, mode).await,
         Command::Export(cmd) => identity::dispatch_export(&cmd, client, mode).await,
-        Command::Import(_) => Err(identity::unimplemented("import")),
+        Command::Import(cmd) => identity::dispatch_import(&cmd, client, mode).await,
     }
 }

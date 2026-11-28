@@ -16,6 +16,14 @@ extend-ignore-identifiers-re = [
     # Hex / base32 / base64 literals in tests + docs.
     "[A-Za-z0-9]{32,}",
 ]
+extend-ignore-re = [
+    # Abbreviated git commit ids cited in comments and docs ("3dbe61a8c").
+    "\\b[0-9a-f]{7,40}\\b",
+    # IDNA A-labels (punycode test data: "xn--exmple-4nf.com").
+    "xn--[a-z0-9-]+",
+    # Windows SDDL security descriptors ("D:P(A;;GA;;;BA)": BA = built-in admins).
+    "D:P(\\([^)]*\\))+",
+]
 
 [default.extend-words]
 # Project-specific vocabulary that typos would otherwise flag.
@@ -36,6 +44,46 @@ pqxdh = "pqxdh"
 # MediaEncryptionKey abbreviation (MekRotate, MekRequest, etc.) —
 # `typos` reads it as a truncated "Me".
 mek = "mek"
+# Additive-increase/multiplicative-decrease (congestion control, ADR 0015).
+aimd = "aimd"
+# Authenticated key exchange (Signal / OTR literature, ADR 0002).
+ake = "ake"
+# CVE Numbering Authority (vulnerability disclosure docs).
+cna = "cna"
+# Dota / Dota 2, game titles in the game database and detection docs.
+dota = "dota"
+# The Paeth PNG filter (PNG spec section 9.4), used by the e2e PNG decoder.
+paeth = "paeth"
+# The ratatui crate (rekindle-tui).
+ratatui = "ratatui"
+# Double Ratchet header field PN (Signal spec section 3.2); also "UPnP".
+pn = "pn"
+# One-time prekey abbreviation ("OT" signature domain, `pqpk_ot`; PQXDH).
+ot = "ot"
+# Thread id prefix (`thr_<32 hex>`, rekindle-types thread.rs).
+thr = "thr"
+# OpenType table tags `loca` and `trak` (xtask woff2 encoder).
+loca = "loca"
+trak = "trak"
+# The hax-lib-macros crate (libcrux-ml-kem dependency, deny.toml).
+hax = "hax"
+# `image::Delay::numer_denom_ms` and its numerator/denominator pair.
+numer = "numer"
+# Xfire skin XML names the importers must match as spelled:
+# "Hilight"/"HilightDown" and the friends-of-friends "Fof" colours.
+hilight = "hilight"
+fof = "fof"
+
+[default.extend-identifiers]
+# Xfire skin pack node and colour names, spelled as the packs spell them
+# (rekindle-skin importers and the built-in packs' NOTICE files).
+ListColorSelectedDiabledCG = "ListColorSelectedDiabledCG"
+UserNameDeactiveCG = "UserNameDeactiveCG"
+ListFoFTextCG = "ListFoFTextCG"
+FoFNameColor = "FoFNameColor"
+TRO = "TRO"
+thex = "thex"
+thexcover = "thexcover"
 
 [files]
 extend-exclude = [
@@ -48,6 +96,9 @@ extend-exclude = [
     "dist/",
     "src-tauri/gen/",
     "legacy/",
+    # Verbatim upstream licence texts are reproduced exactly and never edited
+    # (Nerd Fonts' LICENSE carries upstream's "explict").
+    "src/assets/fonts/LICENSE-NerdFonts.md",
     "*.min.js",
     "*.min.css",
     "*.png",

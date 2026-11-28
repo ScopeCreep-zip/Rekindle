@@ -5,15 +5,12 @@
 //! Token-bucket throttle for per-(community, channel) notification
 //! rate-limiting (architecture §17.2 line 2402 — 5 emits per 10s
 //! window before summary mode kicks in) + `NotificationLevel`
-//! tier-cascade primitive + `verify_notification_message` content
-//! hash check + `blake3_hex` helper.
+//! tier-cascade primitive.
 
 use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 
 use parking_lot::Mutex;
-
-use rekindle_codec::community::channel_record::ChannelMessage;
 
 /// Architecture §17.2 line 2402 — "Max 5 notifications per channel per
 /// 10-second window. If exceeded, a single summary notification
@@ -61,10 +58,6 @@ impl NotificationThrottle {
         Self::default()
     }
 
-    fn now_ms() -> u128 {
-        u128::from(rekindle_utils::time::timestamp_ms())
-    }
-
     /// Architecture §17.2 line 2402 — record an attempt to notify and
     /// return the dispatch decision. Pure logic; takes `now_ms` so
     /// tests can drive the clock.
@@ -98,10 +91,6 @@ impl NotificationThrottle {
             window.suppressed_since_emit = window.suppressed_since_emit.saturating_add(1);
             NotificationDecision::Drop
         }
-    }
-
-    pub fn record_attempt_now(&self, community_id: &str, channel_id: &str) -> NotificationDecision {
-        self.record_attempt(community_id, channel_id, Self::now_ms())
     }
 }
 
@@ -153,117 +142,10 @@ pub fn parse_notification_level(level: &str) -> Result<NotificationLevel, String
     level.parse()
 }
 
-pub use rekindle_utils::blake3_hex;
-
-/// Architecture §28.9 — verify the fetched channel-message ciphertext
-/// hashes to the announcement payload's `content_hash`. Caller passes
-/// the pending fetch's recorded hash; mismatch means the announcer
-/// lied or a peer served corrupt bytes.
-pub fn verify_message_content_hash(
-    expected_content_hash: &str,
-    message: &ChannelMessage,
-) -> Result<(), &'static str> {
-    if blake3_hex(&message.ciphertext) != expected_content_hash {
-        return Err("message notification hash mismatch");
-    }
-    Ok(())
-}
+#[cfg(test)]
+#[path = "notifications_throttle_tests.rs"]
+mod throttle_tests;
 
 #[cfg(test)]
-mod throttle_tests {
-    use super::*;
-
-    #[test]
-    fn first_five_attempts_emit_normally() {
-        let throttle = NotificationThrottle::new();
-        for i in 0_u128..5 {
-            assert_eq!(
-                throttle.record_attempt("c", "ch", 1000 + i * 100),
-                NotificationDecision::Emit,
-                "burst slot {i} should emit",
-            );
-        }
-    }
-
-    #[test]
-    fn sixth_attempt_inside_window_drops() {
-        let throttle = NotificationThrottle::new();
-        for i in 0_u128..5 {
-            throttle.record_attempt("c", "ch", 1000 + i * 100);
-        }
-        assert_eq!(
-            throttle.record_attempt("c", "ch", 1500),
-            NotificationDecision::Drop,
-        );
-    }
-
-    #[test]
-    fn next_attempt_after_window_emits_summary() {
-        let throttle = NotificationThrottle::new();
-        for i in 0_u128..5 {
-            throttle.record_attempt("c", "ch", 1000 + i * 100);
-        }
-        throttle.record_attempt("c", "ch", 1500);
-        throttle.record_attempt("c", "ch", 1600);
-        assert_eq!(
-            throttle.record_attempt("c", "ch", 12_000),
-            NotificationDecision::EmitSummary { bundled_count: 3 },
-        );
-        assert_eq!(
-            throttle.record_attempt("c", "ch", 12_100),
-            NotificationDecision::Emit,
-        );
-    }
-
-    #[test]
-    fn separate_channels_have_separate_windows() {
-        let throttle = NotificationThrottle::new();
-        for i in 0_u128..5 {
-            throttle.record_attempt("c", "ch_a", 1000 + i * 10);
-        }
-        assert_eq!(
-            throttle.record_attempt("c", "ch_b", 1100),
-            NotificationDecision::Emit,
-        );
-        assert_eq!(
-            throttle.record_attempt("c", "ch_a", 1100),
-            NotificationDecision::Drop,
-        );
-    }
-}
-
-#[cfg(test)]
-mod level_tests {
-    use super::*;
-
-    #[test]
-    fn from_str_round_trip() {
-        for level in [
-            NotificationLevel::All,
-            NotificationLevel::Mentions,
-            NotificationLevel::Nothing,
-        ] {
-            let parsed: NotificationLevel = level.as_str().parse().expect("known level");
-            assert_eq!(parsed, level);
-        }
-    }
-
-    #[test]
-    fn from_str_unknown_returns_err() {
-        let parsed: Result<NotificationLevel, _> = "loud".parse();
-        assert!(parsed.is_err());
-    }
-
-    #[test]
-    fn parse_rejects_unknown_with_error() {
-        let err = parse_notification_level("loud").unwrap_err();
-        assert!(err.contains("all"), "error mentions valid options");
-    }
-
-    #[test]
-    fn to_db_is_stable() {
-        assert_eq!(NotificationLevel::All.to_db(), 0);
-        assert_eq!(NotificationLevel::Mentions.to_db(), 1);
-        assert_eq!(NotificationLevel::Nothing.to_db(), 2);
-    }
-}
+#[path = "notifications_level_tests.rs"]
+mod level_tests;

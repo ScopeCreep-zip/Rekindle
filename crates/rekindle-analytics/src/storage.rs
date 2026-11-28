@@ -16,7 +16,7 @@ use rusqlite::Connection;
 /// Approximate per-row overhead — index entries, hidden ROWID, small
 /// integer columns we don't bother summing. Tuned against
 /// `dbstat`-measured rows in the SQLite shell.
-const ROW_OVERHEAD_BYTES: u64 = 48;
+const ROW_OVERHEAD_BYTES: i64 = 48;
 
 pub fn compute(conn: &Connection, owner_key: &str, community_id: &str) -> StorageUsage {
     let message_bytes = sum_table_bytes(
@@ -46,7 +46,7 @@ pub fn compute(conn: &Connection, owner_key: &str, community_id: &str) -> Storag
     );
     let read_state_bytes = sum_table_bytes(
         conn,
-        "channel_read_state",
+        "read_markers",
         "owner_key = ?1 AND community_id = ?2",
         &["channel_id"],
         owner_key,
@@ -122,11 +122,10 @@ fn sum_table_bytes(
 }
 
 fn community_metadata_bytes(conn: &Connection, owner_key: &str, community_id: &str) -> u64 {
-    // Single community row: name + description + JSON config blobs.
+    // Single community row: name + description.
     let community_row: i64 = conn
         .query_row(
             "SELECT COALESCE(LENGTH(name), 0) + COALESCE(LENGTH(description), 0) \
-                  + COALESCE(LENGTH(my_role_ids), 0) + COALESCE(LENGTH(dht_record_key), 0) \
                   + ?3 \
                FROM communities WHERE owner_key = ?1 AND id = ?2",
             rusqlite::params![owner_key, community_id, ROW_OVERHEAD_BYTES],

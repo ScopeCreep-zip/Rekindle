@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Superseded in part by [0014](0014-veilid-boundary-is-transitive.md):** the "Boundaries"
   sentence naming the only `veilid_core` importers (the boundary is transitive linkage).
+- **Amended by [0017](0017-veilid-fork.md):** veilid-core is built from a minimal pinned fork
+  until upstream carries our fixes.
 - **Date:** 2026-04 (initial); reconfirmed 2026-05 in v2.0 architecture work
 
 ## Context and problem statement

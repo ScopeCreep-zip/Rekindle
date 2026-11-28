@@ -1,0 +1,592 @@
+//! The governance op store and op log on the Host (plan E3.2, ADR 0011):
+//! records created with a fresh owner and pinned by `owner_of`, the pinned
+//! `GenesisCert`, the op set in `governance_ops`/`governance_heads` (one
+//! repo for both tracks, D1), an op fetched by its `OpRef` from its
+//! author's `M`/2 chain, and our op queued on the governance-op outbox
+//! stream.
+
+use rekindle_records::port::OpenIntent;
+use std::collections::BTreeMap;
+
+use rekindle_db::repo::governance_ops::{self as repo, DeviceHead, OpState, StoredOp};
+use rekindle_governance_runtime::deps::DhtRecordInfo;
+use rekindle_governance_runtime::op_log::{self, HeldOp, OpFate, OpVerdict};
+use rekindle_governance_runtime::GovernanceRuntimeError;
+use rekindle_records::lease::LeaseId;
+use rekindle_records::port::RecordSchema;
+use rekindle_types::dht_layout::member_record::GOV_HEAD;
+use rekindle_types::governance::{GenesisCert, OpHash, OpRef};
+use rekindle_types::id::PseudonymKey;
+
+use super::HostGovernance;
+
+fn adapter(context: &str, e: impl std::fmt::Display) -> GovernanceRuntimeError {
+    GovernanceRuntimeError::Adapter(format!("{context}: {e}"))
+}
+
+fn state_of(fate: OpFate) -> OpState {
+    match fate {
+        OpFate::Applied => OpState::Applied,
+        OpFate::PendingDeps => OpState::PendingDeps,
+        OpFate::Quarantined => OpState::Quarantined,
+        OpFate::Equivocation => OpState::Equivocation,
+    }
+}
+
+fn fate_of(state: OpState) -> OpFate {
+    match state {
+        OpState::Applied => OpFate::Applied,
+        OpState::PendingDeps => OpFate::PendingDeps,
+        OpState::Quarantined => OpFate::Quarantined,
+        OpState::Equivocation => OpFate::Equivocation,
+    }
+}
+
+/// The verdicts of `mine`'s ops among `ops`, by hash (hex).
+fn own_states(ops: Vec<StoredOp>, mine: Option<&str>) -> Vec<(String, OpState)> {
+    ops.into_iter()
+        .filter(|op| mine == Some(op.author.as_str()))
+        .map(|op| (hex::encode(op.op_hash), op.state))
+        .collect()
+}
+
+pub(super) fn outcome_of(
+    published: &crate::host::adapters::outbox::Published,
+) -> rekindle_governance_runtime::OpOutcome {
+    match published {
+        crate::host::adapters::outbox::Published::Landed => {
+            rekindle_governance_runtime::OpOutcome::Landed
+        }
+        crate::host::adapters::outbox::Published::Queued(_) => {
+            rekindle_governance_runtime::OpOutcome::Pending
+        }
+    }
+}
+
+pub(super) fn pseudonym_of(hex_key: &str) -> Option<PseudonymKey> {
+    let bytes = hex::decode(hex_key).ok()?;
+    Some(PseudonymKey(<[u8; 32]>::try_from(bytes).ok()?))
+}
+
+/// The held form of the stored `ops`, each with the member record its
+/// device key's head names (ADR 0022 rule 3: one record per device key).
+///
+/// # Errors
+/// An op's device key has no head or its author is not a pseudonym (the
+/// store writes the head with the op, so either is a corrupt store).
+pub(crate) fn held_ops(ops: Vec<StoredOp>, heads: &[DeviceHead]) -> Result<Vec<HeldOp>, String> {
+    let records: BTreeMap<&str, &str> = heads
+        .iter()
+        .map(|h| (h.device_key.as_str(), h.member_record.as_str()))
+        .collect();
+    ops.into_iter()
+        .map(|op| {
+            let record = records
+                .get(op.device_key.as_str())
+                .ok_or_else(|| format!("op device key {} has no head", op.device_key))?;
+            let author = pseudonym_of(&op.author)
+                .ok_or_else(|| format!("op author {:?} is not a pseudonym", op.author))?;
+            let device_key = <[u8; 32]>::try_from(hex::decode(&op.device_key).unwrap_or_default())
+                .map_err(|_| format!("op device key {:?} is not a key", op.device_key))?;
+            Ok(HeldOp {
+                hash: OpHash(op.op_hash),
+                device_key,
+                author,
+                author_record: (*record).to_owned(),
+                seq: op.device_seq,
+                lamport: op.lamport,
+                issued_at: op.issued_at,
+                encoded: op.op,
+                fate: fate_of(op.state),
+            })
+        })
+        .collect()
+}
+
+/// Store the op and advance the device head in the caller's transaction.
+pub(crate) fn store_op_and_head(
+    conn: &rekindle_db::rusqlite::Connection,
+    owner: &str,
+    community: &str,
+    op: &HeldOp,
+    signed_here: bool,
+) -> rekindle_db::rusqlite::Result<()> {
+    let author = hex::encode(op.author.0);
+    // The key that signed the op (`GovernanceOp.deviceKey`, ADR 0022 rule 1).
+    let device_key = hex::encode(op.device_key);
+    let stored = StoredOp {
+        op_hash: op.hash.0,
+        author: author.clone(),
+        device_key: device_key.clone(),
+        device_seq: op.seq,
+        lamport: op.lamport,
+        issued_at: op.issued_at,
+        op: op.encoded.clone(),
+        state: state_of(op.fate),
+        signed_here,
+    };
+    let head = DeviceHead {
+        device_key,
+        author,
+        member_record: op.author_record.clone(),
+        head_seq: op.seq,
+        frontier_hash: op.hash.0,
+    };
+    repo::insert(conn, owner, community, &stored)?;
+    let newer = repo::heads(conn, owner, community)?
+        .iter()
+        .find(|h| h.device_key == head.device_key)
+        .is_none_or(|h| h.head_seq < head.head_seq);
+    if newer {
+        repo::set_head(conn, owner, community, &head)?;
+    }
+    Ok(())
+}
+
+impl HostGovernance {
+    pub(super) fn op_store(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
+        self.owner_and_db()
+            .ok_or_else(|| GovernanceRuntimeError::Adapter("no identity is unlocked".into()))
+    }
+
+    pub(super) async fn create_record_impl(
+        &self,
+        schema: &RecordSchema,
+    ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
+        let pool = self
+            .transport()?
+            .require_records()
+            .map_err(|e| adapter("record pool", e))?;
+        let (lease, record_key, owner) = pool
+            .create(schema, None)
+            .await
+            .map_err(|e| adapter("create record", e))?;
+        Ok(DhtRecordInfo {
+            record_key,
+            owner_keypair: Some(owner),
+            lease,
+        })
+    }
+
+    pub(super) fn owner_of_impl(&self, lease: LeaseId) -> Result<String, GovernanceRuntimeError> {
+        self.transport()?
+            .require_records()
+            .map_err(|e| adapter("record pool", e))?
+            .owner_of(lease)
+            .map_err(|e| adapter("owner of record", e))
+    }
+
+    pub(super) fn genesis_cert_impl(&self, community_id: &str) -> Option<GenesisCert> {
+        self.ctx.communities.genesis_cert(community_id)
+    }
+
+    pub(super) async fn governance_ops_impl(
+        &self,
+        community_id: &str,
+    ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+        let (owner, db) = self.op_store()?;
+        let community = community_id.to_owned();
+        let (ops, heads): (Vec<StoredOp>, Vec<DeviceHead>) = db
+            .call(move |conn| {
+                Ok((
+                    repo::list(conn, &owner, &community, None)?,
+                    repo::heads(conn, &owner, &community)?,
+                ))
+            })
+            .await
+            .map_err(|e| adapter("governance ops", e))?;
+        held_ops(ops, &heads).map_err(GovernanceRuntimeError::Adapter)
+    }
+
+    /// Store `op` and advance its device key's head when it is newer;
+    /// `signed_here` only from the local signer
+    /// (`GovernanceOpStore::store_signed_governance_op`).
+    pub(super) async fn store_governance_op_impl(
+        &self,
+        community_id: &str,
+        op: &HeldOp,
+        signed_here: bool,
+    ) -> Result<(), GovernanceRuntimeError> {
+        // A community we no longer hold (left, or a join withdrawn: SU1) has
+        // no row for its ops: a late ring change or walk that read it before
+        // the forget stores nothing (IJ3).
+        if !self.ctx.communities.map().read().contains_key(community_id) {
+            return Err(GovernanceRuntimeError::CommunityNotFound(
+                community_id.to_owned(),
+            ));
+        }
+        let (owner, db) = self.op_store()?;
+        let community = community_id.to_owned();
+        let op = op.clone();
+        db.call(move |conn| {
+            let tx = conn.unchecked_transaction()?;
+            store_op_and_head(&tx, &owner, &community, &op, signed_here)?;
+            tx.commit()
+        })
+        .await
+        .map_err(|e| adapter("store governance op", e))
+    }
+
+    pub(super) async fn set_governance_op_fates_impl(
+        &self,
+        community_id: &str,
+        fates: Vec<OpVerdict>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        let (owner, db) = self.op_store()?;
+        let community = community_id.to_owned();
+        let mine = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.clone());
+        let (before, after, abandoned) = db
+            .call(move |conn| {
+                let tx = conn.unchecked_transaction()?;
+                let mine = mine.as_deref();
+                let before = own_states(repo::list(&tx, &owner, &community, None)?, mine);
+                let mut abandoned = Vec::new();
+                for verdict in &fates {
+                    let state = state_of(verdict.fate);
+                    repo::set_state(
+                        &tx,
+                        &owner,
+                        &community,
+                        &verdict.hash.0,
+                        state,
+                        verdict.lamport,
+                    )?;
+                    if matches!(state, OpState::Quarantined | OpState::Equivocation) {
+                        abandoned.extend(rekindle_db::repo::outbox::abandon_forum_starters(
+                            &tx,
+                            &owner,
+                            &hex::encode(verdict.hash.0),
+                        )?);
+                    }
+                }
+                let after = own_states(repo::list(&tx, &owner, &community, None)?, mine);
+                tx.commit()?;
+                Ok((before, after, abandoned))
+            })
+            .await
+            .map_err(|e| adapter("governance op fates", e))?;
+        // An own op the converged set refuses (or reinstates) is announced
+        // (review RV7 M2).
+        if !abandoned.is_empty() {
+            if let Some(ops) = self.ctx.outbox.governance_ops() {
+                ops.announce_abandoned_starters(abandoned);
+            }
+        }
+        self.announce_verdicts(community_id, &before, &after).await;
+        Ok(())
+    }
+
+    /// The op at `op_ref.author_seq` of its author's op log: chain seq
+    /// `author_seq + 1` of `M`/2, through `logs`: one read per author log
+    /// per walk (plan S7c.1, `op_walk::fetch_from_log`).
+    pub(super) async fn fetch_governance_op_impl(
+        &self,
+        op_ref: &OpRef,
+        logs: &rekindle_governance_runtime::op_walk::WalkLogCache,
+    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
+        let pool = self
+            .transport()?
+            .require_records()
+            .map_err(|e| adapter("record pool", e))?;
+        rekindle_governance_runtime::op_walk::fetch_from_log(&*pool, logs, op_ref).await
+    }
+
+    /// The fast path: every member hears the op before its watch fires
+    /// (`GovernanceRuntimeDeps::gossip_governance_op`, before the install).
+    pub(super) fn gossip_op(&self, community_id: &str, encoded: Vec<u8>) {
+        self.send_to_mesh_impl(
+            community_id,
+            &rekindle_codec::community::envelope::CommunityEnvelope::control(
+                rekindle_codec::community::envelope::ControlPayload::GovernanceOp { op: encoded },
+            ),
+        );
+    }
+
+    /// A gossiped `governanceOp @74`: seen, read at its locator at once,
+    /// and into the op store and the rebuild only as that read returns it
+    /// (`op_log::receive_gossiped_op`, lead ruling 2026-11-26), for both
+    /// tracks.
+    pub async fn on_governance_op(&self, community_id: &str, op: Vec<u8>) {
+        if !self.ctx.communities.map().read().contains_key(community_id) {
+            return;
+        }
+        match op_log::receive_gossiped_op(self, community_id, op.clone()).await {
+            Ok(rekindle_governance_runtime::op_receive::Gossiped::NotLanded) => {
+                self.read_when_landed(community_id, op);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::debug!(community = community_id, %error, "gossiped governance op not stored");
+            }
+        }
+    }
+
+    /// A seen op its author's log did not serve yet: read its locator again
+    /// after each of `rekindle_governance_runtime::op_receive::LANDING_READS`, on the community's scope,
+    /// until a read returns it (merged) or settles it otherwise (ruling
+    /// 2026-11-26 item 1). An op that never lands is never merged: the
+    /// reads end, nothing is stored.
+    fn read_when_landed(&self, community_id: &str, op: Vec<u8>) {
+        let host = self.clone();
+        let community = community_id.to_owned();
+        let scope = self.ctx.community_scope(community_id);
+        let stop = scope.token();
+        scope.spawn_or_drop("gossiped op landing reads", async move {
+            for wait in rekindle_governance_runtime::op_receive::LANDING_READS {
+                if stop
+                    .run_until_cancelled(tokio::time::sleep(wait))
+                    .await
+                    .is_none()
+                    || !host.holds_community(&community)
+                {
+                    return;
+                }
+                match op_log::receive_gossiped_op(&host, &community, op.clone()).await {
+                    Ok(rekindle_governance_runtime::op_receive::Gossiped::NotLanded) => {}
+                    Ok(_) => return,
+                    Err(error) => {
+                        tracing::debug!(community = %community, %error, "seen governance op not read");
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    /// The `governance_op` stream's send: append `op` to `record`'s op log
+    /// with that record's owner (`op_record_writer`: `K_M(p,d)` from the
+    /// device vault for a second device's `M(p,d)`, else `K_M(p)`).
+    pub(crate) async fn append_own_op(
+        &self,
+        community_id: &str,
+        record: &str,
+        op: Vec<u8>,
+    ) -> Result<(), String> {
+        let writer = self.op_record_writer(community_id, record)?;
+        let pool = self
+            .transport()
+            .map_err(|e| e.to_string())?
+            .require_records()
+            .map_err(|e| format!("record pool: {e}"))?;
+        if let Some(page) = append_op_once(&*pool, record, &writer, op).await? {
+            self.ctx.communities.note_own_op_page(community_id, &page);
+        }
+        self.write_own_frontier(community_id, record, &writer).await
+    }
+
+    /// `K_M(p)`, our member record's owner, from the vault.
+    pub(super) fn member_record_writer(
+        &self,
+        community_id: &str,
+    ) -> Result<zeroize::Zeroizing<String>, String> {
+        let writer = {
+            let guard = self.ctx.vault.lock();
+            let vault = guard.as_ref().ok_or("no identity is unlocked")?;
+            let key = rekindle_vault::VaultKey::MemberRecordOwner {
+                community: community_id.to_owned(),
+            };
+            let bytes = vault
+                .get(&key)
+                .map_err(|e| format!("member record owner: {e}"))?
+                .ok_or("no member record owner is stored")?;
+            zeroize::Zeroizing::new(
+                String::from_utf8(bytes.to_vec()).map_err(|_| "member record owner is not text")?,
+            )
+        };
+        Ok(writer)
+    }
+
+    /// Republish our `Frontier` (`M`/3) after a rebuild: the subkey is "the
+    /// DAG tips this member knows" (the member-record subkey table,
+    /// `evidence/slot-integrity.md` §4), and
+    /// the sweep and a joiner's walk read it to find heads they lack, so a
+    /// frontier written only after our own appends hid every op we merged
+    /// since (a member that joined before `X` never learned `X`). Written
+    /// only when the heads differ from the subkey's local value. Written
+    /// on our device's op record with its owner (`own_op_record_writer`:
+    /// `M(p,d)` with `K_M(p,d)` for a second device, `M(p)` with `K_M(p)`
+    /// for the first), the record `append_own_op` writes the same subkey on.
+    pub(crate) async fn republish_own_frontier(&self, community_id: &str) {
+        let written = match self.own_op_record_writer(community_id) {
+            Ok((record, writer)) => {
+                self.write_own_frontier(community_id, &record, &writer)
+                    .await
+            }
+            Err(e) => Err(e),
+        };
+        if let Err(error) = written {
+            tracing::debug!(community = community_id, %error, "frontier not republished");
+        }
+    }
+
+    /// Write our `Frontier` (`M`/3): the heads of the op set we hold, which a
+    /// joiner's walk and the sweep start from; unchanged heads are not
+    /// written again. The one writer of the subkey: `append_own_op` and the
+    /// post-rebuild republish both come here, serialized per community, and
+    /// the heads are read once the lock is held, so the last write carries
+    /// the latest op set's heads.
+    async fn write_own_frontier(
+        &self,
+        community_id: &str,
+        record: &str,
+        writer: &str,
+    ) -> Result<(), String> {
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        let lock = self.ctx.communities.frontier_write_lock(community_id);
+        let _writing = lock.lock().await;
+        let (cert, me) = {
+            let map = self.ctx.communities.map().read();
+            let community = map.get(community_id).ok_or("community not found")?;
+            let cert = community
+                .genesis_cert
+                .clone()
+                .ok_or("no genesis cert is pinned")?;
+            (
+                cert,
+                community.my_pseudonym_key.as_deref().and_then(pseudonym_of),
+            )
+        };
+        let held = self
+            .governance_ops_impl(community_id)
+            .await
+            .map_err(|e| format!("read op store: {e}"))?;
+        let set = op_log::verify_held_with(self, community_id, &held);
+        // The heads and the checksum of the roster and role tables, both
+        // from one merge of the op set (D15's convergence check, compared by
+        // a reader whose heads equal these), never the installed state,
+        // which lags the op store while a rebuild is pending.
+        // Our own fork, if a restored backup made one, goes out with it
+        // (D15): every member must see both branches.
+        let frontier = op_log::own_frontier(&cert, &set, &held, me.as_ref());
+        let bytes = rekindle_codec::governance_op::encode_frontier(&frontier)
+            .map_err(|e| format!("frontier: {e}"))?;
+        let lease = self
+            .acquire_record(record, Some(writer.to_owned()), OpenIntent::Hold)
+            .await
+            .map_err(|e| format!("open member record: {e}"))?;
+        if let Ok(Some(current)) = self
+            .get_dht_value(
+                lease,
+                rekindle_types::dht_layout::member_record::FRONTIER,
+                false,
+            )
+            .await
+        {
+            if current == bytes {
+                self.release_record(lease).await;
+                return Ok(());
+            }
+        }
+        let written = self
+            .set_own_dht_value(
+                lease,
+                rekindle_types::dht_layout::member_record::FRONTIER,
+                bytes,
+                writer,
+            )
+            .await;
+        // What a joiner's read must meet (plan IV1b): the seq written, and
+        // the heads, beside the joiner's own frontier-read line.
+        if written.is_ok() {
+            let seqs = self.inspect_dht_record_local_seqs(lease).await;
+            let seq = seqs.ok().and_then(|s| {
+                s.get(rekindle_types::dht_layout::member_record::FRONTIER as usize)
+                    .copied()
+                    .flatten()
+            });
+            tracing::info!(
+                community = community_id,
+                seq,
+                heads = frontier.heads.len(),
+                "own frontier written"
+            );
+        }
+        self.release_record(lease).await;
+        written
+            .map(drop)
+            .map_err(|e| format!("write frontier: {e}"))
+    }
+}
+
+/// Append the encoded `op` to `record`'s op log (`M`/2) once: an earlier
+/// attempt whose write landed but whose acknowledgement was lost left the op
+/// at chain seq `op.seq + 1` or later, so the log after `op.seq` is read
+/// first and an entry with this op's hash settles the attempt without a
+/// second append, once the head naming it is at consensus. `Some`: this
+/// call appended it, on the sealed page it names (kept warm, plan E3.2 S7).
+///
+/// Readable is not landed: a head write that ended below consensus stays on
+/// the replicas that took it, each having stored it on arrival (0.5.8
+/// `inbound_set_value`, `set_value.rs:909-923`), and a reader reaching
+/// them reads the op, while nothing else republishes it, since Veilid never
+/// rehydrates a record created this session (`open_record.rs:62-81`). So a
+/// found op's head is written again: the same data and writer resend the
+/// stored bytes at their seq (`set_value.rs:353-366`), and a fanout that
+/// still ends below consensus answers `TryAgain`
+/// (`local_record_store_interface.rs:60-63`), which fails this attempt and
+/// leaves the row to its retry.
+///
+/// # Errors
+/// The op does not decode, or the read, the append or the head's
+/// republication failed.
+pub(crate) async fn append_op_once(
+    port: &dyn rekindle_records::port::RecordPort,
+    record: &str,
+    writer: &str,
+    op: Vec<u8>,
+) -> Result<Option<rekindle_codec::capnp_codec::chain::PagePointer>, String> {
+    let decoded =
+        rekindle_codec::governance_op::decode_op(&op).map_err(|e| format!("governance op: {e}"))?;
+    let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
+    let appended = rekindle_records::chain::append_at_unless_logged(
+        port,
+        record,
+        GOV_HEAD,
+        writer,
+        decoded.op.seq,
+        op,
+        |entry| {
+            rekindle_codec::governance_op::decode_op(entry)
+                .is_ok_and(|d| rekindle_governance::op::op_hash(&d.unsigned, &d.op.sig) == hash)
+        },
+    )
+    .await
+    .map_err(|e| format!("append op: {e}"))?;
+    match appended {
+        rekindle_records::chain::LoggedAppend::Appended(page) => Ok(Some(page)),
+        rekindle_records::chain::LoggedAppend::AlreadyLogged => {
+            republish_head(port, record, writer).await?;
+            Ok(None)
+        }
+    }
+}
+
+/// Write `record`'s op-log head again with the value just read from the
+/// network (see [`append_op_once`]).
+async fn republish_head(
+    port: &dyn rekindle_records::port::RecordPort,
+    record: &str,
+    writer: &str,
+) -> Result<(), String> {
+    let Some(head) = port
+        .read_once(record, GOV_HEAD, false)
+        .await
+        .map_err(|e| format!("read op-log head: {e}"))?
+    else {
+        return Ok(());
+    };
+    port.write_once(record, GOV_HEAD, head.data, Some(writer))
+        .await
+        .and_then(|outcome| outcome.require_stored(GOV_HEAD))
+        .map_err(|e| format!("republish op-log head: {e}"))
+}
+
+#[cfg(test)]
+#[path = "ops_tests.rs"]
+mod tests;

@@ -5,6 +5,11 @@
 //! or recovering peers can then target specific peers for message catchup
 //! instead of blind-fetching from the DHT.
 
+use rekindle_codec::member_record::history_ad::decode_history_ad;
+use rekindle_codec::member_record::RecordScope;
+use rekindle_codec::CodecError;
+use rekindle_secrets::keys::MediaEncryptionKey;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryAd {
     pub channel_id: String,
@@ -45,88 +50,26 @@ pub fn select_deepest_peer(ads: &[(usize, &HistoryAd)]) -> Option<usize> {
         .map(|(idx, _)| *idx)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{select_best_peer, HistoryAd};
-
-    #[test]
-    fn range_contains_endpoints() {
-        let ad = HistoryAd {
-            channel_id: "chan".into(),
-            oldest_lamport: 10,
-            newest_lamport: 20,
-        };
-        assert!(ad.contains(10));
-        assert!(ad.contains(15));
-        assert!(ad.contains(20));
-        assert!(!ad.contains(9));
-    }
-
-    #[test]
-    fn select_best_peer_finds_covering_range() {
-        let ad0 = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 1,
-            newest_lamport: 50,
-        };
-        let ad1 = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 40,
-            newest_lamport: 100,
-        };
-        // Peer 1 covers lamport 75, peer 0 does not
-        assert_eq!(select_best_peer(&[(0, &ad0), (1, &ad1)], 75), Some(1));
-        // Peer 0 covers lamport 25, peer 1 does not
-        assert_eq!(select_best_peer(&[(0, &ad0), (1, &ad1)], 25), Some(0));
-    }
-
-    #[test]
-    fn select_best_peer_prefers_widest_range() {
-        let narrow = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 10,
-            newest_lamport: 20,
-        };
-        let wide = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 5,
-            newest_lamport: 30,
-        };
-        // Both cover lamport 15, but peer 1 has wider range
-        assert_eq!(select_best_peer(&[(0, &narrow), (1, &wide)], 15), Some(1));
-    }
-
-    #[test]
-    fn select_best_peer_returns_none_when_no_coverage() {
-        let ad = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 1,
-            newest_lamport: 50,
-        };
-        assert_eq!(select_best_peer(&[(0, &ad)], 75), None);
-    }
-
-    #[test]
-    fn select_best_peer_empty_ads() {
-        assert_eq!(select_best_peer(&[], 10), None);
-    }
-
-    #[test]
-    fn select_deepest_peer_picks_smallest_oldest_lamport() {
-        let shallow = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 40,
-            newest_lamport: 100,
-        };
-        let deep = HistoryAd {
-            channel_id: "ch".into(),
-            oldest_lamport: 1,
-            newest_lamport: 50,
-        };
-        assert_eq!(
-            super::select_deepest_peer(&[(0, &shallow), (1, &deep)]),
-            Some(1)
-        );
-        assert_eq!(super::select_deepest_peer(&[]), None);
-    }
+/// Decode a member's `M`/5 history ad (plan E3.2) into the ads peer
+/// selection ranks. The codec verifies the pseudonym's signature for the
+/// record `at` and opens the ranges with `key`, the current
+/// `KeyScope::Community` key: a member without it reads no ads.
+pub fn decode_member_history_ads(
+    data: &[u8],
+    key: &MediaEncryptionKey,
+    at: RecordScope<'_>,
+    pseudonym: &[u8; 32],
+) -> Result<Vec<HistoryAd>, CodecError> {
+    Ok(decode_history_ad(data, key, at, pseudonym)?
+        .into_iter()
+        .map(|range| HistoryAd {
+            channel_id: hex::encode(range.channel_id.0),
+            oldest_lamport: range.oldest_lamport,
+            newest_lamport: range.newest_lamport,
+        })
+        .collect())
 }
+
+#[cfg(test)]
+#[path = "history_tests.rs"]
+mod tests;

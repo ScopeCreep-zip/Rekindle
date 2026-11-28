@@ -1,6 +1,8 @@
 # 0015 — Media engine: one Rust engine built from ported production components, not libwebrtc `Call` and not re-derived loops
 
-- **Status:** Accepted (owner ruling Q5, 2026-10-07: Option F)
+- **Status:** Accepted (owner ruling Q5, 2026-10-07: Option F). Amended 2026-10-24 (*Decided from research 2026-10-24:* plan §0 Q8): keyframe
+  requests follow 3GPP TS 26.114 as D27/R7 adopt it, not libwebrtc's fixed 200 ms; libwebrtc `video/timing` and
+  `stream_synchronization` stay for receive timing and A/V sync
 - **Date:** 2026-10-07
 - **Plan step:** E4.3.0 part 2, research spike for ruling Q5
   (`.claude/plans/standards-remediation/00-integration-plan.md` §0 table and E4.3)
@@ -18,8 +20,9 @@ E4.3 requires the following engines whichever engine choice is made (plan E4.3, 
 - GCC-class congestion control on per-packet arrival feedback, reacting within max(1 s, 3 RTT);
 - a NetEQ-class audio playout buffer (p95 target from a forgetting histogram, time-stretch, drift
   handling, PLC merge);
-- A/V sync under 80 ms, and keyframe requests after max(200 ms, RTT), repeated no faster than every
-  200 ms.
+- A/V sync under 80 ms, and keyframe requests per 3GPP TS 26.114: none while recovery is still possible
+  within 2×RWT, repeated every RWT (*amended 2026-10-24, Q8:* it read "after max(200 ms, RTT), repeated no
+  faster than every 200 ms"; the fixed 200 ms would fire 2–3 times per Veilid round trip).
 
 Rekindle derives each of these by hand today, one at a time, and keeps rebuilding them:
 
@@ -152,7 +155,7 @@ Component by component:
 | `BitrateAllocator` (one estimate split by priority, min and max across audio 24–64 kbps, video, FEC and screen) and audio accounting at the head of the pacer (`SetAccountForAudioPackets`, r6 I-BW2) | Ported from libwebrtc `call/bitrate_allocator.cc` semantics (r6 §2.1) | BSD-3-Clause | `rekindle-media-bwe` |
 | Transport feedback | RFC 8888-shaped report (begin_seq plus per-packet arrival offsets; send times kept by the sender, per evidence `steps-20-26.md` §25 item 2), as a Cap'n Proto struct (CLAUDE.md wire rule), every 50–200 ms on the same route | — | `schemas/voice.capnp`, `rekindle-codec` |
 | NetEQ audio playout | **Faithful port of libwebrtc NetEQ**: DelayManager, UnderrunOptimizer, ReorderOptimizer, DecisionLogic, BufferLevelFilter, PacketBuffer, Expand, Merge, Normal, Accelerate, PreemptiveExpand, BackgroundNoise, ComfortNoise and StatisticsCalculator. Opus decode through the existing `opus` 0.3 crate. Its unit tests are ported with it. | BSD-3-Clause | new `crates/rekindle-neteq`, `#![forbid(unsafe_code)]` |
-| Video receive timing, keyframe-request policy, A/V sync | Ported from libwebrtc `video/timing/` (jitter estimator and frame-delay Kalman), `video_receive_stream2` constants (200 ms / 3 s) and `video/stream_synchronization.cc` (1 s cadence, 80 ms step) | BSD-3-Clause | `rekindle-video` (stays `forbid(unsafe_code)`) |
+| Video receive timing, A/V sync; keyframe-request policy | Ported from libwebrtc `video/timing/` (jitter estimator and frame-delay Kalman) and `video/stream_synchronization.cc` (1 s cadence, 80 ms step); keyframe requests follow 3GPP TS 26.114, no request while recovery within 2×RWT is possible and a repeat every RWT (*amended 2026-10-24, Q8*), replacing the `video_receive_stream2` keyframe-request constants (200 ms / 3 s) | BSD-3-Clause (the libwebrtc parts) | `rekindle-video` (stays `forbid(unsafe_code)`) |
 | Loss-protection policy (RS FEC weight versus RTT; no audio NACK) | libwebrtc `media_opt_util` hybrid rule (r6 §2.4), driving the existing Reed-Solomon FEC | BSD-3-Clause | `rekindle-video` |
 
 **What this replaces (deleted when the matching E4.3 sub-step lands):**

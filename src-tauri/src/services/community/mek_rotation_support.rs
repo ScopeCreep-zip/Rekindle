@@ -4,12 +4,13 @@
 //! `MekDistributeDeps` (impl in `crate::services::mek_adapter`).
 //!
 //! What stays:
-//! * `lookup_mek` — exact-scope, exact-generation key lookup (cache, then keystore history)
 //! * `current_generation` — read the current MEK generation from cache/state
 //! * `update_generation_state` — mirror the cache write into AppState.communities
 //! * `persist_mek` — Stronghold persistence wrapper
 //! * `emit_rotation_event` — Tauri MekRotated emit
-//! * `my_pseudonym_hex` / `my_pseudonym` / `pseudonym_from_hex`
+//!
+//! Deleted with the last-resort mint's election (FX3), their only user:
+//! `my_pseudonym_hex`, `my_pseudonym`, `pseudonym_from_hex`.
 //!
 //! What moved into the crate (and was deleted from this file):
 //! * `RotationRecipient`, `online_recipients` — `MekDistributeDeps` methods
@@ -21,33 +22,9 @@
 
 use std::sync::Arc;
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::channel_keys::KeyScope;
-use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
-
-/// The scope's full key (with provenance) at exactly `generation`: the
-/// live keys, then the vault's history for that same scope. Never another
-/// scope's key. Used to re-serve a key to a requester, where provenance
-/// must travel with it.
-pub(crate) fn lookup_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    scope: KeyScope,
-    generation: u64,
-) -> Option<MediaEncryptionKey> {
-    use rekindle_mek_rotation::ChannelMekCache as _;
-    if let Some(mek) = crate::state_helpers::LiveMekCache::new(Arc::clone(state)).get(
-        community_id,
-        scope,
-        generation,
-    ) {
-        return Some(mek);
-    }
-    let guard = state.keystore.lock();
-    crate::keystore::load_mek_generation(guard.as_ref()?, community_id, scope, generation)
-}
 
 /// Mirror a key install into the scope's generation field: the
 /// community's for the community key, the channel's for a channel key.
@@ -93,39 +70,4 @@ pub(crate) fn emit_rotation_event(
             },
         ),
     );
-}
-
-pub(crate) fn persist_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    scope: KeyScope,
-    mek: &MediaEncryptionKey,
-) {
-    let guard = state.keystore.lock();
-    let Some(ks) = guard.as_ref() else {
-        tracing::warn!(community = %community_id, %scope, "keystore locked — MEK not persisted");
-        return;
-    };
-    if let Err(e) = crate::keystore::persist_mek(ks, community_id, scope, mek) {
-        tracing::warn!(community = %community_id, %scope, error = %e, "MEK not persisted");
-    }
-}
-
-pub(crate) fn my_pseudonym_hex(state: &Arc<AppState>, community_id: &str) -> Option<String> {
-    let communities = state.communities.read();
-    communities
-        .get(community_id)
-        .and_then(|community| community.my_pseudonym_key.clone())
-}
-
-pub(crate) fn my_pseudonym(state: &Arc<AppState>, community_id: &str) -> Option<PseudonymKey> {
-    my_pseudonym_hex(state, community_id)
-        .as_deref()
-        .and_then(pseudonym_from_hex)
-}
-
-pub(crate) fn pseudonym_from_hex(hex_str: &str) -> Option<PseudonymKey> {
-    let bytes = hex::decode(hex_str).ok()?;
-    let bytes: [u8; 32] = bytes.try_into().ok()?;
-    Some(PseudonymKey(bytes))
 }

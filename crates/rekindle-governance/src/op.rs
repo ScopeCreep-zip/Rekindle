@@ -1,0 +1,340 @@
+//! [`VerifiedOp`]: a governance op whose signature, chain position and
+//! dependencies are checked, with its hash and its validated Lamport value
+//! (plan E3.2). `merge` takes only these.
+
+use rekindle_secrets::sign::verify_signature;
+use rekindle_types::domains;
+use rekindle_types::governance::{GovernanceEntry, GovernanceOp, OpHash, OpRef};
+use rekindle_types::id::PseudonymKey;
+
+/// The order every CRDT apply rule compares: the op's validated Lamport
+/// value, then its hash. Total, and the same on every reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct OpStamp {
+    pub lamport: u64,
+    pub hash: OpHash,
+}
+
+impl OpStamp {
+    /// Below every real op (whose lamport is at least 1).
+    pub const MIN: Self = Self {
+        lamport: 0,
+        hash: OpHash([0; 32]),
+    };
+}
+
+/// Why an op was refused before it could reach `merge`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpRejection {
+    BadSignature,
+    BadInviteProof,
+    /// A `MemberJoined` or `MemberRecordMoved` whose record key is not the
+    /// one its owner key derives, or whose `ownerProof` is not that owner's
+    /// signature binding the record to the author (ADR 0011 "Binding").
+    BadOwnerProof,
+    /// A dep (or the author's previous op) is not known yet: the op waits
+    /// in `pending_deps` until it is fetched by its `OpRef`.
+    MissingDep(OpHash),
+    /// A dep's locator disagrees with the op it names.
+    DepMismatch(OpHash),
+    /// `prev` is absent at seq > 0, present at seq 0, not the author's
+    /// `seq - 1`, or not among the deps.
+    BadChain,
+    /// A `Checkpoint` op breaking its op-local rules: a cut head missing
+    /// from its deps, too many or repeated heads, a wrong `frontierHash`,
+    /// or a height that disagrees with `prevCheckpoint`
+    /// (`checkpoint::check_shape`, plan E3.2 S7c.3).
+    BadCheckpoint,
+}
+
+/// An op whose signature and deps are checked. Built only by
+/// [`VerifiedOp::verify`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerifiedOp {
+    op: GovernanceOp,
+    hash: OpHash,
+    lamport: u64,
+    /// The community anchor it was verified for: the context its device
+    /// elements are signed in (ADR 0022 rule 10).
+    anchor: String,
+}
+
+/// The op hash: BLAKE3 `derive_key(GOV_OP_HASH)` over the canonical
+/// unsigned bytes and the signature.
+#[must_use]
+pub fn op_hash(unsigned: &[u8], sig: &[u8; 64]) -> OpHash {
+    let mut hasher = blake3::Hasher::new_derive_key(domains::GOV_OP_HASH);
+    hasher.update(unsigned);
+    hasher.update(sig);
+    OpHash(*hasher.finalize().as_bytes())
+}
+
+/// The bytes an op's author signs: `GOV_OP ‖ anchor ‖ unsigned`.
+#[must_use]
+pub fn op_signing_bytes(anchor: &str, unsigned: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(domains::GOV_OP.len() + anchor.len() + unsigned.len());
+    out.extend_from_slice(domains::GOV_OP.as_bytes());
+    out.extend_from_slice(anchor.as_bytes());
+    out.extend_from_slice(unsigned);
+    out
+}
+
+/// Whether `sig` is `device_key`'s signature over op `unsigned` of community
+/// `anchor` (ADR 0022 rule 1: a device key signs every op): an op's authenticity alone, for one this reader cannot
+/// interpret and so cannot verify further (D15: it quarantines the
+/// community only when its author signed it).
+#[must_use]
+pub fn op_signature_holds(
+    anchor: &str,
+    device_key: &[u8; 32],
+    unsigned: &[u8],
+    sig: &[u8; 64],
+) -> bool {
+    verify_signature(device_key, &op_signing_bytes(anchor, unsigned), sig).is_ok()
+}
+
+/// The bytes of a joiner's invite proof (plan E3.2 S10): `INVITE_PROOF ‖
+/// lp(anchor) ‖ joiner pseudonym (32) ‖ lp(member_record) ‖ lp(code_hash)`,
+/// `lp` a `u32be` length prefix. The invite's join key signs them
+/// (`rekindle_secrets::invite::sign_invite_join`), so the proof names the
+/// community, its joiner and the record it binds and is not replayable for
+/// another pseudonym.
+#[must_use]
+pub fn invite_proof_bytes(
+    anchor: &str,
+    joiner: &PseudonymKey,
+    member_record: &str,
+    code_hash: &str,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(domains::INVITE_PROOF.as_bytes());
+    let mut field = |bytes: &[u8]| {
+        out.extend_from_slice(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_be_bytes());
+        out.extend_from_slice(bytes);
+    };
+    field(anchor.as_bytes());
+    field(&joiner.0);
+    field(member_record.as_bytes());
+    field(code_hash.as_bytes());
+    out
+}
+
+/// What verifying an op reads of one of its deps (plan E3.2 S7c.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepFacts<'a> {
+    pub author: &'a PseudonymKey,
+    pub device_key: &'a [u8; 32],
+    pub seq: u64,
+    pub lamport: u64,
+}
+
+impl VerifiedOp {
+    /// Verify `op` of community `anchor`. `unsigned` is the canonical
+    /// unsigned encoding the op was decoded from (the codec produces both
+    /// from one buffer); `known` resolves an already verified op by hash.
+    pub fn verify<'a>(
+        anchor: &str,
+        op: GovernanceOp,
+        unsigned: &[u8],
+        known: impl Fn(&OpHash) -> Option<&'a Self>,
+    ) -> Result<Self, OpRejection> {
+        Self::verify_with(anchor, op, unsigned, |h| known(h).map(Self::facts))
+    }
+
+    /// [`verify`](Self::verify) reading only what it needs of each dep, its
+    /// [`DepFacts`]: a post-cut op is verified against the cut index's
+    /// facts for the cut ops it cites, without those ops (plan E3.2 S7c.5).
+    pub fn verify_with<'a>(
+        anchor: &str,
+        op: GovernanceOp,
+        unsigned: &[u8],
+        known: impl Fn(&OpHash) -> Option<DepFacts<'a>>,
+    ) -> Result<Self, OpRejection> {
+        verify_signature(&op.device_key, &op_signing_bytes(anchor, unsigned), &op.sig)
+            .map_err(|_| OpRejection::BadSignature)?;
+        check_invite_proof(anchor, &op)?;
+        check_owner_proof(anchor, &op)?;
+        crate::checkpoint::check_shape(&op)?;
+        let mut lamport = 0;
+        for dep in &op.deps {
+            let found = known(&dep.op_hash).ok_or(OpRejection::MissingDep(dep.op_hash))?;
+            if *found.author != dep.author
+                || found.seq != dep.author_seq
+                || *found.device_key != dep.device_key
+            {
+                return Err(OpRejection::DepMismatch(dep.op_hash));
+            }
+            lamport = lamport.max(found.lamport);
+        }
+        check_chain(&op, &known)?;
+        let hash = op_hash(unsigned, &op.sig);
+        Ok(Self {
+            op,
+            hash,
+            lamport: lamport + 1,
+            anchor: anchor.to_owned(),
+        })
+    }
+
+    /// What a dependant's verification reads of this op.
+    #[must_use]
+    pub fn facts(&self) -> DepFacts<'_> {
+        DepFacts {
+            author: &self.op.author,
+            device_key: &self.op.device_key,
+            seq: self.op.seq,
+            lamport: self.lamport,
+        }
+    }
+
+    #[must_use]
+    pub fn op(&self) -> &GovernanceOp {
+        &self.op
+    }
+
+    #[must_use]
+    pub fn author(&self) -> &PseudonymKey {
+        &self.op.author
+    }
+
+    #[must_use]
+    pub fn body(&self) -> &GovernanceEntry {
+        &self.op.body
+    }
+
+    #[must_use]
+    pub fn hash(&self) -> OpHash {
+        self.hash
+    }
+
+    /// The community anchor this op was verified for.
+    #[must_use]
+    pub fn anchor(&self) -> &str {
+        &self.anchor
+    }
+
+    /// `1 + max(dep lamports)`, 1 with no deps.
+    #[must_use]
+    pub fn lamport(&self) -> u64 {
+        self.lamport
+    }
+
+    #[must_use]
+    pub fn stamp(&self) -> OpStamp {
+        OpStamp {
+            lamport: self.lamport,
+            hash: self.hash,
+        }
+    }
+
+    /// The locator other ops cite this one by.
+    #[must_use]
+    pub fn op_ref(&self, author_record: &str) -> OpRef {
+        OpRef {
+            op_hash: self.hash,
+            author: self.op.author.clone(),
+            author_record: author_record.to_owned(),
+            author_seq: self.op.seq,
+            device_key: self.op.device_key,
+        }
+    }
+
+    /// A fixture op for this crate's tests, whose signature is not
+    /// checked; `lamport` and `hash` are taken as given.
+    #[cfg(any(test, feature = "fixture"))]
+    pub(crate) fn assume_verified(op: GovernanceOp, hash: OpHash, lamport: u64) -> Self {
+        let anchor = crate::fixture::FIXTURE_ANCHOR.to_owned();
+        Self {
+            op,
+            hash,
+            lamport,
+            anchor,
+        }
+    }
+}
+
+/// The author's chain: seq 0 has no `prev`; seq n > 0 cites its own
+/// seq n - 1 as `prev`, and that op is among the deps.
+fn check_chain<'a>(
+    op: &GovernanceOp,
+    known: &impl Fn(&OpHash) -> Option<DepFacts<'a>>,
+) -> Result<(), OpRejection> {
+    match (op.seq, op.prev) {
+        (0, None) => Ok(()),
+        (seq, Some(prev)) if seq > 0 => {
+            let found = known(&prev).ok_or(OpRejection::MissingDep(prev))?;
+            let chained = *found.author == op.author && found.seq + 1 == seq;
+            let cited = op.deps.iter().any(|d| d.op_hash == prev);
+            if chained && cited {
+                Ok(())
+            } else {
+                Err(OpRejection::BadChain)
+            }
+        }
+        _ => Err(OpRejection::BadChain),
+    }
+}
+
+/// A `MemberJoined` invite proof must be signed by the invite's join key,
+/// whose public half is the commitment `code_hash` (plan E3.2 S10), over the
+/// joiner, its member record and the community: only a holder of the code
+/// makes it, and every reader checks it without the code. Whether the
+/// commitment names a live invite under its cap is a merge-time, causal
+/// check.
+fn check_invite_proof(anchor: &str, op: &GovernanceOp) -> Result<(), OpRejection> {
+    let GovernanceEntry::MemberJoined {
+        member_record,
+        invite_proof: Some(proof),
+        ..
+    } = &op.body
+    else {
+        return Ok(());
+    };
+    let sig: [u8; 64] = proof
+        .sig
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpRejection::BadInviteProof)?;
+    let bytes = invite_proof_bytes(anchor, &op.author, member_record, &proof.code_hash);
+    rekindle_secrets::invite::invite_join_verifies(&proof.code_hash, &bytes, &sig)
+        .then_some(())
+        .ok_or(OpRejection::BadInviteProof)
+}
+
+/// A `MemberJoined` or `MemberRecordMoved` binds a member record to its
+/// author only with the record owner's consent: the record key must be the
+/// one Veilid derives from `memberRecordOwner` for a DFLT member record
+/// (`rekindle_secrets::member_record::dflt_opaque_record_key`), and
+/// `ownerProof` must be that owner's signature over `anchor ‖ author ‖
+/// memberRecord`. Both keys are public once the record is, so without this
+/// anyone could name another's record and take it at merge.
+fn check_owner_proof(anchor: &str, op: &GovernanceOp) -> Result<(), OpRejection> {
+    use rekindle_secrets::member_record::{dflt_opaque_record_key, verify_member_record_binding};
+    use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
+    use rekindle_types::key_format::vld0_key_bytes;
+    let (GovernanceEntry::MemberJoined {
+        member_record: record,
+        member_record_owner: owner,
+        owner_proof: proof,
+        ..
+    }
+    | GovernanceEntry::MemberRecordMoved {
+        member_record: record,
+        member_record_owner: owner,
+        owner_proof: proof,
+    }) = &op.body
+    else {
+        return Ok(());
+    };
+    let owner = vld0_key_bytes(owner).ok_or(OpRejection::BadOwnerProof)?;
+    let opaque = vld0_key_bytes(record).ok_or(OpRejection::BadOwnerProof)?;
+    if opaque != dflt_opaque_record_key(&owner, SUBKEY_COUNT) {
+        return Err(OpRejection::BadOwnerProof);
+    }
+    let proof: [u8; 64] = proof
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpRejection::BadOwnerProof)?;
+    verify_member_record_binding(&owner, anchor, &op.author.0, record, &proof)
+        .map_err(|_| OpRejection::BadOwnerProof)
+}

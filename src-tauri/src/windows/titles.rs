@@ -2,14 +2,14 @@
 //!
 //! The webview never supplies a window title: a title is shown by the OS
 //! (task switcher, taskbar, Mission Control), outside the app's own chrome,
-//! so it is built here from the friend list, the community member table
-//! and the DM store, and stripped of control and bidi characters.
+//! so it is built here from the friend list and the community member
+//! table, and stripped of control and bidi characters.
 
 use std::sync::Arc;
 
 use rekindle_types::key_format::{PublicKeyHex, RecordKeyStr};
 
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -39,21 +39,27 @@ fn short_key(key: &str) -> String {
 /// A peer's name: friend nickname or display name, then a community member
 /// display name for a pseudonym key, then the short key.
 async fn peer_name(state: &Arc<AppState>, pool: &Db, key: &str) -> String {
-    let friend = state.friends.read().get(key).map(|f| {
-        f.nickname
-            .clone()
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| f.display_name.clone())
+    let friend = state_helpers::friend_field(state, key, |f| {
+        Some(
+            f.nickname
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| f.display_name.clone()),
+        )
     });
     if let Some(name) = friend.map(|n| title_text(&n)).filter(|n| !n.is_empty()) {
         return name;
     }
     let owner = state_helpers::owner_key_or_default(state);
     let pseudonym = key.to_owned();
-    let member: Option<String> = db_call_or_default(pool, move |conn| {
+    let member = db_call(pool, move |conn| {
         rekindle_db::repo::members::any_display_name(conn, &owner, &pseudonym)
     })
-    .await;
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "member display name unreadable; titling by short key");
+        None
+    });
     member
         .map(|n| title_text(&n))
         .filter(|n| !n.is_empty())
@@ -68,24 +74,8 @@ pub async fn profile(state: &Arc<AppState>, pool: &Db, peer: &PublicKeyHex) -> S
     format!("Profile - {}", peer_name(state, pool, peer.as_str()).await)
 }
 
-/// `DM - <peer>` for a 1:1 DM, `Group DM` for a group.
-pub async fn dm(state: &Arc<AppState>, pool: &Db, record: &RecordKeyStr) -> String {
-    let me = state_helpers::owner_key_or_default(state);
-    let conversations = crate::services::dm::list_dm_conversations(state, pool).await;
-    let Some(conv) = conversations
-        .into_iter()
-        .find(|c| c.record_key == record.as_str())
-    else {
-        return "Direct Message".to_owned();
-    };
-    if conv.is_group {
-        return "Group DM".to_owned();
-    }
-    match conv.participants.iter().find(|p| p.public_key != me) {
-        Some(peer) => format!("DM - {}", peer_name(state, pool, &peer.public_key).await),
-        None => "Direct Message".to_owned(),
-    }
-}
+/// A group DM's window title (the roster that could name it is E2.6's).
+pub const GROUP: &str = "Group DM";
 
 /// `Community - <name>`, or `Communities` for the community browser.
 pub fn community(state: &Arc<AppState>, community: Option<&RecordKeyStr>) -> String {
@@ -105,20 +95,5 @@ pub fn community(state: &Arc<AppState>, community: Option<&RecordKeyStr>) -> Str
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn title_text_strips_controls_and_bidi() {
-        assert_eq!(title_text("  Alice\u{7}  "), "Alice");
-        assert_eq!(title_text("evil\u{202E}gpj.exe"), "evilgpj.exe");
-        assert_eq!(title_text("a\u{2066}b\u{200F}c\nd"), "abcd");
-        assert_eq!(title_text(&"é".repeat(100)).chars().count(), MAX_TITLE_NAME);
-        assert_eq!(title_text("\u{202E}\u{0}"), "");
-    }
-
-    #[test]
-    fn short_key_is_prefix() {
-        assert_eq!(short_key("3f1a9c0b7e2d4f6a"), "3f1a9c0b…");
-    }
-}
+#[path = "titles_tests.rs"]
+mod tests;

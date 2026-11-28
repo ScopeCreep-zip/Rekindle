@@ -1,0 +1,179 @@
+//! The friend maintenance task (plan E2.1), one per unlock on both hosts:
+//! every 30 s evicting the peer routes past their TTL (the route cache's half of the old route watchdog); every
+//! sixth tick (~3 min) the expiry of stale requests and invites, and the
+//! retire of our DM chains past `DELIVERY_HORIZON` (`dm::stream::
+//! retire_quiet`, plan E2.5), so a quiet conversation does not wait for
+//! our next send. Every tick also re-opens the watches whose open failed
+//! and whose backoff is due (`retry_failed_watches`, plan E2.6). The ticks
+//! are tokio time (paused under netsim): C9.2's `Clock` reads the time, it
+//! does not wait. Sends are the outbox's (plan E2.5), and a removed friend
+//! is forgotten on its `Unfriended` row's settle event, not here.
+//!
+//! Friend-presence staleness (plan E2.5, D23) is a local TTL timer of its
+//! own: every [`STALE_TICK`] it marks offline the friends whose last
+//! heartbeat is past the threshold, reading nothing from the DHT.
+//!
+//! The prekey maintenance (plan E2.4, B1) is a task of its own. It starts
+//! only when the own-records stage says our prekey record is held,
+//! reconciled and filled (a oneshot sent after `fill_record`; audit D-7:
+//! it used to poll the lease, which is set before the fill, and tick at
+//! once, so it could mint a second set beside the stage's), and its first
+//! pass is one [`PREKEY_TICK`] later; then every tick it plans, mints and
+//! publishes what our record needs.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use rekindle_transport::operations::friend;
+use tokio_util::sync::CancellationToken;
+
+use super::HostFriends;
+use crate::daemon::dispatch::DaemonContext;
+
+/// The tick.
+const TICK: Duration = Duration::from_secs(30);
+/// Expiry runs every this many ticks.
+const EXPIRY_EVERY: u64 = 6;
+/// The staleness timer's tick.
+const STALE_TICK: Duration = Duration::from_secs(30);
+/// The prekey maintenance's tick: its rules run in days (B1), and a
+/// consumed slot is refilled at once by the accept that used it (B8).
+const PREKEY_TICK: Duration = Duration::from_secs(60 * 60);
+
+/// Start the task in `scope` (the unlock's).
+///
+/// # Errors
+/// The scope is closed (the unlock is ending).
+pub(crate) fn start(
+    ctx: &DaemonContext,
+    scope: &Arc<rekindle_lifecycle::SessionScope>,
+) -> Result<(), rekindle_lifecycle::ScopeClosed> {
+    let host = HostFriends::of(ctx);
+    let stale = host.clone();
+    scope.spawn_with_token("friend maintenance", move |stop| run(host, stop))?;
+    scope.spawn_with_token("friend presence staleness", move |stop| {
+        run_staleness(stale, stop)
+    })
+}
+
+/// Every [`STALE_TICK`], mark the friends with a stale heartbeat offline.
+async fn run_staleness(host: HostFriends, stop: CancellationToken) {
+    let mut ticks = tokio::time::interval(STALE_TICK);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        // Biased, stop first: a lock beside a tick runs no pass.
+        tokio::select! {
+            biased;
+            () = stop.cancelled() => return,
+            _ = ticks.tick() => {}
+        }
+        rekindle_presence::check_stale_friend_presences(&host);
+    }
+}
+
+/// Start the prekey maintenance in `scope` (the unlock's); it waits for
+/// `ready` (the own-records stage's signal that our record is filled).
+///
+/// # Errors
+/// The scope is closed (the unlock is ending).
+pub(crate) fn start_prekeys(
+    ctx: &DaemonContext,
+    scope: &Arc<rekindle_lifecycle::SessionScope>,
+    ready: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), rekindle_lifecycle::ScopeClosed> {
+    let host = HostFriends::of(ctx);
+    let writes = Arc::clone(&ctx.own_prekey_writes);
+    scope.spawn_with_token("prekey maintenance", move |stop| {
+        let ending = stop.clone();
+        run_prekeys(ready, stop, move || {
+            let (host, writes, ending) = (host.clone(), Arc::clone(&writes), ending.clone());
+            async move {
+                // One writer of our record at a time (F9); a rotation holds
+                // it until the unlock ends, so the wait ends with the scope.
+                let Some(_writes) = ending.run_until_cancelled(writes.lock_owned()).await else {
+                    return;
+                };
+                if let Err(e) = rekindle_transport::operations::prekeys::maintain(&host).await {
+                    tracing::warn!(error = %e, "prekey maintenance failed");
+                }
+            }
+        })
+    })
+}
+
+/// Wait for `ready`, then run `pass` every [`PREKEY_TICK`], the first one
+/// tick after `ready`. A `ready` dropped unsent (the stage did not hold
+/// our record) ends the task: there is nothing to maintain this unlock.
+async fn run_prekeys<P, F>(
+    ready: tokio::sync::oneshot::Receiver<()>,
+    stop: CancellationToken,
+    mut pass: P,
+) where
+    P: FnMut() -> F,
+    F: std::future::Future<Output = ()>,
+{
+    // Biased, stop first: a lock beside the stage's signal starts no ticks.
+    tokio::select! {
+        biased;
+        () = stop.cancelled() => return,
+        held = ready => if held.is_err() {
+            tracing::debug!("prekey maintenance: no prekey record held this unlock");
+            return;
+        },
+    }
+    let mut ticks =
+        tokio::time::interval_at(tokio::time::Instant::now() + PREKEY_TICK, PREKEY_TICK);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        // Biased, stop first: a lock beside a tick runs no pass.
+        tokio::select! {
+            biased;
+            () = stop.cancelled() => return,
+            _ = ticks.tick() => {}
+        }
+        pass().await;
+    }
+}
+
+async fn run(host: HostFriends, stop: CancellationToken) {
+    let mut ticks = tokio::time::interval(TICK);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut count: u64 = 0;
+    loop {
+        // Biased, stop first: a lock beside a tick runs no pass.
+        tokio::select! {
+            biased;
+            () = stop.cancelled() => return,
+            _ = ticks.tick() => {}
+        }
+        count += 1;
+        host.retry_failed_watches().await;
+        if let Some(node) = host.ctx().transport.read().clone() {
+            let evicted = node.peers().write().evict_stale_routes();
+            if !evicted.is_empty() {
+                tracing::debug!(count = evicted.len(), "evicted stale peer routes");
+            }
+        }
+        if count.is_multiple_of(EXPIRY_EVERY) {
+            if let Err(e) = friend::expire_stale_requests(&host).await {
+                tracing::warn!(error = %e, "expiring stale friend requests failed");
+            }
+            // Reset requests either way live as long as the hold they wait on.
+            let ttl = rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS;
+            if let Err(e) = friend::expire_resets(&host, ttl).await {
+                tracing::warn!(error = %e, "expiring stale session resets failed");
+            }
+            rekindle_transport::operations::dm::stream::retire_quiet(&host).await;
+            rekindle_transport::operations::group_dm::retire::retire_quiet(&host).await;
+            match friend::expire_stale_invites(&host).await {
+                Ok(0) => {}
+                Ok(expired) => tracing::info!(expired, "expired stale friend invites"),
+                Err(e) => tracing::warn!(error = %e, "expiring stale invites failed"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "maintenance_tests.rs"]
+mod tests;

@@ -1,33 +1,32 @@
-import { Component } from "solid-js";
-import { buddyListUI, switchTab } from "../../stores/buddylist-ui.store";
+import { type Component, For } from "solid-js";
+import { type BuddyListTab, buddyListUI, switchTab } from "../../stores/buddylist-ui.store";
 
-const TabBar: Component = () => {
-  function handleFriendsTab(): void {
-    switchTab("friends");
-  }
+/** The app's own layout's tabs (a skin's tree switches its views itself):
+ *  Xfire's Friends, Servers and Downloads, and Rekindle's Communities. */
+const TABS: { tab: BuddyListTab; label: string }[] = [
+  { tab: "friends", label: "Friends" },
+  { tab: "communities", label: "Communities" },
+  { tab: "servers", label: "Servers" },
+  { tab: "files", label: "Downloads" },
+];
 
-  function handleCommunitiesTab(): void {
-    switchTab("communities");
-  }
-
-  return (
-    <div class="buddy-tab-bar">
-      <button
-        class={`buddy-tab ${buddyListUI.activeTab === "friends" ? "buddy-tab-active" : ""}`}
-        onClick={handleFriendsTab}
-        title="Friends (Alt+1)"
-      >
-        Friends
-      </button>
-      <button
-        class={`buddy-tab ${buddyListUI.activeTab === "communities" ? "buddy-tab-active" : ""}`}
-        onClick={handleCommunitiesTab}
-        title="Communities (Alt+2)"
-      >
-        Communities
-      </button>
-    </div>
-  );
-};
+const TabBar: Component = () => (
+  <div class="buddy-tab-bar" role="tablist" aria-label="Buddy list">
+    <For each={TABS}>
+      {(t, i) => (
+        <button
+          type="button"
+          class={`buddy-tab ${buddyListUI.activeTab === t.tab ? "buddy-tab-active" : ""}`}
+          role="tab"
+          aria-selected={buddyListUI.activeTab === t.tab}
+          onClick={() => switchTab(t.tab)}
+          title={`${t.label} (Alt+${i() + 1})`}
+        >
+          {t.label}
+        </button>
+      )}
+    </For>
+  </div>
+);
 
 export default TabBar;

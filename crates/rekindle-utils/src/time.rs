@@ -54,3 +54,39 @@ pub fn timestamp_secs() -> u64 {
 pub fn timestamp_secs_i64() -> i64 {
     i64::try_from(since_epoch().as_secs()).unwrap_or(i64::MAX)
 }
+
+/// Wall-clock time as the engines and the Host read it (plan C9.2): the
+/// production [`SystemClock`], or a simulated clock, so a seeded run fixes
+/// every timestamp the code writes or compares.
+pub trait Clock: Send + Sync {
+    /// Milliseconds since the UNIX epoch.
+    fn now_ms(&self) -> u64;
+
+    /// Seconds since the UNIX epoch.
+    fn now_secs(&self) -> u64 {
+        self.now_ms() / 1000
+    }
+
+    /// [`now_ms`](Self::now_ms) as `i64`, for `SQLite` columns.
+    fn now_ms_i64(&self) -> i64 {
+        i64::try_from(self.now_ms()).unwrap_or(i64::MAX)
+    }
+}
+
+/// The system's wall clock.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now_ms(&self) -> u64 {
+        timestamp_ms()
+    }
+
+    fn now_secs(&self) -> u64 {
+        timestamp_secs()
+    }
+}
+
+#[cfg(test)]
+#[path = "time_tests.rs"]
+mod tests;

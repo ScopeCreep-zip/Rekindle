@@ -127,7 +127,7 @@ async fn only_the_daemon_can_answer_a_request() {
 
     let response = pending.await.unwrap().unwrap();
     assert!(
-        matches!(&response, IpcResponse::Ok(v) if v == "genuine"),
+        matches!(&response, IpcResponse::Ok { data, .. } if data == "genuine"),
         "victim got {response:?}"
     );
 }
@@ -139,17 +139,20 @@ async fn the_server_stamps_the_senders_real_name_and_key() {
 
     let mut forged = Message::new(
         &MessageContext::new(client.sender_id()),
-        BusPayload::Request(IpcRequest::Status),
+        BusPayload::Request(Box::new(IpcRequest::Status)),
         SecurityLevel::Open,
         client.epoch(),
     );
     forged.verified_sender_name = Some(DAEMON_AGENT_NAME.to_string());
     forged.verified_sender_key = Some([9; 32]);
+    forged.verified_sender_conn = Some(u64::MAX);
     client.send(&forged).await.unwrap();
 
     let received = bus.next_request().await;
     assert_eq!(received.verified_sender_name, None);
     assert_eq!(received.verified_sender_key, Some(client_pub));
+    assert_ne!(received.verified_sender_conn, Some(u64::MAX));
+    assert!(received.verified_sender_conn.is_some());
 }
 
 #[tokio::test]
@@ -180,7 +183,7 @@ async fn a_reply_in_flight_at_shutdown_still_arrives() {
         .expect("drain finishes");
 
     let response = pending.await.unwrap().unwrap();
-    assert!(matches!(&response, IpcResponse::Ok(v) if v == "stopping"));
+    assert!(matches!(&response, IpcResponse::Ok { data, .. } if data == "stopping"));
 }
 
 #[tokio::test]

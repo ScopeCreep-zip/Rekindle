@@ -1,0 +1,128 @@
+//! Group-DM events (plan E2.6): invites, members joining and leaving, key
+//! rotations and the delivery state of our group sends. A peer is named
+//! by our nickname for them or their fingerprint, never by a name their
+//! payload carries; the group's own name is the creator's.
+
+use serde::{Deserialize, Serialize};
+
+use crate::message::{DeliveryRetry, SendState};
+
+/// A member as we show them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupDmMember {
+    pub public_key: String,
+    /// Our nickname for them, or their fingerprint.
+    pub display_name: String,
+}
+
+/// Group-DM lifecycle events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum GroupDmEvent {
+    /// A creator invited us. Triggered by: a verified `GroupDmInvite`.
+    Invited {
+        group_id: String,
+        /// The creator's name for the group.
+        name: String,
+        inviter: GroupDmMember,
+        /// The signed roster, the inviter and us included.
+        members: Vec<GroupDmMember>,
+    },
+    /// A member (we, or another) joined. Triggered by: our accept, or a
+    /// member's `GroupDmAccept`.
+    Joined {
+        group_id: String,
+        member: GroupDmMember,
+    },
+    /// A member (we, or another) left, or we blocked them. Triggered by:
+    /// our leave, a member's `GroupDmLeave`, our block.
+    Left {
+        group_id: String,
+        member: GroupDmMember,
+    },
+    /// A member's sending key moved to `epoch` (ours after a leave or
+    /// block, or a member's resend).
+    KeyRotated {
+        group_id: String,
+        member: GroupDmMember,
+        epoch: u32,
+    },
+    /// Our group send's state: `queued`, `sent` once its chain entry lands,
+    /// or `failed`; never `delivered` or `read` (a group has no receipts).
+    SendStatus {
+        group_id: String,
+        client_id: String,
+        state: SendState,
+        /// `Some` while an attempt went unanswered and the row is retried
+        /// (attempt count, next attempt), as on `DmSendStatus`; `None` on
+        /// every other change, so the row's settling change clears it.
+        retry: Option<DeliveryRetry>,
+    },
+    /// A member's message, stored under the group's conversation.
+    /// Triggered by: an entry of the member's group chain that opened.
+    Message {
+        group_id: String,
+        /// Its client id (`messages.message_id`), minted by its author.
+        message_id: String,
+        sender: GroupDmMember,
+        body: String,
+        /// The author's clock, milliseconds.
+        timestamp: i64,
+        reply_to: Option<String>,
+    },
+    /// Our own message to the group, exactly as stored, once it is
+    /// committed to the group's outbox stream with its local echo (plan
+    /// E2.5, E6.11): every window of the group upserts it by
+    /// `message.message_id`, so a send no window rendered still shows.
+    /// Distinct from [`Self::Message`] by type: never a member's words, so
+    /// no consumer can notify for it or count it unread.
+    /// Triggered by: `group_dm::content::send` committing our message.
+    MessageSent {
+        group_id: String,
+        /// The client id of the message it replies to, if any.
+        reply_to_id: Option<String>,
+        /// The stored row, as the group's history answers it.
+        message: Box<crate::dto::dm::DmMessage>,
+    },
+    /// The group's creator renamed it. Triggered by: our rename, or the
+    /// creator's `GroupDmRename` entry that opened (never a non-creator's).
+    Renamed { group_id: String, name: String },
+    /// The group's game lobby changed (plan E7.2 G6, SK2-G §5): its view as
+    /// we see it now, or `None` when the group holds none. Triggered by:
+    /// our lobby request, or a roster member's lobby entry that opened and
+    /// changed the fold.
+    Lobby {
+        group_id: String,
+        lobby: Option<crate::dto::group_lobby::LobbyView>,
+    },
+    /// `member`'s group chain was retired past our cursor: their entries
+    /// through `through_seq` were never read. It is stored as the group's
+    /// history-gap row (`messages.history_gap_through`, the 1:1 marker's
+    /// shape), so one marker renders for a DM and a group. Triggered by: a
+    /// diff of the member's chain that met its retire mark.
+    HistoryGap {
+        group_id: String,
+        member: GroupDmMember,
+        through_seq: u64,
+    },
+}
+
+impl GroupDmEvent {
+    /// The group this event belongs to.
+    #[must_use]
+    pub fn group_id(&self) -> &str {
+        match self {
+            Self::Invited { group_id, .. }
+            | Self::Joined { group_id, .. }
+            | Self::Left { group_id, .. }
+            | Self::KeyRotated { group_id, .. }
+            | Self::SendStatus { group_id, .. }
+            | Self::Message { group_id, .. }
+            | Self::MessageSent { group_id, .. }
+            | Self::HistoryGap { group_id, .. }
+            | Self::Renamed { group_id, .. }
+            | Self::Lobby { group_id, .. } => group_id,
+        }
+    }
+}

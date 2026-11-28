@@ -16,6 +16,9 @@ pub struct MekTransferPayload {
     pub generation: u64,
     pub sender_pseudonym: String,
     pub wrapped_mek: Vec<u8>,
+    /// Random per push, kept across its retries (review S7m part 1): the
+    /// ack echoes it inside its tag. Correlates, never settles.
+    pub transfer_id: Vec<u8>,
 }
 
 /// P1.3 — requester → responder ack confirming successful
@@ -41,6 +44,12 @@ pub struct MekTransferAckPayload {
     /// indexed by `(community_id, channel_id, generation,
     /// requester_pseudonym)`.
     pub requester_pseudonym: String,
+    /// The transfer's id, echoed.
+    pub transfer_id: Vec<u8>,
+    /// The key-confirmation tag (`rekindle_secrets::mek_ack`): only a tag
+    /// that verifies under the sender's own key of `generation` settles a
+    /// transfer.
+    pub ack_tag: Vec<u8>,
 }
 
 /// Architecture §10.6 video / screen-share fragment. Frames are

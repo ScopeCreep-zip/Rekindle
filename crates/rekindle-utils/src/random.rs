@@ -13,13 +13,65 @@
 
 use rand::RngCore;
 
+/// Randomness as the engines read it for identifiers and keys (plan C9.2):
+/// the production [`OsRandom`], or a seeded generator, so a seed fixes the
+/// trace. Every implementation is a cryptographic generator (`CryptoRng`).
+/// AEAD nonces never come from this seam: they stay on `OsRng` inside
+/// `rekindle-secrets`.
+pub trait RandomSource: rand::CryptoRng + Send + Sync {
+    /// Fill `dest` with random bytes.
+    fn fill(&self, dest: &mut [u8]);
+
+    /// A random `u32`.
+    fn next_u32(&self) -> u32 {
+        let mut bytes = [0u8; 4];
+        self.fill(&mut bytes);
+        u32::from_le_bytes(bytes)
+    }
+
+    /// A uniform value in `[0, bound)`; `0` when `bound` is `0`. Rejection
+    /// sampling, so no value is favoured.
+    fn below(&self, bound: u64) -> u64 {
+        if bound == 0 {
+            return 0;
+        }
+        let zone = u64::MAX - (u64::MAX % bound);
+        loop {
+            let mut bytes = [0u8; 8];
+            self.fill(&mut bytes);
+            let value = u64::from_le_bytes(bytes);
+            if value < zone {
+                return value % bound;
+            }
+        }
+    }
+}
+
+/// The operating system's entropy.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OsRandom;
+
+impl rand::CryptoRng for OsRandom {}
+
+impl RandomSource for OsRandom {
+    fn fill(&self, dest: &mut [u8]) {
+        rand::rngs::OsRng.fill_bytes(dest);
+    }
+}
+
+/// 16 random bytes from `rng`, for identifiers an engine mints.
+#[must_use]
+pub fn id_bytes_16_from(rng: &dyn RandomSource) -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    rng.fill(&mut bytes);
+    bytes
+}
+
 /// 16 random bytes — the shape of a `ChannelId`, `CategoryId` or
 /// `RoleId`.
 #[must_use]
 pub fn id_bytes_16() -> [u8; 16] {
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    bytes
+    id_bytes_16_from(&OsRandom)
 }
 
 /// `len` random bytes, for nonces and salts.
@@ -29,3 +81,7 @@ pub fn bytes(len: usize) -> Vec<u8> {
     rand::rngs::OsRng.fill_bytes(&mut out);
     out
 }
+
+#[cfg(test)]
+#[path = "random_tests.rs"]
+mod tests;

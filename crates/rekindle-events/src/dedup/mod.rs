@@ -9,7 +9,7 @@
 //! At 100K+ agent scale, this ensures the IPC bus carries only unique events.
 
 use std::collections::{HashSet, VecDeque};
-use std::time::Instant;
+use tokio::time::Instant;
 
 use tracing::{debug, trace};
 
@@ -65,15 +65,25 @@ impl EventDedup {
 
     /// Check if this event is new (should emit) or duplicate (suppress).
     ///
+    /// `now_ms` is the caller's clock reading (the Host's clock port):
+    /// time-bucketed variants hash on it, so dedup is a pure function of
+    /// the events and the clock.
+    ///
     /// Returns `true` if the event is new and has been recorded.
     /// Returns `false` if the event is a duplicate.
-    pub fn check(&mut self, event: &SubscriptionEvent) -> bool {
-        // UnreadChanged is always emitted — it's a computed aggregate, not a network event
-        if matches!(event, SubscriptionEvent::UnreadChanged { .. }) {
+    pub fn check(&mut self, event: &SubscriptionEvent, now_ms: u64) -> bool {
+        // UnreadChanged is always emitted — it's a computed aggregate, not a network event.
+        // A transfer event is the Host's own local state (plan E7.2 G12): it
+        // arrives by one path only, and the same state legitimately repeats
+        // (stop, start, stop again), so no digest may suppress it.
+        if matches!(
+            event,
+            SubscriptionEvent::UnreadChanged { .. } | SubscriptionEvent::Transfer(_)
+        ) {
             return true;
         }
 
-        let digest = hash_event(event);
+        let digest = hash_event(event, now_ms);
 
         if self.digests.contains(&digest) {
             self.suppressed_count += 1;
@@ -148,7 +158,7 @@ impl Default for EventDedup {
 /// The hash covers semantically meaningful fields only. Pathway-specific
 /// metadata (which tier delivered it, arrival timestamp) is excluded so
 /// the same event from different tiers produces the same digest.
-fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
+fn hash_event(event: &SubscriptionEvent, now_ms: u64) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
 
     // Tag with the outer discriminant to prevent cross-type collisions
@@ -157,21 +167,30 @@ fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
 
     match event {
         SubscriptionEvent::ChannelMessage(msg) => hash_channel_message(&mut hasher, msg),
-        SubscriptionEvent::Typing(t) => hash_typing(&mut hasher, t),
-        SubscriptionEvent::Presence(p) => hash_presence(&mut hasher, p),
+        SubscriptionEvent::Typing(t) => hash_typing(&mut hasher, t, now_ms),
+        SubscriptionEvent::Presence(p) => hash_presence(&mut hasher, p, now_ms),
         SubscriptionEvent::Membership(m) => hash_membership(&mut hasher, m),
         SubscriptionEvent::Friend(f) => hash_friend(&mut hasher, f),
+        SubscriptionEvent::GroupDm(g) => hash_messaging::hash_group_dm(&mut hasher, g),
         SubscriptionEvent::Crypto(c) => hash_crypto(&mut hasher, c),
-        SubscriptionEvent::Voice(v) => hash_voice(&mut hasher, v),
+        SubscriptionEvent::Voice(v) => hash_voice(&mut hasher, v, now_ms),
         SubscriptionEvent::Governance(g) => hash_governance(&mut hasher, g),
         SubscriptionEvent::Social(s) => hash_social(&mut hasher, s),
         SubscriptionEvent::Call(c) => hash_call(&mut hasher, c),
         SubscriptionEvent::Notification(n) => hash_notification(&mut hasher, n),
         SubscriptionEvent::Network(n) => hash_network(&mut hasher, n),
-        SubscriptionEvent::System(s) => hash_system(&mut hasher, s),
+        SubscriptionEvent::System(s) => hash_system(&mut hasher, s, now_ms),
         SubscriptionEvent::UnreadChanged { .. } => {
             // Never reaches here — check() returns true early for UnreadChanged
             hasher.update(b"unread");
+        }
+        // Never reaches here either — check() returns true early for transfers.
+        SubscriptionEvent::Transfer(_) => {
+            hasher.update(b"transfer");
+        }
+        // Each review has its own id: two are never the same action.
+        SubscriptionEvent::IntentPending(review) => {
+            hasher.update(review.intent_id.to_string().as_bytes());
         }
     }
 
@@ -185,6 +204,7 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Presence(_) => "pr",
         SubscriptionEvent::Membership(_) => "mb",
         SubscriptionEvent::Friend(_) => "fr",
+        SubscriptionEvent::GroupDm(_) => "gd",
         SubscriptionEvent::Crypto(_) => "cr",
         SubscriptionEvent::Voice(_) => "vo",
         SubscriptionEvent::Governance(_) => "go",
@@ -193,7 +213,9 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Notification(_) => "nt",
         SubscriptionEvent::Network(_) => "ne",
         SubscriptionEvent::System(_) => "sy",
+        SubscriptionEvent::Transfer(_) => "tf",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
+        SubscriptionEvent::IntentPending(_) => "ip",
     }
 }
 

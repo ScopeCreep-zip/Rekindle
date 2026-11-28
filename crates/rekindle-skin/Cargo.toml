@@ -1,0 +1,72 @@
+[package]
+name = "rekindle-skin"
+version = "0.1.0"
+publish = false
+edition = "2021"
+description = "The skin package format rekindle-skin/1: the strict in-memory zip walk, the manifest rules, the token profile and the closed token registry (plan E7.7.1)"
+license.workspace = true
+# Two test binaries: `tests/skin.rs` holds the shared zip writer and both
+# suites; `tests/serve_budget.rs` times the built-ins' stylesheets alone, so
+# no sibling test loads the CPU while it measures.
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# The scrubbing panic hook (rule B19): a panic message may quote the
+# untrusted package, and the Host keeps the start of stderr.
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
+# The canonical package's content address (step 7).
+blake3 = "1"
+crc32fast = "1.5"
+# PCM16 WAV writer for the re-encoded sound cues (Apache-2.0).
+hound = "3.5"
+# The Xfire XML-era importer's reader (MIT): no DTD, no entity resolution.
+quick-xml = "0.42"
+# The Winamp importer inflates its legacy archive (MIT; already in the tree
+# through png). Deflate is inflated only there.
+miniz_oxide = "0.8"
+rekindle-image = { path = "../rekindle-image" }
+# The Mumble/TeamSpeak importer rasterises SVG icons at import (MIT OR
+# Apache-2.0): no text, no system fonts, no raster-image decoders, no
+# svgz; every image href refused by our resolver (plan E7.7.3 item 5).
+resvg = { version = "0.45.1", default-features = false }
+# The same XML reader usvg uses, for the SVG pre-scan (node count, text and
+# reference refusal) before anything is rasterised (MIT OR Apache-2.0).
+rekindle-types = { path = "../rekindle-types" }
+roxmltree = "0.20"
+serde = { workspace = true }
+serde_json = { workspace = true }
+spdx = "0.10"
+# The helper process's typed failure.
+thiserror = { workspace = true }
+# Sound decoders: WAV (PCM), Ogg Vorbis and FLAC only, pure Rust (MPL-2.0).
+symphonia = { version = "0.5", default-features = false, features = [ "wav", "pcm", "ogg", "vorbis", "flac" ] }
+unicode-normalization = "0.1.25"
+
+# The helper's own OS caps through a safe setrlimit (MIT): RLIMIT_AS and
+# RLIMIT_CPU on Linux, RLIMIT_CPU on macOS (plan E7.7.1 "Helper process").
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rlimit = "0.11"
+
+# The Host's macOS footprint watchdog reads the helper's `ri_phys_footprint`
+# through libproc's safe `pidrusage` (MIT; plan E7.7.1 "Helper process",
+# d4 §2.2): macOS has no usable hard memory cap.
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = "0.14.11"
+
+[[bin]]
+name = "rekindle-skin-helper"
+path = "src/bin/rekindle-skin-helper.rs"
+
+[[test]]
+name = "skin"
+path = "tests/skin.rs"
+
+[[test]]
+name = "serve_budget"
+path = "tests/serve_budget.rs"
+
+[dev-dependencies]
+blake3 = "1"

@@ -15,6 +15,7 @@ pub(crate) mod helpers;
 mod invites;
 mod link_previews;
 mod mek;
+mod member_blocks;
 mod messaging;
 mod moderation;
 mod notifications;
@@ -27,7 +28,6 @@ mod reactions_pins;
 mod roles;
 mod segments;
 mod threads;
-pub(crate) mod types;
 mod unread;
 mod video;
 
@@ -63,15 +63,24 @@ pub use channels::{
     reorder_categories, reorder_channels, set_channel_forum_tags, set_channel_topic,
 };
 pub use crud::{
-    __cmd__create_community, __cmd__get_communities, __cmd__get_community_details,
-    __cmd__join_community, __cmd__leave_community, __cmd__update_community_info,
-    __tauri_command_name_create_community, __tauri_command_name_get_communities,
-    __tauri_command_name_get_community_details, __tauri_command_name_join_community,
-    __tauri_command_name_leave_community, __tauri_command_name_update_community_info,
+    __cmd__answer_creator_invite, __cmd__cancel_community_create, __cmd__community_device_enrol,
+    __cmd__create_community, __cmd__follow_community_successor, __cmd__get_co_creation,
+    __cmd__get_communities, __cmd__get_community_details, __cmd__get_community_successors,
+    __cmd__join_community, __cmd__leave_community, __cmd__publish_community_successor,
+    __cmd__remove_co_creator, __cmd__update_community_info,
+    __tauri_command_name_answer_creator_invite, __tauri_command_name_cancel_community_create,
+    __tauri_command_name_community_device_enrol, __tauri_command_name_create_community,
+    __tauri_command_name_follow_community_successor, __tauri_command_name_get_co_creation,
+    __tauri_command_name_get_communities, __tauri_command_name_get_community_details,
+    __tauri_command_name_get_community_successors, __tauri_command_name_join_community,
+    __tauri_command_name_leave_community, __tauri_command_name_publish_community_successor,
+    __tauri_command_name_remove_co_creator, __tauri_command_name_update_community_info,
 };
 pub use crud::{
-    create_community, get_communities, get_community_details, join_community, leave_community,
-    update_community_info,
+    answer_creator_invite, cancel_community_create, community_device_enrol, create_community,
+    follow_community_successor, get_co_creation, get_communities, get_community_details,
+    get_community_successors, join_community, leave_community, publish_community_successor,
+    remove_co_creator, update_community_info,
 };
 #[cfg(debug_assertions)]
 pub use diagnostics::{
@@ -125,6 +134,12 @@ pub use link_previews::{
     set_link_previews_enabled,
 };
 pub use mek::{__cmd__rotate_mek, __tauri_command_name_rotate_mek, rotate_mek};
+pub use member_blocks::{
+    __cmd__block_community_member, __cmd__list_community_blocks, __cmd__unblock_community_member,
+    __tauri_command_name_block_community_member, __tauri_command_name_list_community_blocks,
+    __tauri_command_name_unblock_community_member, block_community_member, list_community_blocks,
+    unblock_community_member,
+};
 pub use messaging::{
     __cmd__delete_channel_message, __cmd__edit_channel_message, __cmd__forward_channel_message,
     __cmd__get_channel_messages, __cmd__get_older_channel_messages, __cmd__send_channel_message,
@@ -191,15 +206,15 @@ pub use polls::{
 };
 pub use presence::{
     __cmd__get_community_members, __cmd__get_presence_policy, __cmd__send_channel_typing,
-    __cmd__set_active_channel, __cmd__set_presence_policy, __cmd__update_community_presence,
+    __cmd__set_active_channel, __cmd__set_community_display_name, __cmd__set_presence_policy,
     __cmd__update_community_profile, __tauri_command_name_get_community_members,
     __tauri_command_name_get_presence_policy, __tauri_command_name_send_channel_typing,
-    __tauri_command_name_set_active_channel, __tauri_command_name_set_presence_policy,
-    __tauri_command_name_update_community_presence, __tauri_command_name_update_community_profile,
+    __tauri_command_name_set_active_channel, __tauri_command_name_set_community_display_name,
+    __tauri_command_name_set_presence_policy, __tauri_command_name_update_community_profile,
 };
 pub use presence::{
     get_community_members, get_presence_policy, send_channel_typing, set_active_channel,
-    set_presence_policy, update_community_presence, update_community_profile,
+    set_community_display_name, set_presence_policy, update_community_profile,
 };
 pub use profile_blobs::{
     __cmd__get_community_avatar_data_url, __cmd__set_community_avatar, __cmd__set_community_banner,
@@ -233,23 +248,24 @@ pub use segments::{
     expand_community_segment,
 };
 pub use threads::{
-    __cmd__archive_thread, __cmd__create_thread, __cmd__get_active_threads,
-    __cmd__get_channel_threads, __cmd__get_thread_messages, __cmd__send_thread_message,
-    __cmd__unarchive_thread, __tauri_command_name_archive_thread,
-    __tauri_command_name_create_thread, __tauri_command_name_get_active_threads,
-    __tauri_command_name_get_channel_threads, __tauri_command_name_get_thread_messages,
-    __tauri_command_name_send_thread_message, __tauri_command_name_unarchive_thread,
+    __cmd__archive_thread, __cmd__create_forum_post, __cmd__create_thread,
+    __cmd__get_active_threads, __cmd__get_channel_threads, __cmd__get_thread_messages,
+    __cmd__send_thread_message, __cmd__unarchive_thread, __tauri_command_name_archive_thread,
+    __tauri_command_name_create_forum_post, __tauri_command_name_create_thread,
+    __tauri_command_name_get_active_threads, __tauri_command_name_get_channel_threads,
+    __tauri_command_name_get_thread_messages, __tauri_command_name_send_thread_message,
+    __tauri_command_name_unarchive_thread,
 };
 pub use threads::{
-    archive_thread, create_thread, get_active_threads, get_channel_threads, get_thread_messages,
-    send_thread_message, unarchive_thread,
+    archive_thread, create_forum_post, create_thread, get_active_threads, get_channel_threads,
+    get_thread_messages, send_thread_message, unarchive_thread,
 };
-pub use types::*;
 pub use unread::{
-    __cmd__get_unread_counts, __cmd__mark_channel_read, __tauri_command_name_get_unread_counts,
-    __tauri_command_name_mark_channel_read,
+    __cmd__get_unread_counts, __cmd__mark_channel_read, __cmd__set_members_on_screen,
+    __tauri_command_name_get_unread_counts, __tauri_command_name_mark_channel_read,
+    __tauri_command_name_set_members_on_screen,
 };
-pub use unread::{get_unread_counts, mark_channel_read};
+pub use unread::{get_unread_counts, mark_channel_read, set_members_on_screen};
 pub use video::{
     __cmd__default_media_capabilities, __cmd__derive_video_stream_id,
     __cmd__force_native_keyframes, __cmd__list_native_video_devices, __cmd__native_video_active,

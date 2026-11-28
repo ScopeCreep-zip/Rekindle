@@ -1,19 +1,13 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
-
-import { communityState } from "../../stores/community.store";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   handlePlaySoundboard,
   handleUploadEmoji,
   handleUploadSoundboardSound,
   handleUploadSticker,
 } from "../../actions/community.actions";
-import {
-  calculateBasePermissions,
-  CREATE_EXPRESSIONS,
-  hasPermission,
-  MANAGE_EXPRESSIONS,
-  USE_SOUNDBOARD,
-} from "../../ipc/permissions";
+import { hasPermission, servedPermissions, USE_SOUNDBOARD } from "../../ipc/permissions";
+import { communityState } from "../../stores/community.store";
+import { deniedFor } from "../../utils/denied";
 
 type ExpressionTab = "emoji" | "sticker" | "soundboard";
 
@@ -27,14 +21,22 @@ interface ExpressionPickerProps {
   activeVoiceChannelId?: string | null;
 }
 
-function expressionSelectionValue(mode: "reaction" | "message", expressionId: string, name: string): string {
+function expressionSelectionValue(
+  mode: "reaction" | "message",
+  expressionId: string,
+  name: string
+): string {
   if (mode === "reaction") {
     return `custom:${expressionId}`;
   }
   return `:${name}:`;
 }
 
-function stickerSelectionValue(mode: "reaction" | "message", expressionId: string, name: string): string {
+function stickerSelectionValue(
+  mode: "reaction" | "message",
+  expressionId: string,
+  name: string
+): string {
   if (mode === "reaction") {
     return `custom:${expressionId}`;
   }
@@ -52,7 +54,9 @@ function sanitizeExpressionName(fileName: string): string {
 // Architecture §18.3 — measure duration via Web Audio decodeAudioData.
 async function measureAudioDuration(bytes: ArrayBuffer): Promise<number> {
   // Web Audio API's AudioContext is async-only.
-  const AudioCtor = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+  const AudioCtor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtor) {
     throw new Error("Web Audio API unavailable in this environment");
   }
@@ -71,45 +75,29 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
 
   const filtered = createMemo(() => {
     const query = props.searchQuery.trim().toLowerCase();
-    const all = (community()?.expressions ?? []).filter((expression) => expression.kind === activeTab());
+    const all = (community()?.expressions ?? []).filter(
+      (expression) => expression.kind === activeTab()
+    );
     if (!query) return all;
     return all.filter((expression) => expression.name.toLowerCase().includes(query));
   });
 
-  const myPerms = createMemo(() => {
-    const current = community();
-    if (!current) return 0n;
-    return calculateBasePermissions(current.myRoleIds, current.roles);
-  });
+  // The backend's base flags (plan E3.2 S9): expressions are community-wide.
+  const myPerms = createMemo(() => servedPermissions(community()));
 
-  const canUpload = createMemo(() => {
-    if (myPerms() === 0n) return false;
-    return (
-      hasPermission(myPerms(), CREATE_EXPRESSIONS)
-      || hasPermission(myPerms(), MANAGE_EXPRESSIONS)
-    );
-  });
+  // Whether we may add an expression of any kind, sounds included, as the
+  // Host says (never-hide; the validator admits them all on one rule).
+  const uploadDenied = createMemo(() => deniedFor(community(), "createExpressions"));
 
   // Architecture §10.9 — soundboard play requires USE_SOUNDBOARD;
   // backend re-validates on every received SoundboardPlay envelope so
   // a member with the perm revoked mid-session can't keep playing.
-  const canPlaySoundboard = createMemo(() =>
-    hasPermission(myPerms(), USE_SOUNDBOARD),
-  );
-
-  // Soundboard upload is gated more tightly than emoji upload —
-  // MANAGE_EXPRESSIONS only, not CREATE_EXPRESSIONS — because sounds
-  // are eagerly cached by every member (~48MB budget per community)
-  // and a low-trust member could push abusive clips into everyone's
-  // cache without this stricter gate.
-  const canUploadSoundboard = createMemo(() =>
-    hasPermission(myPerms(), MANAGE_EXPRESSIONS),
-  );
+  const canPlaySoundboard = createMemo(() => hasPermission(myPerms(), USE_SOUNDBOARD));
 
   async function uploadEmoji(): Promise<void> {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/webp,image/gif";
+    input.accept = "image/png,image/jpeg,image/gif";
     input.style.display = "none";
     document.body.appendChild(input);
     input.onchange = async () => {
@@ -117,8 +105,12 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       document.body.removeChild(input);
       if (!file) return;
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      const animated = file.type === "image/gif";
-      await handleUploadEmoji(props.communityId, sanitizeExpressionName(file.name), bytes, animated);
+      await handleUploadEmoji(
+        props.communityId,
+        sanitizeExpressionName(file.name),
+        bytes,
+        file.type
+      );
     };
     input.click();
   }
@@ -126,7 +118,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   async function uploadSticker(): Promise<void> {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/webp,image/gif";
+    input.accept = "image/png,image/jpeg,image/gif";
     input.style.display = "none";
     document.body.appendChild(input);
     input.onchange = async () => {
@@ -134,8 +126,12 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       document.body.removeChild(input);
       if (!file) return;
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      const animated = file.type === "image/gif";
-      await handleUploadSticker(props.communityId, sanitizeExpressionName(file.name), bytes, animated);
+      await handleUploadSticker(
+        props.communityId,
+        sanitizeExpressionName(file.name),
+        bytes,
+        file.type
+      );
     };
     input.click();
   }
@@ -172,19 +168,18 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
         bytes,
         durationSeconds,
         1.0,
-        emoji && emoji.trim().length > 0 ? emoji.trim() : undefined,
+        emoji && emoji.trim().length > 0 ? emoji.trim() : undefined
       );
     };
     input.click();
   }
 
   function uploadCurrent(): void {
+    if (uploadDenied() !== null) return;
     if (activeTab() === "soundboard") {
-      if (!canUploadSoundboard()) return;
       void uploadSoundboard();
       return;
     }
-    if (!canUpload()) return;
     if (activeTab() === "emoji") void uploadEmoji();
     else void uploadSticker();
   }
@@ -209,28 +204,39 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   }
 
   const uploadLabel = createMemo(() =>
-    activeTab() === "emoji" ? "Upload emoji" : activeTab() === "sticker" ? "Upload sticker" : "Upload sound",
+    activeTab() === "emoji"
+      ? "Upload emoji"
+      : activeTab() === "sticker"
+        ? "Upload sticker"
+        : "Upload sound"
   );
   const emptyLabel = createMemo(() =>
-    activeTab() === "emoji" ? "No custom emoji yet" : activeTab() === "sticker" ? "No stickers yet" : "No soundboard sounds yet",
+    activeTab() === "emoji"
+      ? "No custom emoji yet"
+      : activeTab() === "sticker"
+        ? "No stickers yet"
+        : "No soundboard sounds yet"
   );
 
   return (
     <div class="expression-picker-section">
       <div class="expression-picker-tabs">
         <button
+          type="button"
           class={`expression-picker-tab ${activeTab() === "emoji" ? "expression-picker-tab-active" : ""}`}
           onClick={() => setActiveTab("emoji")}
         >
           Emoji
         </button>
         <button
+          type="button"
           class={`expression-picker-tab ${activeTab() === "sticker" ? "expression-picker-tab-active" : ""}`}
           onClick={() => setActiveTab("sticker")}
         >
           Stickers
         </button>
         <button
+          type="button"
           class={`expression-picker-tab ${activeTab() === "soundboard" ? "expression-picker-tab-active" : ""}`}
           onClick={() => setActiveTab("soundboard")}
         >
@@ -238,18 +244,21 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
         </button>
       </div>
       <div class="emoji-picker-section-label expression-picker-header">
-        <span>Community {activeTab() === "emoji" ? "Emoji" : activeTab() === "sticker" ? "Stickers" : "Sounds"}</span>
-        <Show
-          when={
-            activeTab() === "soundboard"
-              ? canUploadSoundboard()
-              : canUpload()
-          }
+        <span>
+          Community{" "}
+          {activeTab() === "emoji" ? "Emoji" : activeTab() === "sticker" ? "Stickers" : "Sounds"}
+        </span>
+        {/* Never-hide: drawn always, disabled with the Host's reason. */}
+        <button
+          type="button"
+          class="expression-picker-upload-btn"
+          onClick={uploadCurrent}
+          disabled={uploadDenied() !== null}
+          title={uploadDenied() ?? undefined}
+          aria-description={uploadDenied() ?? undefined}
         >
-          <button class="expression-picker-upload-btn" onClick={uploadCurrent}>
-            {uploadLabel()}
-          </button>
-        </Show>
+          {uploadLabel()}
+        </button>
       </div>
       <Show
         when={filtered().length > 0}
@@ -259,6 +268,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
           <For each={filtered()}>
             {(expression) => (
               <button
+                type="button"
                 class="emoji-picker-item expression-picker-item"
                 title={
                   expression.kind === "soundboard"
@@ -266,23 +276,26 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
                     : `:${expression.name}:`
                 }
                 disabled={
-                  expression.kind === "soundboard"
-                  && (!props.activeVoiceChannelId || !canPlaySoundboard())
+                  expression.kind === "soundboard" &&
+                  (!props.activeVoiceChannelId || !canPlaySoundboard())
                 }
                 onClick={() => selectExpression(expression)}
               >
-                <Show when={expression.kind === "soundboard"} fallback={
-                  <Show
-                    when={expression.inlineDataUrl}
-                    fallback={<span class="expression-picker-fallback">:{expression.name}:</span>}
-                  >
-                    <img
-                      class="expression-picker-image"
-                      src={expression.inlineDataUrl!}
-                      alt={`:${expression.name}:`}
-                    />
-                  </Show>
-                }>
+                <Show
+                  when={expression.kind === "soundboard"}
+                  fallback={
+                    <Show
+                      when={expression.inlineDataUrl}
+                      fallback={<span class="expression-picker-fallback">:{expression.name}:</span>}
+                    >
+                      <img
+                        class="expression-picker-image"
+                        src={expression.inlineDataUrl!}
+                        alt={`:${expression.name}:`}
+                      />
+                    </Show>
+                  }
+                >
                   <span class="expression-picker-soundboard-glyph">
                     {expression.soundMeta?.emoji ?? "🔊"}
                   </span>

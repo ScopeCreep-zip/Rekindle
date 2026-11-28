@@ -1,16 +1,22 @@
-import { Component, Show, createSignal, createEffect } from "solid-js";
-import type { Community } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, createUniqueId, Show } from "solid-js";
 import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
-import { ICON_SAVE, ICON_COPY } from "../../../icons";
 import FormField from "../../common/FormField";
+import SkinGlyph from "../../common/SkinGlyph";
+import CommunityDeviceStatus from "../CommunityDeviceStatus";
+import MyNameSection from "./MyNameSection";
+import SuccessorSection from "./SuccessorSection";
 
 interface OverviewTabProps {
   community: Community;
-  canManage: boolean;
+  /** Why we may not edit the community, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
 }
 
 const OverviewTab: Component<OverviewTabProps> = (props) => {
+  const communityNameId = createUniqueId();
+  const descriptionId = createUniqueId();
   const [editName, setEditName] = createSignal("");
   const [editDescription, setEditDescription] = createSignal("");
   const [copied, setCopied] = createSignal(false);
@@ -42,7 +48,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       await handleUpdateCommunityInfo(
         props.community.id,
         nameChanged ? newName : null,
-        descChanged ? newDesc : null,
+        descChanged ? newDesc : null
       );
       addToast("Community updated", "success");
     } finally {
@@ -52,46 +58,55 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
 
   return (
     <div class="settings-section">
-      <FormField label="Community Name">
-        <Show when={props.canManage} fallback={
-          <div class="settings-value">{props.community.name}</div>
-        }>
-          <input
-            class="form-input"
-            type="text"
-            value={editName()}
-            onInput={(e) => setEditName(e.currentTarget.value)}
-          />
-        </Show>
+      <FormField label="Community Name" controlId={communityNameId}>
+        <input
+          id={communityNameId}
+          class="form-input"
+          type="text"
+          value={editName()}
+          disabled={props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+          onInput={(e) => setEditName(e.currentTarget.value)}
+        />
       </FormField>
-      <FormField label="Description">
-        <Show when={props.canManage} fallback={
-          <div class="settings-value">{props.community.description || "No description set."}</div>
-        }>
-          <textarea
-            class="form-textarea"
-            rows={3}
-            value={editDescription()}
-            onInput={(e) => setEditDescription(e.currentTarget.value)}
-            placeholder="Community description..."
-          />
-        </Show>
+      <FormField label="Description" controlId={descriptionId}>
+        <textarea
+          id={descriptionId}
+          class="form-textarea"
+          rows={3}
+          value={editDescription()}
+          disabled={props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+          onInput={(e) => setEditDescription(e.currentTarget.value)}
+          placeholder="Community description..."
+        />
       </FormField>
       <FormField label="Community ID">
         <div class="form-field-row">
           <span class="settings-value settings-value-mono">{props.community.id}</span>
-          <button class="settings-copy-btn" onClick={handleCopyId}>
-            <span class="nf-icon">{ICON_COPY}</span> {copied() ? "Copied" : "Copy"}
+          <button type="button" class="settings-copy-btn" onClick={handleCopyId}>
+            <SkinGlyph name="copy" /> {copied() ? "Copied" : "Copy"}
           </button>
         </div>
       </FormField>
-      <Show when={props.canManage}>
-        <div class="settings-actions-sticky">
-          <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
-            <span class="nf-icon">{ICON_SAVE}</span> {savingOverview() ? "Saving..." : "Save Changes"}
-          </button>
-        </div>
-      </Show>
+      <MyNameSection communityId={props.community.id} />
+      <SuccessorSection communityId={props.community.id} />
+      <div class="settings-section-title">This device</div>
+      <CommunityDeviceStatus communityId={props.community.id} />
+      <div class="settings-actions-sticky">
+        <button
+          type="button"
+          class="form-btn-primary"
+          onClick={handleSaveOverview}
+          disabled={savingOverview() || props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+        >
+          <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
     </div>
   );
 };

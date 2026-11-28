@@ -1,0 +1,162 @@
+builtin:combat: imported by `cargo xtask import-skin --format xfire-ini`
+(plan E7.7.3 item 2; rekindle-skin::import::xfire_ini).
+
+Provenance
+  LongName: Combat
+  Version (the skin's own revision): 2
+  skin file: combat.ini
+  theme file: CombatThemes.ini
+  source tree BLAKE3: a580bf8861b8f0a6cb820e7a4c4a112266beba4a104501f8424382fd0f605bdf
+
+Licence
+  The skin art and palette are Xfire, Inc.'s own work, stated outside the
+  skin's files:
+    source: https://web.archive.org/web/20100105213412/http://www.xfire.com/downloads/1032/
+    quote: "The Combat skin is an official skin created by Xfire."
+  Xfire is defunct; the Rekindle owner ruled on 2026-10-15 that
+  Xfire's own assets may be used, and replaces them with the same command.
+  Rekindle's MIT OR Apache-2.0 licence does not cover this pack.
+
+Colour groups (15 defined)
+  MenuTextCG RGBA(255,255,255,0) -> token menubar.text
+  UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
+  HeaderColor RGBA(0,0,0,0) -> image shift (baked)
+  ChatBGCG RGBA(255,255,255,0) -> token bg.panel
+  InGameChatTextColor RGBA(255,255,255,0) -> dropped: in-game overlay (E7.5 research)
+  FriendsFavoritesText RGBA(0,0,255,0) -> dropped: server browser
+  AllServersText RGBA(255,255,0,0) -> dropped: server browser
+  DownloadText RGBA(0,255,0,0) -> dropped: the download manager's tab label
+  Friend RGBA(0,84,12,0) -> token text.base
+  FriendofFriend RGBA(84,65,0,0) -> dropped: friends of friends (E7.8 research)
+  AllServers RGBA(169,108,30,0) -> not mapped: no registry role chat.peer.text yet
+  Select RGBA(0,0,0,0) -> token accent.fill
+  Label RGBA(255,255,255,0) -> token selection.text
+  InfoViewHyperlink RGBA(0,84,12,0) -> not mapped: no registry role profile.link yet
+  ProgressFill RGBA(128,128,128,0) -> token progress.fill
+Colour roles by reference (4)
+  [ChatArea] colorgroup=ChatBGCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatBGCG -> token bg.input
+  [ChatArea] colorgroup=ChatBGCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatBGCG -> bg.input kept: an earlier reference set it
+
+Regions
+  window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
+    Normal: 333x586 px
+  buddylist.infobar: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
+  community.sidebar-header: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
+  titlebar.btn.minimize: [Minimizebox], 24x24 px, Stretch; states normal, hover, down
+  buddylist.group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
+  community.category-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
+  community.member-group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
+  statusbar.arrow: [DownArrow], 20x20 px, Stretch; states normal, hover, down
+  buddylist.action-button: [AddFriendButton], 36x50 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
+  scrollbar.button-up: [DefaultScrollbar], 11x29 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: [DefaultScrollbar], 11x9 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: [DefaultScrollbar], 9x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: [DefaultScrollbar], 9x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: [DefaultScrollbar], 10x105 px, NineSlice(Insets { top: 3, right: 0, bottom: 2, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: [DefaultScrollbar], 104x11 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal, hover, down
+  scrollbar.track: [DefaultScrollbar], 11x405 px, NineSlice(Insets { top: 135, right: 0, bottom: 135, left: 0 }); states normal
+  scrollbar.track-horizontal: [DefaultScrollbar], 405x11 px, NineSlice(Insets { top: 0, right: 135, bottom: 0, left: 135 }); states normal
+  scrollbar.corner: [DefaultScrollbar], 11x11 px, Stretch; states normal
+  chat.send-button: [ImButton], 64x42 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  chat.toolbar: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
+  chat.group-header: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
+  community.channel-header: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
+  dropped [CombatDragBar (buddylist.infobar)] Disabled: the slot has no such state
+  dropped [CombatDragBar (community.sidebar-header)] Disabled: the slot has no such state
+
+Dropped
+  images with no region slot: 213
+  other keys (classes, sizes, cursors, sounds): 433
+  other skin files (chat, group chat, in-game): 4
+  text styles: 90
+  window layout: 615
+  lines Windows reads no value from (3):
+    combat.ini: [StatusEdit] Text.bold (line 557)
+    combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
+    combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
+  files not read (59):
+    CombatGroupChatInfoSkin.ini
+    CombatInGameMainSkin.ini
+    CombatInGamePopUp.ini
+    CombatInGamePopUpSkin.ini
+    c_button_add_off.gif
+    c_button_add_server_off.gif
+    c_button_arrow_off.gif
+    c_button_chat_off.gif
+    c_button_close_down.gif
+    c_button_close_hover.gif
+    c_button_close_norm.gif
+    c_button_close_off.gif
+    c_button_download_off.gif
+    c_button_game_off.gif
+    c_button_launch_off.gif
+    c_button_maximize_down.gif
+    c_button_maximize_hover.gif
+    c_button_maximize_norm.gif
+    c_button_maximize_off.gif
+    c_button_minimize_down.gif
+    c_button_minimize_hover.gif
+    c_button_minimize_norm.gif
+    c_button_minimize_off.gif
+    c_button_profile_off.gif
+    c_button_refresh_off.gif
+    c_button_restore_down.gif
+    c_button_restore_hover.gif
+    c_button_restore_norm.gif
+    c_button_restore_off.gif
+    c_button_stop_off.gif
+    c_close_down.gif
+    c_close_hover.gif
+    c_header_arrow_down.gif
+    c_header_arrow_up.gif
+    c_menu_down.gif
+    c_menu_down_top.gif
+    c_minimize_down.gif
+    c_minimize_hover.gif
+    c_top_left_off.gif
+    c_top_middle_off.gif
+    c_top_right_off.gif
+    infoview/c_infoview_button_join_disabled.gif
+    infoview/c_infoview_button_voicechat_disabled.gif
+    infoview/icon_mic_green.gif
+    infoview/icon_mic_grey.gif
+    infoview/icon_speaker_green.gif
+    infoview/icon_speaker_grey.gif
+    infoview/icon_voice_server.gif
+    ingame/c_ingame_background.gif
+    ingame/c_ingame_bottomleft.gif
+    ingame/c_ingame_bottommiddle.gif
+    ingame/c_ingame_bottomright.gif
+    ingame/c_ingame_middleleft.gif
+    ingame/c_ingame_middleright.gif
+    ingame/c_ingame_topleft.gif
+    ingame/c_ingame_topmiddle.gif
+    ingame/c_ingame_topright.gif
+    ingame/c_ingame_x.gif
+    strings.ini
+
+Contrast changes (minimal Oklab-lightness walk) (22 made)
+  text.base: #00540c -> #00520a (1.4.3 text.base on accent.fill 30.0% over bg.dark: 4.40:1 -> passes, required 4.50:1)
+  accent.text: #0a5a9c -> #004f91 (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 3.87:1 -> passes, required 4.50:1)
+  status.ingame-text: #006285 -> #004a6c (1.4.3 .buddy-game-info status.ingame-text on accent.fill 30% over bg.dark: 3.22:1 -> passes, required 4.50:1)
+  danger.text: #b00019 -> #910000 (1.4.3 .buddy-handshake-error danger.text on accent.fill 30% over bg.dark: 3.48:1 -> passes, required 4.50:1)
+  status.offline-text: #5b5b5b -> #454545 (1.4.3 .buddy-handshake-retrying status.offline-text on accent.fill 30% over bg.dark: 3.22:1 -> passes, required 4.50:1)
+  status.online: #00872c -> #007a1e (1.4.11 .channel-presence-dot status.online on accent.fill 25% over bg.dark: 2.54:1 -> passes, required 3.00:1)
+  status.online-text: #007427 -> #007225 (1.4.3 .chat-call-btn hovered status.online-text on status.online 20% over bg.panel 80% over bg.dark: 4.43:1 -> passes, required 4.50:1)
+  text.base: #00520a -> #004a00 (1.4.3 .community-item hovered text.base on overlay 5% over accent.fill 30% over bg.dark: 4.06:1 -> passes, required 4.50:1)
+  text.secondary: #545454 -> #4e4e4e (1.4.3 .forum-tag-chip-remove text.secondary on accent.fill 25% over bg.input: 4.12:1 -> passes, required 4.50:1)
+  text.base: #004a00 -> #004400 (1.4.3 .message-list-selection-btn hovered text.base on accent.fill 25% over accent.fill 15% over bg.base: 4.18:1 -> passes, required 4.50:1)
+  status.away: #8f7000 -> #795b00 (1.4.11 .status-dot-away status.away on accent.fill 30% over bg.dark: 2.22:1 -> passes, required 3.00:1)
+  status.busy: #da3034 -> #c1071e (1.4.11 .status-dot-busy status.busy on accent.fill 30% over bg.dark: 2.23:1 -> passes, required 3.00:1)
+  status.ingame: #0078b4 -> #00649e (1.4.11 .status-dot-ingame status.ingame on accent.fill 30% over bg.dark: 2.29:1 -> passes, required 3.00:1)
+  status.offline: #737373 -> #5f5f5f (1.4.11 .status-dot-offline status.offline on accent.fill 30% over bg.dark: 2.24:1 -> passes, required 3.00:1)
+  status.online: #007a1e -> #007214 (1.4.11 .status-dot-online status.online on accent.fill 30% over bg.dark: 2.61:1 -> passes, required 3.00:1)
+  status.online-text: #007225 -> #007124 (1.4.3 .chat-call-btn hovered status.online-text on status.online 20% over bg.panel 80% over bg.dark: 4.49:1 -> passes, required 4.50:1)
+  status.online: #007214 -> #006f10 (1.4.11 .status-dot-online status.online on accent.fill 30% over bg.dark: 2.91:1 -> passes, required 3.00:1)
+  status.away-text: #6a5300 -> #685100 (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.dark: 4.37:1 -> passes, required 4.50:1)
+  text.base: #004400 -> #002e00 (1.4.11 body icon text.base on bg.dark: 2.71:1 -> 15.09:1, required 3.00:1)
+  menubar.bg: #7b7b7b -> #767676 (1.4.3 menubar.text on menubar.bg: 4.23:1 -> 4.54:1, required 4.50:1)
+  titlebar.start: #808080 -> #aeaeae (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 1.68:1 -> 3.00:1, required 3.00:1)
+  titlebar.start: #aeaeae -> #b9b9b8 (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 4.28:1 -> 4.51:1, required 4.50:1)

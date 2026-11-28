@@ -1,24 +1,27 @@
 [package]
 name = "rekindle-transport"
 version = "0.1.0"
+publish = false
 edition = "2021"
-description = "Unified network transport layer for Rekindle — sole Veilid boundary"
-license = "MIT"
+description = "Unified network transport layer for Rekindle, over the Veilid-free record, route and message ports"
+license.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
 # Workspace
-rekindle-calls = { path = "../rekindle-calls" }
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-dm = { path = "../rekindle-dm" }
 rekindle-events = { path = "../rekindle-events" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-route = { path = "../rekindle-route" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }
+# `log-scrub`: the route trace lines (`route_trace`) tag through the
+# scrubber's own key, as every log sink already does.
+rekindle-utils = { path = "../rekindle-utils", features = [ "retry", "log-scrub" ] }
 # Tier-5 gossip primitives. rekindle-gossip is transport-agnostic pure
 # logic ("does not call app_message itself; the integration layer plumbs
 # the broadcast helpers into Veilid") and this crate is that integration
@@ -31,25 +34,29 @@ rekindle-gossip = { path = "../rekindle-gossip" }
 # hand-rolled: a manual XOR/OR loop can be optimised back into an
 # early exit, which is the timing oracle it was meant to prevent.
 subtle = "2"
-# Shared VeilidConfig builder (`veilid_config::build_veilid_config`) —
-# one translation of startup tuning into veilid_core::VeilidConfig for
-# both node-startup tracks. Unidirectional edge; rekindle-protocol must
-# never depend on rekindle-transport.
+# The ports' Veilid implementation (`ports::VeilidPorts`, the one Veilid
+# startup path) and the typed record helpers over `RecordPort`. This crate
+# names no Veilid type (plan C9.1); it links Veilid only through this edge
+# (ADR 0014). Unidirectional; rekindle-protocol must never depend on
+# rekindle-transport.
 rekindle-protocol = { path = "../rekindle-protocol" }
+# The record, route and app-message ports (`rekindle_records::port`).
 rekindle-records = { path = "../rekindle-records" }
-
-# Veilid — the ONLY crate in the workspace that imports this
-veilid-core = { version = "0.5", default-features = true }
+rekindle-sync = { path = "../rekindle-sync" }
+# The friend and 1:1 operations (plan E2.1) store through the identity's
+# database (`rekindle_db::repo`, Tier 3; no SQL leaves the storage crates)
+# and audit through `rekindle_audit::AuditKind` (Tier 2).
+rekindle-audit = { path = "../rekindle-audit" }
+rekindle-db = { path = "../rekindle-db" }
 
 # Async
 async-trait = "0.1"
-backoff = "0.4"
 futures = { workspace = true }
 tokio = { workspace = true }
 tokio-util = "0.7"
 
 # Serialization — postcard for wire, serde for trait bounds
-postcard = { version = "1", features = [ "use-std" ] }
+postcard = { version = "1", default-features = false, features = [ "use-std" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
@@ -60,7 +67,6 @@ ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hkdf = "0.12"
 rand = { workspace = true }
 sha2 = "0.10"
-x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
 
 # Data structures
@@ -68,8 +74,12 @@ bitflags = { version = "2", features = [ "serde" ] }
 indexmap = "2"
 parking_lot = { workspace = true }
 
+# The safety number's scannable form as a QR code (plan E2.3); matrix
+# only, no renderer: every frontend draws the modules itself.
+qrcode = { version = "0.14", default-features = false }
+
 # Identity generation
-uuid = { version = "1", features = [ "v4", "fast-rng" ] }
+uuid = { version = "1", features = [ "v4", "v7", "fast-rng" ] }
 
 # Logging
 hex = "0.4"
@@ -77,6 +87,11 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# `log_capture`: the log-line tests read their lines through it.
+rekindle-utils = { path = "../rekindle-utils", features = [ "test-support" ] }
+# The frame size tests build real bundles over a temporary database.
 proptest = "1"
-tempfile = "3"
+rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
+# The route trace test reads its lines through a real fmt subscriber.
 tokio = { workspace = true, features = [ "test-util", "macros" ] }
+tracing-subscriber = { workspace = true }

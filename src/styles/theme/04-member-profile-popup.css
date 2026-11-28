@@ -42,7 +42,7 @@
     background: var(--color-xfire-bg-secondary);
     border: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 25%, transparent);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-xfire-shadow) 30%, transparent);
     z-index: 10;
   }
   .call-reactions-grid-open { display: grid; }
@@ -71,9 +71,24 @@
     bottom: 60px;
     left: 50%;
     font-size: 28px;
-    animation: call-reaction-float 2s ease-out forwards;
     transform: translateX(-50%);
+    /* Reduced motion: the glyph holds in place and fades, so the
+     * `animationend` ReactionFloater removes it on still fires. */
+    animation: call-reaction-hold 2s linear forwards;
   }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .call-reaction-float {
+      animation: call-reaction-float 2s ease-out forwards;
+    }
+  }
+
+  @keyframes call-reaction-hold {
+    0%   { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
   @keyframes call-reaction-float {
     0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
     20%  { opacity: 1; transform: translate(-50%, -20px) scale(1.0); }
@@ -161,15 +176,12 @@
   .group-call-tile-active {
     border-color: var(--color-xfire-online);
   }
-  .group-call-tile-ringing {
-    opacity: 0.7;
-  }
   .group-call-tile-avatar {
     width: 32px;
     height: 32px;
     border-radius: 50%;
     background: var(--color-xfire-accent);
-    color: #fff;
+    color: var(--color-xfire-accent-fg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -221,12 +233,12 @@
     cursor: pointer;
     border: none;
     background: transparent;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .modal-close-btn:hover {
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   .modal-body {
@@ -237,9 +249,16 @@
   }
 
   /* Tooltip */
+  /* Never wider than its container, so an ellipsizing child (a buddy
+     name) shrinks with the row instead of running past it. */
   .tooltip-wrapper {
     position: relative;
     display: inline-flex;
+    max-width: 100%;
+  }
+
+  .tooltip-wrapper:is(:hover, :focus-within) > .tooltip-bubble {
+    display: block;
   }
 
   .tooltip-bubble {
@@ -257,6 +276,7 @@
     white-space: nowrap;
     pointer-events: none;
     z-index: var(--z-tooltip);
+    display: none;
   }
 
   /* Scroll area */
@@ -279,6 +299,11 @@
     font-weight: 700;
     color: var(--color-xfire-text);
     cursor: pointer;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
   }
 
   .identity-bar-name:hover {
@@ -289,7 +314,7 @@
     font-size: 12px;
     font-weight: 700;
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, var(--color-xfire-bg-darker, #000) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 50%, transparent);
     border: 1px solid var(--color-xfire-accent);
     border-radius: 2px;
     padding: 1px 4px;
@@ -298,23 +323,25 @@
     flex: 1;
   }
 
+  /* The key is already shortened to its 8 + 6 character form
+   * (`UserIdentityBar.tsx` `truncatedKey`); cutting it again left "aa…".
+   * It keeps its width and the display name ellipsizes instead. */
   .identity-bar-key {
     font-size: 10px;
     font-family: monospace;
     color: var(--color-xfire-text-dim);
     cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex-shrink: 0;
     white-space: nowrap;
   }
 
   .identity-bar-key:hover {
-    color: var(--color-xfire-link, var(--color-xfire-accent));
+    color: var(--color-xfire-link, var(--color-xfire-accent-text));
   }
 
   .identity-bar-game {
     font-size: 10px;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     margin-left: auto;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -370,14 +397,14 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-online) 60%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-online) var(--tint-fill), transparent);
+    color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
     margin-left: auto;
   }
 
   .pending-btn-accept:hover {
-    background: var(--color-xfire-online);
+    background: var(--color-xfire-success-fill);
   }
 
   .pending-btn-reject {
@@ -387,13 +414,13 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
+    color: var(--color-xfire-danger-fg);
     font-family: var(--font-family-xfire);
   }
 
   .pending-btn-reject:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .pending-btn-block {
@@ -403,13 +430,13 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-offline) var(--tint-fill), transparent);
+    color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
   }
 
   .pending-btn-block:hover {
-    background: var(--color-xfire-offline);
+    background: color-mix(in srgb, var(--color-xfire-offline) 85%, var(--color-xfire-fill-shade));
   }
 
   .blocked-user-item {
@@ -420,7 +447,11 @@
   }
 
 
-  .add-friend-generate {
+  .add-friend-generate,
+  /* The Communities view's New chooser (plan CB1): its two choices. */
+  .community-start-choices,
+  .intent-dialog-body,
+  .local-search {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -445,8 +476,16 @@
     background: var(--color-xfire-accent);
     border: none;
     border-radius: 3px;
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-size: 11px;
     cursor: pointer;
+  }
+
+  /* The friend-code tab's line while our code is read or failed, and the
+   * "Publishing your identity…" wait (plan E2.5 FC3, `OwnRecordsWait`). */
+  .add-friend-code-status {
+    padding: 8px 0;
+    font-size: 11px;
+    text-align: center;
   }
 }

@@ -1,7 +1,25 @@
 //! Tests for [`super::EventDedup`] and [`super::hash_event`].
 
 use super::*;
-use rekindle_types::subscription_events::{FriendEvent, UnreadContext};
+use rekindle_types::subscription_events::{FriendEvent, TypingContext, TypingEvent, UnreadContext};
+
+/// A fixed clock reading: dedup is a pure function of the events and `now`.
+const NOW_MS: u64 = 1_700_000_000_000;
+
+#[test]
+fn time_buckets_come_from_the_callers_clock() {
+    let mut dedup = EventDedup::new(100, 300);
+    let event = SubscriptionEvent::Typing(TypingEvent::Started {
+        context: TypingContext::Dm {
+            peer_key: "abc123".into(),
+        },
+        who: "alice".into(),
+        name: "Alice".into(),
+    });
+    assert!(dedup.check(&event, NOW_MS));
+    assert!(!dedup.check(&event, NOW_MS + 1), "same 5 s bucket");
+    assert!(dedup.check(&event, NOW_MS + 5_000), "next bucket");
+}
 
 #[test]
 fn same_event_produces_same_hash() {
@@ -10,8 +28,8 @@ fn same_event_produces_same_hash() {
         display_name: "alice".into(),
         message: "hello".into(),
     });
-    let h1 = hash_event(&event);
-    let h2 = hash_event(&event);
+    let h1 = hash_event(&event, NOW_MS);
+    let h2 = hash_event(&event, NOW_MS);
     assert_eq!(h1, h2);
 }
 
@@ -27,7 +45,7 @@ fn different_events_produce_different_hashes() {
         display_name: "bob".into(),
         message: "hello".into(),
     });
-    assert_ne!(hash_event(&e1), hash_event(&e2));
+    assert_ne!(hash_event(&e1, NOW_MS), hash_event(&e2, NOW_MS));
 }
 
 #[test]
@@ -35,11 +53,10 @@ fn dedup_suppresses_duplicate() {
     let mut dedup = EventDedup::new(100, 300);
     let event = SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: "abc123".into(),
-        dm_log_key: Some("log1".into()),
         display_name: None,
     });
-    assert!(dedup.check(&event)); // first: emit
-    assert!(!dedup.check(&event)); // second: suppress
+    assert!(dedup.check(&event, NOW_MS)); // first: emit
+    assert!(!dedup.check(&event, NOW_MS)); // second: suppress
     assert_eq!(dedup.suppressed_count(), 1);
 }
 
@@ -50,8 +67,24 @@ fn unread_changed_never_deduped() {
         context: UnreadContext::FriendRequests,
         count: 3,
     };
-    assert!(dedup.check(&event));
-    assert!(dedup.check(&event)); // same event, still emitted
+    assert!(dedup.check(&event, NOW_MS));
+    assert!(dedup.check(&event, NOW_MS)); // same event, still emitted
+    assert_eq!(dedup.suppressed_count(), 0);
+}
+
+/// Stop, start, stop: the same `paused` state twice is two real
+/// changes, so neither is suppressed (plan E7.2 G12).
+#[test]
+fn transfer_events_never_deduped() {
+    use rekindle_types::dto::transfer::TransferState;
+    use rekindle_types::subscription_events::TransferEvent;
+    let mut dedup = EventDedup::new(100, 300);
+    let event = SubscriptionEvent::Transfer(TransferEvent::StateChanged {
+        attachment_id: "att".into(),
+        state: TransferState::Paused,
+    });
+    assert!(dedup.check(&event, NOW_MS));
+    assert!(dedup.check(&event, NOW_MS));
     assert_eq!(dedup.suppressed_count(), 0);
 }
 
@@ -68,9 +101,56 @@ fn capacity_eviction() {
         peer_key: "c".into(),
     });
 
-    assert!(dedup.check(&e1));
-    assert!(dedup.check(&e2));
-    assert!(dedup.check(&e3)); // evicts e1
-    assert!(dedup.check(&e1)); // e1 was evicted, so it's new again
+    assert!(dedup.check(&e1, NOW_MS));
+    assert!(dedup.check(&e2, NOW_MS));
+    assert!(dedup.check(&e3, NOW_MS)); // evicts e1
+    assert!(dedup.check(&e1, NOW_MS)); // e1 was evicted, so it's new again
     assert_eq!(dedup.len(), 2);
+}
+
+/// Two bio changes from one friend inside one bucket are two events: the
+/// new bio's digest is part of the hash, so the second is not suppressed.
+#[test]
+fn two_bio_changes_in_one_bucket_are_both_kept() {
+    let mut dedup = EventDedup::new(100, 300);
+    let bio = |digest: &str| {
+        SubscriptionEvent::Friend(FriendEvent::BioChanged {
+            peer_key: "abc123".into(),
+            bio_digest: digest.into(),
+        })
+    };
+    assert!(dedup.check(&bio("d1"), NOW_MS));
+    assert!(
+        dedup.check(&bio("d2"), NOW_MS + 1),
+        "a second change is kept"
+    );
+    assert!(
+        !dedup.check(&bio("d2"), NOW_MS + 2),
+        "the same change is not"
+    );
+}
+
+/// SR2b: successive retries of one group send are distinct changes, not
+/// one change repeated, so the dedup window never merges them.
+#[test]
+fn successive_group_send_retries_are_not_merged() {
+    use rekindle_types::message::{DeliveryRetry, SendState};
+    use rekindle_types::subscription_events::GroupDmEvent;
+    let retry = |attempts| {
+        SubscriptionEvent::GroupDm(GroupDmEvent::SendStatus {
+            group_id: "g1".into(),
+            client_id: "c1".into(),
+            state: SendState::Sent,
+            retry: Some(DeliveryRetry {
+                attempts,
+                next_attempt_at: 9_000,
+            }),
+        })
+    };
+    let mut dedup = EventDedup::new(100, 300);
+    assert!(dedup.check(&retry(1), NOW_MS));
+    assert!(
+        dedup.check(&retry(2), NOW_MS),
+        "the second retry is published"
+    );
 }

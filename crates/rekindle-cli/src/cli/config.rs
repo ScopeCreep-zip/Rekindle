@@ -20,10 +20,13 @@ pub enum ConfigCmd {
 /// Data export subcommands.
 #[derive(Subcommand)]
 pub enum ExportCmd {
-    /// Export identity bundle.
+    /// Export the unlocked identity as an archive (as `identity export`).
     Identity {
-        /// Output file path.
+        /// Output file path (written owner-only).
         path: PathBuf,
+        /// Read the passphrase from this file (`-` for stdin).
+        #[arg(long)]
+        passphrase_file: Option<PathBuf>,
     },
 
     /// Export friend list as JSON.
@@ -42,9 +45,12 @@ pub enum ExportCmd {
 /// Data import subcommands.
 #[derive(Subcommand)]
 pub enum ImportCmd {
-    /// Import identity bundle.
+    /// Import an identity archive (as `identity import`).
     Identity {
         /// Input file path.
         path: PathBuf,
+        /// Read the passphrase from this file (`-` for stdin).
+        #[arg(long)]
+        passphrase_file: Option<PathBuf>,
     },
 }

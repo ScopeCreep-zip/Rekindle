@@ -64,10 +64,10 @@ pub async fn get_quiet_hours(
         let mut rows = stmt.query(rusqlite::params![owner_key])?;
         if let Some(row) = rows.next()? {
             Ok(QuietHoursSettings::from_db(
-                row.get::<_, i64>(0).unwrap_or(0),
-                row.get::<_, i64>(1).unwrap_or(1320),
-                row.get::<_, i64>(2).unwrap_or(420),
-                row.get::<_, String>(3).unwrap_or_else(|_| "UTC".to_string()),
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
             ))
         } else {
             Ok(QuietHoursSettings::default())
@@ -76,22 +76,31 @@ pub async fn get_quiet_hours(
     .await
 }
 
-/// Read the global Do Not Disturb flag for the current user. Falls
-/// back to `false` when unset or on any DB error so a malfunctioning
-/// settings table can never silently swallow notifications.
+/// Read the global Do Not Disturb flag for the current user. `false` when
+/// no settings row exists; a DB error is logged and also reads as `false`
+/// so a malfunctioning settings table can never silently swallow
+/// notifications.
 pub async fn is_do_not_disturb_active(state: &Arc<AppState>, pool: &Db) -> bool {
+    use rusqlite::OptionalExtension;
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {
         return false;
     };
-    crate::db_helpers::db_call_or_default(pool, move |conn| {
+    let stored = crate::db_helpers::db_call(pool, move |conn| {
         conn.query_row(
             "SELECT do_not_disturb FROM app_settings WHERE owner_key = ?1",
             rusqlite::params![owner_key],
-            |r| r.get::<_, i64>(0).map(|v| v != 0),
+            |r| r.get::<_, i64>(0),
         )
-        .or(Ok(false))
+        .optional()
     })
-    .await
+    .await;
+    match stored {
+        Ok(flag) => flag.is_some_and(|v| v != 0),
+        Err(e) => {
+            tracing::warn!(error = %e, "reading do_not_disturb failed; notifications stay on");
+            false
+        }
+    }
 }
 
 /// Toggle the global Do Not Disturb flag for the current user.

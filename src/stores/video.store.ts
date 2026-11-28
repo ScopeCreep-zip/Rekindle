@@ -49,7 +49,7 @@ function configKey(communityId: string, channelId: string): string {
 export function setVideoSessionConfig(
   communityId: string,
   channelId: string,
-  config: SessionVideoConfig,
+  config: SessionVideoConfig
 ): void {
   setVideoState("configs", configKey(communityId, channelId), config);
 }
@@ -60,25 +60,18 @@ export function setVideoSessionConfig(
  *  `video_sender.ts`. */
 export function videoSessionConfigFor(
   communityId: string,
-  channelId: string,
+  channelId: string
 ): SessionVideoConfig | undefined {
   return videoState.configs[configKey(communityId, channelId)];
 }
 
-export function setDmPeerDecodeCodecs(
-  peerPubkey: string,
-  codecs: string[],
-): void {
+export function setDmPeerDecodeCodecs(peerPubkey: string, codecs: string[]): void {
   setVideoState("dmPeerDecodeCodecs", peerPubkey, codecs);
 }
 
 /** The DM peer's decode codec wire strings, or `undefined` before the
  *  `dmPeerVideoDecodeCodecs` fetch lands. Read reactively by the DM
  *  video sender's `encoderConstraints()`. */
-export function dmPeerDecodeCodecsFor(
-  peerPubkey: string,
-): string[] | undefined {
+export function dmPeerDecodeCodecsFor(peerPubkey: string): string[] | undefined {
   return videoState.dmPeerDecodeCodecs[peerPubkey];
 }
-
-export { videoState };

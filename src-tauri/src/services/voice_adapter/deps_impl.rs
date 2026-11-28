@@ -6,7 +6,7 @@
 //! `io_helpers`) for bodies that would otherwise blow the file-size
 //! cap.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -17,11 +17,25 @@ use rekindle_voice::{
 };
 
 use super::{event_mapping, io_helpers, session_setup, VoiceAdapter};
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state_helpers;
 
 #[async_trait]
 impl VoiceSessionDeps for VoiceAdapter {
+    fn sign_media_session_key(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        session_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        super::media_keys::sign_media_session_key(
+            &self.state,
+            community_id,
+            channel_id,
+            session_key,
+        )
+    }
+
     fn owner_key(&self) -> Result<String, VoiceError> {
         state_helpers::current_owner_key(&self.state).map_err(|_| VoiceError::IdentityNotLoaded)
     }
@@ -31,7 +45,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], VoiceError> {
-        state_helpers::identity_secret(&self.state).ok_or(VoiceError::IdentityNotLoaded)
+        state_helpers::identity_secret_bytes(&self.state).ok_or(VoiceError::IdentityNotLoaded)
     }
 
     fn voice_engine_present(&self) -> bool {
@@ -74,20 +88,18 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn voice_peers(&self, community_id: &str, _channel_id: &str) -> Vec<VoicePeer> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
+        // The members the Host reaches: roster ∩ `M`/6 ∩ beat present
+        // (plan E3.4 S4; E4.1 moves voice into the Host).
+        let Ok(governance) = crate::state_helpers::host_governance(&self.state) else {
             return Vec::new();
         };
-        let Some(gossip) = community.gossip.as_ref() else {
-            return Vec::new();
-        };
-        gossip
-            .online_members
-            .iter()
-            .map(|(pseudonym, member)| VoicePeer {
-                pseudonym: pseudonym.clone(),
+        governance
+            .reachable_members(community_id)
+            .into_iter()
+            .map(|(pseudonym, route_blob)| VoicePeer {
+                pseudonym,
                 display_name: String::new(),
-                route_blob: Some(member.route_blob.clone()),
+                route_blob: Some(route_blob),
             })
             .collect()
     }
@@ -166,10 +178,31 @@ impl VoiceSessionDeps for VoiceAdapter {
             );
             return;
         }
-        crate::event_dispatch::emit_subscription(
-            &self.app_handle,
-            &SubscriptionEvent::Voice(event_mapping::map(event, &scope)),
-        );
+        let event = match event {
+            VoiceSessionEvent::UserJoined { peer_pubkey } => {
+                let display_name = match &scope {
+                    VoiceScope::Community { community, .. } => {
+                        let Ok(host) = state_helpers::host_governance(&self.state) else {
+                            return;
+                        };
+                        host.member_shown_name(community, &peer_pubkey)
+                    }
+                    VoiceScope::Dm { .. } => {
+                        let name = state_helpers::friend_display_name(&self.state, &peer_pubkey);
+                        let key = rekindle_types::id::PseudonymKey::from_hex_lossy(&peer_pubkey);
+                        rekindle_node::host::adapters::governance::shown_name(name, &key)
+                    }
+                };
+                VoiceEvent::Joined {
+                    scope,
+                    pseudonym: peer_pubkey,
+                    display_name,
+                    route_blob: None,
+                }
+            }
+            event => event_mapping::map(event, &scope),
+        };
+        crate::event_dispatch::emit_voice(&self.app_handle, event);
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
@@ -199,11 +232,8 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn audio_prefs(&self) -> AudioPrefs {
-        // The saved preferences live in the `preferences.json` store. They
-        // were read from Tauri managed state, where nothing ever put them,
-        // so every call ran on defaults: the system input instead of the
-        // chosen one, default volumes and processing (plan C7.23).
-        let prefs = crate::commands::settings::load_preferences(&self.app_handle);
+        // The unlocked identity's saved preferences (plan C7.23, D1).
+        let prefs = crate::services::preferences::current(&self.state);
         AudioPrefs {
             noise_suppression: prefs.noise_suppression,
             echo_cancellation: prefs.echo_cancellation,
@@ -235,13 +265,6 @@ impl VoiceSessionDeps for VoiceAdapter {
         io_helpers::resolve_peer_route_impl(&self.state, peer_pubkey_hex).await
     }
 
-    async fn load_member_names(
-        &self,
-        community_id: Option<&str>,
-    ) -> std::collections::HashMap<String, String> {
-        io_helpers::load_community_member_names_impl(&self.state, community_id).await
-    }
-
     fn broadcast_media_capabilities(&self, community_id: &str, channel_id: &str) {
         if let Err(e) =
             io_helpers::broadcast_media_capabilities_impl(&self.state, community_id, channel_id)
@@ -252,6 +275,7 @@ impl VoiceSessionDeps for VoiceAdapter {
 
     fn emit_local_joined(
         &self,
+        session: &rekindle_voice::session_state::VoiceSessionState,
         channel_id: &str,
         community_id: Option<&str>,
         public_key: &str,
@@ -259,6 +283,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     ) {
         event_mapping::emit_local_joined_impl(
             &self.app_handle,
+            session,
             channel_id,
             community_id,
             public_key,
@@ -275,7 +300,6 @@ impl VoiceSessionDeps for VoiceAdapter {
         transport: Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
         muted_flag: Arc<std::sync::atomic::AtomicBool>,
         deafened_flag: Arc<std::sync::atomic::AtomicBool>,
-        member_names: std::collections::HashMap<String, String>,
     ) -> Result<(), VoiceError> {
         session_setup::spawn_voice_loops_impl(
             &self.state,
@@ -285,7 +309,6 @@ impl VoiceSessionDeps for VoiceAdapter {
             &transport,
             &muted_flag,
             &deafened_flag,
-            member_names,
         )
         .map_err(VoiceError::Session)
     }
@@ -343,11 +366,31 @@ impl VoiceSessionDeps for VoiceAdapter {
         community_id: &str,
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) {
-        if let Err(e) =
-            crate::services::community::send_to_mesh(&self.state, community_id, envelope)
+        if let Err(e) = crate::state_helpers::host_governance(&self.state)
+            .map(|host| host.send_to_mesh_impl(community_id, envelope))
+            .map_err(|e| e.to_string())
         {
             tracing::debug!(community = %community_id, error = %e,
                 "voice adapter: send_community_envelope failed");
+        }
+    }
+
+    async fn send_channel_envelope_now(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) {
+        if let Err(e) = crate::services::community::send_to_channel_peers_now(
+            &self.state,
+            community_id,
+            channel_id,
+            envelope,
+        )
+        .await
+        {
+            tracing::debug!(community = %community_id, error = %e,
+                "voice adapter: send_channel_envelope_now failed");
         }
     }
 
@@ -396,12 +439,57 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn stop_devices_and_clear_engine(&self) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
+        let handle = {
+            let mut ve = self.state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            ve.take()
+        };
+        if let Some(handle) = handle {
+            crate::services::community::media_ready_runtime::end(
+                &self.state,
+                &handle.session_state,
+                handle.community_id.as_deref(),
+                &handle.channel_id,
+            );
         }
-        *ve = None;
+        // The call ended: a window that opens from now on is not shown it.
+        if let Some(host) = self.state.host.current() {
+            for key in [
+                super::event_mapping::SESSION_STATE,
+                super::event_mapping::SELF_STATE,
+                crate::services::voice_signaling_adapter::ROSTER_STATE,
+            ] {
+                host.clear_state(key);
+            }
+        }
+        // Native camera session dies with the voice session — its frames
+        // have nowhere to go without the roster's routes.
+        crate::services::native_video::stop(&self.state);
+    }
+
+    async fn end_channel_session(&self, community_id: &str, channel_id: &str) {
+        // Our beat says we left at once (plan E3.4 S8-pre).
+        crate::services::presence_adapter::voice_presence_changed(&self.state, community_id);
+        // The media-ready gate flips not-ready for the session that ended.
+        crate::services::community::media_ready_runtime::clear_media_ready(
+            &self.state,
+            community_id,
+            channel_id,
+        );
+        // The channel session's keys end with it, and the keys still queued
+        // for it (plans C7.20, C7.29, E2.5); a rejoin draws new ones.
+        let outbox =
+            crate::services::voice_signaling_adapter::HostMediaKeyOutbox(Arc::clone(&self.state));
+        rekindle_voice::signaling::end_media_key_session(
+            &self.state.voice_sender_keys,
+            &outbox,
+            community_id,
+            channel_id,
+        )
+        .await;
     }
 
     fn stop_audio_devices(&self) {
@@ -454,7 +542,11 @@ impl VoiceSessionDeps for VoiceAdapter {
     fn emit_system_alert(&self, title: String, body: String) {
         crate::event_dispatch::emit_notification(
             &self.app_handle,
-            rekindle_types::subscription_events::NotificationEvent::SystemAlert { title, body },
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title,
+                body,
+                subject: None,
+            },
         );
     }
 
@@ -483,9 +575,13 @@ impl VoiceSessionDeps for VoiceAdapter {
         let owner_key = state_helpers::current_owner_key(&self.state).ok()?;
         let community = community_id.to_string();
         let pseu = pseudonym.to_string();
-        db_call_or_default(&self.pool, move |conn| {
+        db_call(&self.pool, move |conn| {
             rekindle_db::repo::members::display_name(conn, &owner_key, &community, &pseu)
         })
         .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "member display name unreadable");
+            None
+        })
     }
 }

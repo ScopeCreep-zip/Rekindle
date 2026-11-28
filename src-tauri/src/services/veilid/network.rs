@@ -2,21 +2,24 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::services::{message_service, sync_service};
 use crate::state::AppState;
 use crate::state_helpers;
 
-use rekindle_codec::community::envelope::{
-    CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
-};
+use rekindle_transport::liveness::{Liveness, ProbeAnswer};
+use rekindle_transport::operations::direct::NAK;
 
-fn resolve_bootstrap_community_id(state: &Arc<AppState>, governance_key: &str) -> Option<String> {
-    let communities = state.communities.read();
-    communities
-        .values()
-        .find(|community| community.governance_key.as_deref() == Some(governance_key))
-        .map(|community| community.id.clone())
+/// The adopted transport node's route liveness (plan RH1r-c), which this
+/// shell's update loop feeds until E5.7: our probes, arrivals over our
+/// routes and the network's return.
+pub(super) fn route_liveness(state: &Arc<AppState>) -> Option<Arc<Liveness>> {
+    state
+        .transport
+        .read()
+        .as_ref()
+        .map(|transport| Arc::clone(transport.liveness()))
 }
+
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 pub async fn handle_app_call(
     app_handle: &AppHandle,
@@ -27,9 +30,47 @@ pub async fn handle_app_call(
     tracing::debug!(call_id = %call_id, "app_call received");
 
     let message = call.message().to_vec();
+    let liveness = route_liveness(state);
+    if let Some(live) = &liveness {
+        // A liveness probe is refused; it names no sender, so it is no
+        // evidence about our route (plan RV2), as the daemon's dispatch
+        // answers it (`rekindle-transport` `subscriptions::dispatch`).
+        match rekindle_transport::liveness::answer_probe(&message) {
+            ProbeAnswer::NotProbe => {}
+            ProbeAnswer::Refuse => {
+                reply_to_call(state, call_id, NAK.to_vec()).await;
+                return;
+            }
+        }
+        // Arrival over our route is evidence of its inbound path (RV1).
+        live.heard_over(call.route_id().map(ToString::to_string).as_deref());
+    }
 
-    // Cross-device sync envelopes are tagged with their own discriminator,
-    // so try them first (architecture §28.4 device pairing).
+    // A 1:1 call (the `'D'` tag) is routed first, by its tag: the Host's
+    // direct dispatch; an unported kind (a relay offer) is answered by the
+    // desktop's arm (plan E2.3). Gossip never travels by `app_call`. The
+    // untagged arms below keep their order until their owners tag them
+    // (plan E2.3, "Ingress").
+    match rekindle_codec::ingress::classify(&message) {
+        rekindle_codec::ingress::Ingress::Direct(_) => {
+            // A call left unanswered gets no reply: the caller's `app_call`
+            // times out and is attempted again (a NAK is a refusal, RV2).
+            let route = call.route_id().map(ToString::to_string);
+            if let Some(reply) = direct_call(app_handle, state, &message, route.as_deref()).await {
+                reply_to_call(state, call_id, reply).await;
+            }
+            return;
+        }
+        rekindle_codec::ingress::Ingress::Gossip(_) => {
+            tracing::debug!(msg_len = message.len(), "gossip by app_call — NAK");
+            reply_to_call(state, call_id, NAK.to_vec()).await;
+            return;
+        }
+        rekindle_codec::ingress::Ingress::Untagged => {}
+    }
+
+    // Cross-device sync envelopes carry their own JSON discriminator
+    // (architecture §28.4 device pairing).
     if let Ok(rekindle_types::cross_device_sync::SyncEnvelope::PairingRequest(payload)) =
         serde_json::from_slice(&message)
     {
@@ -56,169 +97,173 @@ pub async fn handle_app_call(
         return;
     }
 
-    let reply_bytes = match rekindle_codec::capnp_envelope::try_decode_community_envelope(&message)
-    {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
-            joiner_pseudonym,
-            governance_key,
-        }))) => {
-            if let Some(community_id) = resolve_bootstrap_community_id(state, &governance_key) {
-                crate::services::community::build_bootstrap_response(
-                    state,
-                    &community_id,
-                    &governance_key,
-                    &joiner_pseudonym,
+    if let Some(reply) = community_call(app_handle, state, call_id, &message).await {
+        reply_to_call(state, call_id, reply).await;
+    }
+}
+
+/// Send an `app_call`'s reply.
+async fn reply_to_call(state: &Arc<AppState>, call_id: veilid_core::OperationId, reply: Vec<u8>) {
+    if let Some(api) = state_helpers::veilid_api(state) {
+        if let Err(e) = api.app_call_reply(call_id, reply).await {
+            tracing::warn!(error = %e, "failed to reply to app_call");
+        }
+    }
+}
+
+/// Answer a community-envelope `app_call`; `None` leaves it unanswered (a
+/// partial community's bootstrap, plan E3.2 S7c.8 (1)).
+async fn community_call(
+    app_handle: &AppHandle,
+    state: &Arc<AppState>,
+    call_id: veilid_core::OperationId,
+    message: &[u8],
+) -> Option<Vec<u8>> {
+    Some(
+        match rekindle_codec::capnp_envelope::try_decode_community_envelope(message)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
+        {
+            Some(ControlPayload::BootstrapRequest {
+                joiner_pseudonym,
+                anchor,
+                member_joined,
+                member_joined_op,
+                joiner_route,
+            }) => {
+                let joiner = rekindle_governance_runtime::BootstrapJoiner {
+                    pseudonym: joiner_pseudonym,
+                    member_joined,
+                    member_joined_op,
+                    route: joiner_route,
+                };
+                crate::services::community::answer_bootstrap_request(
+                    app_handle, state, &anchor, &joiner,
                 )
                 .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!(call_id = %call_id, error = %e, "failed to build bootstrap response");
-                    b"ACK".to_vec()
-                })
-            } else {
-                tracing::warn!(
-                    call_id = %call_id,
-                    governance_key = %governance_key,
-                    "rejecting bootstrap request for unknown governance key"
-                );
-                b"ACK".to_vec()
             }
-        }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
-            community_id,
-            channel_id,
-            generation,
-            sender_pseudonym,
-            wrapped_mek,
-        })))) => {
-            // P1.3 — reply with a Cap'n-Proto-encoded `MekTransferAck`
-            // instead of a bare `b"ACK"`. Confirms BOTH (1) the unwrap
-            // succeeded at the app layer (a network-layer success
-            // alone leaves the responder uncertain whether decryption
-            // worked) and (2) the generation we ack'd matches what
-            // they sent (catches misrouted app_calls).
-            //
-            // On unwrap failure we still reply `b"ACK"` so the
-            // responder's app_call await resolves; the caller's
-            // tracing surfaces the error path.
-            let received = rekindle_types::channel_keys::KeyScope::from_wire(channel_id.as_deref())
-                .ok_or_else(|| format!("MekTransfer names no key scope: {channel_id:?}"))
-                .and_then(|scope| {
-                    crate::services::community::handle_incoming_mek_transfer(
-                        app_handle,
-                        state,
-                        &community_id,
-                        scope,
-                        &sender_pseudonym,
-                        &wrapped_mek,
-                    )
-                });
-            match received {
-                Ok(_) => {
-                    let requester_pseudonym = {
-                        let communities = state.communities.read();
-                        communities
-                            .get(&community_id)
-                            .and_then(|cs| cs.my_pseudonym_key.clone())
-                            .unwrap_or_default()
-                    };
-                    let ack = CommunityEnvelope::Control(ControlPayload::MekTransferAck(
-                        MekTransferAckPayload {
-                            community_id: community_id.clone(),
-                            channel_id: channel_id.clone(),
-                            generation,
-                            requester_pseudonym,
-                        },
-                    ));
-                    rekindle_codec::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(
-                        |e| {
+            Some(ControlPayload::CheckpointStateRequest { request }) => {
+                // A member's state snapshot request (plan E3.2 S7c.3): the Host
+                // admits and rate-limits the signer; a refusal is a NAK.
+                match state.host.current() {
+                    Some(host) => host
+                        .governance()
+                        .answer_checkpoint_state(&request)
+                        .await
+                        .unwrap_or_else(|| NAK.to_vec()),
+                    None => NAK.to_vec(),
+                }
+            }
+            Some(ControlPayload::CheckpointHintRequest { request }) => {
+                // A member's or a joiner's checkpoint hint request (plan E3.2
+                // S7c.5): admitted and rate-limited like a snapshot request.
+                match state.host.current() {
+                    Some(host) => host
+                        .governance()
+                        .answer_checkpoint_hint(&request)
+                        .await
+                        .unwrap_or_else(|| NAK.to_vec()),
+                    None => NAK.to_vec(),
+                }
+            }
+            Some(ControlPayload::FrontierRequest { request }) => {
+                // A member's frontier request (plan E3.2 S7d-keys.8): only an
+                // admitted member, rate-limited per requester; else a NAK.
+                match state.host.current() {
+                    Some(host) => host
+                        .governance()
+                        .answer_frontier(&request)
+                        .await
+                        .unwrap_or_else(|| NAK.to_vec()),
+                    None => NAK.to_vec(),
+                }
+            }
+            Some(ControlPayload::MekTransfer(transfer)) => {
+                // The Host's one receive path (plan E3.1, CB3 glue audit), the
+                // daemon's too: membership and removal checks, unwrap, install
+                // (catch-up included), `MekRotated`, and the `MekTransferAck`
+                // whose key-confirmation tag proves the unwrap (P1.3, review
+                // S7m part 1). A refusal is a bare `ACK`: no tag, so the
+                // sender does not settle the transfer.
+                match state_helpers::host_governance(state) {
+                    Ok(host) => host
+                        .receive_mek_transfer(&transfer)
+                        .unwrap_or_else(|refusal| {
                             tracing::warn!(
                                 call_id = %call_id,
-                                error = %e,
-                                "failed to encode MekTransferAck — falling back to bare ACK"
+                                reason = refusal.reason(),
+                                "MEK transfer refused — replying bare ACK"
                             );
                             b"ACK".to_vec()
-                        },
-                    )
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        call_id = %call_id,
-                        error = %error,
-                        "failed to handle incoming MEK transfer — replying bare ACK"
-                    );
-                    b"ACK".to_vec()
+                        }),
+                    Err(e) => {
+                        tracing::warn!(call_id = %call_id, error = %e, "MEK transfer while locked — replying bare ACK");
+                        b"ACK".to_vec()
+                    }
                 }
             }
-        }
-        Ok(Some(CommunityEnvelope::Control(
-            payload @ (ControlPayload::VoiceMediaKey { .. }
-            | ControlPayload::VoiceMediaKeyRequest { .. }),
-        ))) => {
-            // Plan C7.22 — call-media keys arrive point to point and are
-            // acknowledged. The sender is authenticated by the HPKE Auth
-            // seal (as a MEK transfer is by its ECDH wrap), not by an
-            // envelope signature.
-            crate::services::voice_signaling_adapter::answer_media_key_call(
-                app_handle, state, &payload,
-            )
-        }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
-            channel_id: _,
-            attachment_id,
-            requested_chunks,
-            requester_pseudonym,
-        }))) => {
-            // Find the community that owns this attachment by scanning each
-            // open file cache for the requested attachment_id. The requester's
-            // pseudonym is informational here — permission to read the file
-            // is implicit in being able to decrypt the FEK (which only
-            // community members can do).
-            let _ = requester_pseudonym;
-            let attachment_uuid = uuid::Uuid::from_bytes(attachment_id);
-            let owning_community = {
-                let caches = state.file_caches.read();
-                caches.iter().find_map(|(cid, cache)| {
-                    cache
-                        .stats_per_attachment()
-                        .contains_key(&attachment_uuid)
-                        .then(|| cid.clone())
-                })
-            };
-            match owning_community {
-                Some(cid) => crate::services::community::files::serve_attachment_request(
-                    state,
-                    &cid,
+            Some(
+                payload @ (ControlPayload::VoiceMediaKey { .. }
+                | ControlPayload::VoiceMediaKeyRequest { .. }),
+            ) => {
+                // Plan C7.22 — call-media keys arrive point to point and are
+                // acknowledged. The sender is authenticated by its pseudonym
+                // signature inside the payload (plan C7.29), not by an
+                // envelope signature.
+                crate::services::voice_signaling_adapter::answer_media_key_call(
+                    app_handle, state, &payload,
+                )
+                .await
+            }
+            Some(ControlPayload::RequestAttachment {
+                channel_id: _,
+                attachment_id,
+                requested_chunks,
+                requester_pseudonym,
+            }) => {
+                // Find the community that owns this attachment by scanning each
+                // open file cache for the requested attachment_id. The requester's
+                // pseudonym is informational here — permission to read the file
+                // is implicit in being able to decrypt the FEK (which only
+                // community members can do).
+                let _ = requester_pseudonym;
+                rekindle_node::host::adapters::files::ops::serve(
+                    &state.files,
                     attachment_id,
                     &requested_chunks,
                 )
-                .unwrap_or_else(|| b"ACK".to_vec()),
-                None => b"ACK".to_vec(),
+                .unwrap_or_else(|| b"ACK".to_vec())
             }
-        }
-        _ => {
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("inbound app_call: no identity database — dropped");
-                return;
-            };
-            // Architecture §27.1: a DmInvite arriving via app_call must
-            // get a structured DmAccept/DmDecline reply, not a bare
-            // ACK. Try that path first; fall through to the generic
-            // handler for everything else.
-            if let Some(reply) =
-                message_service::try_handle_dm_invite_app_call(app_handle, state, &pool, &message)
-                    .await
-            {
-                reply
-            } else {
-                message_service::handle_incoming_message(app_handle, state, &pool, &message).await;
-                b"ACK".to_vec()
+            _ => {
+                tracing::debug!(msg_len = message.len(), "untagged app_call — NAK");
+                NAK.to_vec()
             }
-        }
-    };
+        },
+    )
+}
 
-    if let Some(api) = state_helpers::veilid_api(state) {
-        if let Err(e) = api.app_call_reply(call_id, reply_bytes).await {
-            tracing::warn!(error = %e, "failed to reply to app_call");
+/// Answer a 1:1 `app_call` through the Host: its reply (empty for a
+/// handled call, whose return is the receipt, or a frame); an unported
+/// kind is answered by the desktop's arm. A call the Host could not judge
+/// (its deadline, an internal error) is answered retry later
+/// (`direct::RETRY_LATER`, review RV5 M2); with no host there is no reply.
+/// Either way the caller attempts it again.
+async fn direct_call(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    message: &[u8],
+    route: Option<&str>,
+) -> Option<Vec<u8>> {
+    let host = state.host.current()?;
+    match host.receive_direct_call(message, route).await {
+        rekindle_transport::operations::direct::Called::Answered(reply) => Some(reply),
+        rekindle_transport::operations::direct::Called::RetryLater => {
+            Some(rekindle_transport::operations::direct::RETRY_LATER.to_vec())
+        }
+        rekindle_transport::operations::direct::Called::Unported(opened) => {
+            let pool = state.db.current().ok()?;
+            Some(super::inbound_unported::handle_call(app, state, &pool, *opened).await)
         }
     }
 }
@@ -230,19 +275,40 @@ pub fn handle_attachment(
 ) {
     let attached = attachment.state.is_attached();
     let public_internet_ready = attachment.public_internet_ready;
-    state.network_ready.send_replace(public_internet_ready);
+    // Veilid 0.5.8 re-sends an unchanged attachment after an executor stall
+    // whose tick lag exceeds TICK_LAG_REPORT (2 s) and is at least half the
+    // RPC timeout (attachment_manager/mod.rs:24-25,557-581,
+    // online_detector.rs:63,711), and to an app back from the background
+    // (attachment_manager/mod.rs:578-580,655-661), so readiness watchers wake
+    // only on a real edge (synthesis #6).
+    state.network_ready.send_if_modified(|ready| {
+        let changed = *ready != public_internet_ready;
+        *ready = public_internet_ready;
+        changed
+    });
+    // The transport's readiness, which the Host's stages wait on (its login
+    // stage and reconnect heal, plan E3.1 C2a/C2c): this shell runs the
+    // node's update loop until E5.7.
+    if let Some(transport) = state.transport.read().as_ref() {
+        transport.shared().set_attachment(
+            rekindle_transport::AttachmentState::from_veilid_string(&attachment.state.to_string()),
+            attached,
+            public_internet_ready,
+        );
+    }
     let state_str = attachment.state.to_string();
+    super::sample_strength(app_handle, state, &state_str);
     tracing::info!(
         state = %state_str,
         public_internet_ready,
         "network attachment changed"
     );
 
-    let was_attached = state_helpers::is_attached(state);
-    let reconnected = !was_attached && attached;
-
-    {
-        if let Some(ref mut node) = *state.node.write() {
+    let attached_edge = {
+        let mut guard = state.node.write();
+        // No node handle yet: the first update is the edge.
+        guard.as_mut().is_none_or(|node| {
+            let edge = node.is_attached != attached;
             node.attachment_state = state_str;
             node.is_attached = attached;
             node.public_internet_ready = public_internet_ready;
@@ -255,19 +321,29 @@ pub fn handle_attachment(
                 .median_latency
                 .map(veilid_core::TimestampDuration::as_u64)
                 .unwrap_or_default();
-        }
-    }
+            edge
+        })
+    };
     // Network readiness = the routing domain is up AND the routing table
     // holds at least one live peer. `public_internet_ready` in practice
     // implies bootstrap contact, so this rarely differs — but when it
     // does (domain flagged ready before any peer entry lands), DHT and
     // route work issued in that window fails with transient KeyNotFound,
-    // which is exactly what `wait_for_network_ready` exists to prevent.
+    // so the friends' trigger below waits for both.
     let ready = public_internet_ready && attachment.live_peer_count.as_u64() >= 1;
-    let _ = state.network_ready_tx.send(ready);
+    // The friends' network-ready trigger (plan E2.5): re-open their
+    // watches and catch every chain up once the network is back.
+    if let Some(host) = state.host.current() {
+        host.friend_presence().network_changed(ready);
+    }
 
     super::emit_network_status(app_handle, state);
 
+    // The OS notification is for an attached/detached edge only: an
+    // unchanged re-send after a stall (above) raises none.
+    if !attached_edge {
+        return;
+    }
     let status = if attached {
         "connected"
     } else {
@@ -275,28 +351,12 @@ pub fn handle_attachment(
     };
     let notification = rekindle_types::subscription_events::NotificationEvent::SystemAlert {
         title: "Network".to_string(),
+        subject: None,
         body: format!("Veilid network {status}"),
     };
     crate::event_dispatch::emit_notification(app_handle, notification);
-
-    if reconnected && public_internet_ready && state.identity.read().is_some() {
-        tracing::info!(
-            "network reconnected; invalidating watches, rebuilding governance, triggering friend resync"
-        );
-        invalidate_all_watches(state);
-        let state = state.clone();
-        let app_handle = app_handle.clone();
-        crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
-            "attachment heal",
-            async move {
-                // A route that died while detached was reported dead and is
-                // being reallocated by its owner (plan C7.9b).
-                crate::services::governance_adapter::open_community_dht_records(&state).await;
-                crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
-                let _ = sync_service::sync_friends_now(&state, &app_handle).await;
-            },
-        );
-    }
+    // The reconnect heal is the Host's login stage, on the transport's
+    // readiness edge (plan E3.1 C2c).
 }
 
 pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRouteChange) {
@@ -325,35 +385,17 @@ pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRo
     }
 
     if !change.dead_remote_routes.is_empty() {
-        // The importer forgets the dead routes (Veilid already dropped
-        // them, so nothing is released) and the peers whose cached blob was
-        // one of them lose it, so the next send re-fetches a fresh route.
-        // Voice resolves its routes through the same importer, so it holds
+        // The transport's decision, as the daemon's dispatch takes it
+        // (`TransportNode::on_dead_remote_routes`). Voice resolves its routes through the same importer, so it holds
         // no copy of its own to evict.
-        let affected = state_helpers::on_dead_remote_routes(state, &change.dead_remote_routes);
+        let dead: Vec<String> = change
+            .dead_remote_routes
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let affected = state_helpers::on_dead_remote_routes(state, &dead);
         if !affected.is_empty() {
             tracing::debug!(peers = affected.len(), "dropped dead remote routes");
         }
-    }
-}
-
-fn invalidate_all_watches(state: &Arc<AppState>) {
-    let friend_keys: Vec<String> = {
-        let friends = state.friends.read();
-        friends
-            .values()
-            .filter(|f| f.dht_record_key.is_some())
-            .map(|f| f.public_key.clone())
-            .collect()
-    };
-    if !friend_keys.is_empty() {
-        let mut unwatched = state.unwatched_friends.write();
-        for key in &friend_keys {
-            unwatched.insert(key.clone());
-        }
-        tracing::info!(
-            count = friend_keys.len(),
-            "invalidated all friend watches for re-establishment"
-        );
     }
 }

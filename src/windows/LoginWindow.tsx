@@ -1,15 +1,16 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
-import Titlebar from "../components/titlebar/Titlebar";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { handleCreateIdentity, handleLogin } from "../actions/auth.actions";
 import Avatar from "../components/common/Avatar";
-import Modal from "../components/common/Modal";
 import LoadingButton from "../components/common/LoadingButton";
-import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
-import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
-import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
+import Titlebar from "../components/titlebar/Titlebar";
+import { startEventStream } from "../ipc/channels";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
+import { commands, type IdentitySummary } from "../ipc/commands";
+import { isCancelled } from "../ipc/commands/dto";
+import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { errorMessage } from "../utils/error";
 import { truncateKey } from "../utils/formatting";
-import { startEventStream } from "../ipc/channels";
+import { setWindowKind } from "../utils/window_kind";
 
 type Mode = "picker" | "login" | "create";
 
@@ -21,11 +22,6 @@ const LoginWindow: Component = () => {
   const [displayName, setDisplayName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
-
-  // Delete confirmation state
-  const [deleteTarget, setDeleteTarget] = createSignal<IdentitySummary | null>(null);
-  const [deletePass, setDeletePass] = createSignal("");
-  const [deleteError, setDeleteError] = createSignal<string | null>(null);
 
   async function loadIdentities(): Promise<void> {
     try {
@@ -136,32 +132,22 @@ const LoginWindow: Component = () => {
     }
   }
 
-  function confirmDelete(id: IdentitySummary, e: Event): void {
+  /** Delete an identity: Protected, so the Host's review asks for its
+   *  passphrase in the `IntentDialog` — the one prompt (ADR 0019). */
+  async function deleteIdentity(id: IdentitySummary, e: Event): Promise<void> {
     e.stopPropagation();
-    setDeleteTarget(id);
-    setDeletePass("");
-    setDeleteError(null);
-  }
-
-  function cancelDelete(): void {
-    setDeleteTarget(null);
-    setDeletePass("");
-    setDeleteError(null);
-  }
-
-  async function executeDelete(): Promise<void> {
-    const target = deleteTarget();
-    if (!target || !deletePass().trim()) return;
-
+    setError(null);
     try {
-      await commands.deleteIdentity(target.publicKey, deletePass());
-      cancelDelete();
+      await commands.deleteIdentity(id.publicKey);
       await loadIdentities();
     } catch (err) {
-      setDeleteError(errorMessage(err));
+      // A cancelled review is the user's choice, not a failure.
+      if (isCancelled(err)) return;
+      setError(errorMessage(err));
     }
   }
 
+  setWindowKind("login");
   return (
     <div class="app-frame">
       <Titlebar title="Rekindle" />
@@ -174,16 +160,20 @@ const LoginWindow: Component = () => {
           <div class="account-bubble-grid">
             <For each={identities()}>
               {(id) => (
-                <div class="account-bubble" onClick={() => selectAccount(id)}>
-                  <Avatar
-                    displayName={id.displayName}
-                    size={64}
-                    avatarUrl={avatarDataUrl(id.avatarBase64)}
-                  />
-                  <div class="account-bubble-name">{id.displayName}</div>
+                <div class="account-bubble">
                   <button
+                    type="button"
+                    class="account-bubble-select"
+                    onClick={() => selectAccount(id)}
+                  >
+                    <Avatar displayName={id.displayName} size={64} />
+                    <span class="account-bubble-name">{id.displayName}</span>
+                  </button>
+                  <button
+                    type="button"
                     class="account-bubble-delete"
-                    onClick={(e: MouseEvent) => confirmDelete(id, e)}
+                    aria-label={`Delete ${id.displayName}`}
+                    onClick={(e: MouseEvent) => void deleteIdentity(id, e)}
                   >
                     ✕
                   </button>
@@ -191,7 +181,21 @@ const LoginWindow: Component = () => {
               )}
             </For>
           </div>
-          <button class="account-create-btn" onClick={() => { setPassphrase(""); setDisplayName(""); setError(null); setMode("create"); }}>
+          <Show when={error() !== null}>
+            <div class="form-error" role="alert">
+              {error()}
+            </div>
+          </Show>
+          <button
+            type="button"
+            class="account-create-btn"
+            onClick={() => {
+              setPassphrase("");
+              setDisplayName("");
+              setError(null);
+              setMode("create");
+            }}
+          >
             + Create New Identity
           </button>
         </div>
@@ -201,11 +205,7 @@ const LoginWindow: Component = () => {
       <Show when={mode() === "login" && selected() !== null}>
         <form class="login-container" onSubmit={handleLoginSubmit}>
           <div class="lock-avatar">
-            <Avatar
-              displayName={selected()!.displayName}
-              size={96}
-              avatarUrl={avatarDataUrl(selected()!.avatarBase64)}
-            />
+            <Avatar displayName={selected()!.displayName} size={96} />
           </div>
           <div class="lock-name">{selected()!.displayName}</div>
           <div class="account-card-key">{truncateKey(selected()!.publicKey)}</div>
@@ -272,37 +272,6 @@ const LoginWindow: Component = () => {
           </LoadingButton>
         </form>
       </Show>
-
-      {/* Delete confirmation modal */}
-      <Modal
-        isOpen={deleteTarget() !== null}
-        title="Delete Account"
-        onClose={cancelDelete}
-      >
-        <div class="delete-confirm-text">
-          Enter passphrase for "{deleteTarget()?.displayName}" to confirm deletion.
-        </div>
-        <input
-          class="form-input"
-          type="password"
-          placeholder="Passphrase"
-          value={deletePass()}
-          onInput={(e: InputEvent) => setDeletePass((e.target as HTMLInputElement).value)}
-        />
-        <Show when={deleteError() !== null}>
-          <div class="form-error">{deleteError()}</div>
-        </Show>
-        <button
-          class="form-btn-danger"
-          onClick={executeDelete}
-          disabled={!deletePass().trim()}
-        >
-          Delete Forever
-        </button>
-        <button class="form-btn-secondary" onClick={cancelDelete}>
-          Cancel
-        </button>
-      </Modal>
     </div>
   );
 };

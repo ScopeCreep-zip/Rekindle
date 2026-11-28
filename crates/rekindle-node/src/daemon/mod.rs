@@ -12,21 +12,18 @@
 //! `let _ = ...` (a deliberate signal that the daemon's existing
 //! semantics — "log + ignore" on invalid edges — are preserved).
 
+pub mod clients;
 pub mod community_rpc;
-pub mod community_runtime;
 pub mod dispatch;
-pub mod friend_inbox;
+pub mod event_forward;
 pub mod gossip;
 pub mod gossip_adapter;
-pub mod governance_adapter;
 pub mod handler;
 pub mod heartbeat;
-mod keepalive;
+pub(crate) mod keepalive;
 pub mod mek_rotation;
 pub mod presence_adapter;
 pub mod shutdown;
-mod status;
-mod watch_relay;
 
 pub use rekindle_lifecycle::{
     AppLifecycle as DaemonLifecycle, LifecycleError, LifecycleState as DaemonState, TransportGuard,

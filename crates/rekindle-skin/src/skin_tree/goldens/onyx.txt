@@ -1,0 +1,96 @@
+TopLeft Decor target [0, 0, 83, 128] art [0, 0, 83, 128] Frame
+Top Decor target [0, 0, 218, 128] art [0, 0, 218, 128] Frame
+TopRight Decor target [0, 0, 83, 128] art [0, 0, 83, 128] Frame
+StatusWrapper Group
+StatusEdit StatusText target [0, -1, 162, 21] art [0, 1, 162, 16] Spacing
+DownArrow StatusList target [0, -1, 24, 24] art [0, 1, 15, 18] Size
+ExpandButton Button target [0, -1, 47, 24] art [0, 1, 47, 20] Size
+ResizeLeft Button target [0, 0, 24, 320] art [0, 0, 5, 320] Size
+ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
+ResizeUp Button target [0, 0, 384, 24] art [0, 0, 384, 5] Size
+ResizeDown Button target [0, -19, 384, 24] art [0, 19, 384, 5] Size
+BRGripper Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Size
+BottomLeft Decor target [0, 0, 83, 117] art [0, 0, 83, 117] Frame
+Bottom Decor target [0, 0, 218, 117] art [0, 0, 218, 117] Frame
+BottomRight Decor target [0, 0, 83, 117] art [0, 0, 83, 117] Frame
+Logo2 Decor label "Rekindle" cover [0, 0, 194, 44] glyph RekindleWordmark
+LeftEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
+RightEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
+Middle Decor
+MainTitleBar Drag
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-6, -6, 24, 24] art [6, 6, 16, 16] Size
+  Title NameField target [0, -4, 160, 20] art [0, 4, 160, 15] Spacing
+TopButtonBar Group
+  Minimize Button target [-4, -4, 20, 20] art [4, 4, 15, 15] Short
+  Maximize Button target [-1, -4, 17, 20] art [1, 4, 15, 15] Short
+  Close Button target [-1, -4, 21, 20] art [1, 4, 15, 15] Short
+MenuBar MenuBar
+  XfireMenuText MenuTitle label "Rekindle"
+    FileMenu Part target [0, -1, 54, 23] art [0, 1, 54, 22] Spacing
+  ToolsMenuText MenuTitle label "Tools"
+    ToolsMenu Part target [0, -1, 38, 23] art [0, 1, 38, 22] Spacing
+  HelpMenuText MenuTitle label "Help"
+    HelpMenu Part target [0, -1, 32, 23] art [0, 1, 32, 22] Spacing
+  MenuDiv0 Decor
+  MenuDiv1 Decor
+  MenuDiv2 Decor
+  MenuDiv3 Decor
+  TabNormalText Tab(Friends) label "Friends"
+    TabNormalButton Part target [0, -2, 48, 23] art [0, 2, 48, 19] Spacing
+  TabServerText Tab(Servers) label "Servers"
+    TabServerButton Part target [0, -2, 48, 23] art [0, 2, 48, 19] Spacing
+  TabDownloadText Tab(Files) label "Downloads"
+    TabDownloadButton Part target [0, -2, 65, 23] art [0, 2, 65, 19] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 68, 23] art [0, 4, 68, 16] Spacing
+    TabDownloadButton.Communities Part
+  MenuDiv4 Decor
+  MenuDiv5 Decor
+  MenuDiv6 Decor
+MenuClip Decor
+AdBG Decor
+  AdArea AdArea
+ListViewBG Decor
+TabbedControl Views
+  BuddyView View(Friends)
+    BuddyView.BvBk Part
+  ServerView View(Servers)
+    ServerView.BvBk Part
+  DownloadView View(Files)
+    DownloadView.BvBk Part
+  TabbedControl.Communities View(Communities)
+BottomBar Group
+  TabButtonArea ButtonBar
+    FriendsButtons ButtonRow(Friends)
+      AddButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      ImButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      JoinFriendButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      FriendsButtons.InfoButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+    ServerButtons ButtonRow(Servers)
+      AddServerButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      RefreshButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      JoinServerButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      ServerButtons.InfoButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+    FilesButtons ButtonRow(Files)
+      StartDownloadButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      StopDownloadButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      ExecuteDownloadButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      DownloadInfoButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+    FriendsButtons.Communities ButtonRow(Communities)
+      CommunitiesOpen Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      CommunitiesLeave Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+        CommunitiesLeaveText.Communities Part label "Leave"
+      CommunitiesNew Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+popup InfoPopup
+  XfireTopRow Decor target [0, 0, 200, 117] art [0, 0, 200, 117] Frame
+  XfireBottomRow Decor target [0, 0, 200, 117] art [0, 0, 200, 117] Frame
+  XfireMiddleRow Decor target [0, 0, 200, 86] art [0, 0, 200, 86] Frame
+  BackDrop Decor
+  InfoView InfoView
+  ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
+  JoinButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+  JoinChatTab ButtonBar
+    HostChatButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+    JoinChatButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+    LeaveChatButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+      TalkingStateButton Part
+  CloseInfoView Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size

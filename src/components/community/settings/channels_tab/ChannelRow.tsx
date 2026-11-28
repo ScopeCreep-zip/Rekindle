@@ -1,37 +1,29 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import type { Channel, Community } from "../../../../stores/community.store";
-import type { ConfirmOptions } from "../types";
+import { type Component, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
-  handleRenameChannel,
   handleDeleteChannel,
-  handleSetSlowmode,
-  handleSetChannelTopic,
-  handleSetChannelForumTags,
+  handleMoveChannel,
+  handleRenameChannel,
   handleReorderChannels,
-  handleSetNotificationOverride,
+  handleSetChannelForumTags,
   handleSetChannelNotificationSound,
+  handleSetChannelTopic,
+  handleSetNotificationOverride,
+  handleSetSlowmode,
 } from "../../../../actions/community.actions";
+import type { Channel, Community } from "../../../../stores/community.store";
+import type { GlyphName } from "../../../common/glyph_art";
+import SkinGlyph from "../../../common/SkinGlyph";
 import ChannelOverwriteEditor from "./ChannelOverwriteEditor";
-import {
-  ICON_SAVE,
-  ICON_PENCIL,
-  ICON_DELETE,
-  ICON_PERMS,
-  ICON_CHANNEL_TEXT,
-  ICON_VOLUME_HIGH,
-  ICON_MEGAPHONE,
-  ICON_ARROW_UP,
-  ICON_ARROW_DOWN,
-} from "../../../../icons";
 
 interface ChannelRowProps {
   community: Community;
   channel: Channel;
   canManageChannels: boolean;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const ChannelRow: Component<ChannelRowProps> = (props) => {
+  const notificationLevelId = createUniqueId();
+  const notificationSoundId = createUniqueId();
   const [renaming, setRenaming] = createSignal(false);
   const [renameValue, setRenameValue] = createSignal("");
   const [editingSlowmode, setEditingSlowmode] = createSignal(false);
@@ -58,13 +50,8 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     setRenaming(false);
   }
 
-  function confirmDeleteChannel(): void {
-    props.requestConfirm({
-      title: "Delete Channel",
-      message: `Delete #${props.channel.name}? This cannot be undone.`,
-      confirmLabel: "Delete",
-      action: () => handleDeleteChannel(cid(), props.channel.id),
-    });
+  function deleteChannel(): void {
+    void handleDeleteChannel(cid(), props.channel.id);
   }
 
   function startEditSlowmode(): void {
@@ -128,7 +115,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     void handleSetChannelNotificationSound(
       cid(),
       props.channel.id,
-      soundRef.length > 0 ? soundRef : null,
+      soundRef.length > 0 ? soundRef : null
     );
   }
 
@@ -153,21 +140,22 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     handleReorderChannels(cid(), ids);
   }
 
-  function channelTypeIcon() {
+  function channelTypeIcon(): GlyphName {
     return props.channel.type === "voice"
-      ? ICON_VOLUME_HIGH
+      ? "voice.server"
       : props.channel.type === "announcement"
-        ? ICON_MEGAPHONE
-        : ICON_CHANNEL_TEXT;
+        ? "megaphone"
+        : "chat";
   }
 
   return (
     <div>
       <div class="channel-manage-row">
-        <span class="nf-icon channel-manage-icon">{channelTypeIcon()}</span>
-        <Show when={renaming()} fallback={
-          <span class="channel-manage-name">{props.channel.name}</span>
-        }>
+        <SkinGlyph name={channelTypeIcon()} class="channel-manage-icon" />
+        <Show
+          when={renaming()}
+          fallback={<span class="channel-manage-name">{props.channel.name}</span>}
+        >
           <input
             class="form-input channel-rename-input"
             type="text"
@@ -183,88 +171,132 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
         <Show when={props.canManageChannels}>
           <Show when={!renaming()}>
             <button
+              type="button"
               class="form-btn-secondary channel-manage-btn"
               onClick={startRename}
               title="Rename"
             >
-              <span class="nf-icon">{ICON_PENCIL}</span>
+              <SkinGlyph name="pencil" />
             </button>
           </Show>
           <Show when={renaming()}>
             <button
+              type="button"
               class="form-btn-primary channel-manage-btn"
               onClick={submitRename}
               title="Save"
             >
-              <span class="nf-icon">{ICON_SAVE}</span>
+              <SkinGlyph name="save" />
             </button>
           </Show>
           <button
+            type="button"
             class="form-btn-danger channel-manage-btn"
-            onClick={confirmDeleteChannel}
+            onClick={deleteChannel}
             title="Delete"
           >
-            <span class="nf-icon">{ICON_DELETE}</span>
+            <SkinGlyph name="delete" />
           </button>
           <button
+            type="button"
             class="form-btn-secondary channel-manage-btn"
             onClick={() => setShowOverwrite((v) => !v)}
             title="Permissions"
           >
-            <span class="nf-icon">{ICON_PERMS}</span>
+            <SkinGlyph name="perms" />
           </button>
           <button
+            type="button"
             class="form-btn-secondary channel-manage-btn"
             onClick={moveChannelUp}
             disabled={index() === 0}
             title="Move Up"
           >
-            <span class="nf-icon">{ICON_ARROW_UP}</span>
+            <SkinGlyph name="arrow-up" />
           </button>
           <button
+            type="button"
             class="form-btn-secondary channel-manage-btn"
             onClick={moveChannelDown}
             disabled={index() === props.community.channels.length - 1}
             title="Move Down"
           >
-            <span class="nf-icon">{ICON_ARROW_DOWN}</span>
+            <SkinGlyph name="arrow-down" />
           </button>
         </Show>
       </div>
+      {/* Category (plan E7.15): the Host's ChannelMove, reviewed by the intent gate. */}
+      <Show when={props.canManageChannels}>
+        <div class="channel-settings-inline">
+          <label class="channel-settings-inline-row">
+            <span class="form-field-label">Category</span>
+            <select
+              class="form-select"
+              value={props.channel.categoryId ?? ""}
+              onChange={(e) =>
+                void handleMoveChannel(
+                  cid(),
+                  props.channel.id,
+                  e.currentTarget.value === "" ? null : e.currentTarget.value
+                )
+              }
+            >
+              <option value="">No category</option>
+              <For each={props.community.categories}>
+                {(cat) => <option value={cat.id}>{cat.name}</option>}
+              </For>
+            </select>
+          </label>
+        </div>
+      </Show>
       {/* Slowmode label / inline editor */}
       <Show when={props.canManageChannels}>
         <div class="channel-settings-inline">
-          <Show when={editingSlowmode()} fallback={
-            <span class="channel-settings-inline-row">
-              <Show when={props.channel.slowmodeSeconds}>
-                <span class="channel-slowmode-label">{props.channel.slowmodeSeconds}s slowmode</span>
-              </Show>
-              <button
-                class="form-btn-secondary channel-manage-btn"
-                onClick={startEditSlowmode}
-                title="Set Slowmode"
-              >
-                Slowmode
-              </button>
-            </span>
-          }>
+          <Show
+            when={editingSlowmode()}
+            fallback={
+              <span class="channel-settings-inline-row">
+                <Show when={props.channel.slowmodeSeconds}>
+                  <span class="channel-slowmode-label">
+                    {props.channel.slowmodeSeconds}s slowmode
+                  </span>
+                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary channel-manage-btn"
+                  onClick={startEditSlowmode}
+                  title="Set Slowmode"
+                >
+                  Slowmode
+                </button>
+              </span>
+            }
+          >
             <span class="channel-settings-inline-row">
               <input
                 class="form-input channel-slowmode-input"
                 type="number"
                 min="0"
                 value={slowmodeValue()}
-                onInput={(e) => setSlowmodeValue(parseInt(e.currentTarget.value) || 0)}
+                onInput={(e) => setSlowmodeValue(parseInt(e.currentTarget.value, 10) || 0)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") submitSlowmode();
                   if (e.key === "Escape") cancelSlowmode();
                 }}
                 placeholder="Seconds"
               />
-              <button class="form-btn-primary channel-manage-btn" onClick={submitSlowmode}>
-                <span class="nf-icon">{ICON_SAVE}</span>
+              <button
+                type="button"
+                class="form-btn-primary channel-manage-btn"
+                onClick={submitSlowmode}
+              >
+                <SkinGlyph name="save" />
               </button>
-              <button class="form-btn-secondary channel-manage-btn" onClick={cancelSlowmode}>
+              <button
+                type="button"
+                class="form-btn-secondary channel-manage-btn"
+                onClick={cancelSlowmode}
+              >
                 Cancel
               </button>
             </span>
@@ -274,20 +306,24 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
       {/* Topic inline editor */}
       <Show when={props.canManageChannels}>
         <div class="channel-settings-inline">
-          <Show when={editingTopic()} fallback={
-            <span class="channel-settings-inline-row">
-              <Show when={props.channel.topic}>
-                <span class="channel-topic-label">{props.channel.topic}</span>
-              </Show>
-              <button
-                class="form-btn-secondary channel-manage-btn"
-                onClick={startEditTopic}
-                title="Set Topic"
-              >
-                Topic
-              </button>
-            </span>
-          }>
+          <Show
+            when={editingTopic()}
+            fallback={
+              <span class="channel-settings-inline-row">
+                <Show when={props.channel.topic}>
+                  <span class="channel-topic-label">{props.channel.topic}</span>
+                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary channel-manage-btn"
+                  onClick={startEditTopic}
+                  title="Set Topic"
+                >
+                  Topic
+                </button>
+              </span>
+            }
+          >
             <span class="channel-settings-inline-row">
               <input
                 class="form-input channel-topic-input"
@@ -300,10 +336,18 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="Channel topic..."
               />
-              <button class="form-btn-primary channel-manage-btn" onClick={submitTopic}>
-                <span class="nf-icon">{ICON_SAVE}</span>
+              <button
+                type="button"
+                class="form-btn-primary channel-manage-btn"
+                onClick={submitTopic}
+              >
+                <SkinGlyph name="save" />
               </button>
-              <button class="form-btn-secondary channel-manage-btn" onClick={cancelTopic}>
+              <button
+                type="button"
+                class="form-btn-secondary channel-manage-btn"
+                onClick={cancelTopic}
+              >
                 Cancel
               </button>
             </span>
@@ -315,9 +359,12 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           not just admins (it's a personal preference). */}
       <div class="channel-settings-inline">
         <span class="channel-settings-inline-row">
-          <label class="channel-notif-label">Notifications:</label>
+          <label class="channel-notif-label" for={notificationLevelId}>
+            Notifications:
+          </label>
           <select
             class="form-select channel-notif-select"
+            id={notificationLevelId}
             value={props.channel.notificationLevel ?? "all"}
             onChange={(e) => {
               const value = e.currentTarget.value as "all" | "mentions" | "nothing";
@@ -328,37 +375,42 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <option value="mentions">Mentions only</option>
             <option value="nothing">Nothing</option>
           </select>
-          <label class="channel-notif-label">Sound:</label>
+          <label class="channel-notif-label" for={notificationSoundId}>
+            Sound:
+          </label>
           <select
             class="form-select channel-notif-select"
+            id={notificationSoundId}
             value={props.channel.notificationSoundRef ?? ""}
             onChange={(e) => changeChannelSound(e.currentTarget.value)}
           >
             <option value="">(default)</option>
             <For each={soundboardSounds()}>
-              {(sound) => (
-                <option value={sound.contentHash}>{sound.name}</option>
-              )}
+              {(sound) => <option value={sound.contentHash}>{sound.name}</option>}
             </For>
           </select>
         </span>
       </div>
       <Show when={props.canManageChannels && props.channel.type === "forum"}>
         <div class="channel-settings-inline">
-          <Show when={editingForumTags()} fallback={
-            <span class="channel-settings-inline-row">
-              <Show when={(props.channel.forumTags?.length ?? 0) > 0}>
-                <span class="channel-topic-label">{props.channel.forumTags?.join(", ")}</span>
-              </Show>
-              <button
-                class="form-btn-secondary channel-manage-btn"
-                onClick={startEditForumTags}
-                title="Set Forum Tags"
-              >
-                Forum Tags
-              </button>
-            </span>
-          }>
+          <Show
+            when={editingForumTags()}
+            fallback={
+              <span class="channel-settings-inline-row">
+                <Show when={(props.channel.forumTags?.length ?? 0) > 0}>
+                  <span class="channel-topic-label">{props.channel.forumTags?.join(", ")}</span>
+                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary channel-manage-btn"
+                  onClick={startEditForumTags}
+                  title="Set Forum Tags"
+                >
+                  Forum Tags
+                </button>
+              </span>
+            }
+          >
             <span class="channel-settings-inline-row">
               <input
                 class="form-input channel-topic-input"
@@ -371,10 +423,18 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="news, updates, support"
               />
-              <button class="form-btn-primary channel-manage-btn" onClick={submitForumTags}>
-                <span class="nf-icon">{ICON_SAVE}</span>
+              <button
+                type="button"
+                class="form-btn-primary channel-manage-btn"
+                onClick={submitForumTags}
+              >
+                <SkinGlyph name="save" />
               </button>
-              <button class="form-btn-secondary channel-manage-btn" onClick={cancelForumTags}>
+              <button
+                type="button"
+                class="form-btn-secondary channel-manage-btn"
+                onClick={cancelForumTags}
+              >
                 Cancel
               </button>
             </span>

@@ -1,4 +1,6 @@
-//! Size/count limits and byte-format validators for expressions.
+//! Size/count limits and validators for expressions. Pictures go through
+//! `super::image` (`rekindle-image`); this file checks names, tags and
+//! soundboard containers.
 
 use crate::error::ChannelError;
 
@@ -73,25 +75,6 @@ pub fn normalize_tags(tags: Vec<String>) -> Result<Vec<String>, ChannelError> {
     Ok(out)
 }
 
-/// Sniff an image-upload payload by magic bytes. Returns the mime
-/// content-type if recognised, `None` otherwise. Pure — does NOT
-/// decode the image, just verifies the container claim is plausible.
-///
-/// Supports: PNG, WebP, GIF (animated only).
-#[must_use]
-pub fn detect_image_media_type(bytes: &[u8], animated_allowed: bool) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Some("image/png");
-    }
-    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        return Some("image/webp");
-    }
-    if animated_allowed && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
-        return Some("image/gif");
-    }
-    None
-}
-
 /// Sniff a soundboard payload's container. Architecture §18.3 only
 /// allows small Opus or MP3 clips.
 #[must_use]
@@ -108,58 +91,6 @@ pub fn detect_audio_kind(bytes: &[u8]) -> Option<&'static str> {
         return Some("audio/mpeg");
     }
     None
-}
-
-/// Validate emoji bytes: non-empty, ≤ size cap (static or animated),
-/// recognised image format.
-pub fn validate_emoji_bytes(bytes: &[u8], animated: bool) -> Result<(), ChannelError> {
-    let max_len = if animated {
-        MAX_ANIMATED_EMOJI_BYTES
-    } else {
-        MAX_STATIC_EMOJI_BYTES
-    };
-    if bytes.is_empty() {
-        return Err(ChannelError::InvalidId(
-            "emoji upload cannot be empty".into(),
-        ));
-    }
-    if bytes.len() > max_len {
-        return Err(ChannelError::BodyTooLarge {
-            size: bytes.len(),
-            max: max_len,
-        });
-    }
-    if detect_image_media_type(bytes, animated).is_none() {
-        return Err(ChannelError::InvalidId(if animated {
-            "animated emoji must be PNG, WebP, or GIF".into()
-        } else {
-            "emoji must be PNG or WebP".into()
-        }));
-    }
-    Ok(())
-}
-
-/// Validate sticker bytes: non-empty, ≤ 1 MB, recognised image format.
-pub fn validate_sticker_bytes(bytes: &[u8], animated: bool) -> Result<(), ChannelError> {
-    if bytes.is_empty() {
-        return Err(ChannelError::InvalidId(
-            "sticker upload cannot be empty".into(),
-        ));
-    }
-    if bytes.len() > MAX_STICKER_BYTES {
-        return Err(ChannelError::BodyTooLarge {
-            size: bytes.len(),
-            max: MAX_STICKER_BYTES,
-        });
-    }
-    if detect_image_media_type(bytes, animated).is_none() {
-        return Err(ChannelError::InvalidId(if animated {
-            "animated sticker must be PNG, WebP, or GIF".into()
-        } else {
-            "sticker must be PNG or WebP".into()
-        }));
-    }
-    Ok(())
 }
 
 /// Validate soundboard bytes: non-empty, ≤ 1 MB, recognised audio container.

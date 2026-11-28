@@ -42,6 +42,7 @@ use std::sync::Arc;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
+use crate::signaling::presence::named_roster;
 
 /// Seconds a roster entry is protected from presence-based removal
 /// after being added. A peer who just announced via gossip won't have
@@ -56,7 +57,6 @@ pub const JOIN_GRACE_SECS: u64 = 45;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresencePeerView {
     pub pseudonym_hex: String,
-    pub display_name: Option<String>,
     /// The member's voice channel claim, if any.
     pub voice_channel_id: Option<String>,
     /// Row passed the scan's liveness gate (fresh heartbeat +
@@ -212,11 +212,12 @@ pub async fn reconcile_from_presence(
         return;
     }
 
-    let (removed, remote_count) = {
+    let (removed, members) = {
         let mut t = transport.lock().await;
         let removed: Vec<bool> = plan.remove.iter().map(|gone| t.remove_peer(gone)).collect();
-        (removed, t.peer_count())
+        (removed, t.peer_keys())
     };
+    let members = named_roster(&**deps, community_id, members);
     for (gone, was_present) in plan.remove.iter().zip(&removed) {
         tracing::info!(
             community = %community_id,
@@ -235,8 +236,8 @@ pub async fn reconcile_from_presence(
                 channel_id: channel_id.clone(),
                 pseudonym_key: gone.clone(),
                 present: false,
-                display_name: None,
-                remote_count,
+                display_name: deps.member_shown_name(community_id, gone),
+                roster: members.clone(),
             });
             // Plan C7.20 — an expired peer is a departure: rotate.
             let is_stage = deps
@@ -249,6 +250,7 @@ pub async fn reconcile_from_presence(
                 &transport,
                 gone,
                 is_stage,
+                crate::signaling::media_keys::Departure::LeftChannel,
             )
             .await;
         }
@@ -262,14 +264,21 @@ pub async fn reconcile_from_presence(
 
     // Lost-join repair: re-run the join handshake. A peer that missed our
     // `VoiceJoin` adds us from it and acks with its own route, which adds
-    // it here (`presence::ack`). Gossip dedups a `Control` envelope by its
-    // content, so peers that already applied this join drop the resend.
-    // Repeats every scan until the peer is in our roster.
+    // it here (`presence::ack`). Each resend is a new gossip message (a
+    // fresh message id), so flood suppression never drops it; a peer that
+    // already holds us treats it as a route upsert (`add_peer` reports no
+    // membership change, so nothing rotates). Repeats every scan until
+    // the peer is in our roster.
     if !plan.introduce.is_empty() {
-        let join = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        let join = CommunityEnvelope::control(ControlPayload::VoiceJoin {
             channel_id: channel_id.clone(),
             route_blob: our_route.clone(),
             display_name: deps.my_display_name(),
+            session_key: crate::signaling::media_keys::our_session_key(
+                &**deps,
+                community_id,
+                &channel_id,
+            ),
         });
         deps.send_to_mesh(community_id, &join);
         tracing::info!(
@@ -289,11 +298,16 @@ pub async fn reconcile_from_presence(
     // the peer holds our route and streams back, media_live drops them
     // from this set.
     for peer in &reannounce {
-        let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+        let ack = CommunityEnvelope::control(ControlPayload::VoiceJoinAck {
             channel_id: channel_id.clone(),
             joiner_pseudonym: peer.clone(),
             display_name: deps.my_display_name(),
             route_blob: our_route.clone(),
+            session_key: crate::signaling::media_keys::our_session_key(
+                &**deps,
+                community_id,
+                &channel_id,
+            ),
         });
         deps.send_to_channel(community_id, &channel_id, &ack);
         tracing::info!(

@@ -2,11 +2,8 @@
 //! presence adapter.
 //!
 //! Lifted out of `community_deps.rs` so the trait impl file stays
-//! focused on the per-method dispatch. Three operations:
+//! focused on the per-method dispatch. Two operations:
 //!
-//! - `insert_channel_catchup_messages` — batch insert of
-//!   newly-fetched SMPL channel-log messages, skipping rows
-//!   already stored by `message_id`.
 //! - `compute_history_ranges` — `MIN/MAX(lamport_ts) GROUP BY
 //!   conversation_id` to advertise the Shared Locker history.
 //! - `upsert_discovered_member_rows` — atomic batch upsert of
@@ -14,79 +11,11 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_presence::DiscoveredMemberRow;
 
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
-
-/// Store caught-up channel messages, each body opened under exactly its
-/// key generation at the record and subkey it was read from. A body that
-/// does not open is not stored: the materialized channel view and the
-/// MEK request path pick it up once its key arrives.
-pub(super) fn insert_channel_catchup_messages(
-    state: &Arc<AppState>,
-    pool: &Db,
-    community_id: &str,
-    channel_id: &str,
-    record_key: &str,
-    messages: Vec<(u32, ChannelMessage)>,
-) {
-    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-    let channel = channel_id.to_string();
-    let opened: Vec<(ChannelMessage, String)> = messages
-        .into_iter()
-        .filter_map(|(subkey_index, msg)| {
-            let body = crate::channel_materialize::decrypt_channel_record_message(
-                state,
-                community_id,
-                channel_id,
-                msg.mek_generation,
-                &msg.ciphertext,
-                rekindle_secrets::channel_body::BodyPosition {
-                    channel_record_key: record_key,
-                    subkey_index,
-                    lamport_ts: msg.lamport_ts,
-                },
-            );
-            (!body.decryption_failed).then_some((msg, body.body))
-        })
-        .collect();
-    crate::db_helpers::db_fire(pool, "smpl_channel_catchup", move |conn| {
-        for (msg, body) in &opened {
-            let mid = msg.message_id.as_deref().unwrap_or("");
-            if mid.is_empty() {
-                continue;
-            }
-            let exists: bool = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
-                    rusqlite::params![owner_key, mid],
-                    |r| r.get(0),
-                )
-                .unwrap_or(false);
-            if exists {
-                continue;
-            }
-            let _ = conn.execute(
-                "INSERT OR IGNORE INTO messages \
-                 (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, message_id, lamport_ts) \
-                 VALUES (?1, ?2, 'channel', ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![
-                    owner_key,
-                    channel,
-                    msg.sender_pseudonym,
-                    body,
-                    msg.timestamp,
-                    mid,
-                    msg.lamport_ts,
-                ],
-            );
-        }
-        Ok(())
-    });
-}
 
 pub(super) async fn compute_history_ranges(
     state: &Arc<AppState>,
@@ -102,7 +31,9 @@ pub(super) async fn compute_history_ranges(
             let mut stmt = conn.prepare(
                 "SELECT conversation_id, MIN(lamport_ts), MAX(lamport_ts) \
                  FROM messages \
-                 WHERE owner_key = ?1 AND community_id = ?2 AND lamport_ts > 0 \
+                 WHERE owner_key = ?1 \
+                   AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) \
+                   AND conversation_type = 'channel' AND lamport_ts > 0 \
                  GROUP BY conversation_id",
             )?;
             let rows = stmt
@@ -112,8 +43,7 @@ pub(super) async fn compute_history_ranges(
                     let newest: u64 = row.get(2)?;
                     Ok((channel_id_str, oldest, newest))
                 })?
-                .filter_map(Result::ok)
-                .collect::<Vec<_>>();
+                .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         })
         .await;

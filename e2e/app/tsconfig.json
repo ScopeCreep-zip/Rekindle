@@ -1,0 +1,11 @@
+// Plan E7.14: type-checks the real-app suite (WebdriverIO runner, mocha,
+// expect-webdriverio) and the walk it imports from. Run via
+// `pnpm typecheck`.
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@wdio/globals/types", "@wdio/mocha-framework", "expect-webdriverio"],
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../walk/**/*.ts"]
+}

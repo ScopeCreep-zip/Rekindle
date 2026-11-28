@@ -1,0 +1,41 @@
+@layer components {
+
+  /* Co-creation (plan E3.2 S7s.3f): the Create Community dialog's status
+   * view, one row per co-creator with the Host's stated state. Remove and
+   * the buddy list's invite rows reuse the pending-request styles. */
+  .co-create-status-hint {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-family: var(--font-family-xfire);
+  }
+
+  .co-create-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  .co-create-status-badge {
+    margin-left: auto;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 3px;
+    color: var(--color-xfire-text);
+    background: color-mix(in srgb, var(--color-xfire-offline) 12%, transparent);
+    font-family: var(--font-family-xfire);
+  }
+
+  .co-create-status-badge.co-create-status-accepted,
+  .co-create-status-badge.co-create-status-joining {
+    background: color-mix(in srgb, var(--color-xfire-success) 30%, transparent);
+    color: var(--color-xfire-success);
+  }
+
+  /* Our name in a community (Settings, Overview: MyNameSection): the field takes the row. */
+  .my-name-row .form-input {
+    flex: 1;
+  }
+}

@@ -1,9 +1,10 @@
 [package]
 name = "rekindle-files"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Lost Cargo file sharing — chunking, Merkle, FEK, local cache for Rekindle v2.0"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -12,10 +13,14 @@ workspace = true
 async-trait = "0.1"
 base64 = "0.22"
 blake3 = "1"
+# Voice messages: Opus in Ogg, encoded and decoded by the Host (plan E5.1),
+# with the binding the media engine (rekindle-voice) uses.
 hex = { workspace = true }
-lru = "0.12"
-rekindle-crypto = { path = "../rekindle-crypto" }
+lru = "0.19"
+opus = "0.3"
+parking_lot = { workspace = true }
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
@@ -26,9 +31,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = [ "fs" ] }
 tracing = { workspace = true }
 uuid = { version = "1", features = [ "v4", "serde" ] }
+zeroize = "1"
 
 [dev-dependencies]
-parking_lot = { workspace = true }
 proptest = "1"
 tempfile = "3"
 tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

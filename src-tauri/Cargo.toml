@@ -3,18 +3,27 @@
 # binaries with one name collide, cargo#6313).
 name = "rekindle-desktop"
 version = "0.0.1"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
 
 [lints]
 workspace = true
+
+[features]
+# The WebDriver walk's driver (plan E7.13): the vendored, patched
+# tauri-plugin-wdio-webdriver. Debug builds only (`lib.rs` compile_error!);
+# never a default (`cargo xtask check-webdriver-release`).
+# It also turns on rekindle-node's damaged-post switch (`webdriver.rs`).
+webdriver-test = [ "dep:tauri-plugin-wdio-webdriver", "rekindle-node/webdriver-test" ]
 
 [lib]
 name = "rekindle_lib"
 crate-type = [ "staticlib", "cdylib", "rlib" ]
 
 [build-dependencies]
-tauri-build = { version = "2.7", features = [  ] }
+tauri-build = { version = "2.7", features = [ "isolation" ] }
 
 [dependencies]
 # v2.0 crates (flat governance)
@@ -27,7 +36,6 @@ rekindle-db = { path = "../crates/rekindle-db" }
 rekindle-dm = { path = "../crates/rekindle-dm" }
 rekindle-events = { path = "../crates/rekindle-events" }
 rekindle-files = { path = "../crates/rekindle-files" }
-rekindle-friendship = { path = "../crates/rekindle-friendship" }
 rekindle-gossip = { path = "../crates/rekindle-gossip" }
 rekindle-governance = { path = "../crates/rekindle-governance" }
 rekindle-governance-runtime = { path = "../crates/rekindle-governance-runtime" }
@@ -39,6 +47,7 @@ rekindle-presence = { path = "../crates/rekindle-presence" }
 rekindle-records = { path = "../crates/rekindle-records" }
 rekindle-route = { path = "../crates/rekindle-route" }
 rekindle-secrets = { path = "../crates/rekindle-secrets" }
+rekindle-skin = { path = "../crates/rekindle-skin" }
 rekindle-sync = { path = "../crates/rekindle-sync" }
 rekindle-types = { path = "../crates/rekindle-types" }
 rekindle-vault = { path = "../crates/rekindle-vault" }
@@ -51,30 +60,35 @@ rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 
 # v1.0 crates (still used during migration)
 rekindle-crypto = { path = "../crates/rekindle-crypto" }
+rekindle-node = { path = "../crates/rekindle-node" }
+rekindle-outbox = { path = "../crates/rekindle-outbox" }
+# `HostApi`, `Caller` (plan E1.1): every GUI request reaches the Host through them.
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
 rekindle-idle = { path = "../crates/rekindle-idle" }
+rekindle-ipc = { path = "../crates/rekindle-ipc" }
 rekindle-protocol = { path = "../crates/rekindle-protocol" }
 rekindle-utils = { path = "../crates/rekindle-utils", features = [ "retry", "log-scrub" ] }
 rekindle-voice = { path = "../crates/rekindle-voice" }
 # W16.9 — adoption of the unified transport boundary. Tauri shell
 # becomes a thin frontend over rekindle-transport (parity with
-# rekindle-cli and rekindle-node). Initially used for the W16
-# reliability primitive (envelope_queue, SeqTracker) and call
-# signaling (operations::calls); subsequent waves migrate more
-# services through transport.
+# rekindle-cli and rekindle-node); waves migrate services through
+# transport flow by flow.
 async-trait = "0.1"
 ed25519-dalek = "2"
 futures.workspace = true
 rekindle-transport = { path = "../crates/rekindle-transport" }
 
-tauri = { version = "2.12", features = [ "macos-private-api", "tray-icon", "image-png" ] }
+tauri = { version = "2.12", features = [ "macos-private-api", "tray-icon", "image-png", "isolation" ] }
 # OS notifications (`os_notify.rs`). On Linux its async `show_async()` runs on
 # zbus's own executor; the notification plugin's blocking `show` panicked
 # inside the async runtime, so the plugin is not used.
 notify-rust = "4"
+# The panic shortcut on a Wayland session (plan E7.1, `portal_shortcuts.rs`):
+# the GlobalShortcuts portal over the session bus. The same zbus 5 notify-rust
+# already brings in; no new crate.
+zbus = "5"
 # tauri-plugin-window-state removed — causes infinite windowDidMove loop on macOS
 # with prevent_exit(), see tauri#11489
-tauri-plugin-store = "2"
 
 # tauri-plugin-sql removed — using rusqlite directly for veilid-core compatibility
 tauri-plugin-autostart = "2"
@@ -83,6 +97,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = { version = "2", features = [ "deep-link" ] }
+tauri-plugin-wdio-webdriver = { path = "../crates/vendor/tauri-plugin-wdio-webdriver", optional = true }
 
 parking_lot = { workspace = true }
 rusqlite = { version = "0.39", features = [ "bundled" ] }
@@ -97,7 +112,6 @@ tracing-subscriber = { workspace = true }
 # `tokio_rusqlite::` references compile unchanged.
 argon2 = "0.5"
 base64 = "0.22"
-blake2 = "0.10"
 blake3 = "1"
 hex = "0.4"
 image = { version = "0.25", default-features = false, features = [ "webp", "png", "jpeg", "gif" ] }
@@ -146,7 +160,22 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
 # which wry's permission handler reports only as `Other`. v2_4 gates
 # `set_enable_media_stream`.
 webkit2gtk = { version = "2.0.2", features = [ "v2_4" ] }
+# Shaped windows (plan SK0 S3, `windows/shape/linux.rs`): the GtkWindow's
+# widget input shape from a cairo region, through gtk's re-exported cairo. The same gtk 0.18 tauri compiles against, so
+# `WebviewWindow::gtk_window()` type-matches; already locked, no new crate.
+gtk = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+# Shaped windows (plan SK0 S3, `windows/shape/win32_region.rs`): SetWindowRgn,
+# CreateRectRgn, CombineRgn. The same windows 0.62 tauri uses for
+# `WebviewWindow::hwnd()`'s HWND; already locked, no new crate.
+windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_Graphics_Gdi" ] }
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../crates/rekindle-test-fixtures" }
+# `log_capture`: the log-line tests read their lines through it.
 proptest = "1"
+rekindle-utils = { path = "../crates/rekindle-utils", features = [ "test-support" ] }
 tempfile = "3"
+# `host::test_fixtures`: the relay tests start a real offline Host (plan GI3).
+rekindle-node = { path = "../crates/rekindle-node", features = [ "test-fixtures" ] }

@@ -1,7 +1,7 @@
 //! High-level query operations for CLI and TUI consumption.
 //!
-//! [`QueryEngine`] composes low-level DHT reads, MEK decryption, and
-//! profile resolution into display-ready types. Every returned type
+//! [`QueryEngine`] composes the peer registry and the MEK cache into
+//! display-ready types. Every returned type
 //! implements `Serialize + Clone + Debug` and contains no Veilid-internal
 //! types — only strings, numbers, and bools.
 //!
@@ -25,7 +25,7 @@ use crate::shared::SharedState;
 
 pub use rekindle_types::display::{
     ChannelOverviewDisplay, CommunityDetail, CommunityOverview, DecryptedMessageDisplay,
-    DmMessageDisplay, DmThreadDisplay, FriendDisplay, RoleDisplay, TransportSnapshot,
+    RoleDisplay, TransportSnapshot,
 };
 
 // ── QueryEngine ─────────────────────────────────────────────────────────
@@ -33,24 +33,17 @@ pub use rekindle_types::display::{
 /// High-level query interface for CLI and TUI.
 ///
 /// Obtained via [`TransportNode::query()`](crate::broadcast::node::TransportNode).
-/// Composes low-level DHT reads + MEK decryption + profile resolution
-/// into display-ready types.
+/// Composes the peer registry and the MEK cache into display-ready
+/// types.
 pub struct QueryEngine {
-    /// The unlocked session's record pool: every query's DHT reads.
-    records: Arc<rekindle_protocol::dht::pool::RecordPool>,
     mek_cache: Arc<RwLock<MekCache>>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
 }
 
 impl QueryEngine {
     /// Create a new query engine.
-    pub fn new(
-        records: Arc<rekindle_protocol::dht::pool::RecordPool>,
-        mek_cache: Arc<RwLock<MekCache>>,
-        peer_registry: Arc<RwLock<PeerRegistry>>,
-    ) -> Self {
+    pub fn new(mek_cache: Arc<RwLock<MekCache>>, peer_registry: Arc<RwLock<PeerRegistry>>) -> Self {
         Self {
-            records,
             mek_cache,
             peer_registry,
         }
@@ -76,7 +69,14 @@ impl QueryEngine {
     ///
     /// `route_allocated` requires the route manager which `QueryEngine` doesn't
     /// own. The caller passes it explicitly from `TransportNode::status_snapshot()`.
-    pub fn node_health(&self, shared: &SharedState, route_allocated: bool) -> TransportSnapshot {
+    pub fn node_health(
+        &self,
+        shared: &SharedState,
+        route_allocated: bool,
+        general_route: rekindle_types::subscription_events::RouteAvailability,
+        route_paused: Option<rekindle_types::subscription_events::RoutePauseCause>,
+        own_route_down: rekindle_types::subscription_events::OwnRouteDownSet,
+    ) -> TransportSnapshot {
         TransportSnapshot {
             attachment: shared.attachment_state().to_string(),
             is_attached: shared.is_attached(),
@@ -85,12 +85,12 @@ impl QueryEngine {
             peer_count: self.peer_registry.read().route_count(),
             route_allocated,
             route_age_secs: None,
+            general_route,
+            route_paused,
+            own_route_down,
         }
     }
 }
 
 mod communities;
 pub use communities::{community_detail, list_communities, CommunityMetaSummary};
-mod display_map;
-mod messages;
-mod social;

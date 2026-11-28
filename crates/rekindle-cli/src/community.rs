@@ -1,12 +1,18 @@
 //! Community commands: create, join, leave, list, info.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::LifecycleRequest;
+use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+use rekindle_types::display::CommunityDetail;
 
 use crate::cli::CommunityCmd;
+use crate::community_ref;
+use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
+
+mod profile;
 
 pub async fn dispatch(
     cmd: &CommunityCmd,
@@ -18,77 +24,106 @@ pub async fn dispatch(
             name,
             description,
             approval_required,
+            co_creators,
             ..
         } => {
             let validated_name = helpers::validate_name(name, "Community")?;
-            let value = client
-                .request_ok(IpcRequest::CommunityCreate {
-                    name: validated_name,
-                    description: description.clone().unwrap_or_default(),
-                    approval_required: *approval_required,
-                })
-                .await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityCreate {
+                        name: validated_name,
+                        description: description.clone().unwrap_or_default(),
+                        approval_required: *approval_required,
+                        co_creators: co_creators.clone(),
+                    },
+                )),
+            )
+            .await?;
             format::print_structured(&value, mode)
+        }
+        CommunityCmd::CreatorRemove { anchor, identity } => {
+            let (anchor, identity) = (anchor.clone(), identity.clone());
+            lifecycle(
+                client,
+                mode,
+                LifecycleRequest::CreatorRemove { anchor, identity },
+            )
+            .await
+        }
+        CommunityCmd::CreateCancel { anchor } => {
+            let anchor = anchor.clone();
+            lifecycle(
+                client,
+                mode,
+                LifecycleRequest::CommunityCreateCancel { anchor },
+            )
+            .await
+        }
+        CommunityCmd::CreatorAnswer { anchor, decline } => {
+            let (anchor, accept) = (anchor.clone(), !*decline);
+            lifecycle(
+                client,
+                mode,
+                LifecycleRequest::CreatorInviteAnswer { anchor, accept },
+            )
+            .await
         }
         CommunityCmd::Join { invite, .. } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityJoin {
-                    invite: invite.clone(),
-                })
-                .await?;
+            let invite = invite.clone();
+            lifecycle(client, mode, LifecycleRequest::CommunityJoin { invite }).await
+        }
+        CommunityCmd::Leave { community } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityLeave {
+                        anchor: community.clone(),
+                    },
+                )),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::Leave { community, force } => {
-            if !helpers::confirm_unless_forced(*force, &format!("Leave community '{community}'?"))?
-            {
-                return format::print_text("Cancelled.");
-            }
-            let value = client
-                .request_ok(IpcRequest::CommunityLeave {
-                    governance_key: community.clone(),
-                })
-                .await?;
+        CommunityCmd::SetName {
+            community,
+            name,
+            clear,
+        } => profile::set_name(client, mode, community, name.as_deref(), *clear).await,
+        CommunityCmd::Profile(args) => profile::update(client, mode, args).await,
+        CommunityCmd::Forget { community } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityForget {
+                        anchor: community.clone(),
+                    },
+                )),
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::List { .. } => {
-            let value = client.request_ok(IpcRequest::CommunityList).await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            let rows = value
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|c| {
-                            vec![
-                                c.get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?")
-                                    .to_string(),
-                                c.get("member_count")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                c.get("channel_count")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                rekindle_client::fmt::abbreviate_key(
-                                    c.get("governance_key")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("?"),
-                                ),
-                            ]
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            table::print_table(&["Name", "Members", "Channels", "Key"], &rows, mode)
+        CommunityCmd::Focus {
+            community,
+            channel,
+            voice,
+        } => {
+            let detail = community_ref::detail(client, community).await?;
+            let request = focus_request(&detail, channel.as_deref(), *voice)?;
+            let value = helpers::send(client, request).await?;
+            format::print_structured(&value, mode)
         }
-        CommunityCmd::Info { community, .. } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityInfo {
-                    governance_key: community.clone(),
-                })
-                .await?;
+        CommunityCmd::List => list(client, mode).await,
+        CommunityCmd::Info { community, full } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityInfo {
+                        anchor: community.clone(),
+                    },
+                )),
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -132,23 +167,33 @@ pub async fn dispatch(
                         .to_string(),
                 ),
                 (
-                    "Governance Key",
+                    "Anchor Key",
                     value
-                        .get("governance_key")
+                        .get("anchor")
                         .and_then(|v| v.as_str())
                         .unwrap_or("?")
                         .to_string(),
                 ),
             ];
-            table::print_kv_table(&pairs, mode)
+            let mut pairs = pairs;
+            pairs.extend(standing_rows(&value));
+            table::print_kv_table(&pairs, mode)?;
+            if *full {
+                print_full_info(&value, mode)?;
+            }
+            Ok(())
         }
         CommunityCmd::Approve { community, member } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityApprove {
-                    governance_key: community.clone(),
-                    member_pseudonym: member.clone(),
-                })
-                .await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityApprove {
+                        anchor: community.clone(),
+                        member_pseudonym: member.clone(),
+                    },
+                )),
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -163,24 +208,32 @@ pub async fn dispatch(
             member,
             reason,
         } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityReject {
-                    governance_key: community.clone(),
-                    member_pseudonym: member.clone(),
-                    reason: reason.clone().unwrap_or_default(),
-                })
-                .await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityReject {
+                        anchor: community.clone(),
+                        member_pseudonym: member.clone(),
+                        reason: reason.clone().unwrap_or_default(),
+                    },
+                )),
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
             format::print_text(&format!("Rejected {member}"))
         }
         CommunityCmd::Pending { community } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityPendingMembers {
-                    governance_key: community.clone(),
-                })
-                .await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityPendingMembers {
+                        anchor: community.clone(),
+                    },
+                )),
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -210,28 +263,325 @@ pub async fn dispatch(
                 .unwrap_or_default();
             table::print_table(&["Pseudonym", "Name", "Status"], &rows, mode)
         }
+        CommunityCmd::PublishSuccessor { .. }
+        | CommunityCmd::FollowSuccessor { .. }
+        | CommunityCmd::Successors { .. } => successor(cmd, client, mode).await,
+        CommunityCmd::Transfer { .. }
+        | CommunityCmd::WithdrawTransfer { .. }
+        | CommunityCmd::AcceptTransfer { .. }
+        | CommunityCmd::AnswerLink { .. } => transfer(cmd, client, mode).await,
+        CommunityCmd::RetireDevice { .. }
+        | CommunityCmd::ReadmitDevice { .. }
+        | CommunityCmd::EnrolDevice { .. } => device(cmd, client, mode).await,
+        CommunityCmd::Invite(sub) => governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Role(sub) => governance::dispatch_role(sub, client, mode).await,
+        CommunityCmd::Moderate(sub) => governance::dispatch_moderate(sub, client, mode).await,
+        CommunityCmd::Channel(sub) => crate::channel_overwrite::dispatch(sub, client, mode).await,
+        CommunityCmd::Watch { community } => {
+            crate::community_watch::watch(client, community.as_deref(), mode).await
+        }
+    }
+}
+
+async fn list(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let value = community_ref::list(client).await?;
+    if mode.is_structured() {
+        return format::print_structured(&value, mode);
+    }
+    let rows = value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|c| {
+                    vec![
+                        c.get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?")
+                            .to_string(),
+                        c.get("memberCount")
+                            .and_then(serde_json::Value::as_u64)
+                            .map_or("?".into(), |n| n.to_string()),
+                        c.get("channelCount")
+                            .and_then(serde_json::Value::as_u64)
+                            .map_or("?".into(), |n| n.to_string()),
+                        rekindle_client::fmt::abbreviate_key(
+                            c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
+                        ),
+                        removal_text(c.get("removed")),
+                    ]
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    table::print_table(
+        &["Name", "Members", "Channels", "Key", "Standing"],
+        &rows,
+        mode,
+    )
+}
+
+/// The active-channel request for a community already resolved to its anchor.
+pub fn focus_request(
+    detail: &CommunityDetail,
+    channel: Option<&str>,
+    voice: bool,
+) -> anyhow::Result<IpcRequest> {
+    let channel = channel
+        .map(|channel| community_ref::channel_id(detail, channel).map(str::to_owned))
+        .transpose()?;
+    Ok(IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelSetActive {
+            community: detail.anchor.clone(),
+            channel,
+            kind: if voice { "voice" } else { "text" }.into(),
+        },
+    )))
+}
+
+/// `community info --full`: the channel list and the roles with their
+/// permission bits, from the `CommunityDetail` answer.
+fn print_full_info(value: &serde_json::Value, mode: OutputMode) -> anyhow::Result<()> {
+    use rekindle_types::display::{ChannelOverviewDisplay, RoleDisplay};
+    let channels: Vec<ChannelOverviewDisplay> =
+        serde_json::from_value(value.get("channels").cloned().unwrap_or_default())?;
+    let roles: Vec<RoleDisplay> =
+        serde_json::from_value(value.get("roles").cloned().unwrap_or_default())?;
+    format::print_text("")?;
+    table::print_table(
+        &["Channel", "Kind", "Topic", "Key gen", "ID"],
+        &channel_rows(&channels),
+        mode,
+    )?;
+    format::print_text("")?;
+    table::print_table(
+        &["Role", "Position", "Permissions", "ID"],
+        &role_rows(&roles),
+        mode,
+    )
+}
+
+fn channel_rows(channels: &[rekindle_types::display::ChannelOverviewDisplay]) -> Vec<Vec<String>> {
+    let mut sorted: Vec<_> = channels.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.sort_order
+            .cmp(&b.sort_order)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    sorted
+        .into_iter()
+        .map(|c| {
+            vec![
+                c.name.clone(),
+                c.kind.clone(),
+                c.topic.clone(),
+                c.mek_generation.to_string(),
+                rekindle_client::fmt::abbreviate_key(&c.id),
+            ]
+        })
+        .collect()
+}
+
+fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>> {
+    let mut sorted: Vec<_> = roles.iter().collect();
+    sorted.sort_by(|a, b| b.position.cmp(&a.position).then_with(|| a.id.cmp(&b.id)));
+    sorted
+        .into_iter()
+        .map(|r| {
+            vec![
+                r.name.clone(),
+                r.position.to_string(),
+                format!("{:#x}", r.permissions),
+                r.id.clone(),
+            ]
+        })
+        .collect()
+}
+
+/// The info table's rows after the community's facts: our standing (plan
+/// E3.2 S9 R3-5), our governance ops not yet landed, and the community
+/// key generation the Host holds (`CommunityDetail::mek_generation`).
+fn standing_rows(value: &serde_json::Value) -> [(&'static str, String); 3] {
+    [
+        ("Standing", removal_text(value.get("removed"))),
+        (
+            "Key Generation",
+            value
+                .get("mek_generation")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
+                .to_string(),
+        ),
+        (
+            "Unlanded Ops",
+            publications_text(value.get("op_publications")),
+        ),
+    ]
+}
+
+/// Our governance ops not yet landed as info shows them
+/// (`CommunityDetail::op_publications`): "none", or how many stand pending
+/// and each failure's reason.
+fn publications_text(publications: Option<&serde_json::Value>) -> String {
+    let Some(states) = publications
+        .and_then(serde_json::Value::as_object)
+        .filter(|s| !s.is_empty())
+    else {
+        return "none".into();
+    };
+    let kind = |s: &serde_json::Value| s.get("kind").and_then(|k| k.as_str()).map(str::to_owned);
+    let pending = states
+        .values()
+        .filter(|s| kind(s).as_deref() == Some("pending"))
+        .count();
+    let failed: Vec<&str> = states
+        .values()
+        .filter(|s| kind(s).as_deref() == Some("failed"))
+        .map(|s| s.get("reason").and_then(|r| r.as_str()).unwrap_or(""))
+        .collect();
+    if failed.is_empty() {
+        format!("{pending} pending")
+    } else {
+        format!(
+            "{pending} pending, {} failed: {}",
+            failed.len(),
+            failed.join("; ")
+        )
+    }
+}
+
+/// A community's standing as list and info show it (plan E3.2 S9 R3-5):
+/// "member", or "removed"/"banned" with the remover's card name or short
+/// pseudonym when the merge names one.
+fn removal_text(removed: Option<&serde_json::Value>) -> String {
+    let Some(removed) = removed.filter(|r| !r.is_null()) else {
+        return "member".into();
+    };
+    let what = if removed.get("banned").and_then(serde_json::Value::as_bool) == Some(true) {
+        "banned"
+    } else {
+        "removed"
+    };
+    let by = (removed.get("byName").and_then(|v| v.as_str()))
+        .map(str::to_owned)
+        .or_else(|| {
+            (removed.get("by").and_then(|v| v.as_str())).map(rekindle_client::fmt::abbreviate_key)
+        });
+    let standing = match by {
+        Some(by) => format!("{what} by {by}"),
+        None => what.into(),
+    };
+    match (removed.get("reason").and_then(|v| v.as_str())).filter(|r| !r.is_empty()) {
+        Some(reason) => format!("{standing}: {reason}"),
+        None => standing,
+    }
+}
+
+/// The successor commands (plan E3.2 S7s.4): publish this community's
+/// successor, follow one, or list the offers kept for the snapshot.
+async fn successor(
+    cmd: &CommunityCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        CommunityCmd::PublishSuccessor {
+            community,
+            continuing,
+        } => LifecycleRequest::CommunityPublishSuccessor {
+            anchor: community.clone(),
+            continuing: (!continuing.is_empty()).then(|| continuing.clone()),
+        },
+        CommunityCmd::FollowSuccessor {
+            community,
+            new_anchor,
+        } => LifecycleRequest::CommunityFollowSuccessor {
+            anchor: community.clone(),
+            new_anchor: new_anchor.clone(),
+        },
+        CommunityCmd::Successors { community } => LifecycleRequest::CommunitySuccessors {
+            anchor: community.clone(),
+        },
+        _ => anyhow::bail!("not a successor command"),
+    };
+    lifecycle(client, mode, request).await
+}
+
+/// The transfer commands (plan E3.2 S7s.4): offer, withdraw, accept.
+async fn transfer(
+    cmd: &CommunityCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
         CommunityCmd::Transfer {
             community,
             new_owner,
-            force,
-        } => {
-            if !helpers::confirm_unless_forced(
-                *force,
-                &format!("Transfer ownership of '{community}' to {new_owner}?"),
-            )? {
-                return format::print_text("Cancelled.");
+        } => LifecycleRequest::CommunityOfferTransfer {
+            anchor: community.clone(),
+            transfer_to: new_owner.clone(),
+        },
+        CommunityCmd::WithdrawTransfer { community } => {
+            LifecycleRequest::CommunityWithdrawTransfer {
+                anchor: community.clone(),
             }
-            let value = client
-                .request_ok(IpcRequest::CommunityTransferOwnership {
-                    governance_key: community.clone(),
-                    new_owner_pseudonym: new_owner.clone(),
-                })
-                .await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            format::print_text(&format!("Ownership transferred to {new_owner}"))
         }
-        CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
-    }
+        CommunityCmd::AcceptTransfer { community } => LifecycleRequest::CommunityAcceptTransfer {
+            anchor: community.clone(),
+        },
+        CommunityCmd::AnswerLink { community, request } => {
+            LifecycleRequest::CommunityAnswerSuccessorLink {
+                anchor: community.clone(),
+                request: request.clone(),
+            }
+        }
+        _ => anyhow::bail!("not a transfer command"),
+    };
+    lifecycle(client, mode, request).await
 }
+
+/// The device-key commands (ADR 0022, plan E3.2 S7d-keys K5): retire one
+/// of our device keys, or co-sign a member's fork-answering key back in.
+async fn device(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let request = match cmd {
+        CommunityCmd::EnrolDevice { community } => LifecycleRequest::CommunityDeviceEnrol {
+            anchor: community.clone(),
+        },
+        CommunityCmd::RetireDevice {
+            community,
+            device_key,
+        } => LifecycleRequest::CommunityDeviceRetire {
+            anchor: community.clone(),
+            device_key: device_key.clone(),
+        },
+        CommunityCmd::ReadmitDevice {
+            community,
+            member,
+            device_key,
+        } => LifecycleRequest::CommunityDeviceReadmit {
+            anchor: community.clone(),
+            member: member.clone(),
+            device_key: device_key.clone(),
+        },
+        _ => anyhow::bail!("not a device command"),
+    };
+    lifecycle(client, mode, request).await
+}
+
+/// Send a lifecycle `request` and print its answer (the creator-set
+/// round's commands, plan E3.2 S7s.3).
+async fn lifecycle(
+    client: &DaemonClient,
+    mode: OutputMode,
+    request: LifecycleRequest,
+) -> anyhow::Result<()> {
+    let value = helpers::send(
+        client,
+        IpcRequest::Community(CommunityRequest::Lifecycle(request)),
+    )
+    .await?;
+    format::print_structured(&value, mode)
+}
+
+#[cfg(test)]
+#[path = "community_removal_tests.rs"]
+mod removal_tests;

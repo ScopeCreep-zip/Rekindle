@@ -6,15 +6,25 @@
 
 use std::collections::HashSet;
 
+use rekindle_types::group_dm::{group_call_refused, GroupCallRoster};
+
 use crate::error::CallError;
 use crate::group::{generate_call_key, wrap_call_key};
 use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
+use crate::signaling::group_handlers::check_members;
+pub use crate::signaling::trace::{
+    accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_dm_call,
+    end_group_call, start_dm_call, start_group_call,
+};
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{
+    CallAccept, CallClosed, CallInvite, DirectBody, GroupCallMember, GroupCallOffer,
+    GroupCallParticipantLeft,
+};
 
 /// Ring window (architecture §10.10) — 30 s for both caller-side
 /// dialing and receiver-side incoming. `pub` because rekindle-transport
@@ -25,7 +35,7 @@ pub const RING_DURATION_MS: u64 = 30_000;
 /// the 30 s dialing timeout, fires `CallInvite` via app_message, emits
 /// `CallStarted` + `ConversationFocusRequested` so frontends seed the
 /// outgoing-call UI. Returns `call_id` on success.
-pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn start_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     peer_public_key: &str,
     kind: CallKind,
@@ -57,18 +67,22 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
         expires_at_ms,
     );
 
-    let invite = MessagePayload::CallInvite {
+    let invite = DirectBody::CallInvite(CallInvite {
         call_id: call_id.clone(),
         offer_kind: kind.as_u8(),
         initiator_pubkey,
         initiator_x25519_pub: my_pub.to_vec(),
         expires_at_ms,
         video_decode_codecs: deps.local_video_decode_codecs(),
-    };
-    if let Err(e) = deps.send_to_peer(peer_public_key, invite).await {
+    });
+    // Plan CE3 (30): durable until the callee answers or it expires.
+    if let Err(e) = deps
+        .commit_call_invite(peer_public_key, &call_id, invite, expires_at_ms)
+        .await
+    {
         deps.registry().remove(&call_id);
         return Err(CallError::Transport(format!(
-            "call invite send failed: {e}"
+            "call invite not committed: {e}"
         )));
     }
 
@@ -104,7 +118,7 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
 /// `CallConnected` + `ConversationFocusRequested`. Distinct from
 /// `handle_accept_received` (caller-side handler of the peer's
 /// CallAccept reply).
-pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn accept_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
 ) -> Result<(), CallError> {
@@ -147,26 +161,26 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
     // caller's first packets.
     if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
-        deps.shutdown_voice_session().await;
+        deps.shutdown_voice_session(call_id).await;
         // Tell the caller we couldn't accept.
         let _ = deps
             .send_to_peer(
                 &peer_pubkey,
-                MessagePayload::CallDecline {
+                DirectBody::CallDecline(CallClosed {
                     call_id: call_id.to_string(),
                     reason: format!("voice session failed: {e}"),
-                },
+                }),
             )
             .await;
         return Err(CallError::Session(format!("voice session failed: {e}")));
     }
 
     // Voice up. Fire CallAccept (caller will derive matching key).
-    let accept = MessagePayload::CallAccept {
+    let accept = DirectBody::CallAccept(CallAccept {
         call_id: call_id.to_string(),
         acceptor_x25519_pub: my_pub.to_vec(),
         video_decode_codecs: deps.local_video_decode_codecs(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(&peer_pubkey, accept).await {
         // We're locally in-call but the peer never got the accept.
         // Don't unwind — audio may still reach them via any other
@@ -180,6 +194,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
         call.status = CallStatus::Active;
         registry.insert(call);
     }
+    deps.spawn_consent_watch(call_id.to_string(), deps.now_ms());
 
     deps.emit_event(CallSignalEvent::CallConnected {
         call_id: call_id.to_string(),
@@ -207,7 +222,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
 /// W13.7 — receiver-side LOCAL decline. Drops the CallState entry
 /// + fires `CallDecline` envelope. Fire-and-forget send (the peer's
 /// state will GC via the dialing timeout if our envelope is lost).
-pub async fn decline_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn decline_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -220,61 +235,31 @@ pub async fn decline_dm_call<D: CallSignalingDeps + ?Sized>(
     let _ = deps
         .send_to_peer(
             &peer_pubkey,
-            MessagePayload::CallDecline {
+            DirectBody::CallDecline(CallClosed {
                 call_id: call_id.to_string(),
                 reason: reason.unwrap_or_default(),
-            },
+            }),
         )
         .await;
     Ok(())
 }
 
-/// Hangup (or cancel-while-dialing). Removes CallState, fires
-/// CallEnd to peer, tears down voice if it was up, emits CallEnded.
-/// Works in any state (Outgoing / Incoming / Connecting / Active).
-pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
+/// Hangup (or cancel-while-dialing), in any state (Outgoing / Incoming /
+/// Connecting / Active). The local end comes first and never waits on the
+/// network (plan CE1, decision 22 (d)): the call leaves the registry,
+/// `CallEnded` retires the call window, voice stops; then `CallEnd` is
+/// committed to the outbox, which delivers it once the peer is reachable
+/// ([`crate::signaling::lifecycle`]).
+pub(super) async fn end_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
 ) -> Result<(), CallError> {
-    let removed = deps
-        .registry()
-        .remove(call_id)
-        .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))?;
-    let was_voice_up = matches!(removed.status, CallStatus::Active | CallStatus::Connecting);
-    let reason_str = reason.unwrap_or_default();
-
-    let peer_pubkey = removed.peer_pubkey.clone();
-    drop(removed); // Release Drop+Zeroize on the removed CallState now.
-
-    if let Err(e) = deps
-        .send_to_peer(
-            &peer_pubkey,
-            MessagePayload::CallEnd {
-                call_id: call_id.to_string(),
-                reason: reason_str.clone(),
-            },
-        )
+    let reason = reason.unwrap_or_default();
+    crate::signaling::lifecycle::end_locally(deps, call_id, &reason)
         .await
-    {
-        tracing::info!(call = %call_id, peer = %peer_pubkey, error = %e,
-            "CallEnd send failed; their state will GC on their own timeout");
-    }
-
-    // W15.2 — tear down voice so mic/speaker/loops actually stop.
-    // Skip if voice was never up (Outgoing/Incoming status only).
-    if was_voice_up {
-        deps.shutdown_voice_session().await;
-    }
-
-    deps.emit_event(CallSignalEvent::CallEnded {
-        call_id: call_id.to_string(),
-        peer_public_key: peer_pubkey,
-        reason: reason_str,
-        voice_was_up: was_voice_up,
-    });
-
-    Ok(())
+        .map(drop)
+        .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))
 }
 
 // ── Group calls (W12.9 / W13.13) ─────────────────────────────────────
@@ -285,14 +270,32 @@ pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
 /// X25519 + HKDF-SHA256 + AES-256-GCM (`rekindle_calls::group::wrap_call_key`).
 /// Fire-and-forget sends; accepts/declines arrive asynchronously
 /// via `handle_group_call_payload`.
-pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
+///
+/// A group-scoped start is refused first for the reason the group's view
+/// serves as `callRefused` ([`group_call_refused`]), then when an invitee
+/// is not on the roster.
+///
+/// # Errors
+/// [`CallError::GroupCallRefused`], [`CallError::NotInGroup`], or the
+/// identity or roster could not be read.
+pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     participant_pubkeys: Vec<String>,
     kind: CallKind,
+    group_id: Option<String>,
 ) -> Result<String, CallError> {
+    let initiator_pubkey = deps.owner_key()?;
+    if let Some(group) = group_id.as_deref() {
+        let roster = deps.group_roster(group).await?;
+        if let Some(reason) = group_call_refused(&roster, &initiator_pubkey) {
+            return Err(CallError::GroupCallRefused(reason));
+        }
+        if let GroupCallRoster::Held(keys) = &roster {
+            check_members(keys, group, participant_pubkeys.iter().map(String::as_str))?;
+        }
+    }
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();
-    let initiator_pubkey = deps.owner_key()?;
     let expires_at_ms = rekindle_utils::timestamp_ms() + RING_DURATION_MS;
     let call_key = generate_call_key();
 
@@ -315,6 +318,14 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
         our_x25519_secret: Some(my_secret),
         call_key: Some(call_key),
         status: GroupCallStatus::Outgoing,
+        group_id: group_id.clone(),
+    });
+    deps.emit_event(CallSignalEvent::GroupCallStarted {
+        call_id: call_id.clone(),
+        participants: all_participants.clone(),
+        kind: kind.as_u8(),
+        expires_at_ms,
+        group_id: group_id.clone(),
     });
 
     for invitee in &participant_pubkeys {
@@ -343,7 +354,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
                 continue;
             }
         };
-        let offer = MessagePayload::GroupCallOffer {
+        let offer = DirectBody::GroupCallOffer(GroupCallOffer {
             call_id: call_id.clone(),
             offer_kind: kind.as_u8(),
             initiator_pubkey: initiator_pubkey.clone(),
@@ -351,7 +362,8 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
             participants: all_participants.clone(),
             wrapped_call_key: wrapped,
             expires_at_ms,
-        };
+            group_id: group_id.clone(),
+        });
         if let Err(e) = deps.send_to_peer(invitee, offer).await {
             tracing::info!(peer = %invitee, error = %e, "GroupCallOffer send failed");
         }
@@ -365,7 +377,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
 /// emits `GroupCallConnected`. Voice session setup is W14
 /// follow-up — left to existing 1:1 voice flow until group-voice
 /// topology lands.
-pub async fn accept_group_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn accept_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
 ) -> Result<(), CallError> {
@@ -381,23 +393,24 @@ pub async fn accept_group_call<D: CallSignalingDeps + ?Sized>(
     registry.set_status(call_id, GroupCallStatus::Active);
 
     let our_ed_pubkey = deps.owner_key()?;
-    let payload = MessagePayload::GroupCallAccept {
+    let payload = DirectBody::GroupCallAccept(GroupCallMember {
         call_id: call_id.to_string(),
-        acceptor_pubkey: our_ed_pubkey,
-    };
+        pubkey: our_ed_pubkey,
+    });
     if let Err(e) = deps.send_to_peer(&snapshot.initiator_pubkey, payload).await {
         tracing::warn!(call = %call_id, error = %e, "GroupCallAccept send failed");
     }
 
     deps.emit_event(CallSignalEvent::GroupCallConnected {
         call_id: call_id.to_string(),
+        group_id: snapshot.group_id.clone(),
     });
     Ok(())
 }
 
 /// W13.13 — receiver-side LOCAL decline of a group call. Drops the
 /// GroupCallState entry + fires `GroupCallDecline` to the initiator.
-pub async fn decline_group_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn decline_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -411,23 +424,26 @@ pub async fn decline_group_call<D: CallSignalingDeps + ?Sized>(
     let _ = deps
         .send_to_peer(
             &initiator,
-            MessagePayload::GroupCallDecline {
+            DirectBody::GroupCallDecline(CallClosed {
                 call_id: call_id.to_string(),
                 reason: reason.unwrap_or_default(),
-            },
+            }),
         )
         .await;
     Ok(())
 }
 
-/// Leave / end a group call locally. Drops the GroupCallState
-/// entry and emits `GroupCallEnded` so the local UI dismisses the
-/// in-call panel. Other participants learn through whatever path
-/// our exit registers (gossip ParticipantLeft on next presence
-/// poll, dialing-timeout on the initiator's side, etc.). No
-/// explicit GroupCallEnd envelope today — matches the pre-Phase-14
-/// behavior.
-pub fn end_group_call<D: CallSignalingDeps + ?Sized>(
+/// Leave / end a group call: drop the GroupCallState entry, tell every
+/// other member of the call (`GroupCallParticipantLeft` naming us) and emit
+/// `GroupCallEnded` so the local UI dismisses the call (finding GV3).
+///
+/// Whom we tell follows what they hold: our own call (rings out or
+/// connected) and a call we joined are known to every participant, so each
+/// other participant learns we left, and an invitee still being rung for
+/// our call clears its ring on the initiator's leave
+/// (`group_handlers::handle_participant_left`). A call that only rings here
+/// is known to its initiator alone.
+pub(super) async fn end_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -436,10 +452,57 @@ pub fn end_group_call<D: CallSignalingDeps + ?Sized>(
         .group_registry()
         .remove(call_id)
         .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))?;
+    let reason = reason.unwrap_or_default();
+    let own = deps.owner_key()?;
+    let recipients: Vec<String> = if removed.status == GroupCallStatus::Incoming {
+        vec![removed.initiator_pubkey.clone()]
+    } else {
+        removed
+            .participants
+            .iter()
+            .filter(|p| **p != own)
+            .cloned()
+            .collect()
+    };
     drop(removed);
     deps.emit_event(CallSignalEvent::GroupCallEnded {
         call_id: call_id.to_string(),
-        reason: reason.unwrap_or_default(),
+        reason: reason.clone(),
     });
+    for peer in &recipients {
+        let left = DirectBody::GroupCallParticipantLeft(GroupCallParticipantLeft {
+            call_id: call_id.to_string(),
+            participant_pubkey: own.clone(),
+            reason: reason.clone(),
+        });
+        if let Err(e) = deps.send_to_peer(peer, left).await {
+            tracing::info!(call = %call_id, peer = %peer, error = %e,
+                "GroupCallParticipantLeft send failed");
+        }
+    }
     Ok(())
+}
+
+/// End every call when the session ends (quit or logout): each 1:1 call
+/// through [`end_dm_call`], so the peer gets `CallEnd` instead of waiting
+/// out its own timeout, and each group call through [`end_group_call`].
+/// The registries are empty afterwards (plan C7.27).
+pub async fn end_all_calls<D: CallSignalingDeps + ?Sized>(deps: &D, reason: &str) {
+    let dm_ids: Vec<String> = deps
+        .registry()
+        .list_all()
+        .into_iter()
+        .map(|call| call.call_id.clone())
+        .collect();
+    for call_id in dm_ids {
+        // A call that ended on its own meanwhile is simply gone.
+        if let Err(e) = end_dm_call(deps, &call_id, Some(reason.to_string())).await {
+            tracing::debug!(call = %call_id, error = %e, "end_all_calls: call already ended");
+        }
+    }
+    for call_id in deps.group_registry().list_ids() {
+        if let Err(e) = end_group_call(deps, &call_id, Some(reason.to_string())).await {
+            tracing::debug!(call = %call_id, error = %e, "end_all_calls: group call already ended");
+        }
+    }
 }

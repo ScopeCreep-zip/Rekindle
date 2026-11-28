@@ -149,7 +149,7 @@ Per-channel state has three storage layers:
 |---|---|
 | `channels` SQLite table | Channel definition: `topic`, `slowmode_seconds`, `nsfw`, per-channel `message_record_key`, `mek_generation`, `log_key`, `my_sequence` (gap-detection counter) |
 | `messages` SQLite table | Message rows, indexed by `(owner_key, conversation_id, timestamp)` with the dedup constraint |
-| `src-tauri/src/channel_repo.rs` + `channel_materialize.rs` | Read / write façades the runtime uses; materialize produces denormalised snapshots for the UI |
+| `rekindle_db::repo::channels` + `src-tauri/src/channel_materialize.rs` | The `channels` table's SQL (both hosts); materialize produces denormalised snapshots for the UI |
 
 The detailed schema for these tables is in
 [`data-layer.md`](data-layer.md).
@@ -242,15 +242,20 @@ plus the group-call variants.
 
 ## 4. DMs and Group DMs
 
-DMs reuse the same SMPL infrastructure as community channels,
+Group DMs reuse the same SMPL infrastructure as community channels,
 optimised for small private conversations. See `crates/rekindle-dm/`
 for the pure-logic implementation; `src-tauri/src/services/dm/`
 wires it to Veilid and SQLite via `DmStore` (the
-`SqliteDmStore` impl is the production adapter).
+`SqliteDmStore` impl is the production adapter). ChatWindow's group mode
+renders them until E2.6 replaces them.
 
-### Direct messages (2 members)
+### Direct messages (2 members) — deleted (plan E2.3)
 
-```
+The 2-member SMPL DM below is gone: 1:1 DMs are the friend's ratchet
+stream (the chat window's 1:1 mode). Kept here as the record of what was
+removed.
+
+```text
 SMPL Record (DM)
 ├── o_cnt: 0
 ├── member_count: 2
@@ -261,7 +266,7 @@ SMPL Record (DM)
 
 The DM MEK comes from X25519 ECDH between the two identity keys:
 
-```
+```text
 dm_mek = HKDF-SHA256(
     ikm:  X25519(alice_private, bob_public),
     salt: SHA256(sorted(alice_pubkey || bob_pubkey)),

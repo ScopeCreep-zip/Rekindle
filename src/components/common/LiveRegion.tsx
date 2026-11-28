@@ -1,4 +1,5 @@
-import { Component, JSX } from "solid-js";
+import type { Component, JSX } from "solid-js";
+import { createScrollFocus } from "../../utils/scroll_focus";
 
 interface LiveRegionProps {
   /**
@@ -24,6 +25,12 @@ interface LiveRegionProps {
    * that both consumers run against this exact node.
    */
   ref?: (el: HTMLDivElement) => void;
+  /**
+   * False when a separate announcer reads new content (the chat window's
+   * `ChatAnnouncer`): the region keeps its `log` role and name but is not
+   * live, so loading history is not read out. Defaults to true.
+   */
+  announces?: boolean;
   children: JSX.Element;
 }
 
@@ -46,15 +53,22 @@ interface LiveRegionProps {
  * scroller both of them need it to be.
  */
 const LiveRegion: Component<LiveRegionProps> = (props) => {
+  const scrollFocus = createScrollFocus<HTMLDivElement>();
   return (
     <div
       class={props.class}
-      ref={props.ref}
+      ref={(el) => {
+        scrollFocus.setElement(el);
+        props.ref?.(el);
+      }}
       role="log"
-      aria-live={props.priority ?? "polite"}
+      aria-live={props.announces === false ? "off" : (props.priority ?? "polite")}
       aria-relevant="additions"
       aria-atomic="false"
       aria-label={props.label ?? "messages"}
+      // The region is the scroller: keyboard users scroll it from the tab
+      // order (axe `scrollable-region-focusable`, SC 2.1.1; plan E7.3).
+      tabIndex={scrollFocus.tabIndex()}
     >
       {props.children}
     </div>

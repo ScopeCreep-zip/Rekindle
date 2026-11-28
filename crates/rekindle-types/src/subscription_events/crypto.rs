@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Cryptographic key lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum CryptoEvent {
     /// A channel MEK was rotated (new generation available).
     /// Triggered by: gossip `ControlPayload::MekRotated`, DHT watch on registry MEK vault.
@@ -33,34 +34,17 @@ pub enum CryptoEvent {
         generation: u64,
         sender_pseudonym: String,
     },
-    /// An admin keypair was granted to us (operator delegation).
-    /// Triggered by: gossip `ControlPayload::AdminKeypairGrant`.
-    AdminKeypairGranted { community: String },
-    /// A slot keypair was granted to us (per-channel write access).
-    /// Triggered by: gossip `ControlPayload::SlotKeypairGrant`.
-    SlotKeypairGranted {
-        community: String,
-        slot_index: u32,
-        segment_index: u32,
+    /// One publish to our prekey record (plan E2.4): the head after an SPK
+    /// and PQ-LR rotation, the one-time slots refilled or topped up, or
+    /// both. One event per publish call, so a new identity's first set is
+    /// one event, not 101.
+    /// Triggered by: the unlock's first set and reconciliation, the
+    /// "prekey maintenance" task and the slot refill after a first contact
+    /// consumed one.
+    PrekeyRecordPublished {
+        /// The head (subkey 0) was written.
+        head: bool,
+        /// The one-time slots written (1..=100), ascending.
+        slots: Vec<u32>,
     },
-    /// Phase 3a — a PQXDH bundle component was published to our profile
-    /// record. Emitted by the subkey-5 write path (Phase 3b wires this).
-    /// Phase 3a declares the variant so the cross-tier `EventDedup` hash
-    /// already knows the shape when 3b starts firing it.
-    PqBundlePublished {
-        /// DHT subkey number written (5 = canonical PqPreKeyBundle).
-        subkey: u16,
-        /// Which component of the bundle was rotated.
-        kind: PqBundleKind,
-    },
-}
-
-/// Identifies which PQ bundle component was rotated in a
-/// [`CryptoEvent::PqBundlePublished`] event.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PqBundleKind {
-    /// Long-rotation last-resort ML-KEM key.
-    LastResort,
-    /// Batch of one-time ML-KEM keys (consumed individually by initiators).
-    OneTimeBatch,
 }

@@ -19,21 +19,28 @@ use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
 
 mod events;
-use rekindle_db::Db;
+pub(crate) use events::ROSTER_STATE;
+mod media_keys;
+pub use media_keys::{install_carrier as install_media_key_carrier, HostMediaKeyOutbox};
 
 pub struct VoiceSignalingAdapter {
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
+    governance: rekindle_node::host::adapters::governance::HostGovernance,
 }
 
 impl VoiceSignalingAdapter {
-    /// `_pool` accepted to match the construction shape of the other
-    /// Phase-14 adapters (calls, voice, dm) even though signaling
-    /// doesn't reach SQLite directly — `persist_hand_raise` goes
-    /// through `services::community::persist_hand_raise(&AppState, ...)`.
-    #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, _pool: Db) -> Arc<Self> {
-        Arc::new(Self { state, app_handle })
+    pub fn new(
+        state: Arc<AppState>,
+        app_handle: tauri::AppHandle,
+    ) -> Result<Arc<Self>, rekindle_db::NotLoggedIn> {
+        state.db.current()?;
+        let governance = state_helpers::host_governance(&state)?;
+        Ok(Arc::new(Self {
+            state,
+            app_handle,
+            governance,
+        }))
     }
 }
 
@@ -48,11 +55,10 @@ pub fn handle_voice_signaling(
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    let Ok(pool) = state.db.current() else {
-        tracing::debug!("voice signaling: no identity database — dropped");
+    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
+        tracing::debug!("voice signaling: no unlocked Host");
         return;
     };
-    let adapter = VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
     let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     let cid = community_id.to_string();
     let sender = sender_pseudonym.to_string();
@@ -73,11 +79,10 @@ pub fn member_departed(
     community_id: &str,
     departed: &str,
 ) {
-    let Ok(pool) = state.db.current() else {
+    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
         return;
     };
-    let deps: Arc<dyn VoiceSignalingDeps> =
-        VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
+    let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     rekindle_voice::signaling::member_departed(&deps, community_id, departed);
 }
 
@@ -85,23 +90,23 @@ pub fn member_departed(
 /// installed and answered with its `VoiceMediaKeyAck`; a
 /// `VoiceMediaKeyRequest` starts our deliveries and is answered with a
 /// bare acknowledgement. Returns the reply bytes.
-pub fn answer_media_key_call(
+pub async fn answer_media_key_call(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     payload: &rekindle_codec::community::envelope::ControlPayload,
 ) -> Vec<u8> {
     use rekindle_codec::community::envelope::ControlPayload;
-    let Ok(pool) = state.db.current() else {
+    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
         return b"ACK".to_vec();
     };
-    let deps: Arc<dyn VoiceSignalingDeps> =
-        VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
+    let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     match payload {
         ControlPayload::VoiceMediaKey { .. } => {
             rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
+                .await
                 .and_then(|ack| {
                     rekindle_codec::capnp_envelope::encode_community_envelope(
-                        &CommunityEnvelope::Control(ack),
+                        &CommunityEnvelope::control(ack),
                     )
                     .ok()
                 })
@@ -161,18 +166,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn online_voice_members(&self, community_id: &str) -> Vec<(String, Vec<u8>)> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
-            return Vec::new();
-        };
-        let Some(gossip) = community.gossip.as_ref() else {
-            return Vec::new();
-        };
-        gossip
-            .online_members
-            .iter()
-            .map(|(pk, m)| (pk.clone(), m.route_blob.clone()))
-            .collect()
+        // Roster ∩ `M`/6 ∩ beat present, from the Host (plan E3.4 S4).
+        crate::state_helpers::host_governance(&self.state)
+            .map(|governance| governance.reachable_members(community_id))
+            .unwrap_or_default()
     }
 
     fn decode_channel_id(&self, channel_id: &str) -> Option<[u8; 16]> {
@@ -258,30 +255,36 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         self.state.voice_sender_keys.keys(community_id, channel_id)
     }
 
-    fn seal_media_key(
+    fn sign_media_session_key(
         &self,
         community_id: &str,
-        recipient: &str,
-        aad: &[u8],
-        secret: &[u8; 32],
+        channel_id: &str,
+        session_key: &[u8],
     ) -> Option<Vec<u8>> {
-        let (_, signing_key) =
-            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
-        let recipient: [u8; 32] = hex::decode(recipient).ok()?.try_into().ok()?;
-        rekindle_secrets::media_sender_key::seal(&signing_key, &recipient, aad, secret).ok()
+        crate::services::voice_adapter::media_keys::sign_media_session_key(
+            &self.state,
+            community_id,
+            channel_id,
+            session_key,
+        )
     }
 
-    fn open_media_key(
+    fn sign_sealed_media_key(
         &self,
         community_id: &str,
-        sender: &str,
-        aad: &[u8],
+        channel_id: &str,
+        recipient: &str,
+        key_index: u64,
         sealed: &[u8],
-    ) -> Option<zeroize::Zeroizing<[u8; 32]>> {
-        let (_, signing_key) =
-            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
-        let sender: [u8; 32] = hex::decode(sender).ok()?.try_into().ok()?;
-        rekindle_secrets::media_sender_key::open(&signing_key, &sender, aad, sealed).ok()
+    ) -> Option<Vec<u8>> {
+        crate::services::voice_adapter::media_keys::sign_sealed_media_key(
+            &self.state,
+            community_id,
+            channel_id,
+            recipient,
+            key_index,
+            sealed,
+        )
     }
 
     async fn call_peer(
@@ -299,9 +302,14 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
             .flatten()
     }
 
+    fn media_key_outbox(&self) -> Arc<dyn rekindle_voice::signaling::MediaKeyOutbox> {
+        Arc::new(HostMediaKeyOutbox(Arc::clone(&self.state)))
+    }
+
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope) {
-        if let Err(e) =
-            crate::services::community::send_to_mesh(&self.state, community_id, envelope)
+        if let Err(e) = crate::state_helpers::host_governance(&self.state)
+            .map(|host| host.send_to_mesh_impl(community_id, envelope))
+            .map_err(|e| e.to_string())
         {
             tracing::debug!(community = %community_id, error = %e, "voice send_to_mesh failed");
         }
@@ -414,6 +422,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 "voice signaling directed send failed",
             );
         }
+    }
+
+    fn member_shown_name(&self, community_id: &str, pseudonym: &str) -> String {
+        self.governance.member_shown_name(community_id, pseudonym)
     }
 
     fn my_display_name(&self) -> Option<String> {

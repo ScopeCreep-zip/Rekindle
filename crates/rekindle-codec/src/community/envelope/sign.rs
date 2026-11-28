@@ -2,23 +2,29 @@
 
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 
-use crate::envelope::DEFAULT_TTL;
+use crate::envelope::{signing_input, DEFAULT_TTL, MESSAGE_ID_LEN};
 
 use super::SignedEnvelope;
 
 /// Create a signed envelope from a serialized envelope payload.
 ///
-/// Signs `envelope_bytes` with the pseudonym's Ed25519 signing key.
+/// Signs `message_id ‖ envelope_bytes` (under the gossip domain tag,
+/// [`signing_input`]) with the pseudonym's Ed25519 signing key.
+/// `message_id` is fresh per send, from the host's `RandomSource`: a
+/// re-send of the same bytes is a new message (see
+/// `crate::envelope`'s module doc).
 pub fn sign_envelope(
     signing_key: &SigningKey,
     community_id: &str,
     sender_pseudonym: &str,
+    message_id: [u8; MESSAGE_ID_LEN],
     envelope_bytes: &[u8],
 ) -> SignedEnvelope {
-    let signature = signing_key.sign(envelope_bytes);
+    let signature = signing_key.sign(&signing_input(&message_id, envelope_bytes));
     SignedEnvelope {
         community_id: community_id.to_string(),
         sender_pseudonym: sender_pseudonym.to_string(),
+        message_id,
         envelope_bytes: envelope_bytes.to_vec(),
         signature: signature.to_bytes().to_vec(),
         ttl: DEFAULT_TTL,

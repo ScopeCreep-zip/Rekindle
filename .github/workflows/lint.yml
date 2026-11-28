@@ -14,18 +14,36 @@
 #   .gitleaks.toml (secret scan)
 #   .actionlint.yaml, .zizmor.yml (workflow audits)
 
+# Our own composite actions (.github/actions/<name>) are referenced as
+# ScopeCreep-zip/Rekindle/.github/actions/<name>@<full 40-char sha>, never
+# ./.github/actions/<name> (zizmor self-repository: a workspace path is not
+# pinned and loads whatever the checkout holds). The sha is the latest
+# commit that touches that action: after changing .github/actions/<name>,
+# push that commit, then set every reference to
+#   git log -1 --format=%H -- .github/actions/<name>
+# in a follow-up commit (the pinned commit must already be on GitHub).
+
 name: Lint
 
 on:
+  # A pull request runs once, on pull_request. push covers only the long-lived
+  # branches a merge lands on (main and the integration branch); a push to a PR
+  # branch would otherwise start a second, identical run (GitHub: "If multiple
+  # triggering events for your workflow occur at the same time, multiple workflow
+  # runs will be triggered").
   push:
-    branches: [main, "codex/**"]
+    branches: [main, codex/communities-merge-cli-claude-remote]
   pull_request:
     branches: [main, "codex/**"]
+  # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
+  merge_group:
   workflow_dispatch:
 
+# A new commit on a pull request cancels that PR's older run; pushes to main and
+# the integration branch never cancel, so every merged commit keeps its result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -37,21 +55,22 @@ jobs:
   frontend:
     name: Frontend (biome / stylelint / knip)
     runs-on: ubuntu-24.04
+    env:
+      # Pin pnpm's runtime for install and exec. The shared action bootstraps Node from the 22 range.
+      npm_config_use_node_version: "22.22.2" # Stylelint 18 requires ^22.22.2 on Node 22.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup-pnpm
+      - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+        id: frontend-install
 
-      # The package.json devDependencies for biome / stylelint / knip
-      # are pending; once they land the next steps just work. Until
-      # then this job is skipped at install time. See
-      # docs/contributor/linting.md "Pending devDependencies".
       - name: Biome — check
-        if: ${{ hashFiles('node_modules/.bin/biome') != '' }}
         run: pnpm exec biome check src/
 
       - name: Stylelint — CSS lint
-        if: ${{ hashFiles('node_modules/.bin/stylelint') != '' }}
+        if: ${{ !cancelled() && steps.frontend-install.outcome == 'success' }}
         run: pnpm exec stylelint 'src/styles/**/*.css'
 
       - name: knip — unused exports / files
@@ -60,7 +79,7 @@ jobs:
 
       # Covers src/**, e2e/** and the node-side config files. e2e/ sat
       # outside every tsconfig until tsconfig.e2e.json existed, which is
-      # how a call-signature bug in e2e/security/xss.spec.ts survived.
+      # how a call-signature bug in a since-removed e2e spec survived.
       - name: TypeScript — typecheck (src + e2e + configs)
         run: pnpm typecheck
 
@@ -77,9 +96,11 @@ jobs:
     name: Frontend tiers (dependency-cruiser)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup-pnpm
+      - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       # No `if:` guard. `dependency-cruiser` is a real devDependency now,
       # so this step runs unconditionally. It previously skipped on a
@@ -99,31 +120,18 @@ jobs:
           pnpm exec depcruise --config .dependency-cruiser.cjs
           --ignore-known .dependency-cruiser-known-violations.json src
 
-  # ──────────────────────────────────────────────────────────────────
-  # Security regression suite — deep-link payload handling and DOM-XSS
-  # canaries (e2e/security/*.spec.ts). @playwright/test is a real
-  # devDependency, so this runs for real rather than being guarded.
-  # CSP tests skip themselves here (Vite serves no CSP); the declared
-  # policy is covered by src-tauri/tests/csp_policy.rs in the Rust job.
-  # ──────────────────────────────────────────────────────────────────
-  security:
-    name: Security suite (playwright)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Deep-link / XSS regression tests
-        run: pnpm test:security
+  # No browser security suite: the CSP, isolation and XSS checks run in
+  # the real app (plan E7.14 S6, `pnpm test:app`), which needs a desktop
+  # session and so is run by the gate on both target machines, not here.
+  # The declared CSP is also covered by src-tauri/tests/csp_policy.rs in
+  # ci.yml's Rust job.
 
   # ──────────────────────────────────────────────────────────────────
   # xtask guardrails — tier boundaries, the unconditional 600-line
   # file-size ceiling (the burn-down allowlist is gone; any file over the
-  # limit fails), allow-reason hygiene. Pure Rust, no GTK.
+  # limit fails), allow-reason hygiene. Its release-build check compiles
+  # the whole workspace, so it needs the same system libraries as ci.yml,
+  # and its supply-chain check runs `cargo deny`.
   # ──────────────────────────────────────────────────────────────────
   # Seven gates, all languages: crate boundaries, the 600-line ceiling
   # (rs/ts/tsx/css), `#[allow]` reasons, and four duplication checks —
@@ -138,13 +146,23 @@ jobs:
     name: Guardrails (cargo xtask check)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Install system deps
+        uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: xtask
+
+      # `cargo xtask check` runs `cargo deny check advisories bans licenses
+      # sources`; pinned to the version the contributors' toolchain uses.
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version 0.19.6
 
       - run: cargo xtask check
 
@@ -155,9 +173,11 @@ jobs:
     name: TOML (taplo)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install taplo
-        run: cargo install taplo-cli --locked
+        run: cargo install taplo-cli --locked --version 0.10.0
       - name: taplo format --check
         run: taplo format --check
 
@@ -168,20 +188,22 @@ jobs:
     name: Markdown (markdownlint / lychee)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
       - name: markdownlint-cli2
-        uses: DavidAnson/markdownlint-cli2-action@v17
+        uses: DavidAnson/markdownlint-cli2-action@db43aef879112c3119a410d69f66701e0d530809 # v17
         with:
           config: .markdownlint-cli2.yaml
           globs: "**/*.md"
 
       - name: lychee — link check
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
         with:
           args: --config lychee.toml '**/*.md'
           fail: true
@@ -193,14 +215,16 @@ jobs:
     name: SQL (sqlfluff)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Install sqlfluff
-        run: pip install sqlfluff
+        run: pip install --require-hashes --no-deps -r .github/requirements/sqlfluff.txt
 
       - name: sqlfluff lint
         run: sqlfluff lint crates/rekindle-db/schema/
@@ -212,15 +236,17 @@ jobs:
     name: Workflows (actionlint / zizmor)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: actionlint
-        uses: docker://rhysd/actionlint:latest
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: -color -config-file .actionlint.yaml
 
       - name: zizmor
-        uses: zizmorcore/zizmor-action@v0.6.4
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
           advanced-security: false
           # Read ignore rules from .zizmor.yml.
@@ -232,22 +258,25 @@ jobs:
     name: Shell (shellcheck / shfmt)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: shellcheck
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
         with:
           scandir: scripts
 
       - name: shfmt
         run: |
           # mvdan/sh's release assets are versioned in the filename
-          # (shfmt_vX.Y.Z_linux_amd64), so the literal
-          # "latest/download/shfmt_linux_amd64" alias 404s. Resolve the
-          # tag first and build the real asset name from it.
-          SHFMT_VERSION=$(curl -sSfL https://api.github.com/repos/mvdan/sh/releases/latest | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-          curl -sSfL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" -o /usr/local/bin/shfmt
-          chmod +x /usr/local/bin/shfmt
+          # (shfmt_vX.Y.Z_linux_amd64). Pinned (resolving "latest" through
+          # the API 404'd) and checked against the release's sha256sums.txt.
+          SHFMT_VERSION=v3.12.0
+          bin="shfmt_${SHFMT_VERSION}_linux_amd64"
+          curl -sSfL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/${bin}" -o "${RUNNER_TEMP}/${bin}"
+          echo "d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea  ${RUNNER_TEMP}/${bin}" | sha256sum -c -
+          sudo install -m 0755 "${RUNNER_TEMP}/${bin}" /usr/local/bin/shfmt
           shfmt -d -i 4 -ci -bn scripts/
 
   # ──────────────────────────────────────────────────────────────────
@@ -257,14 +286,16 @@ jobs:
     name: Nix (nixfmt / statix / deadnix / flake check)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/nix-installer-action@2559b44fed7d4fc978e8dd0e379661afb8b73590 # main
+      - uses: DeterminateSystems/magic-nix-cache-action@8941f279e15828abcd2fc8fbb7cd282ab00972a7 # main
 
       - name: nixfmt --check
         run: |
-          nix shell nixpkgs#nixfmt-rfc-style --command nixfmt --check $(find . -name '*.nix' -not -path './target/*' -not -path './node_modules/*')
+          nix shell nixpkgs#nixfmt --command find . -name '*.nix' -not -path './target/*' -not -path './node_modules/*' -exec nixfmt --check {} +
 
       - name: statix
         run: |
@@ -284,8 +315,10 @@ jobs:
     name: Typos
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: crate-ci/typos@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: crate-ci/typos@b41eb62e9a8096c9ba6636e2365d3f56018a203c # master
 
   # ──────────────────────────────────────────────────────────────────
   # Secrets — gitleaks history + working-tree scan.
@@ -294,9 +327,10 @@ jobs:
     name: Secrets (gitleaks)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # gitleaks-action@v2 now gates organization accounts behind a paid
       # GITLEAKS_LICENSE secret — a vendor billing change, not a scan
@@ -305,9 +339,12 @@ jobs:
       # going through the Action wrapper.
       - name: Install gitleaks
         run: |
-          GITLEAKS_VERSION=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz -C /usr/local/bin gitleaks
+          # Pinned and checked against the release's checksums.txt.
+          GITLEAKS_VERSION=8.30.1
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}" -o "${RUNNER_TEMP}/${tarball}"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${RUNNER_TEMP}/${tarball}" | sha256sum -c -
+          sudo tar -xzf "${RUNNER_TEMP}/${tarball}" -C /usr/local/bin gitleaks
 
       - name: gitleaks detect
         run: gitleaks detect --source . --config .gitleaks.toml --redact --no-banner -v
@@ -322,9 +359,11 @@ jobs:
     name: Semgrep (SAST)
     runs-on: ubuntu-24.04
     container:
-      image: returntocorp/semgrep:latest
+      image: returntocorp/semgrep:1.186.0@sha256:6e1b04340e60e910fbb4ddbf3c857ab0918f064417ad5ac530014ccb3cf8c8f1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: semgrep ci
         # Each registry ruleset needs its own `--config` flag — folding
         # them into one quoted, space-separated value made semgrep treat
@@ -349,12 +388,17 @@ jobs:
     name: Cap'n Proto (capnp compile)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install capnp
         run: |
           sudo apt-get update
           sudo apt-get install -y capnproto
+          # `-orust` runs the capnpc-rust plugin; the version build.rs uses
+          # (Cargo.lock: capnpc 0.26.0), so the check compiles what the build does.
+          cargo install capnpc --locked --version 0.26.0
 
       - name: capnp compile (validate every schema)
         run: |

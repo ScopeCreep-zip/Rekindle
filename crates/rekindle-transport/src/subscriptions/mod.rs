@@ -1,17 +1,17 @@
 //! Consolidated subscription module — every inbound signal from Veilid.
 //!
 //! `SubscriptionManager` is the **sole owner** of all reactive state:
-//! DHT watches, gossip processing, typing/presence/unread tracking,
-//! and event emission. No other code in the workspace establishes
-//! watches, processes ValueChange events, or maintains unread counts.
+//! gossip processing, typing/presence/unread tracking and event
+//! emission. It holds no DHT watch: the Host's watch ring and record pool
+//! own them (plan E3.3 slice 8 deleted the channel-record watch and the
+//! tier-3 poll); value changes are routed here.
 //!
 //! # Submodules
 //!
 //! - `events/` — typed event enums per domain (channel, typing, presence, etc.)
 //! - `state` — mutable state: unread, typing, presence, voice
-//! - `watches` — DHT watch lifecycle: create, renew, route ValueChange
+//! - `value_changes` — the value changes' own worker, off the dispatch loop
 //! - `gossip_handler` — inbound gossip processing (all 52 ControlPayload variants)
-//! - `dm_handler` — inbound DM processing (all 10 DmPayload variants)
 
 pub mod cold_start;
 pub mod events;
@@ -23,13 +23,13 @@ pub use rekindle_events::{dedup, state, state_effects};
 mod bare_envelope;
 pub mod dispatch;
 mod dispatch_gossip;
+mod drain;
 mod manager_ingress;
 mod manager_lifecycle;
 mod manager_network;
 mod manager_setup;
-pub mod poll;
 mod read_state;
-pub mod watches;
+mod value_changes;
 
 pub use cold_start::ColdStartBuffer;
 
@@ -40,13 +40,11 @@ use parking_lot::RwLock;
 use rekindle_lifecycle::SessionScope;
 use tokio::sync::broadcast;
 
-use crate::broadcast::node::TransportNode;
 use crate::gossip::GossipMesh;
 use crate::session::Session;
 
 use events::SubscriptionEvent;
 use state::SubscriptionState;
-use watches::WatchRegistry;
 
 /// Broadcast channel capacity for subscription events.
 const EVENT_CHANNEL_CAPACITY: usize = 4096;
@@ -55,16 +53,17 @@ const EVENT_CHANNEL_CAPACITY: usize = 4096;
 ///
 /// Owns all inbound reactive state. Created once during daemon resume.
 /// The daemon's `InboundHandler` forwards every signal here. Consumers
-/// (TUI, CLI) subscribe via `subscribe()` and receive typed events.
+/// (TUI, CLI) subscribe via `subscribe()` and receive typed events. A clone
+/// is a handle to the same state (every field is shared).
+#[derive(Clone)]
 pub struct SubscriptionManager {
-    /// Transport node for DHT operations.
-    node: Arc<TransportNode>,
     /// Session state (identity, communities, DM keys).
     session: Arc<RwLock<Option<Session>>>,
     /// Mutable state: unread counts, typing, presence, voice.
     state: Arc<RwLock<SubscriptionState>>,
-    /// Active DHT watches registry.
-    watches: Arc<RwLock<WatchRegistry>>,
+    /// The host's clock port (plan C9.2): dedup buckets, voice join times
+    /// and synthesized message timestamps read it, never the wall clock.
+    clock: Arc<dyn rekindle_utils::Clock>,
     /// Cross-tier Blake3 content deduplication.
     dedup: Arc<RwLock<dedup::EventDedup>>,
     /// Per-community gossip mesh (shared with BroadcastManager).
@@ -83,16 +82,15 @@ impl SubscriptionManager {
     /// Call `setup_identity()` and `setup_community()` to begin watching.
     /// Background tasks run in `scope`.
     pub fn new(
-        node: Arc<TransportNode>,
         session: Arc<RwLock<Option<Session>>>,
         scope: Arc<SessionScope>,
+        clock: Arc<dyn rekindle_utils::Clock>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
-            node,
             session,
             state: Arc::new(RwLock::new(SubscriptionState::default())),
-            watches: Arc::new(RwLock::new(WatchRegistry::new())),
+            clock,
             dedup: Arc::new(RwLock::new(dedup::EventDedup::default())),
             meshes: Arc::new(RwLock::new(HashMap::new())),
             event_tx,

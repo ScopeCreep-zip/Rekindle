@@ -2,8 +2,8 @@
 //!
 //! Every operation the upload/download/dht_scan/expression_fetch flows
 //! need against AppState, the database, the Veilid transport, or the
-//! Tauri event system is abstracted behind a single trait. The src-tauri
-//! `files_adapter` implements this trait against the live runtime; the
+//! Tauri event system is abstracted behind a single trait. The Host's
+//! `HostFiles` implements this trait against the live runtime; the
 //! crate-side bodies are parameterised over `Arc<dyn FilesDeps>` so they
 //! never import `veilid-core` or `tauri` directly (Invariant 2).
 //!
@@ -17,16 +17,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
-};
-use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
 use crate::error::FilesError;
 use crate::pinned::PinnedSet;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
+pub use rekindle_types::message::ChannelPost;
 
 /// Events emitted to the UI as Lost Cargo flows complete.
 #[derive(Debug, Clone)]
@@ -37,6 +35,18 @@ pub enum FilesEvent {
         channel_id: String,
         attachment_id_hex: String,
     },
+    /// A verified chunk of an attachment entered the cache (plan E7.2
+    /// G12): the fetch's checkpoint, which a running transfer records and
+    /// shows as progress. Also sent once as a fetch starts, from the
+    /// chunks the cache already held.
+    ChunkCached {
+        community_id: String,
+        attachment_id_hex: String,
+        chunks_done: u32,
+        chunk_count: u32,
+        bytes_done: u64,
+        total: u64,
+    },
     /// Architecture §32 W15 — expression-asset chunks fully cached;
     /// picker can render.
     ExpressionAssetReady {
@@ -46,7 +56,7 @@ pub enum FilesEvent {
 }
 
 /// Column set for [`FilesDeps::insert_channel_message_full`]. Mirrors
-/// `message_repo::insert_channel_message_full`'s SQL shape; grouping the
+/// `rekindle_db::repo::messages::channel::insert`'s SQL shape; grouping the
 /// fields keeps the trait method under the argument-count budget while
 /// each field stays explicit at the construction site.
 pub struct InsertChannelMessage<'a> {
@@ -56,70 +66,17 @@ pub struct InsertChannelMessage<'a> {
     pub message_id: &'a str,
     pub timestamp_ms: i64,
     pub mek_generation: u64,
-    pub lamport_ts: u64,
     pub attachment_json: &'a str,
     pub flags: u32,
     pub body: &'a str,
 }
 
-/// Single deps trait for all Lost Cargo flows. Implementations
-/// supply concrete AppState / Db / AppHandle / Veilid wiring.
-#[async_trait]
-pub trait FilesDeps: Send + Sync + 'static {
-    // ── Identity ───────────────────────────────────────────────────
-
-    fn owner_key(&self) -> Result<String, FilesError>;
-
-    fn my_pseudonym(&self, community_id: &str) -> Result<String, FilesError>;
-
-    // ── Channel + community state ──────────────────────────────────
-
-    fn channel_log_key(&self, community_id: &str, channel_id: &str) -> Result<String, FilesError>;
-
-    fn slot_keypair(&self, community_id: &str) -> Result<String, FilesError>;
-
-    fn my_subkey_index(&self, community_id: &str) -> Result<u32, FilesError>;
-
-    fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool;
-
+/// The community keys and the chunk caches: all the expression store
+/// (`expressions`) and the key lookups (`keys`) need, so a host that serves
+/// expressions implements it alone (plan E3.1 E3c).
+pub trait FileCacheDeps: Send + Sync + 'static {
     /// Community and channel keys (plan D6).
     fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
-
-    // ── Permissions + slowmode + mentions ──────────────────────────
-
-    fn require_permission(&self, community_id: &str, permission: u64) -> Result<(), FilesError>;
-
-    fn enforce_slowmode(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        now_ms: i64,
-    ) -> Result<(), FilesError>;
-
-    /// Returns (mentioned_pseudonyms, mentioned_roles, mention_flags).
-    fn resolve_outbound_mentions(
-        &self,
-        community_id: &str,
-        sender_pseudonym: &str,
-        body: &str,
-    ) -> (Vec<String>, Vec<String>, u32);
-
-    // ── Lamport + sequence ─────────────────────────────────────────
-
-    /// Next message-clock value (attachment messages).
-    fn increment_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
-    /// Next governance-clock value (`AttachmentPinned`).
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
-
-    fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
-
-    // ── Cache (sync, AppState-coupled) ─────────────────────────────
 
     fn ensure_cache_open(&self, community_id: &str) -> Result<(), FilesError>;
 
@@ -148,6 +105,47 @@ pub trait FilesDeps: Send + Sync + 'static {
         community_id: &str,
         f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
     ) -> Result<(), FilesError>;
+}
+
+/// Single deps trait for all Lost Cargo flows. Implementations
+/// supply concrete AppState / Db / AppHandle / Veilid wiring.
+#[async_trait]
+pub trait FilesDeps: FileCacheDeps {
+    // ── Ports (plan C9.2) ──────────────────────────────────────────
+
+    /// The host's clock: post timestamps and the slowmode state.
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock>;
+
+    /// The host's RNG: the attachment, message and voice-file ids.
+    fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource>;
+
+    // ── Identity ───────────────────────────────────────────────────
+
+    fn owner_key(&self) -> Result<String, FilesError>;
+
+    fn my_pseudonym(&self, community_id: &str) -> Result<String, FilesError>;
+
+    // ── Channel + community state ──────────────────────────────────
+
+    fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool;
+
+    // ── Permissions + slowmode + mentions ──────────────────────────
+
+    /// Require `permission` on `channel_id` (its overwrites applied), or
+    /// community-wide for `None`.
+    fn require_permission(
+        &self,
+        community_id: &str,
+        channel_id: Option<&str>,
+        permission: u64,
+    ) -> Result<(), FilesError>;
+
+    fn enforce_slowmode(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        now_ms: i64,
+    ) -> Result<(), FilesError>;
 
     // ── Online-peer routing (gossip overlay) ───────────────────────
 
@@ -169,35 +167,21 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     // ── DHT operations (async, veilid-core abstracted away) ────────
 
-    /// Write a ChannelMessage entry to the channel SMPL record.
-    /// Adapter handles slot_keypair string → KeyPair parsing,
-    /// pseudonym credentials lookup, RecordKey construction.
-    async fn write_channel_message_to_smpl(
+    /// Store `post`'s outbox `channel_post` row (plan E3.3 slice 7): an
+    /// attachment message's echo is its row already written `queued`; a
+    /// possession entry (`PostEntry::Cached`) has none.
+    async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError>;
+
+    /// The entries of `channel_id` (plan E3.3 "Files move onto MSR"):
+    /// every member's channel outbox entries of it, verified and linked by
+    /// tag (`read_author_outboxes(channel)`); a channel has no record of
+    /// its own (plan E3.3 slice 8). Used by `fetch_offer`
+    /// (a Message carrying the attachment) and `discover_sources` (its
+    /// author, and the `AttachmentCached` entries of the outboxes).
+    async fn channel_entries(
         &self,
         community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-        message: &ChannelMessage,
-    ) -> Result<(), FilesError>;
-
-    async fn write_attachment_cached_to_smpl(
-        &self,
-        community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-        cached: &ChannelAttachmentCached,
-    ) -> Result<(), FilesError>;
-
-    /// Scan all 255 member subkeys of a channel SMPL record and
-    /// return the decoded entries in arrival order. Used by
-    /// `fetch_attachment_offer` (looks for Message entries with
-    /// matching attachment_id) and `discover_sources` (looks for
-    /// AttachmentCached entries).
-    async fn scan_channel_subkeys(
-        &self,
-        channel_log_key: &str,
+        channel_id: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError>;
 
     /// Make an app_call to a peer over their imported private route,
@@ -229,14 +213,6 @@ pub trait FilesDeps: Send + Sync + 'static {
         save_path: &Path,
     ) -> Result<(), FilesError>;
 
-    // ── Gossip ─────────────────────────────────────────────────────
-
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: &CommunityEnvelope,
-    ) -> Result<(), FilesError>;
-
     // ── Pin governance ─────────────────────────────────────────────
 
     async fn write_attachment_pinned(
@@ -244,7 +220,6 @@ pub trait FilesDeps: Send + Sync + 'static {
         community_id: &str,
         attachment_id: [u8; 16],
         pinned: bool,
-        lamport: u64,
     ) -> Result<(), FilesError>;
 
     // ── Events ─────────────────────────────────────────────────────

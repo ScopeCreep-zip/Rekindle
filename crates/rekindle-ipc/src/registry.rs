@@ -2,8 +2,8 @@
 //! levels, with O(1) pubkey lookups via a reverse index.
 //!
 //! After Noise IK handshake, the server extracts the client's X25519 static
-//! public key and resolves it here. Keys not in the registry receive
-//! `SecurityLevel::Open` (ephemeral CLI clients).
+//! public key and resolves it here, at every frame. Keys not in the
+//! registry receive `SecurityLevel::Open`.
 //!
 //! Adapted from open-sesame `core-ipc/src/registry.rs`.
 //!
@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use super::message::{AgentType, SecurityLevel};
+use super::protocol::AgentCapability;
 
 /// An agent's verified identity, clearance, and key state.
 #[derive(Debug, Clone)]
@@ -24,8 +25,8 @@ pub struct AgentIdentity {
     pub security_level: SecurityLevel,
     /// Agent type classification.
     pub agent_type: AgentType,
-    /// Declared capabilities (e.g., "translate", "moderate").
-    pub capabilities: Vec<String>,
+    /// What an `Agent`-level registration may do (plan D1).
+    pub capabilities: Vec<AgentCapability>,
     /// Monotonic generation counter. Survives crash-restart.
     pub generation: u64,
 }
@@ -54,7 +55,7 @@ impl ClearanceRegistry {
         pubkey: [u8; 32],
         level: SecurityLevel,
         agent_type: AgentType,
-        capabilities: Vec<String>,
+        capabilities: Vec<AgentCapability>,
     ) {
         // Remove existing pubkeys from reverse index.
         if let Some(existing) = self.identities.get(&name) {
@@ -221,133 +222,18 @@ impl ClearanceRegistry {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn register_and_lookup() {
-        let mut reg = ClearanceRegistry::new();
-        let key = [0xAA; 32];
-        reg.register(
-            "agent-a".into(),
-            key,
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            vec![],
-        );
-        let id = reg.lookup(&key).unwrap();
-        assert_eq!(id.current_pubkey, key);
-        assert_eq!(id.security_level, SecurityLevel::Agent);
-        assert_eq!(id.generation, 0);
-    }
-
-    #[test]
-    fn lookup_name() {
-        let mut reg = ClearanceRegistry::new();
-        let key = [0xAA; 32];
-        reg.register(
-            "agent-a".into(),
-            key,
-            SecurityLevel::Internal,
-            AgentType::System,
-            vec![],
-        );
-        assert_eq!(reg.lookup_name(&key), Some("agent-a"));
-        assert_eq!(reg.lookup_name(&[0xBB; 32]), None);
-    }
-
-    #[test]
-    fn register_overwrites() {
-        let mut reg = ClearanceRegistry::new();
-        reg.register(
-            "a".into(),
-            [0xAA; 32],
-            SecurityLevel::Open,
-            AgentType::Human,
-            vec![],
-        );
-        reg.register(
-            "a".into(),
-            [0xBB; 32],
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            vec![],
-        );
-        assert!(reg.lookup(&[0xAA; 32]).is_none());
-        assert!(reg.lookup(&[0xBB; 32]).is_some());
-    }
-
-    #[test]
-    fn pending_allows_dual_key_lookup() {
-        let mut reg = ClearanceRegistry::new();
-        reg.register(
-            "a".into(),
-            [0xAA; 32],
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            vec![],
-        );
-        assert!(reg.register_pending("a", [0xBB; 32]));
-        assert!(reg.lookup(&[0xAA; 32]).is_some());
-        assert!(reg.lookup(&[0xBB; 32]).is_some());
-    }
-
-    #[test]
-    fn finalize_rotation() {
-        let mut reg = ClearanceRegistry::new();
-        reg.register(
-            "a".into(),
-            [0xAA; 32],
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            vec![],
-        );
-        reg.register_pending("a", [0xBB; 32]);
-        assert!(reg.finalize_rotation("a"));
-        assert!(reg.lookup(&[0xAA; 32]).is_none());
-        assert!(reg.lookup(&[0xBB; 32]).is_some());
-        assert_eq!(reg.find_by_name("a").unwrap().generation, 1);
-    }
-
-    #[test]
-    fn revoke_removes_both_keys() {
-        let mut reg = ClearanceRegistry::new();
-        reg.register(
-            "a".into(),
-            [0xAA; 32],
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            vec![],
-        );
-        reg.register_pending("a", [0xBB; 32]);
-        let revoked = reg.revoke_by_name("a").unwrap();
-        assert_eq!(revoked.generation, 0);
-        assert!(reg.lookup(&[0xAA; 32]).is_none());
-        assert!(reg.lookup(&[0xBB; 32]).is_none());
-    }
-
-    #[test]
-    fn revoke_then_reregister_preserves_generation() {
-        let mut reg = ClearanceRegistry::new();
-        reg.register(
-            "a".into(),
-            [0xAA; 32],
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            vec![],
-        );
-        reg.register_pending("a", [0xBB; 32]);
-        reg.finalize_rotation("a"); // gen = 1
-        let revoked = reg.revoke_by_name("a").unwrap();
-        assert_eq!(revoked.generation, 1);
-        reg.register_with_generation(
-            "a".into(),
-            [0xCC; 32],
-            SecurityLevel::Agent,
-            AgentType::Bot,
-            revoked.generation + 1,
-        );
-        assert_eq!(reg.find_by_name("a").unwrap().generation, 2);
+impl AgentIdentity {
+    /// Whether this registration may send a request needing `capability`
+    /// (only `Agent`-level registrations are scoped by capabilities).
+    #[must_use]
+    pub fn permits(&self, capability: Option<AgentCapability>) -> bool {
+        if self.security_level != SecurityLevel::Agent {
+            return true;
+        }
+        capability.is_some_and(|c| self.capabilities.contains(&c))
     }
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;

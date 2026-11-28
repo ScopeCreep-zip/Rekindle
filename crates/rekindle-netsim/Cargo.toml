@@ -1,0 +1,32 @@
+[package]
+name = "rekindle-netsim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Seeded, deterministic network simulator over the Veilid-free record, route and message ports (plan C9.3)"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+blake3 = "1"
+parking_lot = { workspace = true }
+rand = { workspace = true }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-record-pool = { path = "../rekindle-record-pool" }
+rekindle-records = { path = "../rekindle-records" }
+rekindle-route = { path = "../rekindle-route" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+zeroize = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "test-util", "macros" ] }

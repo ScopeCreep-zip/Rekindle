@@ -1,219 +1,129 @@
 use std::sync::Arc;
 
+use rekindle_codec::community::envelope::ControlPayload;
+use rekindle_types::subscription_events::SocialEvent;
+
 use crate::state::AppState;
-use crate::state_helpers;
-use rekindle_db::Db;
 
-pub(super) fn handle_event_payload(
-    app_handle: &tauri::AppHandle,
+/// An event control message, stored by the Host's governance adapter (plan
+/// E3.1 E4); the event to show when it accepted it (plan GI4).
+pub(super) async fn handle_event_payload(
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
-    payload: rekindle_codec::community::envelope::ControlPayload,
-) {
-    use rekindle_codec::community::envelope::ControlPayload;
-    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
-
+    sender_pseudonym: &str,
+    payload: ControlPayload,
+) -> Option<SocialEvent> {
+    let Some(host) = state.host.current() else {
+        tracing::debug!(community = %community_id, "event change before the Host is up — dropped");
+        return None;
+    };
+    if !host
+        .governance()
+        .on_event_control(community_id, sender_pseudonym, &payload)
+        .await
+    {
+        return None;
+    }
+    let community = community_id.to_string();
     match payload {
-        ControlPayload::EventCreated { event } => {
-            handle_event_upsert(app_handle, state, pool, community_id, event, true);
-            crate::services::community::wake_event_reminders(state);
-        }
-        ControlPayload::EventUpdated { event } => {
-            handle_event_upsert(app_handle, state, pool, community_id, event, false);
-            crate::services::community::wake_event_reminders(state);
-        }
-        ControlPayload::EventDeleted { event_id } => {
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let eid = event_id.clone();
-            crate::db_helpers::db_fire(pool, "delete event", move |conn| {
-                conn.execute(
-                    "DELETE FROM community_events WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3",
-                    rusqlite::params![owner_key, cid, eid],
-                )?;
-                conn.execute(
-                    "DELETE FROM event_rsvps WHERE owner_key = ?1 AND community_id = ?2 AND event_id = ?3",
-                    rusqlite::params![owner_key, cid, eid],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Social(SocialEvent::EventDeleted {
-                    community: community_id.to_string(),
-                    event_id,
-                }),
-            );
-            crate::services::community::wake_event_reminders(state);
-        }
+        ControlPayload::EventCreated { event } => Some(SocialEvent::EventCreated {
+            community,
+            event: Box::new(event),
+        }),
+        ControlPayload::EventUpdated { event } => Some(SocialEvent::EventUpdated {
+            community,
+            event: Box::new(event),
+        }),
+        ControlPayload::EventDeleted { event_id } => Some(SocialEvent::EventDeleted {
+            community,
+            event_id,
+        }),
         ControlPayload::EventRsvpChanged {
             event_id,
             pseudonym_key,
             status,
-        } => {
-            // The fast path (plan C7.15): the attendee list moves now; the
-            // author's `EventRsvp` governance entry replaces it at the next
-            // merge.
-            if let Some(community) = state.communities.write().get_mut(community_id) {
-                crate::services::community::event_rsvps::apply(
-                    community,
-                    &event_id,
-                    &pseudonym_key,
-                    &status,
-                );
-            }
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let eid = event_id.clone();
-            let pk = pseudonym_key.clone();
-            let st = status.clone();
-            crate::db_helpers::db_fire(pool, "persist rsvp", move |conn| {
-                conn.execute(
-                    "INSERT OR REPLACE INTO event_rsvps \
-                     (owner_key, community_id, event_id, pseudonym_key, status) \
-                     VALUES (?1,?2,?3,?4,?5)",
-                    rusqlite::params![owner_key, cid, eid, pk, st],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Social(SocialEvent::EventRsvpChanged {
-                    community: community_id.to_string(),
-                    event_id,
-                    pseudonym: pseudonym_key,
-                    rsvp_status: status,
-                }),
-            );
-        }
-        _ => {}
+        } => Some(SocialEvent::EventRsvpChanged {
+            community,
+            event_id,
+            pseudonym: pseudonym_key,
+            rsvp_status: status,
+        }),
+        _ => None,
     }
 }
 
-pub(super) fn handle_game_server_payload(
-    app_handle: &tauri::AppHandle,
+/// A game-server control message, stored by the Host's governance adapter
+/// (plan E3.1 H1); the event to show when it accepted it (plan GI4).
+pub(super) async fn handle_game_server_payload(
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
-    payload: rekindle_codec::community::envelope::ControlPayload,
-) {
-    use rekindle_codec::community::envelope::ControlPayload;
-    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
-
-    match payload {
-        ControlPayload::GameServerAdded { server } => {
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let persisted = server.clone();
-            crate::db_helpers::db_fire(pool, "persist game server", move |conn| {
-                conn.execute(
-                    "INSERT OR REPLACE INTO game_servers \
-                     (owner_key, community_id, id, game_id, label, address, added_by, created_at) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                    rusqlite::params![
-                        owner_key,
-                        cid,
-                        persisted.id,
-                        persisted.game_id,
-                        persisted.label,
-                        persisted.address,
-                        persisted.added_by,
-                        persisted.created_at,
-                    ],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Social(SocialEvent::GameServerAdded {
-                    community: community_id.to_string(),
-                    server: Box::new(server),
-                }),
-            );
-        }
-        ControlPayload::GameServerRemoved { server_id } => {
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let sid = server_id.clone();
-            crate::db_helpers::db_fire(pool, "remove game server", move |conn| {
-                conn.execute(
-                    "DELETE FROM game_servers WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3",
-                    rusqlite::params![owner_key, cid, sid],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Social(SocialEvent::GameServerRemoved {
-                    community: community_id.to_string(),
-                    server_id,
-                }),
-            );
-        }
-        _ => {}
-    }
-}
-
-fn handle_event_upsert(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    pool: &Db,
-    community_id: &str,
-    event: rekindle_types::event::EventInfo,
-    created: bool,
-) {
-    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
-
-    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-    let cid = community_id.to_string();
-    let d = event.clone();
-    let recurrence_json = d
-        .recurrence
-        .as_ref()
-        .and_then(|r| serde_json::to_string(r).ok());
-    let location_json = d
-        .location
-        .as_ref()
-        .and_then(|l| serde_json::to_string(l).ok());
-    let cover_image_ref = d.cover_image_ref.clone();
-    crate::db_helpers::db_fire(pool, "persist event", move |conn| {
-        conn.execute(
-            "INSERT OR REPLACE INTO community_events \
-             (owner_key, community_id, id, title, description, creator_pseudonym, \
-              start_time, end_time, channel_id, max_attendees, created_at, status, \
-              cover_image_ref, recurrence_json, location_json) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
-            rusqlite::params![
-                owner_key,
-                cid,
-                d.id,
-                d.title,
-                d.description,
-                d.creator_pseudonym,
-                d.start_time,
-                d.end_time,
-                d.channel_id,
-                d.max_attendees,
-                d.created_at,
-                d.status,
-                cover_image_ref,
-                recurrence_json,
-                location_json,
-            ],
-        )?;
-        Ok(())
-    });
-    let event_kind = if created {
-        SocialEvent::EventCreated {
-            community: community_id.to_string(),
-            event: Box::new(event),
-        }
-    } else {
-        SocialEvent::EventUpdated {
-            community: community_id.to_string(),
-            event: Box::new(event),
-        }
+    sender_pseudonym: &str,
+    payload: ControlPayload,
+) -> Option<SocialEvent> {
+    let Some(host) = state.host.current() else {
+        tracing::debug!(community = %community_id, "game server change before the Host is up — dropped");
+        return None;
     };
-    crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Social(event_kind));
+    if !host
+        .governance()
+        .on_game_server_control(community_id, sender_pseudonym, &payload)
+        .await
+    {
+        return None;
+    }
+    let community = community_id.to_string();
+    match payload {
+        ControlPayload::GameServerAdded { server } => Some(SocialEvent::GameServerAdded {
+            community,
+            server: Box::new(server),
+        }),
+        ControlPayload::GameServerRemoved { server_id } => Some(SocialEvent::GameServerRemoved {
+            community,
+            server_id,
+        }),
+        _ => None,
+    }
+}
+
+/// A message pin or unpin, stored by the Host's governance adapter (plan
+/// E3.1 E3b); the event to show when it accepted it (plan GI4).
+pub(super) async fn handle_pin_payload(
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: ControlPayload,
+) -> Option<SocialEvent> {
+    let Some(host) = state.host.current() else {
+        tracing::debug!(community = %community_id, "pin change before the Host is up — dropped");
+        return None;
+    };
+    if !host
+        .governance()
+        .on_pin_control(community_id, sender_pseudonym, &payload)
+        .await
+    {
+        return None;
+    }
+    let community = community_id.to_string();
+    match payload {
+        ControlPayload::MessagePinned {
+            channel_id,
+            message_id,
+            pinned_by,
+        } => Some(SocialEvent::MessagePinned {
+            community,
+            channel: channel_id,
+            message_id,
+            pinned_by,
+        }),
+        ControlPayload::MessageUnpinned {
+            channel_id,
+            message_id,
+        } => Some(SocialEvent::MessageUnpinned {
+            community,
+            channel: channel_id,
+            message_id,
+        }),
+        _ => None,
+    }
 }

@@ -12,7 +12,7 @@
  */
 
 /** Default colour when a role has none set. */
-export const DEFAULT_ROLE_COLOR = "#000000";
+const DEFAULT_ROLE_COLOR = "#000000";
 
 /**
  * Render a packed 24-bit colour as `#rrggbb`.

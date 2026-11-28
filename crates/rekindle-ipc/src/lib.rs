@@ -42,8 +42,8 @@
 pub mod client;
 pub mod error;
 pub mod event_router;
-pub mod event_source;
 pub mod framing;
+pub mod host_api;
 pub mod media_channel;
 pub mod message;
 pub mod noise;
@@ -54,19 +54,26 @@ pub mod server;
 pub mod transport;
 
 #[cfg(test)]
+mod connect_retry_tests;
+#[cfg(test)]
+mod intent_wire_tests;
+#[cfg(test)]
 mod media_transport_tests;
 #[cfg(test)]
 mod routing_tests;
+#[cfg(test)]
+mod stream_tests;
 
 // Re-exports for convenience.
 pub use client::BusClient;
 pub use error::{IpcError, Result};
 pub use framing::{decode_frame, encode_frame, MAX_APP_FRAME, MAX_NOISE_MESSAGE};
+pub use host_api::{Caller, ConnId, HostApi};
 pub use media_channel::{media_channel, MediaReceiver, MediaSender};
 pub use message::{AgentType, Message, MessageContext, SecurityLevel, Timestamp, WIRE_VERSION};
 pub use noise::NoiseTransport;
 pub use noise_keys::{generate_keypair, ZeroizingKeypair, NOISE_PARAMS};
-pub use protocol::{BusPayload, IpcRequest, IpcResponse, SubscriptionFilter};
+pub use protocol::{BusPayload, CommunityRequest, IpcRequest, IpcResponse, SubscriptionFilter};
 pub use registry::ClearanceRegistry;
 pub use server::BusServer;
 pub use transport::{runtime_dir, socket_path, PeerCredentials};

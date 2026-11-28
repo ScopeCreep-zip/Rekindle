@@ -3,14 +3,12 @@
 //! * `list_audio_devices_inner` — pure DTO mapping over
 //!   `rekindle_voice::device::enumerate_audio_devices`.
 //! * `persist_audio_device_prefs` — write the user's selected devices to
-//!   the `preferences.json` Tauri store.
+//!   the unlocked identity's preferences (`services::preferences`).
 //! * `apply_stage_audience_gate` — force-mute when joining a Stage channel
 //!   as an audience member (not on the speaker list).
 //!
 //! The Tauri command handlers in `commands/voice.rs` stay as ≤15-LoC
 //! delegations.
-
-use tauri_plugin_store::StoreExt;
 
 use crate::state::{ChannelType, SharedState};
 
@@ -60,28 +58,27 @@ pub fn list_audio_devices_inner() -> AudioDevices {
     }
 }
 
-pub fn persist_audio_device_prefs(
-    app: &tauri::AppHandle,
+pub async fn persist_audio_device_prefs(
+    state: &SharedState,
     input_device: Option<&str>,
     output_device: Option<&str>,
 ) -> Result<(), String> {
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let mut prefs: crate::commands::settings::Preferences = store
-        .get("preferences")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    prefs.input_device = input_device.map(str::to_string);
-    prefs.output_device = output_device.map(str::to_string);
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())
+    let (input, output) = (
+        input_device.map(str::to_string),
+        output_device.map(str::to_string),
+    );
+    crate::services::preferences::update(state, |prefs| {
+        prefs.input_device = input;
+        prefs.output_device = output;
+    })
+    .await
 }
 
 /// Persist the input-channel choice for input `device` (plan C7.24b). The
 /// channels must exist on the connected device; an empty choice clears the
 /// entry, so the device averages all its channels again.
-pub fn persist_input_channels(
-    app: &tauri::AppHandle,
+pub async fn persist_input_channels(
+    state: &SharedState,
     device: &str,
     mut channels: Vec<u16>,
 ) -> Result<(), String> {
@@ -98,19 +95,15 @@ pub fn persist_input_channels(
             bad + 1
         ));
     }
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let mut prefs: crate::commands::settings::Preferences = store
-        .get("preferences")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    if channels.is_empty() {
-        prefs.input_channels.remove(device);
-    } else {
-        prefs.input_channels.insert(device.to_string(), channels);
-    }
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())
+    let device = device.to_string();
+    crate::services::preferences::update(state, |prefs| {
+        if channels.is_empty() {
+            prefs.input_channels.remove(&device);
+        } else {
+            prefs.input_channels.insert(device, channels);
+        }
+    })
+    .await
 }
 
 pub fn apply_stage_audience_gate(state: &SharedState, community_id: &str, channel_id: &str) {
@@ -156,13 +149,11 @@ pub fn build_voice_signaling_deps(
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<std::sync::Arc<dyn rekindle_voice::signaling::VoiceSignalingDeps>, String> {
-    let pool = state.db.current()?;
     Ok(
         crate::services::voice_signaling_adapter::VoiceSignalingAdapter::new(
             state.clone(),
             app.clone(),
-            pool,
-        ),
+        )?,
     )
 }
 
@@ -185,25 +176,33 @@ pub async fn join_voice_channel_inner(
         .map_err(|e| e.to_string())?;
     if let Some(cid) = community_id {
         apply_stage_audience_gate(state, cid, channel_id);
-        // Discover who is ALREADY in the channel now, rather than on the
-        // next 60 s steady poll: the presence reconcile that binds voice
-        // peers runs on the poll tick, and a join in steady state would
-        // otherwise wait up to a minute (observed: ~39 s join→peer gap).
-        // Our own row (now carrying the cleartext voice_channel_id) also
-        // publishes on this tick so peers see us join promptly.
-        crate::services::community::presence::nudge_presence_poll(state, cid);
+        // Our beat says the channel at once, and the voice roster is handed
+        // what the members' beats show (plan E3.4 S8-pre).
+        crate::services::presence_adapter::voice_presence_changed(state, cid);
     }
     Ok(())
 }
 
+/// The refusal of a server mute with no voice channel named.
+pub const MUTE_NEEDS_VOICE: &str = "Mute is for members in a voice channel.";
+/// The refusal of a server deafen with no voice channel named.
+pub const DEAFEN_NEEDS_VOICE: &str = "Deafen is for members in a voice channel.";
+
+/// The voice channel a server mute or deafen acts in, or the typed
+/// `refusal` when the caller named none: never a silent no-op.
+pub fn voice_channel_or(channel_id: Option<String>, refusal: &str) -> Result<String, String> {
+    channel_id.ok_or_else(|| refusal.to_owned())
+}
+
 pub fn server_mute_member_inner(
     community_id: &str,
-    channel_id: &str,
+    channel_id: Option<String>,
     target_pseudonym: &str,
     muted: bool,
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<(), String> {
+    let channel_id = voice_channel_or(channel_id, MUTE_NEEDS_VOICE)?;
     crate::commands::community::require_permission(
         state,
         community_id,
@@ -213,9 +212,13 @@ pub fn server_mute_member_inner(
     rekindle_voice::signaling::server_mute_member(
         &deps,
         community_id,
-        channel_id,
+        &channel_id,
         target_pseudonym,
         muted,
     );
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "voice_runtime_tests.rs"]
+mod tests;

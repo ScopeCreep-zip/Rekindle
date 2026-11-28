@@ -8,8 +8,8 @@ is "the Xfire experience, on a P2P substrate."
 
 The implementation lives in:
 
-- **`src-tauri/src/windows.rs`** — Tauri `WebviewWindowBuilder` setup.
-- **`src-tauri/tauri.conf.json`** — declared windows + their defaults.
+- **`src-tauri/src/windows/mod.rs`** — Tauri `WebviewWindowBuilder` setup
+  for every window kind (`tauri.conf.json` declares none: `"windows": []`).
 - **`src/main.tsx`** — pathname-based router that picks the window
   component.
 - **`src/windows/`** — one component per top-level window.
@@ -46,20 +46,50 @@ This pattern repeats in every window: there is a single `Titlebar` at
 the top, a `<main class="window-main">` wrapper that takes the
 flex-1 slot, and a footer (status bar, message input, action bar).
 
+### The skin outline (plan SK0 S2)
+
+A skin that lays a window kind (`SkinManifest.windows`: `main` for the
+buddy list, `chat` for conversations) draws that window's outline from
+its frame tiles. The window root carries `data-skin-window="main|chat"`
+and renders `SkinFrame` (32 empty `<i>` slots, `aria-hidden`, each a
+drag region). The Host's served stylesheet appends `@layer shape`
+(`rekindle-skin` `shape::css::frame_css`; the layer sits after
+`components`, before `utilities, a11y, sec`):
+
+- `.app-frame[data-skin-window=K]` loses its border, radius and
+  border-image, is `isolation: isolate`, and is padded by the outsets
+  plus the content insets, its ground (`bg-dark`) painted on the
+  `content-box` only: the flex children lie in the content rectangle,
+  which alone is opaque.
+- slot *n* holds the *n*th tile in paint order (frame pieces as laid,
+  then decorations by Z), absolutely placed by its `TileAxis` in the
+  frame rectangle (or the window for an overhang): Start/End by offset
+  and width, Centre floored to a whole pixel, Repeat between its two
+  insets with `repeat-x`/`repeat-y`. Every image draws at its source
+  size from its box's top left, never stretched.
+- `.skin-frame` is `z-index: -1` inside the isolated root: above the
+  ground, beneath every in-flow child, so decorations never cover the
+  UI or a security surface.
+
+The drawn outline equals `shape::silhouette` at every size (the same
+placement arithmetic; a unit test checks every built-in), the region the
+platform shaper cuts (S3). A window or skin without a layout matches no
+rule and keeps the plain box.
+
 ## Window catalogue
 
-Only the **login** window is declared statically in `tauri.conf.json`.
-Every other window is created at runtime by helpers in
-`src-tauri/src/windows.rs`. Each window carries a unique `label` and
+No window is declared statically (`tauri.conf.json` has
+`"windows": []`). Every window, the login one included, is created at
+runtime by helpers in `src-tauri/src/windows/mod.rs` (`open_login` runs
+at setup). Each window carries a unique `label` and
 URL path; the SolidJS `Switch` in `main.tsx` reads
 `window.location.pathname` and renders the matching component.
 
 | Window | Label | Path | Notes |
 |--------|-------|------|-------|
-| Login | `login` | `/login` | 380 × 480, declared in `tauri.conf.json` |
+| Login | `login` | `/login` | 380 × 480, opened by `open_login` at setup |
 | Buddy list | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
-| Chat | `chat-{pubkey}` | `/chat?peer={key}` | One per 1:1 friend conversation |
-| DM | `dm-{record-key}` | `/dm?record={key}` | One per DM / group DM |
+| Chat | `chat-{pubkey}`, `chat-{record-key}` | `/chat?peer={key}`, `/chat?group={key}` | One per 1:1 friend conversation or group DM |
 | Community | `community-{id}` | `/community?id={id}` | One per joined community |
 | Settings | `settings` | `/settings` | Single instance |
 | Profile | `profile-{key}` | `/profile?key={key}` | One per peer profile view |
@@ -77,8 +107,14 @@ nostalgia goal.
 
 `src/styles/global.css` declares the Xfire palette as Tailwind theme
 tokens. Every colour used by the app is one of these tokens — there
-are **no inline hex codes** in components. Component styles compose
-the tokens via `@apply` in `xfire-theme.css`.
+are **no inline hex codes** in components, and no colour literal in any
+rule under `src/styles/`: no hex, no colour function and no named colour
+such as `white` or `black` (`cargo xtask check-theme-literals`; the
+system colours of the `forced-colors` rules are the user's palette and
+stay). Literals live only in `global.css`'s token blocks: `@theme`, the
+light-base values in `@layer xfire-defaults` and the reserved `--sec-*`
+set in `@layer sec`. Component styles read the tokens with `var(--…)` in
+the ordered parts under `src/styles/theme/*.css`.
 
 ```css
 @theme {
@@ -87,7 +123,6 @@ the tokens via `@apply` in `xfire-theme.css`.
   --color-xfire-bg-panel:       #1e1e1e;   /* panel fill */
   --color-xfire-bg-input:       #1e1e1e;
   --color-xfire-bg-status:      #181818;
-  --color-xfire-bg-tooltip:     #282828;
   --color-xfire-bg:             #0a0a0a;
   --color-xfire-bg-primary:     #141414;
   --color-xfire-bg-secondary:   #1a1a1a;
@@ -104,7 +139,12 @@ the tokens via `@apply` in `xfire-theme.css`.
   --color-xfire-text-timestamp: #a0a0a0;
 
   /* Accent */
-  --color-xfire-accent:         #177cc1;   /* The Xfire blue */
+  --color-xfire-accent:         #167bc0;   /* The Xfire blue, as a fill */
+  --color-xfire-accent-text:    #3491d8;   /* the same blue as text */
+  --color-xfire-accent-fg:      #ffffff;   /* text on an accent fill */
+  --color-xfire-danger:         #df3337;   /* destructive fills */
+  --color-xfire-danger-text:    #ff5955;   /* errors and destructive text */
+  --color-xfire-success-fill:   #00892d;   /* positive fills, white text */
   --color-xfire-link:           #5fa8d3;
   --color-xfire-focus-outline:  #5fa8d3;
 
@@ -112,13 +152,47 @@ the tokens via `@apply` in `xfire-theme.css`.
   --color-xfire-online:         #53d769;
   --color-xfire-away:           #ffcc00;
   --color-xfire-ingame:         #4fc3f7;
+  --color-xfire-online-text:    #53d769;   /* the status colours as text */
+  --color-xfire-away-text:      #ffcc00;
+  --color-xfire-ingame-text:    #4fc3f7;
   --color-xfire-busy:           #ef4444;
   --color-xfire-offline:        #7d7d7d;
+  --color-xfire-offline-text:   #909090;   /* the offline grey as text */
+
+  /* Overlays */
+  --color-xfire-overlay:        #ffffff;   /* hover and raise, toward the text */
+  --color-xfire-shade:          #000000;   /* recess, away from the text */
+  --color-xfire-fill-shade:     #000000;   /* hover step of a white-text fill */
 }
 ```
 
-The blue (`#177cc1`) is the Xfire accent — used for selected items,
-focus rings, links, and the in-game status indicator. The grey
+The blue is the Xfire accent. As a fill (`accent`, selected items,
+buttons, badges) it carries white text at 4.54:1; as text on a ground it
+is `accent-text`, which reads ≥ 4.5:1 on every grey (plan E7.7.0; the
+original `#177cc1` failed both). Red, the offline grey and the other
+status colours split the same way: the status colours stay for the dots,
+and `danger-text`, `offline-text`, `online-text`, `away-text` and
+`ingame-text` carry them as text (plan E7.7.0a). Hover and pressed
+states lay `overlay` over the ground at a few percent (white on the dark
+base, black on a light one), so one rule serves both bases. Every pair
+the region map `src/styles/regions.toml` declares reads ≥ 4.5:1, the
+status dots ≥ 3:1, on the dark base, and every pair whose text the light
+base revalues reads the same on the light base, measured on white and its
+tints until the skin registry (plan E7.7.1) gives the light base its own
+grounds (`cargo xtask check-contrast-pairs`). A skin's own colours are
+measured by the validator's step 6 (`crates/rekindle-skin/src/access`):
+the registry's pairs, the composited tints, the status dots on every row
+they sit on, and the body text on the selected list rows (accent 30 % and
+25 % over the window, `access/pairs.rs` `SELECTED_ROWS`, WCAG 1.4.3). A
+role tag's text colour is worked out by the Host
+(`crates/rekindle-skin/src/role_tag.rs`) against the base's token skin and
+the skin this device shows, a built-in or an imported one, never against
+skins the device does not show (they pushed every tag towards white once
+the packs' own grounds were imported, plan E7.7.7); when the shown skin
+changes, the Host re-sends the roles whose colours change with it
+(`RolesChanged`). This block is an excerpt:
+the full set, with the per-base values and the reserved `--sec-*` tokens,
+is `src/styles/global.css`. The grey
 hierarchy (`#0a → #14 → #1a → #1e → #25 → #2a`) gives subtle elevation
 without breaking the dark-mode-first aesthetic.
 
@@ -129,7 +203,7 @@ The project enforces three style rules in code review:
 1. **Global styles only.** Tailwind utilities live in `src/styles/`,
    not as inline class strings on components. Components compose
    semantic class names (`.buddy-item`, `.message-bubble`,
-   `.titlebar-button`) defined in `xfire-theme.css`. This keeps the
+   `.titlebar-button`) defined in `src/styles/theme/*.css`. This keeps the
    component tree readable and lets the skin be swapped without
    touching component code.
 2. **Window roots are flex columns.** Every top-level window is
@@ -163,21 +237,31 @@ addresses this with three patterns from the architecture's a11y audit:
   (the modern alternative to the deprecated `left: -9999px` trick) so
   screen readers still announce it; on focus it pops to the top-left
   corner so keyboard users can bypass nav.
-- **Live regions.** `.live-region-sr-only` (visually hidden via
+- **Live regions.** `.sr-only` (visually hidden via
   `clip-path`) wraps ARIA live regions for screen-reader-only
   announcements (incoming-message toasts, presence changes).
+
+The user's settings beat any skin: the `forced-colors` rules, the
+`prefers-contrast: more` overrides and the reduced-motion duration tokens
+are in `@layer a11y`, above `skin` and `components`. Only the security
+surfaces (`@layer sec`: the commit controls, the review card with the facts
+and key fingerprint, the safety number, the pairing QR and code) sit above
+them, and no skin can restyle those (`cargo xtask check-sec-surfaces`).
 
 ## Scrollbars and animations
 
 Two satellite stylesheets handle the rest of the chrome:
 
-- **`src/styles/scrollbar.css`** — narrow custom scrollbars that match
-  the panel background, with the track invisible until hover. Falls
-  back to native scrollbars on platforms that don't support the
-  webkit/scrollbar-* properties.
-- **`src/styles/animations.css`** — a small library of motion tokens
-  (`@keyframes fade-in`, `@keyframes pulse`, status-dot transitions,
-  modal slide-ins). Motion respects `prefers-reduced-motion: reduce`.
+- **`src/styles/scrollbar.css`** — narrow (8 px) custom WebKit
+  scrollbars in `@layer components`: the track is always painted in
+  `bg-dark`, the thumb is the offline grey at 40 % (60 % on hover, 80 %
+  while dragged). An engine without the `::-webkit-scrollbar`
+  pseudo-elements draws its native scrollbars.
+- **`src/styles/animations.css`** — the typing-dot bounce, the
+  new-message fade-in and the toast slide-in (`@keyframes typing-bounce`,
+  `fade-in`, `toast-slide-in`). Every animation is declared under
+  `prefers-reduced-motion: no-preference`, and the `--motion-duration-*`
+  tokens are 0 ms unless the user allows motion.
 
 ## Sound theme
 
@@ -195,8 +279,16 @@ sounds.
 `src-tauri/src/tray.rs` builds the system tray menu. The tray is the
 app's primary "always-available" affordance — left-click toggles the
 buddy list, right-click opens the status menu (Online / Away / Busy /
-Offline + custom status). The tray icon shows the current presence via
-a status dot rendered into the icon at runtime.
+Offline + "Set custom status…", which opens the status message editor in
+Settings → Profile). The tray icon shows the current presence with a status
+dot: four pre-rendered icons in `src-tauri/icons/tray/` (`online`, `away`,
+`busy`, `offline`; the app mark with a dot in `--color-xfire-online`,
+`--color-xfire-away`, `--color-xfire-busy` or `--color-xfire-offline` on a
+dark ring), swapped by `tray::show_status` on the Host's `SelfChanged`.
+Invisible shows the offline icon, as peers see it. With no one logged in the
+tray shows the plain app mark. The status icons are set without the template
+flag: macOS draws a template icon monochrome, which would erase the dot's
+colour; only the plain app mark is a template.
 
 This means the buddy list can be hidden without losing access to the
 status controls, matching Xfire's behaviour where the tray was the
@@ -217,9 +309,7 @@ are static assets only:
 | `sounds/{defaults,classic}.zip` | Notification sound banks |
 | `templates/*.html` | Original chat-bubble HTML templates |
 
-`legacy/intended_architecture/10-ui-skin-system.md` walks through how
-these assets map to current Tailwind classes. When implementing a new
-chrome component, the workflow is: open the relevant Symbiosis GIF and
+When implementing a new chrome component, the workflow is: open the relevant Symbiosis GIF and
 XML layout, identify the regions, port the colours into existing
 theme tokens, and compose the component using `@apply` semantics.
 
@@ -227,26 +317,37 @@ theme tokens, and compose the component using `@apply` semantics.
 
 | Concern | File |
 |---------|------|
-| Window builders (frameless + transparent) | `src-tauri/src/windows.rs` |
-| Static login window declaration | `src-tauri/tauri.conf.json` |
+| Window builders (frameless + transparent), login included | `src-tauri/src/windows/mod.rs` |
 | Pathname-based routing | `src/main.tsx` |
-| Per-window components | `src/windows/{LoginWindow,BuddyListWindow,ChatWindow,DmWindow,CommunityWindow,SettingsWindow,ProfileWindow}.tsx` |
+| Per-window components | `src/windows/{LoginWindow,BuddyListWindow,ChatWindow,CommunityWindow,SettingsWindow,ProfileWindow}.tsx` |
 | Custom titlebar | `src/components/titlebar/Titlebar.tsx` |
 | Theme tokens (Tailwind 4 `@theme`) | `src/styles/global.css` |
-| Component skin classes | `src/styles/xfire-theme.css` |
+| Component skin classes | `src/styles/theme/*.css` (ordered parts; `16-security-surfaces.css` is `@layer sec`) |
+| Region map (text grounds) | `src/styles/regions.toml` |
 | Animations | `src/styles/animations.css` |
 | Custom scrollbars | `src/styles/scrollbar.css` |
 | Nerd Font icon set | `src/assets/fonts/SymbolsNerdFontMono-Regular.woff2`, `src/icons.ts` |
-| Reference skin assets | `legacy/unpacked/skins/Symbiosis/` |
+| Reference skin assets | `legacy/unpacked/skins/Symbiosis.zip` (extracted in `skins_extracted/`) |
+| Built-in packs | `crates/rekindle-skin/builtin/<id>.rkskin` + `<id>.NOTICE`, `crates/rekindle-skin/src/builtin.rs` |
 | Reference notification sounds | `legacy/unpacked/sounds/` |
 | System tray | `src-tauri/src/tray.rs` |
 
 ## Open work
 
-- **Skin selector** — the architecture allows multiple skins (Symbiosis
-  is the default), but the runtime selector + skin-pack format is not
-  yet shipped. The `legacy/unpacked/skins/` extraction tooling is in
-  place; the loader is pending.
+- **Skin selector** — the architecture allows multiple skins (plan E7.7),
+  but the runtime selector (E7.7.2) is not yet shipped. Symbiosis is
+  imported: `cargo xtask import-skin --format xfire-xml --from
+  legacy/unpacked/skins_extracted --builtin symbiosis` writes
+  `crates/rekindle-skin/builtin/symbiosis.rkskin` and its `NOTICE`
+  (Xfire, Inc.'s art under the owner's 2026-10-15 ruling; not MIT), and
+  `rekindle_skin::builtin` embeds it as `builtin:symbiosis`, the default
+  skin (`builtin::DEFAULT`), helper-validated on first use per process.
+  The pack holds Symbiosis's palette, its chat-window frame, its title
+  buttons and its scrollbar with their hover/down/disabled images (region
+  slots `titlebar.btn.*` and `scrollbar.*`, painted by the generated
+  `src/styles/generated/regions.css` from `regions.toml`'s `[regions]`).
+  Xfire's other button, menu and tab images bake in their label or icon and
+  stay dropped (a region never replaces a label; counts in the NOTICE).
 - **High-DPI asset scaling** — the original Symbiosis GIFs are 1× pixel
   art. Components currently composite Tailwind tokens on top of a
   small subset of the original assets; full skin-fidelity at 2× / 3×

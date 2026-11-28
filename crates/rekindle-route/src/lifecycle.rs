@@ -5,7 +5,7 @@
 //! death via `RouteChange`), and a fixed rotation interval is also a
 //! deterministic-timing fingerprint. A route lives until Veilid names
 //! it dead or attachment is lost; death triggers an immediate reallocation
-//! by the route's owner (`rekindle_protocol::own_routes`, single-flight per
+//! by the route's owner (`crate::own_routes::OwnRoutes`, single-flight per
 //! class, so a `RouteChange` burst cannot stack heals). These constants
 //! define that policy identically for every process (Tauri host,
 //! daemon/CLI transport) — backend-owns-policy.

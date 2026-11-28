@@ -1,0 +1,85 @@
+MainBackground Decor target [0, 0, 288, 400] art [0, 0, 288, 400] Frame
+  MainBackgroundCol Decor
+  MenuButton Button target [-4, 0, 24, 89] art [4, 0, 15, 89] Size
+  InfoViewButton Button target [-8, 0, 24, 89] art [8, 0, 15, 89] Size
+  ListBackground Decor
+    TabbedControl Views
+      BuddyView View(Friends)
+      ServerView View(Servers)
+      DownloadView View(Files)
+      TabbedControl.Communities View(Communities)
+  AdArea Group
+    AdView AdArea
+  WndClose Button target [-1, -6, 24, 24] art [1, 6, 12, 12] Size
+  WndMax Button target [-1, -6, 14, 24] art [1, 6, 12, 12] Short
+  WndMin Button target [-11, -6, 24, 24] art [11, 6, 12, 12] Size
+  WndXfire Logo label "Rekindle" cover [0, 0, 103, 12] glyph RekindleMarkSmall
+  StatusEdit StatusText target [0, -4, 232, 24] art [0, 4, 232, 15] Size
+  StatusBtn StatusList target [-2, -6, 24, 24] art [2, 6, 12, 12] Size
+  ResizeRight Button target [-16, 0, 24, 400] art [16, 0, 8, 400] Size
+  ResizeBottom Button target [0, -16, 288, 24] art [0, 16, 288, 8] Short
+  ResizeBottomRight Button target [0, 0, 24, 24] art [0, 0, 24, 24] Short
+popup MainInfoViewPopup
+  MainInfoBackground Decor target [0, 0, 250, 360] art [0, 0, 250, 360] Frame
+    InfoView InfoView
+    ResizeRight Button target [-16, 0, 24, 360] art [16, 0, 8, 360] Size
+popup MainMenuPopup
+  MainMenuBackground Decor target [0, 0, 114, 360] art [0, 0, 114, 360] Frame
+    MenuBar MenuBar
+      XfireMenuText MenuTitle label "Rekindle"
+        FileMenu Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
+      ToolsMenuText MenuTitle label "Tools"
+        ToolsMenu Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
+      HelpMenuText MenuTitle label "Help"
+        HelpMenu Part
+    TabHeader TabStrip
+      TabNormalText Tab(Friends) label "Friends"
+        TabNormalButton Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
+      TabServerText Tab(Servers) label "Servers"
+        TabServerButton Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
+      TabDownloadText Tab(Files) label "Downloads"
+        TabDownloadButton Part
+      TabDownloadText.Communities Tab(Communities) label "Communities" target [0, 0, 109, 16] art [0, 0, 109, 16] Short
+        TabDownloadButton.Communities Part
+    ButtonArea ButtonBar
+      FriendsButtons ButtonRow(Friends)
+        AddFriendButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          AddFriendButtonText Part label "Add Friend"
+        ChatButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          ChatButtonText Part label "Chat"
+        GameButton1 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          GameButton1.GameButtonText Part label "Join"
+        InfoButton1 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          InfoButton1.InfoButtonText Part label "Profile"
+      ServersButtons ButtonRow(Servers)
+        AddServerButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          AddServerButtonText Part label "Add Server"
+        RefreshButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          RefreshButtonText Part label "Refresh"
+        GameButton2 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          GameButton2.GameButtonText Part label "Join"
+        InfoButton2 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          InfoButton2.InfoButtonText Part label "Profile"
+      FilesButtons ButtonRow(Files)
+        FindButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          FindButtonText Part label "Find"
+        DownloadButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          DownloadButtonText Part label "Start"
+        StopButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          StopButtonText Part label "Stop"
+        ExecuteButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          ExecuteButtonText Part label "Execute"
+      FriendsButtons.Communities ButtonRow(Communities)
+        CommunitiesOpen Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          ChatButtonText.Communities Part label "Open"
+        CommunitiesLeave Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          StopButtonText.Communities Part label "Leave"
+        CommunitiesNew Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          AddServerButtonText.Communities Part label "New"
+    InfoJoinChatTab ButtonBar
+      HostChatButton Button target [0, 0, 110, 24] art [0, 0, 110, 21] Size
+        HostChatButtonText Part label "Host Voice"
+      JoinChatButton Button target [0, 0, 110, 24] art [0, 0, 110, 21] Size
+        JoinChatButtonText Part label "Join Voice"
+      LeaveChatButton Button target [0, 0, 110, 24] art [0, 0, 110, 21] Size
+        LeaveChatButtonText Part label "Leave Voice"

@@ -14,8 +14,22 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_protocol::dht::route_imports::RouteImports;
+use rekindle_types::message::MessageClass;
 use rekindle_voice::{VoiceError, VoiceFrameSender};
 use veilid_core::{RoutingContext, Target, VeilidAPI, VeilidAPIError};
+
+/// Forget the peer's route in the shared importer only when the send's
+/// error shows **their** route unusable (`rekindle_protocol::ports::
+/// peer_route_unusable`, the DM send path's rule, plan C7.9e). Our own
+/// side's `NoConnection`/`InvalidTarget` (our safety route released at a
+/// call's teardown, its first hop down, our node info unpublished) keeps
+/// it: the importer is shared, so forgetting it there dropped the peer's
+/// DM route too (live finding CR3).
+fn forget_if_peer_side(e: &VeilidAPIError, forget: impl FnOnce()) {
+    if rekindle_protocol::ports::peer_route_unusable(e) {
+        forget();
+    }
+}
 
 pub struct VeilidVoiceFrameSender {
     routing_context: RoutingContext,
@@ -34,7 +48,10 @@ impl VeilidVoiceFrameSender {
 
     /// Build the voice routing context: a 3-hop Tor-class Safe route
     /// (sender hidden behind an ephemeral route id) with `LowLatency`
-    /// stability — the lowest-latency variant that is still anonymous.
+    /// stability and PreferUnordered sequencing ([`MessageClass::Voice`],
+    /// plan VU decision 2: media keeps UDP, to the peer's Media route,
+    /// itself PreferUnordered) — the lowest-latency variant that is still
+    /// anonymous.
     /// Voice never uses `SafetySelection::Unsafe`: a vulnerable user's
     /// real node identity must not be exposed to a relay just to shave
     /// latency, and Unsafe routing is gated behind veilid-core's
@@ -43,7 +60,7 @@ impl VeilidVoiceFrameSender {
         api.routing_context()
             .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
             .with_safety(rekindle_protocol::dht::pool::safety_selection(
-                &rekindle_types::config::SafetyProfile::default_voice(),
+                &rekindle_route::profile::profile_for_class(MessageClass::Voice),
             ))
             .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
     }
@@ -63,19 +80,15 @@ impl VoiceFrameSender for VeilidVoiceFrameSender {
         {
             Ok(()) => Ok(()),
             Err(e) => {
-                // `NoConnection` ("could not get remote private route")
-                // or `InvalidTarget`: the route is unusable. The importer
-                // forgets it, so the next frame re-imports
-                // fresh (Piece 4 mechanism A). Matched on the veilid
-                // variant — this is the sanctioned adapter layer.
-                if matches!(
-                    e,
-                    VeilidAPIError::NoConnection { .. } | VeilidAPIError::InvalidTarget { .. }
-                ) {
+                forget_if_peer_side(&e, || {
                     self.route_imports.invalidate_after_send_failure(&route_id);
-                }
+                });
                 Err(VoiceError::Transport(format!("app_message: {e}")))
             }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "frame_sender_tests.rs"]
+mod tests;

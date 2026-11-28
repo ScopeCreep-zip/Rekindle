@@ -51,35 +51,6 @@ pub struct CommunityMetadataV2 {
     pub last_refreshed: u64,
 }
 
-/// A channel entry in the manifest channel directory (subkey 1).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelEntryV2 {
-    pub id: String,
-    pub name: String,
-    pub kind: ChannelKind,
-    pub sort_order: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category_id: Option<String>,
-    #[serde(default)]
-    pub topic: String,
-    #[serde(default)]
-    pub slowmode_seconds: u32,
-    #[serde(default)]
-    pub nsfw: bool,
-    /// DHT record key for this channel's message record (SMPL).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_record_key: Option<String>,
-    /// Current MEK generation for this channel.
-    #[serde(default)]
-    pub mek_generation: u64,
-    #[serde(default)]
-    pub permission_overwrites: Vec<super::PermissionOverwrite>,
-    /// DHTLog spine key for persistent message history.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub log_key: Option<String>,
-}
-
 /// A category entry in the manifest category directory (subkey 2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,43 +58,6 @@ pub struct CategoryEntry {
     pub id: String,
     pub name: String,
     pub sort_order: i32,
-}
-
-/// A role entry in the manifest role list (subkey 3).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RoleEntryV2 {
-    pub id: u32,
-    pub name: String,
-    pub color: u32,
-    pub permissions: u64,
-    /// Role hierarchy position. Higher = more authority.
-    pub position: i32,
-    /// Whether to display this role separately in the member list.
-    #[serde(default)]
-    pub hoist: bool,
-    /// Whether this role can be @mentioned by anyone.
-    #[serde(default)]
-    pub mentionable: bool,
-    /// Whether members can assign this role to themselves.
-    #[serde(default)]
-    pub self_assignable: bool,
-}
-
-/// A member summary in the member index (registry owner subkey 0).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberSummary {
-    pub pseudonym_key: String,
-    pub display_name: String,
-    pub role_ids: Vec<u32>,
-    pub joined_at: u64,
-    /// The member's subkey index in the SMPL registry record.
-    pub subkey_index: u32,
-    #[serde(default)]
-    pub onboarding_complete: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_until: Option<u64>,
 }
 
 /// A ban entry in the manifest ban list (subkey 4).
@@ -148,7 +82,7 @@ pub struct CommunityPolicy {
     pub max_members: u32,
     /// Default role IDs assigned to new members.
     #[serde(default)]
-    pub default_role_ids: Vec<u32>,
+    pub default_role_ids: Vec<rekindle_types::id::RoleId>,
     /// Content moderation level.
     #[serde(default)]
     pub moderation_level: ModerationLevel,
@@ -167,13 +101,17 @@ pub enum ModerationLevel {
 
 /// Invite entry stored in manifest subkey 7.
 ///
-/// The `code_hash` is SHA-256(raw_code) so the raw invite code is never
+/// The `code_hash` is the invite's public id (the join key's public half,
+/// seeded by BLAKE3 `derive_key` under `domains::INVITE_JOIN`,
+/// `rekindle_secrets::invite::hash_invite_code`)
+/// so the raw invite code is never
 /// exposed in the publicly-readable DHT manifest. The `encrypted_secrets`
 /// blob can only be decrypted by someone who has the raw code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteEntry {
-    /// SHA-256 hash of the invite code (hex). Raw code never stored in DHT.
+    /// The invite code's lookup id (hex, `hash_invite_code`). Raw code never
+    /// stored in DHT.
     pub code_hash: String,
     pub created_by: String,
     pub created_at: u64,
@@ -194,25 +132,5 @@ pub struct InviteEntry {
 // InviteSecrets`, the Tier-1 one that actually carries the slot seed.
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // `ChannelKind`'s own tests moved to `rekindle_types::channel` with
-    // the type itself; this crate only re-exports it now.
-
-    #[test]
-    fn community_metadata_v2_serde() {
-        let meta = CommunityMetadataV2 {
-            name: "Test".into(),
-            description: Some("desc".into()),
-            icon_hash: None,
-            created_at: 1_234_567_890,
-            owner_pseudonym: "abc".into(),
-            last_refreshed: 0,
-        };
-        let json = serde_json::to_string(&meta).unwrap();
-        assert!(json.contains("ownerPseudonym"));
-        let back: CommunityMetadataV2 = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.name, "Test");
-    }
-}
+#[path = "types_tests.rs"]
+mod tests;

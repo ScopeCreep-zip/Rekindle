@@ -3,39 +3,52 @@
   "version": "0.0.1",
   "packageManager": "pnpm@10.28.1",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": "^22.18.0 || >=23.6.0"
+  },
   "scripts": {
-    "dev": "lsof -ti:1430 | xargs kill -9 2>/dev/null; vite",
+    "dev": "vite",
     "dev:mac": "./scripts/mac-dev-app.sh",
     "dev:linux": "./scripts/linux-dev.sh",
     "reset:veilid": "./scripts/reset-veilid-storage.sh",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json && tsc -p tsconfig.node.json",
-    "test:mock": "playwright test --project=mock",
-    "test:security": "playwright test --config playwright.security.config.ts",
-    "test:e2e": "E2E=true playwright test --project=e2e",
-    "test:e2e:headed": "E2E=true playwright test --project=e2e --headed",
-    "test:e2e:ui": "E2E=true playwright test --project=e2e --ui",
-    "test:all": "playwright test --project=mock && E2E=true playwright test --project=e2e"
+    "bundle": "tauri build --config src-tauri/tauri.release.conf.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json && tsc -p e2e/app/tsconfig.json",
+    "walk": "node e2e/walk/node-check.mjs && node e2e/walk/walk.ts",
+    "test:app": "wdio run e2e/app/wdio.conf.ts; solo=$?; REKINDLE_APP_NO_BUILD=1 wdio run e2e/app/wdio.peers.conf.ts; peers=$?; REKINDLE_APP_NO_BUILD=1 wdio run e2e/app/wdio.native.conf.ts; native=$?; REKINDLE_APP_NO_BUILD=1 wdio run e2e/app/wdio.budget.conf.ts; budget=$?; echo \"test:app: solo exit $solo, peers exit $peers, native exit $native, budget exit $budget\"; [ $solo -eq 0 ] && [ $peers -eq 0 ] && [ $native -eq 0 ] && [ $budget -eq 0 ]",
+    "test:app:devices": "wdio run e2e/app/wdio.devices.conf.ts; solo=$?; REKINDLE_APP_NO_BUILD=1 wdio run e2e/app/wdio.devices-peers.conf.ts; peers=$?; echo \"test:app:devices: solo exit $solo, peers exit $peers\"; [ $solo -eq 0 ] && [ $peers -eq 0 ]"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
     "@tauri-apps/api": "^2.12.1",
     "qr-scanner": "^1.4.2",
-    "solid-js": "^1.9.0"
+    "solid-js": "^1.9.20"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
+    "@biomejs/biome": "2.4.16",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.12.1",
     "@types/node": "^26.5.0",
+    "@wdio/cli": "10.2.0",
+    "@wdio/globals": "10.2.0",
+    "@wdio/local-runner": "10.2.0",
+    "@wdio/mocha-framework": "10.2.0",
+    "@wdio/spec-reporter": "10.2.0",
+    "@wdio/types": "10.2.0",
+    "axe-core": "4.14.0",
     "dependency-cruiser": "^18.2.0",
+    "expect-webdriverio": "8.1.0",
     "knip": "^6.39.0",
+    "stylelint": "18.0.0",
+    "stylelint-config-standard": "41.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
-    "vite-plugin-solid": "^2.0.0"
+    "vite-plugin-solid": "^2.0.0",
+    "webdriverio": "10.2.0"
   }
 }

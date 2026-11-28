@@ -19,7 +19,7 @@ fn open_db() -> Connection {
     conn.execute_batch(rekindle_db::SCHEMA)
         .expect("apply schema");
     conn.execute(
-        "INSERT INTO identity (id, public_key, created_at) VALUES (1, 'owner_pk', 0)",
+        "INSERT INTO identity (id, public_key, created_at, friend_request_token) VALUES (1, 'owner_pk', 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
         [],
     )
     .expect("seed identity");
@@ -34,8 +34,8 @@ fn open_db() -> Connection {
 fn add_member(conn: &Connection, pseudonym: &str, joined_at: i64) {
     conn.execute(
         "INSERT INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-         VALUES ('owner_pk', 'c1', ?1, 'name', '[1]', ?2)",
+         (owner_key, community_id, pseudonym_key, display_name, joined_at) \
+         VALUES ('owner_pk', 'c1', ?1, 'name', ?2)",
         rusqlite::params![pseudonym, joined_at],
     )
     .expect("insert member");
@@ -53,8 +53,8 @@ fn add_leave(conn: &Connection, pseudonym: &str, left_at: i64) {
 fn add_channel(conn: &Connection, channel_id: &str) {
     conn.execute(
         "INSERT INTO channels \
-         (owner_key, id, community_id, name, channel_type, sort_order, my_sequence) \
-         VALUES ('owner_pk', ?1, 'c1', 'general', 'text', 0, 0)",
+         (owner_key, id, community_id, name, channel_type, sort_order) \
+         VALUES ('owner_pk', ?1, 'c1', 'general', 'text', 0)",
         rusqlite::params![channel_id],
     )
     .expect("insert channel");

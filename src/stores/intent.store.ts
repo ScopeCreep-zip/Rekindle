@@ -1,0 +1,149 @@
+/**
+ * The open intent review (plan E1.1, U1.6; ADR 0019): the action the Host
+ * holds for this window, the proof the `IntentDialog` collects, and the
+ * undo offer of an action that ran. Frontends render only — the Host's gate
+ * decides what is held and what proof it needs.
+ *
+ * Reviews queue: the dialog shows the first. A review comes from a Host
+ * call this window made (`hostInvoke`, which resolves with the commit) or
+ * from the backend (`IntentPending`, whose commit's answer is the Host's).
+ */
+
+import { createStore } from "solid-js/store";
+import type { CommandError, Done, IntentProof, IntentReview, UndoOffer } from "../ipc/commands/dto";
+import { isCommandError } from "../ipc/commands/dto";
+import { hostInvoke, invoke, registerIntentPresenter, registerUndoPresenter } from "../ipc/invoke";
+import { errorMessage } from "../utils/error";
+import { kindPhrase } from "../utils/intent_text";
+import { addToast, removeToast } from "./toast.store";
+
+interface Pending {
+  review: IntentReview;
+  resolve: (done: Done<unknown>) => void;
+  reject: (error: unknown) => void;
+}
+
+interface IntentState {
+  /** The review the dialog shows. */
+  review: IntentReview | null;
+  /** Why the last commit did not run (a wrong passphrase), shown in the dialog. */
+  error: string | null;
+  busy: boolean;
+  /** The undo offer of the action that just ran. */
+  undo: UndoOffer | null;
+}
+
+const [intentState, setIntentState] = createStore<IntentState>({
+  review: null,
+  error: null,
+  busy: false,
+  undo: null,
+});
+
+const queue: Pending[] = [];
+
+function showFirst(): void {
+  setIntentState({ review: queue[0]?.review ?? null, error: null, busy: false });
+}
+
+/** Hold `review` for the dialog; resolves with its commit's `Done`. */
+export function presentReview(review: IntentReview): Promise<Done<unknown>> {
+  return new Promise((resolve, reject) => {
+    queue.push({ review, resolve, reject });
+    if (queue.length === 1) showFirst();
+  });
+}
+
+function settle(): void {
+  queue.shift();
+  showFirst();
+}
+
+/** Commit the open review with `proof`. A review whose facts changed comes
+ *  back fresh and is shown again; a refused proof (401) keeps the dialog open
+ *  with the reason; an expired or unknown review rejects the call. */
+export async function commitReview(proof: IntentProof): Promise<void> {
+  const pending = queue[0];
+  if (pending === undefined || intentState.busy) return;
+  setIntentState({ busy: true, error: null });
+  try {
+    const done = await invoke<Done<unknown>>("intent_commit", {
+      intentId: pending.review.intentId,
+      proof,
+    });
+    pending.resolve(done);
+    settle();
+  } catch (e) {
+    if (isCommandError(e) && e.type === "intentRequired") {
+      pending.review = e.data;
+      setIntentState({ review: e.data, busy: false, error: null });
+      return;
+    }
+    // Only the gate's wrong-proof answer (401) keeps the review open; an
+    // action's own refusal (a join not admitted, 403) closes it and the
+    // call rejects with its reason (IJ3).
+    if (isCommandError(e) && e.type === "failed" && e.data.code === 401) {
+      setIntentState({ busy: false, error: errorMessage(e) });
+      return;
+    }
+    pending.reject(e);
+    settle();
+  }
+}
+
+/** Cancel the open review: the Host drops it (running its own cancel
+ *  action for a `cancelSends` review) and the call rejects with the Host's
+ *  answer, `{ type: "cancelled" }`, or with the error `intent_cancel` met
+ *  (the review had expired). */
+export async function cancelReview(): Promise<void> {
+  const pending = queue[0];
+  if (pending === undefined || intentState.busy) return;
+  setIntentState({ busy: true, error: null });
+  try {
+    const done = await invoke<Done<CommandError>>("intent_cancel", {
+      intentId: pending.review.intentId,
+    });
+    pending.reject(done.value);
+  } catch (e) {
+    pending.reject(e);
+  }
+  settle();
+}
+
+let undoTimer: ReturnType<typeof setTimeout> | null = null;
+let undoToast: number | null = null;
+
+function clearUndo(): void {
+  if (undoTimer !== null) clearTimeout(undoTimer);
+  if (undoToast !== null) removeToast(undoToast);
+  undoTimer = null;
+  undoToast = null;
+  setIntentState("undo", null);
+}
+
+/** Offer an undo, as a toast with one action (plan E7.3), until the Host's
+ *  offer expires: the window is the Host's, not a UI timer. */
+function presentUndo(offer: UndoOffer): void {
+  clearUndo();
+  setIntentState("undo", offer);
+  undoToast = addToast("Done.", "info", {
+    label: "Undo",
+    ariaLabel: `Undo: ${kindPhrase(offer.inverse)}`,
+    run: takeUndo,
+  });
+  undoTimer = setTimeout(clearUndo, Math.max(0, offer.expiresAtMs - Date.now()));
+}
+
+/** Take back the offered action. The inverse is a request of its own: a
+ *  review it needs is shown like any other. */
+async function takeUndo(): Promise<void> {
+  const offer = intentState.undo;
+  if (offer === null) return;
+  clearUndo();
+  await hostInvoke("undo", { id: offer.id });
+}
+
+registerIntentPresenter(presentReview);
+registerUndoPresenter(presentUndo);
+
+export { intentState };

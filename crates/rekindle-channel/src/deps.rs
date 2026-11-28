@@ -2,8 +2,8 @@
 //!
 //! One composite trait (`ChannelMessagingDeps`) abstracts every
 //! src-tauri/Veilid/SQLite/Stronghold capability the crate's pure
-//! pipeline logic needs. The adapter at
-//! `src-tauri/src/services/channel_adapter/` (task #190) implements it.
+//! pipeline logic needs. The Host's
+//! `HostChannel` (`rekindle_node::host::adapters::channel`) implements it.
 //!
 //! Schwarzschild boundary: all Veilid types are exchanged as opaque
 //! `String`/`Vec<u8>` here. The crate never imports `veilid-core`.
@@ -15,10 +15,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{
-    ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
-    ChannelPollVote, ChannelReaction, ChannelRecordEntry,
-};
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
@@ -48,24 +45,16 @@ pub struct ChannelInfoSnapshot {
 pub struct ChannelSendOutcome {
     pub message_id: String,
     pub sender_pseudonym_hex: String,
+    /// Empty, with no generation, for a post waiting for its key (plan
+    /// E3.2 S7l): it is sealed at its release.
     pub ciphertext: Vec<u8>,
-    pub mek_generation: u64,
-    pub lamport_ts: u64,
+    pub mek_generation: Option<u64>,
     pub timestamp_ms: i64,
-}
-
-/// Where a channel-record write targets: SMPL record key + slot info.
-/// Mirrors `src-tauri/services/community/channel_messages::ChannelWriteContext`.
-#[derive(Debug, Clone)]
-pub struct ChannelWriteContext {
-    pub community_id: String,
-    pub channel_id: String,
-    /// SMPL record key for the channel record this writer targets.
-    pub channel_key: String,
-    /// String-encoded Veilid KeyPair the adapter parses back.
-    pub slot_keypair_str: String,
-    pub slot_index: u32,
-    pub segment_index: u32,
+    /// The message id of the message this one replies to, when it does.
+    pub reply_to: Option<String>,
+    /// The row's first state: `Queued` before its write, `AwaitingKey`
+    /// before its channel's key.
+    pub send_state: rekindle_types::message::SendState,
 }
 
 /// Pseudonym + signing key for the local user in a community.
@@ -81,13 +70,21 @@ pub struct PseudonymCredentials {
 pub struct ChannelMessageRow {
     pub sender_key: String,
     pub body: String,
+    /// The message id of the stored parent this row replies to.
+    pub reply_to: Option<String>,
 }
 
-/// One entry from a thread record DHT scan, paired with the subkey
-/// it lived in (so the AAD can be reconstructed for decrypt).
+/// One entry of a channel's (or thread's) outbox stream (plan E3.3), read
+/// from its author's channel outbox (`M`/4), verified under the author at
+/// its chain seq and linked to the stream by its tag.
 #[derive(Debug, Clone)]
-pub struct ChannelEntryItem {
-    pub subkey_index: u32,
+pub struct OutboxItem {
+    pub author: rekindle_types::id::PseudonymKey,
+    /// The per-(author, stream) seq, frozen at creation: an author's ops
+    /// are ordered by it (rules E1, R1).
+    pub stream_seq: u64,
+    /// The author's clock at commit, ms (signed with the entry).
+    pub committed_at: u64,
     pub entry: ChannelRecordEntry,
 }
 
@@ -98,12 +95,13 @@ pub struct ThreadStateSnapshot {
     pub parent_channel_id_hex: String,
     pub name: String,
     pub thread_type: String,
-    pub record_key: Option<String>,
     pub invited: Vec<PseudonymKey>,
     pub forum_tag: Option<String>,
     pub auto_archive_seconds: u64,
     pub created_lamport: u64,
-    pub archived_lamport: Option<u64>,
+    /// The standing manual archive's op hash (hex), if archived: a reply
+    /// that names it revives the thread (plan E3.3, architecture §4.6).
+    pub archived_op: Option<String>,
     pub creator_pseudonym_hex: String,
 }
 
@@ -124,19 +122,29 @@ pub struct ThreadInfoSnapshot {
     pub message_count: u32,
 }
 
+/// Our durable local echo of a reply still waiting to be sent.
+#[derive(Debug, Clone)]
+pub struct PendingThreadReply {
+    pub message_id: String,
+    pub body: String,
+    pub sent_at_ms: u64,
+    pub stream_seq: u64,
+    pub send_state: rekindle_types::message::SendState,
+}
+
 /// Member-profile lookup result — display name + role ids the local
 /// user holds. Used by mention-resolution + notification routing.
 #[derive(Debug, Clone, Default)]
 pub struct MemberMentionView {
     pub display_name: Option<String>,
-    pub role_ids: Vec<u32>,
+    pub role_ids: Vec<rekindle_types::id::RoleId>,
 }
 
 /// Role definition view used by mention validation — roles list +
 /// mentionable flag per role.
 #[derive(Debug, Clone)]
 pub struct RoleSnapshot {
-    pub id: u32,
+    pub id: rekindle_types::id::RoleId,
     pub name: String,
     pub mentionable: bool,
 }
@@ -163,25 +171,8 @@ pub struct ExpressionView {
     pub available_to_peers: bool,
 }
 
-/// What a channel record write did (plan C7.13).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DhtWrite {
-    /// Stored at consensus.
-    Stored,
-    /// Missed consensus; the host's record pool holds the write, re-pushes
-    /// it until it lands, and reports the settle
-    /// ([`crate::on_write_settled`]).
-    Held,
-}
-
-/// A sent message whose write is held: it is delivered (or not) when its
-/// record slot settles.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingDelivery {
-    pub community: String,
-    pub channel: String,
-    pub message: String,
-}
+/// A sent post: the payload of its outbox `channel_post` row.
+pub use rekindle_types::message::ChannelPost;
 
 /// Sent-message echo for the local "you said this" UI event.
 #[derive(Debug, Clone)]
@@ -192,18 +183,28 @@ pub struct SentChannelMessageEcho {
     pub timestamp_ms: u64,
     pub body: String,
     pub channel_id: String,
+    /// The original author's pseudonym when this is a forward: the same
+    /// value [`ChannelMessagingDeps::persist_forwarded_message`] stores.
+    pub forwarded_from_author: Option<String>,
 }
 
 // ---------- Trait ----------
 
 #[async_trait]
 pub trait ChannelMessagingDeps: Send + Sync {
+    // ---------- Clock ----------
+
+    /// The host's clock port in seconds (plan C9.2): message, thread,
+    /// poll and expression timestamps read it, never the wall clock, so
+    /// the netsim drives them.
+    fn now_secs(&self) -> u64;
+
     // ---------- Identity / credentials ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]>;
     fn owner_key(&self) -> Option<String>;
     fn my_pseudonym_hex(&self, community_id: &str) -> Option<String>;
-    fn my_role_ids(&self, community_id: &str) -> Vec<u32>;
+    fn my_role_ids(&self, community_id: &str) -> Vec<rekindle_types::id::RoleId>;
     fn pseudonym_credentials(
         &self,
         community_id: &str,
@@ -212,14 +213,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     // ---------- Community / channel state (read) ----------
 
     fn channel_info(&self, community_id: &str, channel_id: &str) -> Option<ChannelInfoSnapshot>;
-
-    fn channel_write_context(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<ChannelWriteContext, ChannelError>;
-
-    fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String>;
 
     /// Community and channel keys (plan D6). Channel text, threads and
     /// attachments are under `scope_for_text`.
@@ -242,7 +235,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     );
     fn thread_state(&self, community_id: &str, thread_id: &str) -> Option<ThreadStateSnapshot>;
 
-    fn slot_seed_bytes(&self, community_id: &str) -> Option<[u8; 32]>;
     fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberMentionView;
 
     /// All known member profiles for a community, keyed by pseudonym
@@ -254,126 +246,58 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     // ---------- Community / channel state (mutation) ----------
 
-    fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
-    fn next_thread_sequence(&self, community_id: &str) -> u64;
     fn mark_last_send_at(&self, community_id: &str, channel_id: &str, now_ms: i64);
-    /// Next message-clock value (channel messages, polls, stage, reactions).
-    fn increment_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
-    /// Next governance-clock value (threads, expressions — anything written
-    /// as a `GovernanceEntry`).
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     // ---------- DHT ----------
-
-    async fn write_channel_message_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        channel_msg: &ChannelMessage,
-    ) -> Result<DhtWrite, ChannelError>;
-
-    async fn write_channel_forward_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        forward: &ChannelForward,
-    ) -> Result<DhtWrite, ChannelError>;
-
-    async fn write_member_reaction_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        reaction: &ChannelReaction,
-    ) -> Result<(), ChannelError>;
-
-    async fn write_channel_poll_create_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollCreate,
-    ) -> Result<(), ChannelError>;
-
-    async fn write_channel_poll_vote_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollVote,
-    ) -> Result<(), ChannelError>;
-
-    async fn write_channel_poll_close_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollClose,
-    ) -> Result<(), ChannelError>;
-
-    async fn write_channel_hand_raise_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelHandRaise,
-    ) -> Result<(), ChannelError>;
-
-    /// Resolve pseudonym hex for each known stage slot subkey. The
-    /// adapter walks AppState.communities (for our own slot) + DB
-    /// `community_members.subkey_index` (for all known peers). Returns
-    /// a map keyed by subkey index so the `list_hand_raises` reader can
-    /// map subkey entries back to identifiable members.
-    async fn stage_pseudonyms_by_subkey(
-        &self,
-        community_id: &str,
-    ) -> Result<std::collections::HashMap<u32, String>, ChannelError>;
-
-    /// Create a lazy thread SMPL record, held under its creator lease.
-    /// Returns the lease and the record key.
-    async fn create_smpl_thread_record(
-        &self,
-        slot_seed_bytes: &[u8; 32],
-    ) -> Result<(LeaseId, String), ChannelError>;
 
     /// End a borrow of the host's record pool.
     async fn release_record(&self, lease: LeaseId);
 
-    /// Every entry of `record_key`, a channel or thread record of
-    /// `community_id`, read through the host's writer index: only the
-    /// slots of members it knows are read, and only changed ones from the
-    /// network (plan C7.12).
-    async fn read_all_channel_entries(
-        &self,
-        community_id: &str,
-        record_key: &str,
-    ) -> Result<Vec<ChannelEntryItem>, ChannelError>;
-
-    /// The messages of [`read_all_channel_entries`](Self::read_all_channel_entries).
-    async fn read_all_channel_messages(
-        &self,
-        community_id: &str,
-        record_key: &str,
-    ) -> Result<Vec<ChannelMessage>, ChannelError>;
+    /// Every entry of the stream `stream_id` (a channel of `community_id`)
+    /// across its authors' channel outboxes, author by author in chain
+    /// order (plan E3.3). An outbox not readable now is skipped.
+    async fn read_outbox_entries(&self, community_id: &str, stream_id: &str) -> Vec<OutboxItem>;
 
     /// Hand records the community keeps for its session to the host,
     /// which holds and watches them (the governance runtime's hook of the
     /// same name; plan C7.5).
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
 
-    /// Plate Gate (architecture §15.4): ensure a per-segment channel
-    /// SMPL record exists for the local writer before a send. Returns
-    /// the record key the channel_write_context will target. No-op
-    /// (returns the genesis record key) for segment-0 senders.
-    /// Delegates to `rekindle_governance_runtime::ensure_channel_segment_record`.
-    async fn ensure_channel_segment_record(
+    // ---------- The outbox's channel_post stream (plan E2.5) ----------
+
+    /// Our queued or awaiting-key replies of one thread, including its starter.
+    async fn pending_thread_replies(
         &self,
         community_id: &str,
-        channel_id: &str,
-    ) -> Result<String, ChannelError>;
+        thread_id: &str,
+    ) -> Result<Vec<PendingThreadReply>, ChannelError>;
 
-    // ---------- Held writes (plan C7.13) ----------
+    /// Store `post`'s outbox row (a post with a row of its own is persisted
+    /// `queued`; an op on other rows, [`PostEntry::has_row`] false, has no
+    /// echo); from then on only the outbox moves the post's delivery state.
+    ///
+    /// [`PostEntry::has_row`]: rekindle_types::message::PostEntry::has_row
+    async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError>;
 
-    /// Remember a sent message whose write to `record_key`/`subkey` is
-    /// held, until that slot settles.
-    fn track_pending_delivery(&self, record_key: &str, subkey: u32, pending: PendingDelivery);
+    /// `message`'s write could not be made: its row settles `failed`.
+    async fn fail_post(&self, message: &str);
 
-    /// Forget and return the messages waiting on `record_key`/`subkey`.
-    fn take_pending_deliveries(&self, record_key: &str, subkey: u32) -> Vec<PendingDelivery>;
+    /// Store `post`'s outbox row waiting for its channel's key (the post is
+    /// persisted `awaiting_key`, plan E3.2 S7l, F9-1), failing at
+    /// `deadline_ms` unless the key comes first.
+    async fn queue_waiting_post(
+        &self,
+        post: &ChannelPost,
+        deadline_ms: i64,
+    ) -> Result<(), ChannelError>;
+
+    /// `community_id`'s posts waiting for their channel's key, each
+    /// channel's first-composed first.
+    async fn waiting_posts(&self, community_id: &str) -> Vec<ChannelPost>;
+
+    /// Release the waiting post `message` to its write (`queued`). `false`
+    /// when it was not waiting: another release took it.
+    async fn release_waiting_post(&self, message: &str) -> bool;
 
     // ---------- DB (channel messages) ----------
 
@@ -392,13 +316,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         outcome: &ChannelSendOutcome,
         body: &str,
         original_author_pseudonym: &str,
-    ) -> Result<(), ChannelError>;
-
-    async fn persist_channel_sequence(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        sequence: u64,
     ) -> Result<(), ChannelError>;
 
     async fn persist_slowmode_state(
@@ -427,6 +344,13 @@ pub trait ChannelMessagingDeps: Send + Sync {
         community_id: &str,
         thread_id: &str,
     ) -> Option<ThreadInfoSnapshot>;
+
+    /// A merged thread's creation time from the signed governance op.
+    async fn thread_created_at(
+        &self,
+        community_id: &str,
+        op: &rekindle_types::governance::OpHash,
+    ) -> Result<u64, ChannelError>;
 
     // ---------- Expressions (Files cache + governance state) ----------
 
@@ -486,4 +410,13 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn emit_chat_event_local(&self, echo: &SentChannelMessageEcho);
     fn emit_delivery_succeeded(&self, community_id: &str, channel_id: &str, message_id: &str);
     fn emit_delivery_failed(&self, community_id: &str, channel_id: &str, message_id: &str);
+    /// Our post `message_id` moved to `state` before its write: waiting
+    /// for its key, or released to its write (plan E3.2 S7l).
+    fn emit_send_state(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        state: rekindle_types::message::SendState,
+    );
 }

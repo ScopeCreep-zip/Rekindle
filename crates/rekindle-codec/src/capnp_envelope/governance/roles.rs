@@ -23,7 +23,6 @@ pub(super) fn write_role_definition(
         mentionable,
         self_assignable,
         exclusion_group,
-        lamport,
     } = e
     else {
         unreachable!("write_role_definition: variant mismatch")
@@ -40,38 +39,31 @@ pub(super) fn write_role_definition(
     if let Some(g) = exclusion_group {
         p.set_exclusion_group(g);
     }
-    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_role_assignment(
     mut p: schema_pkg::role_assignment_entry::Builder<'_>,
     target: &PseudonymKey,
     role_id: RoleId,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
     uuid16_to_capnp(p.reborrow().init_role_id(), &role_id.0);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_role_unassignment(
     mut p: schema_pkg::role_unassignment_entry::Builder<'_>,
     target: &PseudonymKey,
     role_id: RoleId,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
     uuid16_to_capnp(p.reborrow().init_role_id(), &role_id.0);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_role_archived(
     mut p: schema_pkg::role_archived_entry::Builder<'_>,
     role_id: RoleId,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_role_id(), &role_id.0);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_role_definition(
@@ -93,7 +85,6 @@ pub(super) fn read_role_definition(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -103,7 +94,6 @@ pub(super) fn read_role_assignment(
     Ok(GovernanceEntry::RoleAssignment {
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
         role_id: role_id_from_capnp(p.get_role_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -113,7 +103,6 @@ pub(super) fn read_role_unassignment(
     Ok(GovernanceEntry::RoleUnassignment {
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
         role_id: role_id_from_capnp(p.get_role_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -122,6 +111,5 @@ pub(super) fn read_role_archived(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::RoleArchived {
         role_id: role_id_from_capnp(p.get_role_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }

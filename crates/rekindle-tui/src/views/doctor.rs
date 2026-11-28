@@ -12,8 +12,8 @@
 //! │   [PASS] node.running                attached               │
 //! │   [PASS] node.public_internet        ready                  │
 //! │ CRYPTO                                                     │
-//! │   [WARN] crypto.prekeys.low          3 remaining            │
-//! │     replenish: rekindle key prekeys replenish                │
+//! │   [WARN] crypto.prekeys              3/100 fresh slots      │
+//! │     prekey maintenance is failing                          │
 //! │ NETWORK                                                    │
 //! │   [FAIL] network.peers.reachable     2/8 reachable          │
 //! │     check: rekindle network routes --refresh                 │

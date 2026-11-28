@@ -21,7 +21,8 @@
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 
 const FAILURE_THRESHOLD: u32 = 3;
 const BREAKER_COOLDOWN: Duration = Duration::from_secs(60);
@@ -102,6 +103,18 @@ pub fn lookup<S: BuildHasher>(
     map.get(key).cloned()
 }
 
+/// The relay routes of a published relay pool (profile subkey 8, JSON
+/// `Vec<Vec<u8>>`), dummies dropped: a dummy's first byte is `0xFF`, the
+/// padding that hides the pool's real size.
+#[must_use]
+pub fn decode_relay_pool(pool_body: &[u8]) -> Vec<Vec<u8>> {
+    let entries: Vec<Vec<u8>> = serde_json::from_slice(pool_body).unwrap_or_default();
+    entries
+        .into_iter()
+        .filter(|blob| blob.first().is_some_and(|&b| b != 0xFF))
+        .collect()
+}
+
 /// Rank candidate relay blobs by `blake3(target_pubkey || blob)`
 /// ascending. The same target consistently picks the same relay first, so
 /// caching/keepalive effects accumulate on one route rather than
@@ -121,71 +134,5 @@ pub fn rank_candidates(target_pubkey: &str, candidates: Vec<Vec<u8>>) -> Vec<Vec
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn key(byte: u8) -> RelayKey {
-        [byte; 32]
-    }
-
-    #[test]
-    fn closed_breaker_is_neither_open_nor_half_open() {
-        let mut map: HashMap<RelayKey, RelayHealth> = HashMap::new();
-        record_success(&mut map, key(1));
-        let health = lookup(&map, &key(1)).unwrap();
-        assert!(!health.is_circuit_open());
-        assert!(!health.is_half_open());
-        assert_eq!(health.consecutive_failures, 0);
-    }
-
-    #[test]
-    fn three_consecutive_failures_open_breaker() {
-        let mut map: HashMap<RelayKey, RelayHealth> = HashMap::new();
-        record_failure(&mut map, key(1));
-        record_failure(&mut map, key(1));
-        let health = lookup(&map, &key(1)).unwrap();
-        assert!(!health.is_circuit_open(), "two failures must not open");
-        record_failure(&mut map, key(1));
-        let health = lookup(&map, &key(1)).unwrap();
-        assert!(health.is_circuit_open(), "three failures must open");
-    }
-
-    #[test]
-    fn success_after_failures_resets_consecutive_count() {
-        let mut map: HashMap<RelayKey, RelayHealth> = HashMap::new();
-        record_failure(&mut map, key(1));
-        record_failure(&mut map, key(1));
-        record_success(&mut map, key(1));
-        record_failure(&mut map, key(1));
-        let health = lookup(&map, &key(1)).unwrap();
-        assert_eq!(health.consecutive_failures, 1);
-        assert!(!health.is_circuit_open());
-    }
-
-    #[test]
-    fn distinct_relays_isolated() {
-        let mut map: HashMap<RelayKey, RelayHealth> = HashMap::new();
-        record_failure(&mut map, key(1));
-        record_failure(&mut map, key(1));
-        record_failure(&mut map, key(1));
-        // Relay 2 is untouched.
-        assert!(lookup(&map, &key(2)).is_none());
-        assert!(lookup(&map, &key(1)).unwrap().is_circuit_open());
-    }
-
-    #[test]
-    fn rank_is_deterministic_per_target() {
-        let candidates = vec![vec![0x10, 0x20], vec![0x30, 0x40], vec![0x50, 0x60]];
-        let a = rank_candidates("alice-pubkey-hex", candidates.clone());
-        let b = rank_candidates("alice-pubkey-hex", candidates);
-        assert_eq!(a, b, "ranking must be stable across calls");
-    }
-
-    #[test]
-    fn rank_differs_per_target() {
-        let candidates = vec![vec![0x11], vec![0x22], vec![0x33], vec![0x44]];
-        let a = rank_candidates("alice-pubkey", candidates.clone());
-        let b = rank_candidates("zach-pubkey", candidates);
-        assert_ne!(a, b);
-    }
-}
+#[path = "relay_tests.rs"]
+mod tests;

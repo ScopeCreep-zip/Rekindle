@@ -1,13 +1,14 @@
-import { Component, JSX } from "solid-js";
+import type { Component, JSX } from "solid-js";
 
 interface ScrollAreaProps {
   children: JSX.Element;
   class?: string;
+  ref?: (el: HTMLDivElement) => void;
 }
 
 const ScrollArea: Component<ScrollAreaProps> = (props) => {
   return (
-    <div class={`scroll-area ${props.class || ""}`}>
+    <div ref={props.ref} class={`scroll-area ${props.class || ""}`}>
       {props.children}
     </div>
   );

@@ -13,20 +13,13 @@
 //! `rekindle_secrets::channel_body`, shared by every host and re-exported
 //! here.
 
-use rekindle_codec::community::channel_record::{ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT};
+use rekindle_codec::community::channel_record::ChannelMessage;
 
 use crate::error::ChannelError;
 
 pub use rekindle_secrets::channel_body::{
     decrypt_channel_body, encrypt_channel_body, BodyPosition,
 };
-
-/// Architecture §28.4 — channel SMPL subkey index for a member writing
-/// their slot's stream of messages. Pure offset from `CHANNEL_OWNER_SUBKEY_COUNT`.
-#[must_use]
-pub fn channel_message_subkey(member_index: u32) -> u32 {
-    u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + member_index
-}
 
 /// Architecture §28.7 — slowmode gate. Returns `Ok(())` when the send
 /// is allowed; returns `Err(SlowmodeActive)` with milliseconds-to-wait
@@ -64,6 +57,8 @@ pub struct BuildChannelMessageParams {
     pub timestamp_ms: i64,
     pub lamport_ts: u64,
     pub message_id: String,
+    /// The message id of the message this one replies to, when it does.
+    pub reply_to: Option<String>,
     pub mention_flag_bits: u32,
     pub mentioned_pseudonyms: Vec<String>,
     pub mentioned_roles: Vec<String>,
@@ -83,6 +78,7 @@ pub fn build_channel_message(params: BuildChannelMessageParams) -> ChannelMessag
         timestamp_ms,
         lamport_ts,
         message_id,
+        reply_to,
         mention_flag_bits,
         mentioned_pseudonyms,
         mentioned_roles,
@@ -93,7 +89,8 @@ pub fn build_channel_message(params: BuildChannelMessageParams) -> ChannelMessag
         ciphertext,
         mek_generation,
         timestamp: u64::try_from(timestamp_ms).unwrap_or_default(),
-        reply_to: None,
+        reply_to,
+        revives: None,
         lamport_ts,
         message_id: Some(message_id),
         attachment: None,
@@ -104,59 +101,5 @@ pub fn build_channel_message(params: BuildChannelMessageParams) -> ChannelMessag
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn slowmode_check_passes_when_no_slowmode_configured() {
-        assert!(slowmode_check(None, 0, 1000).is_ok());
-        assert!(slowmode_check(Some(0), 0, 1000).is_ok());
-    }
-
-    #[test]
-    fn slowmode_check_passes_when_window_elapsed() {
-        assert!(slowmode_check(Some(5), 1000, 6001).is_ok());
-        assert!(slowmode_check(Some(5), 1000, 6000).is_ok());
-    }
-
-    #[test]
-    fn slowmode_check_rejects_within_window_with_wait_ms() {
-        let err = slowmode_check(Some(5), 1000, 3000).expect_err("within window");
-        match err {
-            ChannelError::SlowmodeActive { wait_ms } => assert_eq!(wait_ms, 3000),
-            other => panic!("expected SlowmodeActive, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn slowmode_check_saturating_arithmetic_doesnt_panic() {
-        // Last send "in the future" (clock skew) — elapsed = 0, must reject.
-        assert!(slowmode_check(Some(5), 10_000, 1_000).is_err());
-    }
-
-    #[test]
-    fn build_channel_message_carries_all_inputs() {
-        let msg = build_channel_message(BuildChannelMessageParams {
-            sequence: 42,
-            sender_pseudonym: "abc".into(),
-            ciphertext: vec![1, 2, 3],
-            mek_generation: 7,
-            timestamp_ms: 1_000_000,
-            lamport_ts: 99,
-            message_id: "msg_1".into(),
-            mention_flag_bits: 0b11,
-            mentioned_pseudonyms: vec!["pseu1".into()],
-            mentioned_roles: vec!["role1".into()],
-        });
-        assert_eq!(msg.sequence, 42);
-        assert_eq!(msg.sender_pseudonym, "abc");
-        assert_eq!(msg.ciphertext, vec![1, 2, 3]);
-        assert_eq!(msg.mek_generation, 7);
-        assert_eq!(msg.timestamp, 1_000_000);
-        assert_eq!(msg.lamport_ts, 99);
-        assert_eq!(msg.message_id.as_deref(), Some("msg_1"));
-        assert_eq!(msg.flags, 0b11);
-        assert!(msg.reply_to.is_none());
-        assert!(msg.attachment.is_none());
-    }
-}
+#[path = "send_tests.rs"]
+mod tests;

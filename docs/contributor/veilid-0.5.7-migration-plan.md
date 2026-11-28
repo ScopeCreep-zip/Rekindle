@@ -1,5 +1,10 @@
 # Migration plan: veilid-core 0.5.3 → 0.5.7
 
+> **Historical (2026-11-15).** This document describes the 0.5.3/0.5.4 → 0.5.7 upgrade. Rekindle now pins
+> veilid-core 0.5.8 plus two fixes from the fork (ADR 0017, rev `e1158844`); the 0.5.8 analysis is
+> `.claude/plans/standards-remediation/evidence/veilid-0.5.8/` (synthesis and slice reports 1–6) and plan step VU.
+> Line citations here are 0.5.7's.
+
 Companion to [`veilid-0.5.7-gap-audit.md`](./veilid-0.5.7-gap-audit.md),
 which establishes *what* upstream changed. This is *how* we take it,
 and which parts of our tree get smaller as a result.
@@ -25,7 +30,7 @@ segments, and PQXDH. See §7.
 
 **This is a hard blocker, not a cleanup.** Verified:
 
-```
+```sh
 $ cargo update -p veilid-core --precise 0.5.7 --dry-run
 error: failed to select a version for `libsqlite3-sys`.
     ... required by package `rusqlite v0.39.0`
@@ -210,7 +215,7 @@ test suite, and a manual two-node attach/DHT/messaging smoke run.
 
 This is where the architecture actually gets smaller.
 
-### 2.1 UPnP — make it configurable, then A/B it. Do not just delete.
+### 2.1 UPnP — make it configurable, then A/B it. Do not just delete
 
 An earlier draft called this the cheapest win in the plan. It isn't.
 See gap-audit §1.1 for the full trace; the short version:

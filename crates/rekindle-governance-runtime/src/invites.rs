@@ -28,7 +28,7 @@
 //! matters as much as the first.
 
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::invite::{ChannelKeyInfo, InviteSecrets};
+use rekindle_types::invite::InviteSecrets;
 
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
@@ -46,6 +46,13 @@ pub struct MintedInvite {
     pub secrets_record_key: String,
     pub invite_id: [u8; 16],
     pub expires_at: Option<u64>,
+    /// Our `InviteCreated` by hash and seq in our chain, and the seq of our
+    /// frontier (`M`/3) once it landed: the link carries them, so a joiner
+    /// whose frontier read is older fetches the op by ref (plan IV1b, lead
+    /// decision (28)).
+    pub invite_op: rekindle_types::governance::OpHash,
+    pub invite_op_seq: u64,
+    pub frontier_seq: u32,
 }
 
 /// Mint an invite and announce it in governance.
@@ -55,6 +62,17 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     max_uses: u32,
     expires_in_seconds: Option<u64>,
 ) -> Result<MintedInvite, GovernanceRuntimeError> {
+    // Readers refuse a `max_uses` outside `1..=MAX_USES_PER_INVITE` (plan
+    // E3.2 (d)), so it is refused here, before any secret is published.
+    if !rekindle_governance::invite_quota::check_max_uses_cap(max_uses) {
+        return Err(GovernanceRuntimeError::OutOfBounds { field: "max_uses" });
+    }
+    // An invite is never held (plan E3.2 S7d-keys.8): while the unlock
+    // barrier catches up it is refused at once, before any network step;
+    // every later step is bounded by the command's network deadline.
+    crate::unlock_hold::refuse_unheld(&deps.unlock_barrier(community_id), community_id)?;
+    let invite_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
+    let landing = crate::deps::OpLanding::invite_landed(invite_id);
     let membership = deps
         .community_membership(community_id)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
@@ -75,7 +93,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     // registry as `slot_range_start 0` and derives its slot keypair from
     // that. Segment 0 is implicit and never listed in
     // `gov_state.segments`, so a match against a segment-≥1 registry
-    // means the value is corrupt and the invite would mis-route every
+    // means the value is corrupt and the invite would misroute every
     // joiner who used it. Refuse rather than ship the break.
     if let Some(segment) = gov_state
         .segments
@@ -88,47 +106,33 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         )));
     }
 
-    let (epoch, key) = rekindle_types::channel_keys::current_key(
-        &*deps.keys(),
-        community_id,
-        rekindle_types::channel_keys::KeyScope::Community,
-    )
-    .ok_or_else(|| {
-        GovernanceRuntimeError::Adapter("no MEK available to seed the invite".to_string())
-    })?;
-    let mek_wire_bytes = {
-        use base64::Engine as _;
-        let mut wire = Vec::with_capacity(40);
-        wire.extend_from_slice(&epoch.0.to_le_bytes());
-        wire.extend_from_slice(&*key);
-        base64::engine::general_purpose::STANDARD.encode(wire)
-    };
-
-    // Channel record keys from merged governance — the joiner reads
-    // history from these directly rather than waiting for its own merge.
-    let channel_keys: Vec<ChannelKeyInfo> = gov_state
-        .channels
-        .iter()
-        .map(|(channel_id, channel)| ChannelKeyInfo {
-            channel_id: hex::encode(channel_id.0),
-            record_key: channel.record_key.clone(),
-            name: channel.name.clone(),
+    // The joiner's walk of the op DAG starts at our frontier (`M`/3), on
+    // our op record (below).
+    let me = deps
+        .identity_secret()
+        .map(|secret| {
+            let key = rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
+            rekindle_types::id::PseudonymKey(key.verifying_key().to_bytes())
         })
-        .collect();
+        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+    // The record our ops and `Frontier` live on, where a joiner reads our
+    // frontier and fetches our `InviteCreated` by ref: this device's own
+    // (ADR 0022 rule 3, subkeys 2 and 3 are "that device's own op chain and
+    // view"), a further device's `M(p,d)`.
+    let inviter_member_record =
+        crate::device_signer::own_op_record(deps, community_id, &gov_state)?;
 
-    let code = hex::encode(rekindle_utils::random::id_bytes_16());
+    let code = hex::encode(rekindle_utils::random::id_bytes_16_from(
+        deps.rng().as_ref(),
+    ));
     let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
 
     let secrets = InviteSecrets {
-        governance_key: membership
-            .governance_key
-            .clone()
-            .unwrap_or_else(|| community_id.to_string()),
+        anchor: community_id.to_string(),
+        inviter_member_record,
         registry_key,
-        inviter_route_blob: deps.our_route_blob(),
+        inviter_pseudonym: hex::encode(me.0),
         slot_seed,
-        mek_wire_bytes,
-        channel_keys,
         // From merged governance, not the local membership record: the
         // name a joiner is shown before joining should be the one the
         // community agrees on, not whatever this peer cached.
@@ -147,12 +151,17 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         base64::engine::general_purpose::STANDARD.encode(&encrypted)
     };
 
-    let secrets_record_key = publish_invite_secrets(deps, &encrypted_b64).await?;
+    let secrets_record_key = tokio::time::timeout(
+        landing.remaining(),
+        publish_invite_secrets(deps, &encrypted_b64),
+    )
+    .await
+    .map_err(|_| apply::invite_timed_out())??;
 
-    let invite_id = rekindle_utils::random::id_bytes_16();
-    let expires_at = expires_in_seconds.map(|s| rekindle_utils::timestamp_secs() + s);
-    let lamport = deps.next_governance_lamport(community_id)?;
-    apply::write_entry(
+    let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
+    // The link is handed out only once its op and our frontier are on `M`
+    // (plan E3.2 S6 (4)): a joiner walks what is on the DHT.
+    let created = apply::write_invite_created(
         deps,
         community_id,
         GovernanceEntry::InviteCreated {
@@ -161,10 +170,25 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
             max_uses,
             expires_at,
             secrets_record_key: secrets_record_key.clone(),
-            lamport,
         },
+        landing,
     )
-    .await?;
+    .await;
+    if let Err(GovernanceRuntimeError::NotYetPublished) = created {
+        // Refused, but the op is queued and lands later: its tombstone goes
+        // on the same stream behind it now, so the invite is never listed or
+        // usable and its quota slot frees once both land (S6b). Should this
+        // write fail, the revoke row queued with the op revokes it.
+        apply::write_entry_queued(
+            deps,
+            community_id,
+            GovernanceEntry::InviteRevoked { invite_id },
+        )
+        .await?;
+    }
+    created?;
+    let (invite_op, invite_op_seq) = own_invite_op(deps, community_id, &me, invite_id).await?;
+    let frontier_seq = landed_frontier_seq(deps, &secrets.inviter_member_record).await?;
 
     Ok(MintedInvite {
         code,
@@ -172,7 +196,46 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         secrets_record_key,
         invite_id,
         expires_at,
+        invite_op,
+        invite_op_seq,
+        frontier_seq,
     })
+}
+
+/// Our `InviteCreated` of `invite_id` in our op store: its hash and seq.
+async fn own_invite_op<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    me: &rekindle_types::id::PseudonymKey,
+    invite_id: [u8; 16],
+) -> Result<(rekindle_types::governance::OpHash, u64), GovernanceRuntimeError> {
+    let held = deps.op_store().governance_ops(community_id).await?;
+    let set = crate::op_log::verify_held_with(deps, community_id, &held);
+    (set.ops.iter())
+        .filter(|op| op.author() == me)
+        .find(|op| {
+            matches!(op.body(), GovernanceEntry::InviteCreated { invite_id: id, .. } if *id == invite_id)
+        })
+        .map(|op| (op.hash(), op.op().seq))
+        .ok_or_else(|| GovernanceRuntimeError::Adapter("our InviteCreated is not stored".into()))
+}
+
+/// The seq our frontier (`M`/3) holds locally once the invite's op and
+/// frontier landed (`apply::write_invite_created`): the minimum a joiner's
+/// read of it must meet.
+async fn landed_frontier_seq<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    record: &str,
+) -> Result<u32, GovernanceRuntimeError> {
+    use rekindle_types::dht_layout::member_record::FRONTIER;
+    let lease = deps
+        .acquire_record(record, None, rekindle_records::port::OpenIntent::Check)
+        .await?;
+    let seqs = deps.inspect_dht_record_local_seqs(lease).await;
+    deps.release_record(lease).await;
+    let seq = seqs?.get(FRONTIER as usize).copied().flatten();
+    seq.and_then(|s| u32::try_from(s).ok())
+        .ok_or_else(|| GovernanceRuntimeError::Adapter("our frontier holds no seq".into()))
 }
 
 /// Revoke an invite by writing the tombstone every peer merges.
@@ -184,11 +247,11 @@ pub async fn revoke_invite<D: GovernanceRuntimeDeps>(
     community_id: &str,
     invite_id: [u8; 16],
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
-        GovernanceEntry::InviteRevoked { invite_id, lamport },
+        GovernanceEntry::InviteRevoked { invite_id },
     )
-    .await
+    .await?;
+    Ok(())
 }

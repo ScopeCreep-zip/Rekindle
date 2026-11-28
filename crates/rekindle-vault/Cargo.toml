@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-vault"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Double-encrypted SQLCipher vault for Rekindle (SQLCipher page-level AES-256-CBC + per-entry AES-256-GCM)"
 
 [lints]
@@ -14,14 +16,24 @@ blake3 = "1"
 hex = "0.4"
 parking_lot = { workspace = true }
 rand = { workspace = true }
+rekindle-asql = { path = "../rekindle-asql" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
-rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+subtle = "2"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zeroize = { version = "1", features = [ "derive" ] }
 
+# The SQLCipher provider per target, as `rekindle-db` chooses it (plan
+# SC1 slice 3): CommonCrypto on Apple, the vendored OpenSSL elsewhere.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+rusqlite = { version = "0.39", features = [ "bundled-sqlcipher" ] }
+
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
+
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 tempfile = "3"

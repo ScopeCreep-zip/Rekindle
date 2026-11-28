@@ -1,432 +1,597 @@
-//! Phase 18.c — apply pipeline.
-//!
-//! Ported from `src-tauri/src/services/community/governance.rs::write_entry`.
-//! Pure pipeline: read existing entries → permission validate → DHT
-//! write with M9.5 conflict/verify → mesh broadcast → local CRDT merge
-//! → UI snapshot emit. All side effects flow through the
-//! `GovernanceRuntimeDeps` trait.
+//! The apply pipeline (plan E3.2): bounds and permission checks against
+//! the merged state, then our signed op is built, stored and published
+//! (`op_log`), the state re-merged, and the UI snapshot events emitted.
+//! All side effects flow through the `GovernanceRuntimeDeps` trait.
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_governance::{compact, merge, validate};
+use rekindle_governance::op::VerifiedOp;
+use rekindle_governance::state::GovernanceState;
+use rekindle_governance::{merge, validate};
 use rekindle_secrets::derive;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GenesisCert, GovernanceEntry};
 use rekindle_types::id::PseudonymKey;
+use zeroize::Zeroizing;
 
-use crate::deps::GovernanceRuntimeDeps;
+use crate::deps::{GovernanceRuntimeDeps, OpLanding, OpOutcome};
+use crate::device_signer;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
-use crate::overflow;
+use crate::op_log;
+use crate::unlock_hold;
+use rekindle_types::display_catch_up::{PendingGovKind, PendingGovOp, PendingGovTarget};
 
-/// Warn threshold (~85% of the ~4112 B SMPL per-subkey cap) for the **primary**
-/// governance subkey. With `GovernanceOverflow` spill (see `overflow`), the
-/// primary page is bounded under [`overflow::PRIMARY_PAGE_BUDGET`] before we get
-/// here, so this should rarely fire — a primary near the cap signals the paging
-/// budget drifted, not impending data loss.
-const SMPL_SUBKEY_WARN_BYTES: usize = 3500;
+mod publication;
+use publication::{publish_signed, ForumCommit};
+pub use publication::{write_forum_thread, ForumCommitFuture};
 
-/// Hard SMPL per-subkey cap for a 255-slot governance record:
-/// `MAX_RECORD_DATA_SIZE (1_048_576) / subkey_count (255)`. A `set_dht_value`
-/// over this fails inside Veilid as a generic "failed schema validation" with no
-/// size detail. With overflow paging the primary page is partitioned under this
-/// cap, so this guard is now a **safety net** (a single entry larger than a
-/// whole page) rather than the accumulation wall it once was — kept so any
-/// regression names itself with a typed error + per-kind breakdown instead of
-/// Veilid's opaque string.
-const SMPL_SUBKEY_MAX_BYTES: usize = 1_048_576 / 255;
-
-/// Architecture §6 — classify a governance entry by which UI snapshot
-/// it invalidates so we can emit the right event after a successful
-/// CRDT apply. `Roles` triggers a `RolesChanged` snapshot;
-/// `ChannelsOrCategories` triggers `ChannelsUpdated`. Returning both
-/// false is intentional for entries that touch nothing the UI caches
-/// (e.g. lifecycle events handled elsewhere).
-#[derive(Default, Clone, Copy)]
-struct EntryAffects {
-    roles: bool,
-    channels_or_categories: bool,
-}
-
-fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
-    match entry {
-        // Role definition + archive change the role list itself;
-        // assignment/unassignment change a member's role_ids and are
-        // handled by `MemberRolesChanged` elsewhere.
-        GovernanceEntry::RoleDefinition { .. } | GovernanceEntry::RoleArchived { .. } => {
-            EntryAffects {
-                roles: true,
-                ..EntryAffects::default()
-            }
-        }
-        GovernanceEntry::ChannelCreated { .. }
-        | GovernanceEntry::ChannelArchived { .. }
-        | GovernanceEntry::ChannelUpdated { .. }
-        | GovernanceEntry::CategoryCreated { .. }
-        | GovernanceEntry::CategoryArchived { .. }
-        | GovernanceEntry::CategoryUpdated { .. } => EntryAffects {
-            channels_or_categories: true,
-            ..EntryAffects::default()
-        },
-        _ => EntryAffects::default(),
-    }
-}
-
-/// Per-kind entry counts for overflow diagnostics, e.g.
-/// `"ChannelCreated=2, InviteCreated=8, RoleDefinition=3"`. Only runs on the
-/// should-never-happen `SubkeyOverflow` path.
-fn entry_kind_breakdown(entries: &[GovernanceEntry]) -> String {
-    use std::collections::BTreeMap;
-    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
-    for e in entries {
-        *counts.entry(entry_kind(e)).or_insert(0) += 1;
-    }
-    counts
-        .iter()
-        .map(|(kind, n)| format!("{kind}={n}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn entry_kind(entry: &GovernanceEntry) -> &'static str {
-    match entry {
-        GovernanceEntry::InviteCreated { .. } => "InviteCreated",
-        GovernanceEntry::InviteRevoked { .. } => "InviteRevoked",
-        GovernanceEntry::ChannelCreated { .. } => "ChannelCreated",
-        GovernanceEntry::ChannelUpdated { .. } => "ChannelUpdated",
-        GovernanceEntry::ChannelArchived { .. } => "ChannelArchived",
-        GovernanceEntry::RoleDefinition { .. } => "RoleDefinition",
-        GovernanceEntry::RoleAssignment { .. } => "RoleAssignment",
-        GovernanceEntry::MEKGenerationBump { .. } => "MEKGenerationBump",
-        GovernanceEntry::CommunityMeta { .. } => "CommunityMeta",
-        _ => "other",
-    }
-}
-
-/// Apply a governance entry: sign + write to our SMPL subkey, gossip
-/// `GovernanceUpdated`, merge locally, emit UI snapshot event.
-///
-/// Returns `Ok(())` on success. On M9.5 write conflict or read-back
-/// mismatch, the local merge + UI emit is skipped (the entry never
-/// landed on the network, so the caller's optimistic UI must roll back).
+/// Apply a governance entry as our next signed op: validate it against the
+/// merged state, store it in `governance_ops`, gossip it, re-merge, emit
+/// the UI events and publish it on the governance-op outbox stream,
+/// answering after its first attempt or `GOVERNANCE_ANSWER_BOUND`,
+/// whichever comes first (plan E3.2 S6b, RV4 review M1/M2): `Landed`, or
+/// `Pending` (applied, gossiped, queued; the outbox lands it and the
+/// backend announces the landing). Neither is retried by the caller.
 pub async fn write_entry<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
-) -> Result<(), GovernanceRuntimeError> {
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(
+        deps,
+        community_id,
+        WriteEntry::Ready(Box::new(entry)),
+        OpLanding::FirstAttempt,
+        op_log::Deps::Frontier,
+    )
+    .await
+}
+
+/// [`write_entry`] citing `extra` among its deps beside the frontier: a
+/// transfer acceptance cites the offer it accepts (plan E3.2 S7s.4).
+pub async fn write_entry_citing<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+    extra: Vec<rekindle_types::governance::OpHash>,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(
+        deps,
+        community_id,
+        WriteEntry::Ready(Box::new(entry)),
+        OpLanding::FirstAttempt,
+        op_log::Deps::FrontierAnd(extra),
+    )
+    .await
+}
+
+/// [`write_entry`] for an invite's `InviteCreated` (of `invite_id`),
+/// answering only once the op landed on `M`/2 with our frontier on `M`/3,
+/// else [`GovernanceRuntimeError::NotYetPublished`] with the op queued: a
+/// joiner must find it on the DHT before we hand the link out (plan E3.2
+/// S6 (4)). Its revoke is queued with it, in one transaction, and goes
+/// unless the link is handed out (review RV4 M3, [`OpLanding::InviteLanded`]).
+pub async fn write_invite_created<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+    landing: OpLanding,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(
+        deps,
+        community_id,
+        WriteEntry::Ready(Box::new(entry)),
+        landing,
+        op_log::Deps::Frontier,
+    )
+    .await
+}
+
+/// [`write_entry`], returning once the op is queued on our stream, behind
+/// our earlier ops: the governance-op outbox stream owns its delivery
+/// (plan E3.2 S6b). For a writer that must not wait on the network: the
+/// ingest loop (onboarding answers), the MEK rotation worker, and an
+/// invite refused "not yet published" queueing its `InviteRevoked`.
+pub async fn write_entry_queued<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(
+        deps,
+        community_id,
+        WriteEntry::Ready(Box::new(entry)),
+        OpLanding::Queued,
+        op_log::Deps::Frontier,
+    )
+    .await
+}
+
+/// Our `Checkpoint` op (plan E3.2 S7c.4), queued like
+/// [`write_entry_queued`]: its deps are its cut's heads and our previous
+/// op, so whoever cites it has the whole cut in its causal past (S7c.3).
+pub async fn write_checkpoint_queued<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    checkpoint: rekindle_types::governance::Checkpoint,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    let heads = checkpoint.cut.iter().map(|r| r.op_hash).collect();
+    write(
+        deps,
+        community_id,
+        WriteEntry::Ready(Box::new(GovernanceEntry::Checkpoint(checkpoint))),
+        OpLanding::Queued,
+        op_log::Deps::Cited(heads),
+    )
+    .await
+}
+
+/// What a [`Build`] reads: the locked state, the verified op set and our
+/// pseudonym `p`, exactly what the op it returns is built on.
+pub(crate) struct BuiltOn<'a> {
+    pub state: &'a GovernanceState,
+    pub set: &'a op_log::VerifiedSet,
+    pub author: &'a PseudonymKey,
+}
+
+/// An entry built under the rebuild lock from what the op will be built
+/// on ([`BuiltOn`]): a `DeviceRetired`'s `lastSeq` must hold every op of its
+/// key in the carrier's causal past (ADR 0022 rule 5), so it is read there.
+pub(crate) type Build<D> =
+    Box<dyn FnOnce(&D, &BuiltOn<'_>) -> Result<GovernanceEntry, GovernanceRuntimeError> + Send>;
+
+/// The entry [`write_with`] writes: given, or built under its lock (with
+/// the kind the unlock barrier lists it as while it is held).
+pub(crate) enum WriteEntry<D> {
+    Ready(Box<GovernanceEntry>),
+    Built(Build<D>, PendingGovKind),
+    ForumThread(Box<GovernanceEntry>, ForumCommit),
+}
+
+/// Our op for the entry `build` returns under the rebuild lock, answered
+/// as [`write_entry`] answers.
+pub(crate) async fn write_built<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    build: Build<D>,
+    kind: PendingGovKind,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(
+        deps,
+        community_id,
+        WriteEntry::Built(build, kind),
+        OpLanding::FirstAttempt,
+        op_log::Deps::Frontier,
+    )
+    .await
+}
+
+/// When [`write_with`] answers that our own join is not in the merged
+/// state.
+#[derive(Clone, Copy)]
+enum NotAdmitted {
+    /// After the entry's validation, as any op's missing author record.
+    Refuse,
+    /// Before it: our leave of a join never admitted withdraws, whatever
+    /// the entry's validation would say.
+    Withdraw,
+}
+
+/// What [`write_with`] did.
+enum Written {
+    /// Our op was applied and published.
+    Op(OpOutcome),
+    /// Our join (pseudonym hex) was never admitted: nothing was authored.
+    NotAdmitted(String),
+}
+
+/// Our `MemberLeft`, unless the merged state never admitted our join:
+/// then nothing is authored and [`LeaveOutcome::Withdrawn`] answers (plan
+/// SU1, the withdrawal decision; ADR 0011: membership is the merged
+/// state's alone).
+///
+/// Admission is decided first, in a locked state read, before our slot
+/// heads are read from the DHT: a withdrawn join has no heads to record,
+/// so the read would be wasted. A join admitted there is decided again in
+/// the locked state the op is built on ([`write_with`]), so a leave never
+/// authors on a state that does not admit us.
+///
+/// [`LeaveOutcome::Withdrawn`]: crate::moderation::LeaveOutcome::Withdrawn
+pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<crate::moderation::LeaveOutcome, GovernanceRuntimeError> {
+    use crate::moderation::LeaveOutcome;
+    let me = {
+        let lock = deps.rebuild_lock(community_id);
+        let _installing = lock.lock().await;
+        let gov_state = deps.governance_state(community_id).ok_or_else(|| {
+            GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string())
+        })?;
+        op_log::own_member(deps, community_id, &gov_state)?
+    };
+    if me.record.is_none() {
+        return Ok(LeaveOutcome::Withdrawn);
+    }
+    let heads = deps.departed_slot_heads(community_id, &me.hex).await?;
+    let written = write_with(
+        deps,
+        community_id,
+        WriteEntry::Ready(Box::new(GovernanceEntry::MemberLeft { heads })),
+        OpLanding::FirstAttempt,
+        op_log::Deps::Frontier,
+        NotAdmitted::Withdraw,
+    )
+    .await?;
+    Ok(match written {
+        Written::Op(OpOutcome::Held { op_id }) => LeaveOutcome::Held { op_id },
+        Written::Op(_) => LeaveOutcome::Left,
+        Written::NotAdmitted(_) => LeaveOutcome::Withdrawn,
+    })
+}
+
+async fn write<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: WriteEntry<D>,
+    landing: OpLanding,
+    op_deps: op_log::Deps,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    let refuse = NotAdmitted::Refuse;
+    match write_with(deps, community_id, entry, landing, op_deps, refuse).await? {
+        Written::Op(outcome) => Ok(outcome),
+        Written::NotAdmitted(hex) => Err(GovernanceRuntimeError::MemberRecordMissing(hex)),
+    }
+}
+
+async fn write_with<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: WriteEntry<D>,
+    landing: OpLanding,
+    op_deps: op_log::Deps,
+    not_admitted: NotAdmitted,
+) -> Result<Written, GovernanceRuntimeError> {
+    // Validation and our endorsement (ADR 0022 rule 3) precede the barrier:
+    // neither a malformed entry nor an unendorsed device's op is ever held.
+    let (ready, enrols) = match &entry {
+        WriteEntry::Ready(ready) | WriteEntry::ForumThread(ready, _) => {
+            refuse_out_of_bounds(ready)?;
+            (Some(&**ready), false)
+        }
+        WriteEntry::Built(_, kind) => (None, *kind == PendingGovKind::DeviceKey),
+    };
+    refuse_now(deps, community_id, ready, enrols, landing, not_admitted).await?;
+    // Held writes sign in arrival order after the unlock barrier and the
+    // previous op's landing. Forum posts need a durable answer immediately.
+    let (kind, target) = match &entry {
+        WriteEntry::Ready(ready) | WriteEntry::ForumThread(ready, _) => {
+            (PendingGovKind::of(ready), PendingGovTarget::of(ready))
+        }
+        WriteEntry::Built(_, kind) => (*kind, PendingGovTarget::default()),
+    };
+    let slot = if matches!(entry, WriteEntry::ForumThread(..)) {
+        unlock_hold::BarrierSlot::Now(unlock_hold::take_immediate(deps, community_id)?)
+    } else {
+        unlock_hold::take_slot(deps, community_id, landing, |id| {
+            let name = deps.pending_target_name(community_id, &target);
+            let op = PendingGovOp::held_as(id, kind, target);
+            match name {
+                Some(name) => op.with_name(&name),
+                None => op,
+            }
+        })
+        .await?
+    };
+    match slot {
+        unlock_hold::BarrierSlot::Now(turn) => {
+            let written = write_signed(
+                deps,
+                community_id,
+                entry,
+                landing,
+                op_deps,
+                not_admitted,
+                &turn,
+            )
+            .await;
+            turn.finish(deps, community_id);
+            written
+        }
+        unlock_hold::BarrierSlot::Held(held) => {
+            held.echo(&entry);
+            let op_id = held.op_id().to_owned();
+            let label = held.label();
+            let owned = deps.handle();
+            let community = community_id.to_owned();
+            deps.spawn_held_write(
+                community_id,
+                Box::pin(async move {
+                    let signed = async {
+                        let turn = held.turn(&owned, &community).await?;
+                        let written = write_signed(
+                            &owned,
+                            &community,
+                            entry,
+                            landing,
+                            op_deps,
+                            not_admitted,
+                            &turn,
+                        )
+                        .await;
+                        turn.finish(&owned, &community);
+                        written
+                    };
+                    if let Err(error) = signed.await {
+                        unlock_hold::report_refused(&owned, &community, label, &error);
+                    }
+                }),
+            );
+            Ok(Written::Op(OpOutcome::Held { op_id }))
+        }
+    }
+}
+
+/// [`write_with`] past the unlock barrier, in `turn`.
+async fn write_signed<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: WriteEntry<D>,
+    landing: OpLanding,
+    op_deps: op_log::Deps,
+    not_admitted: NotAdmitted,
+    turn: &unlock_hold::SigningTurn,
+) -> Result<Written, GovernanceRuntimeError> {
+    // Serialized with the rebuild (`dht_hydration`) from the state and
+    // op-set reads to the install (D15: the state is a pure function of a
+    // grow-only op set, so whoever reads last installs last; register S7l,
+    // HIGH-2). Never held across the publish, and no rebuild runs under it.
+    let lock = deps.rebuild_lock(community_id);
+    let installing = locked(&lock, landing).await?;
+
     let gov_state = deps
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
 
-    let membership = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
-
-    let my_pseudo_hex = membership
-        .my_pseudonym_hex
-        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_string()))?;
-    let pseudo_bytes: [u8; 32] = hex::decode(&my_pseudo_hex)
-        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
-        .try_into()
-        .map_err(|_| {
-            GovernanceRuntimeError::InvalidPseudonymHex("pseudonym must be 32 bytes".into())
-        })?;
-    let pseudo = PseudonymKey(pseudo_bytes);
-
-    if !validate::validate_write(&pseudo, &entry, &gov_state) {
-        return Err(GovernanceRuntimeError::PermissionDenied);
+    // Our member record M(p): the cert's for the creator, our
+    // `MemberJoined` for a joiner (S6), in the state this write builds on;
+    // it answers admission only, the op's record is our device's (below).
+    // A join the merge never admitted has none: its
+    // leave withdraws before the entry's validation, authoring nothing
+    // (plan SU1); any other op is validated first (a malformed entry is
+    // refused as such, F3h), then refused for the missing record.
+    if matches!(not_admitted, NotAdmitted::Withdraw) {
+        let me = op_log::own_member(deps, community_id, &gov_state)?;
+        if me.record.is_none() {
+            return Ok(Written::NotAdmitted(me.hex));
+        }
     }
-
-    let gov_key_str = membership
-        .governance_key
-        .ok_or_else(|| GovernanceRuntimeError::GovernanceKeyMissing(community_id.to_string()))?;
-    let my_slot = membership
-        .my_subkey_index
-        .ok_or_else(|| GovernanceRuntimeError::SlotIndexMissing(community_id.to_string()))?;
-    let slot_kp_str = membership
-        .slot_keypair
-        .ok_or_else(|| GovernanceRuntimeError::SlotKeypairMissing(community_id.to_string()))?;
-
-    // Architecture §"Follow GovernanceOverflow pointers" (line 1609) — reassemble
-    // this author's FULL logical entry set across the primary SMPL subkey + every
-    // overflow record in our chain, re-verifying each payload's signature (W26)
-    // against our own pseudonym before accumulating. Capturing the existing
-    // overflow record keys lets us reuse (open) them rather than re-create.
-    let chain = overflow::read_my_chain(deps, &gov_key_str, my_slot, &pseudo).await?;
-    let mut my_entries = chain.entries;
-    my_entries.push(entry.clone());
-
-    // Architecture §4.2 Strategy 1 — compact the WHOLE logical set before
-    // re-paging (the genesis guard + create/archive lifecycle pairing require the
-    // full set). Dead lifecycles and superseded single-key metadata are dropped.
-    let my_entries = compact::compact_author_entries(my_entries, rekindle_utils::timestamp_secs());
-
-    let identity_secret = deps
-        .identity_secret()
-        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let pseudonym_signing_key = derive::derive_community_pseudonym(&identity_secret, community_id);
-
-    // Partition the compacted log into pages: page 0 is the primary SMPL subkey
-    // (small budget), pages ≥1 are member-owned overflow DFLT(1) records (~8×
-    // larger). An entry larger than a whole overflow page is unsplittable → the
-    // should-never-happen SubkeyOverflow safety net (real entries are < ~500 B).
-    let pages = match overflow::partition_into_pages(
-        my_entries,
-        overflow::PRIMARY_PAGE_BUDGET,
-        overflow::OVERFLOW_PAGE_BUDGET,
-    ) {
-        Ok(pages) => pages,
-        Err(bytes) => {
-            tracing::error!(
-                entry_bytes = bytes,
-                cap = overflow::OVERFLOW_PAGE_BUDGET,
-                "a single governance entry exceeds the overflow page budget; unsplittable"
-            );
-            return Err(GovernanceRuntimeError::SubkeyOverflow {
-                bytes,
-                cap: overflow::OVERFLOW_PAGE_BUDGET,
-            });
+    let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
+    let (mut entry, built_on, commit) = match entry {
+        WriteEntry::Ready(ready) => (*ready, None, None),
+        WriteEntry::ForumThread(ready, commit) => (*ready, None, Some(commit)),
+        WriteEntry::Built(build, _) => {
+            let held = deps.op_store().governance_ops(community_id).await?;
+            let set = op_log::verify_held_with(deps, community_id, &held);
+            let on = BuiltOn {
+                state: &gov_state,
+                set: &set,
+                author: &pseudo,
+            };
+            let built = build(deps, &on)?;
+            refuse_out_of_bounds(&built)?;
+            (built, Some(set), None)
         }
     };
-
-    // Write overflow pages highest-index-first so each parent points at an
-    // already-published child. Overflow owner keypairs are DERIVED (not stored);
-    // reuse a record key already in our chain, else create it once.
-    let mut next_key: Option<String> = None;
-    let mut written_overflow_keys: Vec<String> = Vec::new();
-    // The community keeps every page it writes for the session (§14.1).
-    let mut page_leases = rekindle_records::lease::CommunityLeases::default();
-    for i in (1..pages.len()).rev() {
-        let page_index = u32::try_from(i).expect("overflow page index fits u32");
-        let owner_writer =
-            overflow::overflow_owner_writer(deps, &identity_secret, community_id, page_index);
-        let page = match chain.overflow_keys.get(i - 1) {
-            Some(existing) => deps
-                .acquire_record(existing, Some(owner_writer.clone()))
-                .await
-                .map(|lease| (existing.clone(), lease)),
-            None => deps
-                .create_overflow_record(owner_writer.clone())
-                .await
-                .map(|created| (created.record_key, created.lease)),
-        };
-        let (rec_key, lease) = match page {
-            Ok(page) => page,
-            Err(e) => {
-                crate::records::release_all(deps, &page_leases).await;
-                return Err(e);
-            }
-        };
-        page_leases.overflow.push(lease);
-        if let Err(e) = overflow::write_overflow_page(
+    refuse_invalid(&pseudo, &entry, &gov_state)?;
+    let me = op_log::own_member(deps, community_id, &gov_state)?;
+    if me.record.is_none() {
+        return Ok(Written::NotAdmitted(me.hex));
+    }
+    // The pinned GenesisCert names the creator; S5 writes it at origin
+    // and S6 pins it at join (`GovernanceRuntimeDeps::genesis_cert`).
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_string()))?;
+    let set = match built_on {
+        Some(set) => set,
+        None => op_log::verify_held_with(
             deps,
-            &rec_key,
-            &pages[i],
-            next_key.clone(),
-            &pseudonym_signing_key,
-            &pseudo,
-            owner_writer,
-        )
-        .await
-        {
-            crate::records::release_all(deps, &page_leases).await;
-            return Err(e);
-        }
-        written_overflow_keys.push(rec_key.clone());
-        next_key = Some(rec_key);
-    }
+            community_id,
+            &deps.op_store().governance_ops(community_id).await?,
+        ),
+    };
+    let ours = Ours {
+        community_id,
+        cert: &cert,
+        state: &gov_state,
+        set: &set,
+        author: pseudo,
+    };
+    let (op, encoded) = sign_ours(deps, ours, &mut entry, op_deps)?;
+    // The record this device's op chain lives on, resolved from the signed
+    // op as the publish path resolves it (`device_signer::op_record_of`,
+    // ADR 0022 rules 3 and 10): a `MemberJoined` under the endorsement it
+    // carries, any later op under the state's.
+    let record = device_signer::op_record_of(deps, community_id, &gov_state, op.op())?;
+    let held = op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied);
+    let publication = publish_signed(deps, community_id, held, landing, turn, commit).await?;
+    // Gossip before the install, which prunes a removed member it removes.
+    deps.gossip_governance_op(community_id, &encoded);
 
-    // Register our own spill pages in the community's record inventory so they
-    // are warmed (§14.1), opened+tracked (§10), rehydrated on restart (D5), and
-    // closed on leave (§10) like every other community record — the author MUST
-    // keep its overflow records alive or new channels vanish from joiners.
-    if !written_overflow_keys.is_empty() {
-        deps.register_governance_overflow_keys(community_id, &written_overflow_keys);
-        deps.community_records_ready(community_id, page_leases)
-            .await;
-    }
-
-    // Build + sign the primary subkey (page 0), pointing at the first overflow
-    // record (or `None` when everything fit one page). The pointer is bound into
-    // the signature (`signing_bytes`, the canonical `rekindle-gov-subkey-v1`
-    // domain).
-    let (primary_payload, payload) =
-        overflow::build_signed_payload(&pages[0], next_key, &pseudonym_signing_key, &pseudo)?;
-
-    // The primary SMPL subkey is bounded by Veilid's per-subkey cap
-    // (`min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / subkey_count)` ≈ 4112 B for a
-    // 255-slot record). Paging keeps page 0 under PRIMARY_PAGE_BUDGET, so these
-    // guards are now a safety net rather than an expected path.
-    if payload.len() >= SMPL_SUBKEY_WARN_BYTES {
-        tracing::warn!(
-            payload_bytes = payload.len(),
-            entry_count = primary_payload.entries.len(),
-            subkey = my_slot,
-            "governance primary subkey payload approaching the SMPL per-subkey cap (~4112 B)"
-        );
-    } else {
-        tracing::debug!(
-            payload_bytes = payload.len(),
-            entry_count = primary_payload.entries.len(),
-            subkey = my_slot,
-            "writing governance primary subkey payload"
-        );
-    }
-    if payload.len() > SMPL_SUBKEY_MAX_BYTES {
-        tracing::error!(
-            payload_bytes = payload.len(),
-            cap = SMPL_SUBKEY_MAX_BYTES,
-            subkey = my_slot,
-            breakdown = %entry_kind_breakdown(&primary_payload.entries),
-            "governance primary subkey exceeds the SMPL per-subkey cap even after paging"
-        );
-        return Err(GovernanceRuntimeError::SubkeyOverflow {
-            bytes: payload.len(),
-            cap: SMPL_SUBKEY_MAX_BYTES,
-        });
-    }
-
-    // M9.5 — set_dht_value returns Some(stale) when our write was NOT
-    // accepted by the network. Surface as WriteConflict so the caller
-    // doesn't emit GovernanceUpdated for a write that didn't land.
-    let gov_lease = deps.acquire_record(&gov_key_str, None).await?;
-    let written = write_primary(deps, gov_lease, my_slot, &payload, slot_kp_str).await;
-    deps.release_record(gov_lease).await;
-    let verify = written?;
-    if verify != payload {
-        return Err(GovernanceRuntimeError::VerifyMismatch {
-            read: verify.len(),
-            written: payload.len(),
-        });
-    }
-
-    let notification = CommunityEnvelope::Control(ControlPayload::GovernanceUpdated {
-        governance_key: gov_key_str,
-        subkey_index: my_slot,
-        lamport_ts: entry.lamport(),
-    });
-    deps.send_to_mesh(community_id, &notification)?;
-
-    // Local CRDT merge after the network confirms the entry landed.
-    if let Some(mut current_state) = deps.governance_state(community_id) {
-        merge::apply_entry(&pseudo, &entry, &mut current_state);
-        deps.set_governance_state(community_id, current_state);
-    }
+    // The state every reader merges from the op set with this op in it.
+    let mut ops = set.ops;
+    ops.push(op);
+    // The successors this state applies are judged as the rebuild judges
+    // them (`op_log::rebuild_ops`), so our own `CommunitySuccessor` is
+    // offered here without waiting for a peer's op; once per op
+    // (`SuccessorJudgements`), run below outside the install lock. Boxed
+    // with the state it reads, scoped so neither sits in every writer's
+    // future.
+    let announce_successors = {
+        let installed = merge::merge(&cert, &ops);
+        deps.set_governance_state(community_id, installed.clone());
+        Box::pin(async move { crate::successor::announce(deps, community_id, &installed).await })
+    };
+    drop(installing);
 
     deps.emit_event(GovernanceRuntimeEvent::GovernanceEntryApplied {
         community_id: community_id.to_string(),
         entry: Box::new(entry.clone()),
     });
+    announce_successors.await;
 
-    let affects = classify_entry(&entry);
-    if affects.roles {
-        deps.emit_event(GovernanceRuntimeEvent::RolesChanged {
-            community_id: community_id.to_string(),
-        });
-    }
-    if affects.channels_or_categories {
-        deps.emit_event(GovernanceRuntimeEvent::ChannelsUpdated {
-            community_id: community_id.to_string(),
-        });
-    }
+    // The outbox lands it on our `M`/2 and `M`/3; `landing` says how long we wait.
+    publication.landed().await.map(Written::Op)
+}
 
+/// What our op is built on: the community, its pinned cert, the locked
+/// state and the verified op set, and our pseudonym `p` (its author).
+struct Ours<'a> {
+    community_id: &'a str,
+    cert: &'a GenesisCert,
+    state: &'a GovernanceState,
+    set: &'a op_log::VerifiedSet,
+    author: PseudonymKey,
+}
+
+/// Our op for `entry`, signed by this device's op key under `p` (ADR 0022
+/// rule 1); a `MemberJoined`, this device's first op here, gets `p`'s
+/// endorsement of the key written into `entry` (rule 3). Kept off
+/// the async path: the device key and `p`'s secret never live across an
+/// await, so `write_with`'s future holds neither.
+///
+/// # Errors
+/// No identity secret, no stored device key for a later op, or
+/// [`op_log::build_op`]'s.
+fn sign_ours<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    ours: Ours<'_>,
+    entry: &mut GovernanceEntry,
+    op_deps: op_log::Deps,
+) -> Result<(VerifiedOp, Vec<u8>), GovernanceRuntimeError> {
+    let identity_secret = Zeroizing::new(
+        deps.identity_secret()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?,
+    );
+    let key = derive::derive_community_pseudonym(&identity_secret, ours.community_id);
+    let first_op = matches!(entry, GovernanceEntry::MemberJoined { .. });
+    let device = device_signer::device_op_key(deps, ours.community_id, first_op)?;
+    device_signer::carry_first_device(entry, &key, ours.community_id, &device, ours.state);
+    let signer =
+        device_signer::OpSigner::checked(ours.community_id, ours.state, ours.author, &device)?;
+    op_log::build_op(
+        ours.community_id,
+        ours.cert,
+        ours.state,
+        ours.set,
+        signer,
+        entry.clone(),
+        op_deps,
+        deps.clock().now_secs(),
+    )
+}
+
+/// Every reader drops an entry outside its value bounds (plan E3.0), so the
+/// writer refuses it by name before validating permission, instead of
+/// writing what no peer applies or reporting `PermissionDenied`.
+fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntimeError> {
+    match validate::bounds::out_of_bounds_field(entry) {
+        Some(field) => Err(GovernanceRuntimeError::OutOfBounds { field }),
+        None => Ok(()),
+    }
+}
+
+/// [`refuse_invalid`]'s structural half and our device's endorsement
+/// before the unlock barrier, read under the rebuild lock (register S7l,
+/// HIGH-2): a malformed entry is `Malformed` (400) at once, and an op of a
+/// device whose key the merged device set does not endorse is
+/// `DeviceUnendorsed` at once (ADR 0022 rule 3: refused, never written,
+/// so never held either); a device's own first op (its `MemberJoined`, or
+/// the `DeviceKey` that enrols it) carries its endorsement and is resolved
+/// where it is signed. Permission is judged in the state the op is signed
+/// on, past the barrier. `ready` is the entry when it is known now, and
+/// `enrols` marks a built `DeviceKey` (our enrolment).
+async fn refuse_now<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    ready: Option<&GovernanceEntry>,
+    enrols: bool,
+    landing: OpLanding,
+    not_admitted: NotAdmitted,
+) -> Result<(), GovernanceRuntimeError> {
+    let gov_state = {
+        let lock = deps.rebuild_lock(community_id);
+        let _installing = locked(&lock, landing).await?;
+        deps.governance_state(community_id).ok_or_else(|| {
+            GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string())
+        })?
+    };
+    let carries_own = match ready {
+        Some(ready) => {
+            if matches!(not_admitted, NotAdmitted::Refuse) {
+                let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
+                if !validate::well_formed(&pseudo, ready, &gov_state) {
+                    return Err(GovernanceRuntimeError::Malformed);
+                }
+            }
+            device_signer::carries_own_endorsement(deps, community_id, ready)?
+        }
+        None => enrols,
+    };
+    if carries_own {
+        return Ok(());
+    }
+    device_signer::refuse_unendorsed(deps, community_id, &gov_state)
+}
+
+/// The community's rebuild lock, which a rebuild holds across its fetches
+/// of missing deps (`op_log::rebuild_ops`): an invite (whose answer has a
+/// deadline) waits for it only until its deadline, every other write until
+/// it is free.
+///
+/// # Errors
+/// [`GovernanceRuntimeError::InviteTimedOut`] at an invite's deadline.
+async fn locked(
+    lock: &tokio::sync::Mutex<()>,
+    landing: OpLanding,
+) -> Result<tokio::sync::MutexGuard<'_, ()>, GovernanceRuntimeError> {
+    match landing {
+        OpLanding::InviteLanded { deadline, .. } => tokio::time::timeout_at(deadline, lock.lock())
+            .await
+            .map_err(|_| invite_timed_out()),
+        OpLanding::FirstAttempt | OpLanding::Queued => Ok(lock.lock().await),
+    }
+}
+
+/// An invite whose steps before signing outran its command's network
+/// deadline: refused with the deadline in words.
+pub(crate) fn invite_timed_out() -> GovernanceRuntimeError {
+    GovernanceRuntimeError::InviteTimedOut(
+        rekindle_types::config::NETWORK_ANSWER_DEADLINE.as_secs(),
+    )
+}
+
+/// Every reader runs `validate_write` against its merged state before it
+/// applies an entry, so the writer runs it before writing: a malformed
+/// entry is `Malformed` (400), a missing permission `PermissionDenied`
+/// (403), and neither is written or applied.
+fn refuse_invalid(
+    writer: &PseudonymKey,
+    entry: &GovernanceEntry,
+    state: &rekindle_governance::state::GovernanceState,
+) -> Result<(), GovernanceRuntimeError> {
+    if !validate::well_formed(writer, entry, state) {
+        return Err(GovernanceRuntimeError::Malformed);
+    }
+    if !validate::validate_write(writer, entry, state) {
+        return Err(GovernanceRuntimeError::PermissionDenied);
+    }
     Ok(())
 }
 
-/// M9.5: set the primary subkey, surfacing a newer network value as
-/// `WriteConflict` so the caller does not emit `GovernanceUpdated` for a
-/// write that did not land; then force a fresh read, since even a local
-/// set can fail to propagate, and return what the network now serves.
-async fn write_primary<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    gov_lease: rekindle_records::lease::LeaseId,
-    my_slot: u32,
-    payload: &[u8],
-    slot_writer: String,
-) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    if let Some(stale) = deps
-        .set_dht_value(gov_lease, my_slot, payload.to_vec(), Some(slot_writer))
-        .await?
-    {
-        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
-    }
-    deps.get_dht_value(gov_lease, my_slot, true)
-        .await?
-        .ok_or(GovernanceRuntimeError::VerifyEmpty)
-}
+#[cfg(test)]
+#[path = "apply_tests.rs"]
+mod tests;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rekindle_types::id::ChannelId;
-
-    #[test]
-    fn classify_role_definition_marks_roles() {
-        let entry = GovernanceEntry::RoleDefinition {
-            role_id: rekindle_types::id::RoleId([0u8; 16]),
-            name: "test".into(),
-            permissions: 0,
-            position: 0,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-            lamport: 1,
-        };
-        let affects = classify_entry(&entry);
-        assert!(affects.roles);
-        assert!(!affects.channels_or_categories);
-    }
-
-    #[test]
-    fn classify_role_archived_marks_roles() {
-        let entry = GovernanceEntry::RoleArchived {
-            role_id: rekindle_types::id::RoleId([0u8; 16]),
-            lamport: 1,
-        };
-        let affects = classify_entry(&entry);
-        assert!(affects.roles);
-        assert!(!affects.channels_or_categories);
-    }
-
-    #[test]
-    fn classify_channel_created_marks_channels() {
-        let entry = GovernanceEntry::ChannelCreated {
-            channel_id: ChannelId([0u8; 16]),
-            name: "general".into(),
-            channel_type: "text".into(),
-            record_key: String::new(),
-            category_id: None,
-            position: 0,
-            parent_voice_channel_id: None,
-            lamport: 1,
-        };
-        let affects = classify_entry(&entry);
-        assert!(!affects.roles);
-        assert!(affects.channels_or_categories);
-    }
-
-    #[test]
-    fn classify_category_updated_marks_channels() {
-        let entry = GovernanceEntry::CategoryUpdated {
-            category_id: rekindle_types::id::CategoryId([0u8; 16]),
-            name: Some("renamed".into()),
-            position: None,
-            lamport: 1,
-        };
-        let affects = classify_entry(&entry);
-        assert!(!affects.roles);
-        assert!(affects.channels_or_categories);
-    }
-
-    #[test]
-    fn classify_role_assignment_affects_nothing() {
-        let entry = GovernanceEntry::RoleAssignment {
-            target: PseudonymKey([0u8; 32]),
-            role_id: rekindle_types::id::RoleId([0u8; 16]),
-            lamport: 1,
-        };
-        let affects = classify_entry(&entry);
-        assert!(!affects.roles);
-        assert!(!affects.channels_or_categories);
-    }
-}
+#[path = "device_record_tests.rs"]
+mod device_record_tests;

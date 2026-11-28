@@ -1,73 +1,25 @@
-import { Component, createSignal, onMount, onCleanup } from "solid-js";
-import { handleGetNetworkStatus } from "../../actions/settings.actions";
-import { subscribeNetworkStatus } from "../../ipc/channels";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import type { RouteAvailability } from "../../ipc/channels/notification_events";
+import { type Component, For } from "solid-js";
+import {
+  isNetworkConnected,
+  isNetworkConnecting,
+  networkLabel,
+  networkState,
+  trackNetworkStatus,
+} from "../../stores/network.store";
+
+/** Veilid's five attached levels ("signal strength"), one bar each. */
+const BAR_COUNT = 5;
+const BAR_LEVELS = [1, 2, 3, 4, 5];
 
 const NetworkIndicator: Component = () => {
-  const [attachmentState, setAttachmentState] = createSignal("detached");
-  const [isAttached, setIsAttached] = createSignal(false);
-  const [publicInternetReady, setPublicInternetReady] = createSignal(false);
-  const [hasRoute, setHasRoute] = createSignal(false);
-  const [mediaRoute, setMediaRoute] = createSignal<RouteAvailability>("idle");
-
-  let pollTimer: ReturnType<typeof setInterval> | undefined;
-  let unlistenNetwork: UnlistenFn | undefined;
-
-  async function pollNetworkStatus(): Promise<void> {
-    const status = await handleGetNetworkStatus();
-    if (status) {
-      setAttachmentState(status.attachmentState);
-      setIsAttached(status.isAttached);
-      setPublicInternetReady(status.publicInternetReady);
-      setHasRoute(status.hasRoute);
-      setMediaRoute(status.mediaRoute);
-    }
-  }
-
-  onMount(() => {
-    // Initial fetch + polling safety net (every 30s since push events are authoritative)
-    pollNetworkStatus();
-    pollTimer = setInterval(pollNetworkStatus, 30000);
-
-    // Subscribe to push events for instant updates
-    subscribeNetworkStatus((event) => {
-      setAttachmentState(event.attachmentState);
-      setIsAttached(event.isAttached);
-      setPublicInternetReady(event.publicInternetReady);
-      setHasRoute(event.hasRoute);
-      setMediaRoute(event.mediaRoute);
-    }).then((fn) => {
-      unlistenNetwork = fn;
-    });
-  });
-
-  onCleanup(() => {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-    }
-    if (unlistenNetwork) {
-      unlistenNetwork();
-    }
-  });
+  trackNetworkStatus();
 
   function dotClass(): string {
-    if (publicInternetReady() && hasRoute()) return "network-dot network-dot-connected";
-    if (isConnecting()) return "network-dot network-dot-connecting";
-    if (publicInternetReady() && !hasRoute()) return "network-dot network-dot-partial";
+    if (isNetworkConnected()) return "network-dot network-dot-connected";
+    if (isNetworkConnecting()) return "network-dot network-dot-connecting";
+    if (networkState.publicInternetReady && networkState.generalRoute !== "available")
+      return "network-dot network-dot-partial";
     return "network-dot network-dot-disconnected";
-  }
-
-  function isConnecting(): boolean {
-    const state = attachmentState();
-    return state === "attaching" || state === "attached_weak" || (isAttached() && !publicInternetReady());
-  }
-
-  function label(): string {
-    if (publicInternetReady() && hasRoute()) return "Connected";
-    if (isConnecting()) return "Connecting...";
-    if (publicInternetReady() && !hasRoute()) return "No Route";
-    return "Disconnected";
   }
 
   /**
@@ -76,8 +28,8 @@ const NetworkIndicator: Component = () => {
    * indicator says so. `null` once it is available.
    */
   function voiceNote(): string | null {
-    if (!(publicInternetReady() && hasRoute())) return null;
-    switch (mediaRoute()) {
+    if (!isNetworkConnected()) return null;
+    switch (networkState.mediaRoute) {
       case "available":
         return null;
       case "failed":
@@ -87,15 +39,50 @@ const NetworkIndicator: Component = () => {
     }
   }
 
+  /**
+   * The inbound (General) route while the public internet is up and it is
+   * not available, as Media's note says voice (plan F9-A): still being made,
+   * or unavailable (Veilid declared it dead). `null` once it is available.
+   */
+  function routeNote(): string | null {
+    if (!networkState.publicInternetReady) return null;
+    switch (networkState.generalRoute) {
+      case "available":
+        return null;
+      case "unavailable":
+      case "failed":
+        return "Inbound route unavailable";
+      default:
+        return "Inbound route connecting...";
+    }
+  }
+
+  /** Veilid's attachment strength, as the backend smoothed it. */
+  function barsLabel(): string {
+    return `Signal ${networkState.bars} of ${BAR_COUNT}`;
+  }
+
   function title(): string {
-    const note = voiceNote();
-    return note ? `Veilid: ${label()} — ${note}` : `Veilid: ${label()}`;
+    const notes = [routeNote(), voiceNote()].filter((n): n is string => n !== null);
+    const head = `Veilid: ${networkLabel()}, ${barsLabel()}`;
+    return notes.length > 0 ? `${head} — ${notes.join("; ")}` : head;
   }
 
   return (
     <div class="network-indicator" title={title()}>
       <div class={dotClass()} />
-      <span>{label()}</span>
+      <div class="network-bars" role="img" aria-label={barsLabel()}>
+        <For each={BAR_LEVELS}>
+          {(level) => (
+            <div
+              class="network-bar"
+              classList={{ "network-bar-on": networkState.bars >= level }}
+              data-level={level}
+            />
+          )}
+        </For>
+      </div>
+      <span>{networkLabel()}</span>
       {voiceNote() && <span class="network-voice-note">{voiceNote()}</span>}
     </div>
   );

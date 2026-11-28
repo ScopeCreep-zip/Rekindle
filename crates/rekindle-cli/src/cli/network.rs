@@ -32,11 +32,7 @@ pub enum NetworkCmd {
     Status,
 
     /// List known peers with circuit breaker state.
-    Peers {
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
-    },
+    Peers,
 
     /// Show allocated/imported routes.
     Routes {

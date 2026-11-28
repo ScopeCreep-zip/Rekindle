@@ -3,54 +3,23 @@
 //! + the RSVP/profile DB-coupled reads-and-writes the
 //! orchestrator's pure helpers can't reach by themselves.
 //!
-//! The actual MERGE logic (role priority composition, RSVP
-//! aggregation, profile diff) lives in `crates/rekindle-presence/src/community/{role_merge,rsvp_aggregate,profile_diff}.rs`
+//! The actual MERGE logic (RSVP aggregation, profile diff) lives in
+//! `crates/rekindle-presence/src/community/{rsvp_aggregate,profile_diff}.rs`
 //! per Invariant 7. This module just exposes the AppState reads +
-//! the post-merge write.
+//! the post-merge write. Member roles are the merged governance's role
+//! assignments, which the Host reads (`CommunityStore::member_role_ids`);
+//! the scan writes none.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use rekindle_types::id::{PseudonymKey, RoleId};
-
 use crate::state::{AppState, MemberProfileSnapshot};
-use crate::state_helpers;
 
-// ---------- Phase 21.i-fixup.b — role merge primitives ----------
-
-pub(super) fn read_existing_member_roles(
-    state: &Arc<AppState>,
-    community_id: &str,
-) -> HashMap<String, Vec<u32>> {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map(|cs| cs.member_roles.clone())
-        .unwrap_or_default()
-}
-
-pub(super) fn read_governance_role_assignments(
-    state: &Arc<AppState>,
-    community_id: &str,
-) -> HashMap<PseudonymKey, HashSet<RoleId>> {
-    state_helpers::governance_state(state, community_id)
-        .map(|gov| gov.role_assignments.clone())
-        .unwrap_or_default()
-}
-
-pub(super) fn read_my_role_ids(state: &Arc<AppState>, community_id: &str) -> Vec<u32> {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map_or_else(|| vec![0], |cs| cs.my_role_ids.clone())
-}
+// ---------- Post-scan member state ----------
 
 pub(super) fn apply_member_state_update(
     state: &Arc<AppState>,
     community_id: &str,
-    merged_member_roles: HashMap<String, Vec<u32>>,
     known_member_keys: HashSet<String>,
     banned_members: &HashSet<String>,
 ) {
@@ -60,14 +29,12 @@ pub(super) fn apply_member_state_update(
     };
     for banned in banned_members {
         cs.known_members.remove(banned);
-        cs.member_roles.remove(banned);
         if let Some(ref mut gossip) = cs.gossip {
             gossip.online_members.remove(banned);
             gossip.peers.remove(banned);
         }
     }
     cs.known_members.extend(known_member_keys);
-    cs.member_roles = merged_member_roles;
 }
 
 // ---------- Phase 21.i-fixup.d — profile diff primitives ----------

@@ -8,31 +8,17 @@ use serde::{Deserialize, Serialize};
 
 /// Membership lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum MembershipEvent {
-    /// A join request was submitted (operator sees this).
-    /// Triggered by: gossip `ControlPayload::MemberJoinRequest`.
+    /// A joiner waits for approval under `ApprovalRequired`.
+    /// Triggered by: the Host, when the merged governance first lists the
+    /// joiner's signed `MemberJoined` as pending (`member_events.rs`).
     JoinRequested {
         community: String,
         pseudonym: String,
         display_name: String,
         has_invite: bool,
     },
-    /// Our own join request was accepted (we see this).
-    /// Triggered by: gossip `ControlPayload::JoinAccepted`.
-    JoinAccepted {
-        community: String,
-        /// The MEK generation the joiner starts on.
-        ///
-        /// `Option` because the desktop's governance runtime signals
-        /// acceptance from a path that has not read the MEK yet; the
-        /// gossip path supplies it. `None` means "not yet known", not
-        /// generation zero.
-        mek_generation: Option<u64>,
-        slot_index: Option<u32>,
-    },
-    /// Our own join request was rejected (we see this).
-    /// Triggered by: gossip `ControlPayload::JoinRejected`.
-    JoinRejected { community: String, reason: String },
     /// The full member list was re-read and should be re-rendered.
     ///
     /// Not a membership *change*: a refresh follows a registry scan or
@@ -69,45 +55,130 @@ pub enum MembershipEvent {
     },
 
     /// A new member joined the community (everyone sees this).
-    /// Triggered by: gossip `ControlPayload::MemberJoined`.
+    /// Triggered by: the Host, when the merged governance first lists the
+    /// member (`member_events.rs`); the gossip notice publishes none.
     Joined {
         community: String,
         pseudonym: String,
+        /// The name on the member's verified card (`M`/0), when we have
+        /// read it; `None` = not read yet, never "" (plan E3.2 F9-2). The
+        /// event goes out at once, so the name usually follows as a
+        /// [`Self::MemberCardChanged`]; a frontend shows the short
+        /// pseudonym until then.
+        display_name: Option<String>,
+        role_ids: Vec<String>,
+    },
+    /// We joined `community` (plan E3.2): the one event of our own join,
+    /// whichever path it took (a link, or a co-creator's `CreatorJoin`);
+    /// [`Self::Joined`] names any member, us included, once the merged
+    /// governance lists them.
+    /// Triggered by: the Host's join, once the community is installed.
+    SelfJoined { community: String, name: String },
+    /// Our join of `community` was withdrawn after it returned: the
+    /// inviter answered a retried bootstrap exchange and refused our
+    /// `MemberJoined` (plan E3.1/JN1, ADR 0019's outcome rule), so the Host
+    /// left and forgot the community. A refusal at once is the join call's
+    /// error instead; this is the only word of a deferred one.
+    /// Triggered by: the Host's `withdraw_refused_join`, once, when the
+    /// withdrawal drops the community's store entry (`create_leave.rs`
+    /// `drop_community_entry`), in place of `Forgotten`; never for a
+    /// refusal of a join a later re-join superseded.
+    JoinWithdrawn {
+        community: String,
+        /// The inviter's typed refusal.
+        reason: crate::join_refusal::JoinRefusal,
+        /// What the user is told, in the Host's words
+        /// ([`crate::join_refusal::JoinRefusal::withdrawn_text`]).
+        reason_text: String,
+    },
+    /// The name on a member's verified card (`M`/0, signed by the
+    /// pseudonym, its owner pinned to the member's `MemberJoined`), on the
+    /// first read of that card and on each change (plan E3.2 F9-2).
+    /// Triggered by: the Host, when it notes a card name it did not hold
+    /// (`CommunityStore::note_member_card`). Ours too, after we set our
+    /// name or custom status (plan E3.4 S6).
+    MemberCardChanged {
+        community: String,
+        pseudonym: String,
+        /// Never empty: the card's per-community name, else the member's
+        /// short pseudonym fingerprint (the Host's, never the frontend's).
         display_name: String,
-        role_ids: Vec<u32>,
+        /// The card's custom status, when it says one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        custom_status: Option<String>,
     },
     /// A member left the community voluntarily.
-    /// Triggered by: gossip `ControlPayload::MemberLeave`.
+    /// Triggered by: the Host, when the merged governance first holds the
+    /// member's `MemberLeft`, on every member's frontends, the leaver's
+    /// own included; the gossip notice publishes none.
     Left {
         community: String,
         pseudonym: String,
     },
+    /// We no longer hold `community`: our leave (a withdrawn join publishes
+    /// `JoinWithdrawn` instead), or our Forget of a community we were
+    /// removed from dropped its store
+    /// entry and stored membership (plan E3.2). Not a governance change:
+    /// published by the Host on the one path that drops the entry
+    /// (`create_leave.rs` `drop_community_entry`), device-scoped, so it
+    /// reaches every frontend holding the community list after the
+    /// community's own subscription state is torn down. A frontend drops
+    /// the community; one it does not list is a no-op.
+    Forgotten { community: String },
     /// A member was removed by an operator.
-    /// Triggered by: gossip `ControlPayload::MemberRemoved`.
+    /// Triggered by: the desktop's gossip `Kick` notice
+    /// (`control_moderation.rs`), until the merged `MemberRemoved` is the
+    /// only trigger.
     Removed {
         community: String,
         pseudonym: String,
     },
     /// A member was kicked (immediate removal, can rejoin).
-    /// Triggered by: gossip `ControlPayload::Kick`.
+    /// Triggered by: the Host, once per removal, when the merged governance
+    /// first holds the `MemberRemoved` (`member_events.rs`, our own removal
+    /// `own_removal.rs`); the gossip notice publishes none.
     Kicked {
         community: String,
         target_pseudonym: String,
+        /// The remover's pseudonym, when the merged op names it: our own
+        /// removal (plan E3.2 S9 own removal) carries it, as does another's.
+        removed_by: Option<String>,
+        /// The display name on the remover's verified card, when held.
+        removed_by_name: Option<String>,
+        /// The reason the removal op gave (A/B R5-2), shown to the removed
+        /// member. Bounded at the source: governance validation refuses a
+        /// removal whose reason exceeds `key_format::MAX_NOTE_LEN`, as for
+        /// a mod report.
+        reason: Option<String>,
     },
     /// A member was banned (permanent removal, cannot rejoin).
-    /// Triggered by: gossip `ControlPayload::Ban`.
+    /// Triggered by: the Host, once per ban, when the merged governance
+    /// first holds it (`member_events.rs`, our own ban `own_removal.rs`);
+    /// the gossip notice publishes none.
     Banned {
         community: String,
         target_pseudonym: String,
+        /// The remover's pseudonym, when the merged op names it: our own
+        /// removal (plan E3.2 S9 own removal) carries it, as does another's.
+        removed_by: Option<String>,
+        /// The display name on the remover's verified card, when held.
+        removed_by_name: Option<String>,
+        /// The reason the removal op gave (A/B R5-2), shown to the removed
+        /// member. Bounded at the source: governance validation refuses a
+        /// removal whose reason exceeds `key_format::MAX_NOTE_LEN`, as for
+        /// a mod report.
+        reason: Option<String>,
     },
     /// A member was unbanned.
-    /// Triggered by: gossip `ControlPayload::Unban`.
+    /// Triggered by: the Host, when the merged governance lifts the ban
+    /// (`member_events.rs`); the gossip notice publishes none.
     Unbanned {
         community: String,
         target_pseudonym: String,
     },
     /// A member was timed out (temporary restriction).
-    /// Triggered by: gossip `ControlPayload::TimeoutMember`.
+    /// Triggered by: the Host, when the merged governance holds a new
+    /// `TimeoutEntry` for the member (`member_events.rs`).
     TimedOut {
         community: String,
         target_pseudonym: String,
@@ -115,31 +186,36 @@ pub enum MembershipEvent {
         reason: Option<String>,
     },
     /// A member's timeout was removed early.
-    /// Triggered by: gossip `ControlPayload::RemoveTimeout`.
+    /// Triggered by: the Host, when the merged governance drops the
+    /// member's timeout (`RemoveTimeoutEntry`, `member_events.rs`).
     TimeoutRemoved {
         community: String,
         target_pseudonym: String,
     },
-    /// A member's timeout status changed (broadcast to community).
-    /// Triggered by: gossip `ControlPayload::MemberTimedOut`.
+    /// A member's timeout status changed: `timeout_until` (unix seconds)
+    /// is when it ends, `None` once lifted. Published beside `TimedOut`
+    /// and `TimeoutRemoved`, for the member list's state.
+    /// Triggered by: the Host, from the merged governance
+    /// (`member_events.rs`).
     TimeoutStatusChanged {
         community: String,
         pseudonym: String,
         timeout_until: Option<u64>,
     },
     /// A member's roles changed.
-    /// Triggered by: gossip `ControlPayload::MemberRolesChanged`.
+    /// Triggered by: the Host's governance runtime event
+    /// (`host/adapters/governance/events.rs`).
     RolesChanged {
         community: String,
         pseudonym: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<String>,
     },
     /// A member completed onboarding.
     /// Triggered by: gossip `ControlPayload::OnboardingComplete`.
     OnboardingCompleted {
         community: String,
         pseudonym: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<String>,
     },
     /// Onboarding answers were submitted.
     /// Triggered by: gossip `ControlPayload::SubmitOnboardingAnswers`.
@@ -149,3 +225,7 @@ pub enum MembershipEvent {
         answer_count: usize,
     },
 }
+
+#[cfg(test)]
+#[path = "membership_tests.rs"]
+mod tests;

@@ -1,0 +1,349 @@
+//! The D26 ingest gate (plan E3.1 F3): every received channel post passes
+//! [`gate`] before it is stored, displayed or notified, on both hosts. It
+//! checks the block list, bans, timeouts, the channel's slowmode and the
+//! community's automod rules, in that order, and answers [`Verdict::Admit`],
+//! [`Verdict::Report`] (admitted, and reported to the moderators),
+//! [`Verdict::Hide`] (stored blurred) or [`Verdict::Drop`] (never stored).
+//! An automod rule that cannot be evaluated drops the post: a broken rule
+//! never admits what it was written to stop.
+
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::BuildHasher;
+
+use rekindle_codec::community::channel_record::ChannelMessage;
+use rekindle_governance::permissions::{compute_permissions, has_capability};
+use rekindle_governance::state::GovernanceState;
+use rekindle_types::id::{ChannelId, PseudonymKey, ThreadId};
+use rekindle_types::permissions::BYPASS_SLOWMODE;
+
+use rekindle_types::governance::AutoModAction;
+
+use crate::automod::{rule_matches, AutoModCompiledCache};
+use crate::deps::ChannelMessagingDeps;
+
+/// One received post, as the gate judges it.
+#[derive(Debug, Clone, Copy)]
+pub struct GateItem<'a> {
+    pub community_id: &'a str,
+    pub channel_id: &'a str,
+    /// The author's community pseudonym (hex).
+    pub sender_pseudonym: &'a str,
+    /// The opened body.
+    pub body: &'a str,
+    /// The post's own timestamp, in seconds: slowmode compares a sender's
+    /// posts by it, so every peer reaches the same verdict.
+    pub sent_at_secs: u64,
+    /// The author's nearest post in this channel among the posts we hold
+    /// (stored, or admitted earlier in the same batch), at or before
+    /// `sent_at_secs`, in seconds; the post itself is not one. Slowmode
+    /// judges against it, never against the last post judged, so a
+    /// backfilled older post gets the verdict the live path gave it in
+    /// order (plan E3.1 FX2). A predecessor that arrives after its
+    /// successor does not drop the successor retroactively.
+    pub held_before_secs: Option<u64>,
+    /// The receiver's clock, in seconds: a timeout ends by it.
+    pub now_secs: u64,
+    /// Read from history (the backfill), not received live: a departed
+    /// author's post from before its departure stays readable.
+    pub backfill: bool,
+    /// Where a backfilled post was read: the channel record, and the seq
+    /// and digest of the author's slot value holding it. A departed
+    /// author's post is kept from history only from exactly the value its
+    /// departure recorded (A/B finding R3-8, plan S9); `None` (a live post,
+    /// or a read that does not know the value) keeps none.
+    pub slot: Option<SlotPosition<'a>>,
+}
+
+/// A slot value's place in a channel record: the record, the value's seq
+/// (which only rises with each write of the slot) and the digest of its
+/// decrypted page (`rekindle_secrets::slot_head::slot_head_digest`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotPosition<'a> {
+    pub record_key: &'a str,
+    pub seq: u32,
+    pub digest: [u8; 32],
+}
+
+/// Why the gate hid or dropped a post.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GateReason {
+    /// We blocked the author.
+    Blocked,
+    /// The author is banned from the community.
+    Banned,
+    /// The author has left or was removed and has not re-joined.
+    NotMember,
+    /// The author is timed out until the given second.
+    TimedOut { until_secs: u64 },
+    /// The author posted again within the channel's slowmode.
+    Slowmode { seconds: u32 },
+    /// An automod rule matched.
+    AutoMod { rule: String },
+    /// The automod rules could not be evaluated.
+    AutoModError(String),
+}
+
+/// The gate's answer for one post.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// Stored and shown.
+    Admit,
+    /// Stored and shown, and reported to the moderators.
+    Report(GateReason),
+    /// Stored, shown blurred.
+    Hide(GateReason),
+    /// Never stored.
+    Drop(GateReason),
+}
+
+/// The pseudonyms we block in the post's community
+/// (`rekindle_db::repo::community_blocks`), lowercased.
+#[derive(Debug, Clone, Default)]
+pub struct BlockList(BTreeSet<String>);
+
+impl BlockList {
+    /// The block list of `keys`.
+    pub fn new(keys: impl IntoIterator<Item = String>) -> Self {
+        Self(keys.into_iter().map(|k| k.to_ascii_lowercase()).collect())
+    }
+
+    /// Whether `key` is blocked.
+    #[must_use]
+    pub fn contains(&self, key: &str) -> bool {
+        self.0.contains(&key.to_ascii_lowercase())
+    }
+}
+
+/// The posts one batch admitted or hid before they are stored, per
+/// author (lowercased), so a later post of the same batch is judged
+/// against them as it would be against stored ones. It lives for one
+/// batch and is discarded with it.
+#[derive(Debug, Default)]
+pub struct BatchWindows {
+    held: BTreeMap<String, BTreeSet<u64>>,
+}
+
+impl BatchWindows {
+    /// The author's nearest post at or before `at_secs`: the later of
+    /// `stored` (the nearest stored one) and this batch's nearest.
+    #[must_use]
+    pub fn held_before(&self, author: &str, at_secs: u64, stored: Option<u64>) -> Option<u64> {
+        let batch = (self.held.get(&author.to_ascii_lowercase()))
+            .and_then(|times| times.range(..=at_secs).next_back().copied());
+        stored.max(batch)
+    }
+
+    /// Record `author`'s post at `at_secs` of the batch, judged `verdict`:
+    /// unless it was dropped it is held, so it starts a window of its
+    /// author's.
+    pub fn record(&mut self, author: &str, at_secs: u64, verdict: &Verdict) {
+        if !matches!(verdict, Verdict::Drop(_)) {
+            (self.held.entry(author.to_ascii_lowercase()))
+                .or_default()
+                .insert(at_secs);
+        }
+    }
+}
+
+/// When `member`'s timeout ends, while it lasts at `now_secs` (the
+/// caller's clock port). The merge never reads a clock (thread validation
+/// runs at time 0), so the Host refuses a timed-out member's thread at its
+/// send path and holds one it receives ([`hold_timed_out_threads`]) by this.
+#[must_use]
+pub fn timed_out_until(gov: &GovernanceState, member: &PseudonymKey, now_secs: u64) -> Option<u64> {
+    let timeout = gov.timeouts.get(member)?;
+    let until_secs = timeout.started_at.saturating_add(timeout.duration_seconds);
+    (now_secs < until_secs).then_some(until_secs)
+}
+
+/// Hold, at receipt, every thread of the merged `state` that is new to us
+/// (in neither `previous` nor `held`) and whose creator is timed out at
+/// `now_secs`; a held thread stays out of `state` for the session. A
+/// `ThreadCreated` carries no time and the merge reads no clock, so the
+/// moment we receive it is the only time we can judge. Replies are not
+/// judged by their thread's creator: each post passes [`gate`] on its own
+/// author. Returns the threads newly held, in id order, for the caller to
+/// keep across a restart.
+pub fn hold_timed_out_threads<S: BuildHasher>(
+    previous: Option<&GovernanceState>,
+    held: &mut HashSet<ThreadId, S>,
+    state: &mut GovernanceState,
+    now_secs: u64,
+) -> Vec<ThreadId> {
+    let fresh: Vec<ThreadId> = state
+        .threads
+        .iter()
+        .filter(|(id, _)| !held.contains(*id))
+        .filter(|(id, _)| !previous.is_some_and(|p| p.threads.contains_key(*id)))
+        .filter(|(_, t)| timed_out_until(state, &t.creator, now_secs).is_some())
+        .map(|(id, _)| *id)
+        .collect();
+    let mut fresh = fresh;
+    fresh.sort_unstable_by_key(|id| id.0);
+    held.extend(fresh.iter().copied());
+    state.threads.retain(|id, _| !held.contains(id));
+    fresh
+}
+
+/// Judge `item` against the community's merged state `gov`, its compiled
+/// automod rules (`crate::automod::compiled_rules`), the block list and the
+/// channel's slowmode against `item.held_before_secs`.
+pub fn gate(
+    item: &GateItem<'_>,
+    gov: &GovernanceState,
+    rules: &AutoModCompiledCache,
+    blocked: &BlockList,
+) -> Verdict {
+    if let Some(reason) = author_refusal(item, gov, blocked) {
+        return Verdict::Drop(reason);
+    }
+    let sender = PseudonymKey::from_hex_lossy(item.sender_pseudonym);
+    let channel = ChannelId::from_hex(item.channel_id);
+    if let Some(seconds) = slowmode_seconds(gov, channel.as_ref()) {
+        let perms = compute_permissions(&sender, channel.as_ref(), gov, item.now_secs);
+        if !has_capability(perms, BYPASS_SLOWMODE) && within_window(item, seconds) {
+            return Verdict::Drop(GateReason::Slowmode { seconds });
+        }
+    }
+    automod(rules, item.body)
+}
+
+/// The gate's checks on the author alone (block list, ban, membership,
+/// timeout), which need no body: every ingest path runs them before it
+/// opens a post, so a post it refuses is never stored or shown, not even
+/// as undecryptable (A/B finding R2-4). `item.body` is not read.
+#[must_use]
+pub fn author_refusal(
+    item: &GateItem<'_>,
+    gov: &GovernanceState,
+    blocked: &BlockList,
+) -> Option<GateReason> {
+    if blocked.contains(item.sender_pseudonym) {
+        return Some(GateReason::Blocked);
+    }
+    let sender = PseudonymKey::from_hex_lossy(item.sender_pseudonym);
+    if gov.bans.contains(&sender) {
+        return Some(GateReason::Banned);
+    }
+    if not_member(gov, &sender, item) {
+        return Some(GateReason::NotMember);
+    }
+    timed_out_until(gov, &sender, item.now_secs)
+        .map(|until_secs| GateReason::TimedOut { until_secs })
+}
+
+/// A departed author's post (D26 reader-validates, register FX1): dropped
+/// live, and from history unless it predates the departure (a kick or a
+/// leave keeps history, as a ban does not).
+fn not_member(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
+    gov.is_departed(sender) && !(item.backfill && predates_departure(gov, sender, item))
+}
+
+/// Whether a departed author's backfilled post predates its departure. It
+/// is judged by its causal position, never by the time the author wrote
+/// into it: it is kept only when read from exactly the slot value the
+/// departures recorded for that record, its seq and the digest of its page
+/// (the remover's for a kick, the leaver's own for a leave). So a departed
+/// member writing its still-writable slot cannot back-date a post into
+/// history (A/B finding R3-8; Matrix judges history at the event's place
+/// in the DAG), and a leaver that signed a head above its published seq
+/// cannot fill the gap afterwards (plan S9: a value at another seq, or at
+/// the head's seq with another page, is never kept). A slot value is the
+/// member's whole recent page (`channel_record/write.rs`), so the head
+/// value carries every post it had; an older value a stale replica serves
+/// keeps none, and the next read of the head value keeps them. A departure
+/// with no head for the record keeps none of it.
+fn predates_departure(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
+    gov.departed_heads.get(sender).is_some_and(|heads| {
+        item.slot.is_some_and(|slot| {
+            (heads.get(slot.record_key)).is_some_and(|held| held.contains(&(slot.seq, slot.digest)))
+        })
+    })
+}
+
+fn slowmode_seconds(gov: &GovernanceState, channel: Option<&ChannelId>) -> Option<u32> {
+    channel
+        .and_then(|id| gov.channels.get(id))
+        .and_then(|ch| ch.slowmode_seconds)
+        .filter(|s| *s > 0)
+}
+
+/// Whether the author's nearest held post at or before `item` is less than
+/// `seconds` older than it.
+fn within_window(item: &GateItem<'_>, seconds: u32) -> bool {
+    (item
+        .held_before_secs
+        .filter(|earlier| *earlier <= item.sent_at_secs))
+    .is_some_and(|earlier| item.sent_at_secs - earlier < u64::from(seconds))
+}
+
+/// The automod verdict: a matching `BlockLocally` rule drops, then
+/// `BlurContent` hides, then `AlertModerators` admits with a report. The
+/// compiled rules are in rule-id order, so the rule named is the same on
+/// every peer.
+fn automod(rules: &AutoModCompiledCache, body: &str) -> Verdict {
+    let rules = match &rules.rules {
+        Ok(rules) => rules,
+        Err(e) => return Verdict::Drop(GateReason::AutoModError(e.clone())),
+    };
+    let mut verdict = Verdict::Admit;
+    for rule in rules.iter().filter(|rule| rule_matches(rule, body)) {
+        let reason = GateReason::AutoMod {
+            rule: rule.name.clone(),
+        };
+        match rule.action {
+            AutoModAction::BlockLocally => return Verdict::Drop(reason),
+            AutoModAction::BlurContent if !matches!(verdict, Verdict::Hide(_)) => {
+                verdict = Verdict::Hide(reason);
+            }
+            AutoModAction::AlertModerators if verdict == Verdict::Admit => {
+                verdict = Verdict::Report(reason);
+            }
+            AutoModAction::BlurContent | AutoModAction::AlertModerators => {}
+        }
+    }
+    verdict
+}
+
+/// Where a received post's body was sealed: in its author's channel
+/// outbox (`M`/4) at its stream seq, under the community's anchor (plan
+/// E3.3; a channel has no record).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PostAt<'a> {
+    pub anchor: &'a str,
+    pub stream_seq: u64,
+}
+
+/// Open `message`'s body, sealed `at`, under the generation it names;
+/// `None` when we hold no key that opens it.
+pub fn open_body<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+    at: PostAt<'_>,
+    message: &ChannelMessage,
+) -> Option<String> {
+    let PostAt { anchor, stream_seq } = at;
+    let author: [u8; 32] = hex::decode(&message.sender_pseudonym)
+        .ok()?
+        .try_into()
+        .ok()?;
+    let body = crate::text_keys::open_text(
+        deps,
+        community_id,
+        channel_id,
+        message.mek_generation,
+        crate::send::BodyPosition {
+            anchor,
+            channel_id,
+            author: &author,
+            stream_seq,
+        },
+        &message.ciphertext,
+    )?;
+    Some(String::from_utf8_lossy(&body).into_owned())
+}
+
+#[cfg(test)]
+#[path = "ingest_tests.rs"]
+mod tests;

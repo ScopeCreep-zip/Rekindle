@@ -1,122 +1,105 @@
+import { onCommunityListed } from "../../handlers/community/community_listed";
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { isCancelled } from "../../ipc/commands/dto";
+import { asImageKind } from "../../ipc/commands/system";
+import {
+  communityState,
+  dropCommunity,
+  markMembersFailed,
+  setCommunityMembers,
+  setCommunityState,
+} from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 import {
   transformAutoModRule,
-  transformCommunityDetail,
   transformExpression,
   transformMember,
 } from "../../utils/transformers";
 import { handleLoadUnreadCounts } from "./channels";
-import { handleUpdateCommunityPresence } from "./profile";
 
+/// Create a community. A refused create (a cancelled review, a node not
+/// yet attached) rejects with the Host's error, so the form that asked
+/// stays open and shows why (walk row B60). The community's row is not
+/// added here: the Host publishes its arrival (`MetadataChanged`, from
+/// `origin::seed_community`'s `CommunityCreated`) to every window, and the
+/// window that asked lists it from that event as any other does (lead
+/// decision (41): one path for community rows).
 export async function handleCreateCommunity(name: string): Promise<void> {
-  try {
-    const id = await commands.createCommunity(name);
-    // Fetch full community details from backend (includes pseudonym, MEK gen, channels, roles)
-    const details = await commands.getCommunityDetails();
-    const created = details.find((c) => c.id === id);
-    if (created) {
-      setCommunityState("communities", id, transformCommunityDetail(created));
-    } else {
-      setCommunityState("communities", id, {
-        id,
-        name,
-        description: null,
-        channels: [],
-        categories: [],
-        members: [],
-        roles: [],
-        myRoleIds: [0, 1],
-        myPseudonymKey: null,
-        mekGeneration: 0,
-        events: [],
-        expressions: [],
-        automodRules: [],
-      });
-    }
-    // Fetch members so the creator appears in the member list
-    try {
-      const members = await commands.getCommunityMembers(id);
-      setCommunityState("communities", id, "members", members.map(transformMember));
-    } catch (e) {
-      console.error("Failed to load community members after creation:", e);
-    }
-  } catch (e) {
-    console.error("Failed to create community:", e);
-    const msg = typeof e === "string" ? e : "Failed to create community";
-    addToast(msg, "error");
-  }
+  await commands.createCommunity(name);
 }
 
 /// Join a community from its invite link. The backend parses and
-/// validates the link; this only refreshes the stores afterwards.
+/// validates the link; the joined community's row arrives from the Host's
+/// event (decision (41)), and this selects it once it is listed.
 export async function handleJoinCommunity(inviteUrl: string): Promise<void> {
   try {
     const communityId = await commands.joinCommunity(inviteUrl);
-    await loadJoinedCommunity(communityId);
+    loadJoinedCommunity(communityId);
   } catch (e) {
     // Surface the backend's specific error string (banned / full / invalid invite / Stronghold locked /
     // a timed-out join phase / etc.) rather than swallowing it as a generic "Failed to join community" —
     // the user can't act on a message that hides the cause. Re-throw so the join modal stays open and
     // shows the failure inline next to the dial-in stepper's failed phase.
     console.error("Failed to join community:", e);
-    const msg = typeof e === "string" ? e : "Failed to join community";
+    const msg = errorMessage(e);
     addToast(msg, "error");
     throw e instanceof Error ? e : new Error(msg);
   }
 }
 
-/// Load a community the backend has just joined into the stores and
-/// select it. Shared by the join modal and the deep-link consent dialog.
-export async function loadJoinedCommunity(communityId: string): Promise<void> {
-  // Re-fetch community details to get name, channels, pseudonym key, MEK generation, roles
-  const details = await commands.getCommunityDetails();
-  const joined = details.find((c) => c.id === communityId);
-  if (joined) {
-    setCommunityState("communities", communityId, transformCommunityDetail(joined));
-  }
-  // Fetch members for the newly joined community
-  try {
-    const members = await commands.getCommunityMembers(communityId);
-    setCommunityState("communities", communityId, "members", members.map(transformMember));
-  } catch (e) {
-    console.error("Failed to load community members after join:", e);
-  }
-  await handleLoadExpressions(communityId);
-  await handleLoadAutoModRules(communityId);
-
-  // Auto-select the newly joined community so it appears immediately
-  handleSelectCommunity(communityId);
+/// A community the backend has just joined: announce it and select it
+/// once its row is listed. The row comes only from the Host's
+/// `MetadataChanged` (`HostGovernance::join`'s `CommunityJoined`) or
+/// hydration, never from this reply (decision (41)).
+function loadJoinedCommunity(communityId: string): void {
   addToast("Joined community!", "success");
+  onCommunityListed(communityId, () => handleSelectCommunity(communityId));
 }
 
 export function handleSelectCommunity(communityId: string): void {
   setCommunityState("activeCommunity", communityId);
   // Fetch members for the selected community
-  commands.getCommunityMembers(communityId).then((members) => {
-    setCommunityState("communities", communityId, "members", members.map(transformMember));
-  }).catch((e) => {
-    console.error("Failed to load community members:", e);
-    addToast("Failed to load members", "error");
-  });
-  // Notify the server we're online in this community
-  handleUpdateCommunityPresence(communityId, "online");
+  commands
+    .getCommunityMembers(communityId)
+    .then((members) => {
+      setCommunityMembers(communityId, members.map(transformMember));
+    })
+    .catch((e) => {
+      console.error("Failed to load community members:", e);
+      addToast("Failed to load members", "error");
+      markMembersFailed(communityId, errorMessage(e));
+    });
   // Refresh community details to ensure myPseudonymKey, roles, categories, and mekGeneration are current
-  commands.getCommunityDetails().then((details) => {
-    const detail = details.find((c) => c.id === communityId);
-    if (detail) {
-      setCommunityState("communities", communityId, "myPseudonymKey", detail.myPseudonymKey ?? null);
-      setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
-      setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0, 1]);
-      setCommunityState("communities", communityId, "roles", detail.roles ?? []);
-      setCommunityState("communities", communityId, "description", detail.description ?? null);
-      setCommunityState("communities", communityId, "categories", detail.categories ?? []);
-    }
-  }).catch((e) => {
-    console.error("Failed to refresh community details:", e);
-    addToast("Failed to refresh community", "error");
-  });
+  commands
+    .getCommunityDetails()
+    .then((details) => {
+      const detail = details.find((c) => c.id === communityId);
+      if (detail) {
+        setCommunityState(
+          "communities",
+          communityId,
+          "myPseudonymKey",
+          detail.myPseudonymKey ?? null
+        );
+        setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
+        setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds);
+        setCommunityState("communities", communityId, "myPermissions", detail.myPermissions);
+        setCommunityState(
+          "communities",
+          communityId,
+          "myChannelPermissions",
+          detail.myChannelPermissions
+        );
+        setCommunityState("communities", communityId, "roles", detail.roles ?? []);
+        setCommunityState("communities", communityId, "description", detail.description ?? null);
+        setCommunityState("communities", communityId, "categories", detail.categories ?? []);
+      }
+    })
+    .catch((e) => {
+      console.error("Failed to refresh community details:", e);
+      addToast("Failed to refresh community", "error");
+    });
   void handleLoadExpressions(communityId);
   // Fetch unread counts for all channels in this community
   handleLoadUnreadCounts(communityId);
@@ -125,7 +108,12 @@ export function handleSelectCommunity(communityId: string): void {
 export async function handleLoadExpressions(communityId: string): Promise<void> {
   try {
     const expressions = await commands.listExpressions(communityId);
-    setCommunityState("communities", communityId, "expressions", expressions.map(transformExpression));
+    setCommunityState(
+      "communities",
+      communityId,
+      "expressions",
+      expressions.map(transformExpression)
+    );
   } catch (e) {
     console.error("Failed to load expressions:", e);
   }
@@ -148,9 +136,7 @@ export async function handleLoadAutoModRules(communityId: string): Promise<void>
 // The setter (`set_community_avatar`) returns a hash that the caller
 // can pass to `updateCommunityInfo` — when the new hash arrives via
 // the `communityUpdated` event we'll re-resolve on demand.
-export async function handleResolveCommunityImageDataUrls(
-  communityId: string,
-): Promise<void> {
+export async function handleResolveCommunityImageDataUrls(communityId: string): Promise<void> {
   const community = communityState.communities[communityId];
   if (!community) return;
 
@@ -190,8 +176,8 @@ export async function handleSetAutoModRule(
     enabled: boolean;
     keywords: string[];
     regexPatterns: string[];
-    action: "block_locally" | "blur_content" | "alert_moderators";
-  },
+    action: "blockLocally" | "blurContent" | "alertModerators";
+  }
 ): Promise<void> {
   try {
     await commands.setAutoModRule(
@@ -201,7 +187,7 @@ export async function handleSetAutoModRule(
       rule.enabled,
       rule.keywords,
       rule.regexPatterns,
-      rule.action,
+      rule.action
     );
     await handleLoadAutoModRules(communityId);
   } catch (e) {
@@ -211,10 +197,7 @@ export async function handleSetAutoModRule(
   }
 }
 
-export async function handleDeleteAutoModRule(
-  communityId: string,
-  ruleId: string,
-): Promise<void> {
+export async function handleDeleteAutoModRule(communityId: string, ruleId: string): Promise<void> {
   try {
     await commands.deleteAutoModRule(communityId, ruleId);
     await handleLoadAutoModRules(communityId);
@@ -229,10 +212,15 @@ export async function handleUploadEmoji(
   communityId: string,
   name: string,
   bytes: number[],
-  animated: boolean,
+  mime: string
 ): Promise<string | null> {
+  const kind = asImageKind(mime);
+  if (!kind) {
+    addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+    return null;
+  }
   try {
-    const expressionId = await commands.uploadEmoji(communityId, name, bytes, animated);
+    const expressionId = await commands.uploadEmoji(communityId, name, bytes, kind);
     await handleLoadExpressions(communityId);
     addToast("Emoji uploaded", "success");
     return expressionId;
@@ -249,11 +237,16 @@ export async function handleUploadSticker(
   communityId: string,
   name: string,
   bytes: number[],
-  animated: boolean,
-  tags?: string[],
+  mime: string,
+  tags?: string[]
 ): Promise<string | null> {
+  const kind = asImageKind(mime);
+  if (!kind) {
+    addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+    return null;
+  }
   try {
-    const expressionId = await commands.uploadSticker(communityId, name, bytes, animated, tags);
+    const expressionId = await commands.uploadSticker(communityId, name, bytes, kind, tags);
     await handleLoadExpressions(communityId);
     addToast("Sticker uploaded", "success");
     return expressionId;
@@ -275,7 +268,7 @@ export async function handleUploadSoundboardSound(
   durationSeconds: number,
   volume: number,
   emoji?: string,
-  tags?: string[],
+  tags?: string[]
 ): Promise<string | null> {
   try {
     const expressionId = await commands.uploadSoundboardSound(
@@ -285,7 +278,7 @@ export async function handleUploadSoundboardSound(
       durationSeconds,
       volume,
       emoji,
-      tags,
+      tags
     );
     await handleLoadExpressions(communityId);
     addToast("Soundboard sound uploaded", "success");
@@ -303,7 +296,7 @@ export async function handleUploadSoundboardSound(
 export async function handlePlaySoundboard(
   communityId: string,
   channelId: string,
-  expressionId: string,
+  expressionId: string
 ): Promise<void> {
   try {
     await commands.playSoundboard(communityId, channelId, expressionId);
@@ -316,18 +309,10 @@ export async function handlePlaySoundboard(
 export async function handleLeaveCommunity(communityId: string): Promise<void> {
   try {
     await commands.leaveCommunity(communityId);
-    setCommunityState("communities", (prev) => {
-      const next = { ...prev };
-      delete next[communityId];
-      return next;
-    });
-    // If we were viewing this community, clear the selection
-    if (communityState.activeCommunity === communityId) {
-      setCommunityState("activeCommunity", null);
-      setCommunityState("activeChannel", null);
-    }
+    dropCommunity(communityId);
   } catch (e) {
-    console.error("Failed to leave community:", e);
-    addToast("Failed to leave community", "error");
+    // The Host's refusal in its words (a review cancelled is no error).
+    if (isCancelled(e)) return;
+    addToast(errorMessage(e), "error");
   }
 }

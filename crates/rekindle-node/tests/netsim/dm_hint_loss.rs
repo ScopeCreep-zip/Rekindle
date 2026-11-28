@@ -1,0 +1,541 @@
+//! DM hint loss (plan E2.5, D23): every direct message is appended to the
+//! sender's chain before its `app_message` leaves, and that message is only
+//! a hint. With 30% of app messages and calls dropped, every message still
+//! arrives exactly once and in order, through the diff of the chain that a
+//! later hint (or a resend's) triggers; and no chain page holds plaintext.
+
+use std::time::Duration;
+
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_netsim::Fault;
+
+use crate::harness::{eventually, start, SimNode, PASSPHRASE};
+use crate::pair::{befriend, key, retired, send, talk, talk_until_watched, unretired, LIMIT};
+
+async fn received(node: &SimNode, peer: &str) -> Vec<String> {
+    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+        node.ok(IpcRequest::DmHistory {
+            peer_key: peer.to_string(),
+            limit: 100,
+            before: None,
+        })
+        .await,
+    )
+    .expect("the history");
+    history
+        .into_iter()
+        .filter(|m| !m.is_own)
+        .map(|m| m.body)
+        .collect()
+}
+
+/// How long after the last send every message is on Jon's side (E2.B
+/// F2), from the calibrated latencies: the append in flight and the one
+/// that carries the queued run (the outbox hands a stream's due rows over
+/// together; each append is a `HEAD` read and two sets, page then `HEAD`),
+/// the hint, then a running diff's re-read and a full diff, each reading
+/// `HEAD` and the retire mark at once (the empty mark runs to the fanout
+/// deadline), one get per page and one ack per entry.
+fn recovery_bound(entries: u32, pages: u32) -> Duration {
+    use rekindle_netsim::latency::{DEADLINE, GET, MESSAGE, SET};
+    let append = GET.max + SET.max * 2;
+    let diff = DEADLINE.max + GET.max * pages + MESSAGE.max * entries;
+    append * 2 + MESSAGE.max + diff * 2
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn lost_hints_are_recovered_from_the_chain_exactly_once_in_order() {
+    let (sim, mut nodes) = start(2, 71).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    // Sessions and both participant records exist before the loss.
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+
+    sim.fault(Fault::DropMessages { per_mille: 300 });
+    let bodies: Vec<String> = (1..=20).map(|i| format!("chain message {i:02}")).collect();
+    for body in &bodies {
+        send(&nodes[0], &jon, body).await;
+    }
+    sim.fault(Fault::DropMessages { per_mille: 0 });
+    let last = "chain message 21".to_string();
+    send(&nodes[0], &jon, &last).await;
+    let sent = tokio::time::Instant::now();
+
+    let mut expected: Vec<String> = vec!["hello: 0 to 1".into()];
+    expected.extend(bodies.iter().cloned());
+    expected.push(last.clone());
+    assert!(
+        eventually(&sim, recovery_bound(21, 3), || async {
+            let got = received(&nodes[1], &ida).await;
+            expected.iter().all(|b| got.contains(b))
+        })
+        .await,
+        "every message reached Jon within {:?} of the last send (after {:?})",
+        recovery_bound(21, 3),
+        sent.elapsed()
+    );
+    let mut got = received(&nodes[1], &ida).await;
+    for body in &expected {
+        assert_eq!(
+            got.iter().filter(|b| *b == body).count(),
+            1,
+            "{body:?} once"
+        );
+    }
+    // The history lists newest or oldest first; either way, in send order.
+    if got.first() != expected.first() {
+        got.reverse();
+    }
+    assert_eq!(got, expected, "in order");
+
+    // A chain page carries ratchet ciphertext only.
+    let pages = sim.single_subkey_values();
+    assert!(!pages.is_empty(), "the chain pages are on the network");
+    for (page_key, bytes) in &pages {
+        for body in &expected {
+            assert!(
+                !bytes.windows(body.len()).any(|w| w == body.as_bytes()),
+                "page {page_key} holds {body:?} in the clear"
+            );
+        }
+    }
+}
+
+async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
+    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+        node.ok(IpcRequest::DmHistory {
+            peer_key: peer.to_string(),
+            limit: 100,
+            before: None,
+        })
+        .await,
+    )
+    .expect("the history");
+    history.iter().any(|m| {
+        m.is_own && m.body == body && m.send_state == rekindle_types::message::SendState::Delivered
+    })
+}
+
+async fn failed(node: &SimNode, peer: &str, body: &str) -> bool {
+    shows(node, peer, body, rekindle_types::message::SendState::Failed).await
+}
+
+/// Whether our message `body` to `peer` shows `state`.
+async fn shows(
+    node: &SimNode,
+    peer: &str,
+    body: &str,
+    state: rekindle_types::message::SendState,
+) -> bool {
+    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+        node.ok(IpcRequest::DmHistory {
+            peer_key: peer.to_string(),
+            limit: 100,
+            before: None,
+        })
+        .await,
+    )
+    .expect("the history");
+    history
+        .iter()
+        .any(|m| m.is_own && m.body == body && m.send_state == state)
+}
+
+/// The first `StreamRecord` is lost: the outbox resends it until Jon's
+/// `DmAck` names it, and Jon then reads Ida's chain.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_lost_stream_record_is_resent_until_acknowledged() {
+    let (sim, mut nodes) = start(2, 72).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    // Ida's first message creates her record; its StreamRecord and the
+    // message's hint are both lost.
+    sim.fault(Fault::DropMessages { per_mille: 1000 });
+    send(&nodes[0], &jon, "first").await;
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    sim.fault(Fault::DropMessages { per_mille: 0 });
+    assert!(
+        eventually(&sim, LIMIT * 4, || async {
+            received(&nodes[1], &ida)
+                .await
+                .contains(&"first".to_string())
+        })
+        .await,
+        "Jon reads the first message once the resend got through"
+    );
+    // The chain is readable now: lost hints are recovered from it.
+    sim.fault(Fault::DropMessages { per_mille: 300 });
+    let bodies: Vec<String> = (1..=10).map(|i| format!("after {i:02}")).collect();
+    for body in &bodies {
+        send(&nodes[0], &jon, body).await;
+    }
+    sim.fault(Fault::DropMessages { per_mille: 0 });
+    send(&nodes[0], &jon, "last").await;
+    assert!(
+        eventually(&sim, LIMIT * 4, || async {
+            let got = received(&nodes[1], &ida).await;
+            bodies.iter().all(|b| got.contains(b)) && got.contains(&"last".to_string())
+        })
+        .await,
+        "every message after the resend reached Jon"
+    );
+}
+
+/// Ida retires her chain past entries Jon acknowledged (by their hints)
+/// but never diffed (his DHT was off); 31 days on, his diff stores a
+/// `HistoryGap` marker in his history.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_retired_stretch_is_a_stored_history_gap() {
+    let (sim, mut nodes) = start(2, 73).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    // Finding F8: the test finds Ida's chain by a watched change of it that
+    // reached Jon. "hello" can land before his watch on the chain is held
+    // (it is placed when her participant record reaches him), and then his
+    // hint diff reads it first and no change of it reaches him; once the
+    // watch is held, the next entry's change does (at the replica's next
+    // tick, so Jon stays online until it has). On 0.5.8's timing which
+    // entry is the first watched is a race (`talk_until_watched`).
+    assert!(
+        !talk_until_watched(&sim, &nodes[0], &nodes[1])
+            .await
+            .is_empty(),
+        "a change of Ida's chain reached Jon"
+    );
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: true,
+    });
+    // Jon misses its hint too, so his cursor stays before it: the entry
+    // lands, no ack comes, and its row fails at its deadline.
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
+    send(&nodes[0], &jon, "unread on the chain").await;
+    // Its entry lands before the skew (review LV22 hypothesis A): landed
+    // later, it is stamped 31 days on and the retire stops below it.
+    assert!(
+        eventually(&sim, LIMIT, || shows(
+            &nodes[0],
+            &jon,
+            "unread on the chain",
+            rekindle_types::message::SendState::Sent
+        ))
+        .await,
+        "the missed entry landed"
+    );
+    sim.fault(Fault::ClockSkew {
+        node: 0,
+        ms: 31 * 24 * 60 * 60 * 1000,
+    });
+    assert!(
+        eventually(&sim, LIMIT, || failed(
+            &nodes[0],
+            &jon,
+            "unread on the chain"
+        ))
+        .await,
+        "its row failed at its deadline, shown to Ida"
+    );
+    let keys = unretired(&sim, 1);
+    send(&nodes[0], &jon, "after the horizon").await;
+    // The send is committed, not yet appended: the append retires the
+    // stretch, and Jon must not be back (his watch and catch-up read the
+    // chain at once) before it has.
+    assert!(
+        eventually(&sim, LIMIT, || async { retired(&sim, &keys) }).await,
+        "Ida's chain is retired"
+    );
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 0,
+    });
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: false,
+    });
+    send(&nodes[0], &jon, "once more").await;
+    let gap = || async {
+        let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+            nodes[1]
+                .ok(IpcRequest::DmHistory {
+                    peer_key: ida.clone(),
+                    limit: 100,
+                    before: None,
+                })
+                .await,
+        )
+        .expect("the history");
+        history.iter().any(|m| m.history_gap_through.is_some())
+    };
+    assert!(
+        eventually(&sim, LIMIT * 2, gap).await,
+        "Jon's history holds the gap marker"
+    );
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            received(&nodes[1], &ida)
+                .await
+                .contains(&"once more".to_string())
+        })
+        .await,
+        "the messages after the gap arrive"
+    );
+}
+
+/// The friend maintenance's retire tick (plan E2.5): Ida's chain is
+/// retired past entries Jon acknowledged but never diffed with no further
+/// send from her: 31 days on, her next tick retires them while he is still
+/// away, and the diff of his next unlock stores the `HistoryGap` marker.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_retire_tick_retires_a_quiet_conversation() {
+    let (sim, mut nodes) = start(2, 74).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    // The test finds Ida's chain by a watched change of it that reached
+    // Jon (finding F8, as above). The hint now leaves while the append is
+    // in flight (live A/B finding 42), so `talk` returns before the entry
+    // lands; Jon stays online until a change of the chain reached him.
+    // On 0.5.8's timing which entry is the first watched is a race
+    // (`talk_until_watched`).
+    assert!(
+        !talk_until_watched(&sim, &nodes[0], &nodes[1])
+            .await
+            .is_empty(),
+        "a change of Ida's chain reached Jon"
+    );
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: true,
+    });
+    // Jon misses its hint too, so his cursor stays before it: the entry
+    // lands, no ack comes, and its row fails at its deadline.
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
+    send(&nodes[0], &jon, "unread on the chain").await;
+    let keys = unretired(&sim, 1);
+    // Its entry lands before the skew (review LV22 hypothesis A): landed
+    // later, it is stamped 31 days on and the retire stops below it.
+    assert!(
+        eventually(&sim, LIMIT, || shows(
+            &nodes[0],
+            &jon,
+            "unread on the chain",
+            rekindle_types::message::SendState::Sent
+        ))
+        .await,
+        "the missed entry landed"
+    );
+    sim.fault(Fault::ClockSkew {
+        node: 0,
+        ms: 31 * 24 * 60 * 60 * 1000,
+    });
+    assert!(
+        eventually(&sim, LIMIT, || failed(
+            &nodes[0],
+            &jon,
+            "unread on the chain"
+        ))
+        .await,
+        "its row failed at its deadline, shown to Ida"
+    );
+    // No send from Ida: only her maintenance tick (~3 min) can retire, and
+    // Jon stays away until it has (back, he would read the stretch first).
+    assert!(
+        eventually(&sim, LIMIT * 4, || async { retired(&sim, &keys) }).await,
+        "Ida's tick retired her chain"
+    );
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 0,
+    });
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: false,
+    });
+    let gap = || async {
+        let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+            nodes[1]
+                .ok(IpcRequest::DmHistory {
+                    peer_key: ida.clone(),
+                    limit: 100,
+                    before: None,
+                })
+                .await,
+        )
+        .expect("the history");
+        history.iter().any(|m| m.history_gap_through.is_some())
+    };
+    // Jon's next unlock catches up (`catch_up_all`) and diffs.
+    nodes[1].ok(IpcRequest::Lock).await;
+    nodes[1]
+        .ok(IpcRequest::Unlock {
+            identity: jon.clone(),
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+    assert!(
+        eventually(&sim, LIMIT, gap).await,
+        "Jon's history holds the gap marker"
+    );
+}
+
+/// Live A/B finding 42: the hint leaves while the chain append is in
+/// flight, so a message reaches the peer within one message latency, before
+/// the append (a `HEAD` read and two sets) can have landed; Jon's ack waits
+/// on Ida's row until the append lands, and the row then settles delivered.
+/// On 0.5.8 one set (0.33-1.42 s) can beat a message (0.2-0.9 s), so the
+/// bound is the append's fastest whole run, not one set.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_message_arrives_before_its_append_lands() {
+    use rekindle_netsim::latency::{GET, MESSAGE, SET};
+    let (sim, mut nodes) = start(2, 75).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    // The outbox attempts one stream run at a time: "hello"'s append, still
+    // in flight after Jon read its hint, would hold the next send behind it.
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
+        "hello settled"
+    );
+    // The append is a `HEAD` read and two sets; the hint alone is one
+    // message latency.
+    let bound = GET.min + SET.min * 2;
+    assert!(bound > MESSAGE.max, "room for the hint");
+    send(&nodes[0], &jon, "fast").await;
+    let sent = tokio::time::Instant::now();
+    assert!(
+        eventually(&sim, bound, || async {
+            received(&nodes[1], &ida)
+                .await
+                .contains(&"fast".to_string())
+        })
+        .await,
+        "Jon has it within {bound:?} (after {:?})",
+        sent.elapsed()
+    );
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "fast")).await,
+        "Ida's row settles delivered once its append landed"
+    );
+}
+
+/// Live A/B finding 42 follow-up: a stream run's hints don't wait on one
+/// another's appends, so a DM sent while the one before it is still being
+/// appended reaches the peer as fast as the first.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn two_messages_back_to_back_both_arrive_before_their_appends_land() {
+    use rekindle_netsim::latency::SET;
+    let (sim, mut nodes) = start(2, 77).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
+        "hello settled"
+    );
+    let bound = SET.min / 2;
+    send(&nodes[0], &jon, "first").await;
+    let sent = tokio::time::Instant::now();
+    // "second" is sent once "first" reached Jon by its hint, while its
+    // append (a GET and two SETs) is still in flight.
+    assert!(
+        eventually(&sim, bound, || async {
+            received(&nodes[1], &ida)
+                .await
+                .contains(&"first".to_string())
+        })
+        .await,
+        "Jon has the first"
+    );
+    assert!(
+        !delivered(&nodes[0], &jon, "first").await,
+        "the first's append is still in flight"
+    );
+    send(&nodes[0], &jon, "second").await;
+    assert!(
+        eventually(&sim, bound, || async {
+            let got = received(&nodes[1], &ida).await;
+            ["first", "second"]
+                .iter()
+                .all(|b| got.contains(&(*b).to_string()))
+        })
+        .await,
+        "Jon has both within {bound:?} (after {:?})",
+        sent.elapsed()
+    );
+    for body in ["first", "second"] {
+        assert!(
+            eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, body)).await,
+            "{body} settles delivered once its append landed"
+        );
+    }
+}
+
+/// Live finding L-ACK1: Ida's first message creates her record; with half
+/// the app messages lost, its hint can be lost while her `StreamRecord`
+/// arrives and Jon's diff reaches her chain. At every step, a message Ida
+/// shows delivered is already in Jon's history (D22: a `DmAck` covers
+/// only what Jon received, decrypted and stored), and every message ends
+/// delivered.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn delivered_is_shown_only_for_text_the_receiver_holds() {
+    let (sim, mut nodes) = start(2, 74).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    sim.fault(Fault::DropMessages { per_mille: 500 });
+    let bodies: Vec<String> = (1..=6).map(|i| format!("held {i}")).collect();
+    for body in &bodies {
+        send(&nodes[0], &jon, body).await;
+    }
+    let step = Duration::from_millis(250);
+    let mut waited = Duration::ZERO;
+    let mut all_delivered = false;
+    while waited < LIMIT * 4 && !all_delivered {
+        if waited == LIMIT {
+            sim.fault(Fault::DropMessages { per_mille: 0 });
+        }
+        let got = received(&nodes[1], &ida).await;
+        all_delivered = true;
+        for body in &bodies {
+            if delivered(&nodes[0], &jon, body).await {
+                assert!(
+                    got.contains(body),
+                    "{body:?} shown delivered before Jon held it"
+                );
+            } else {
+                all_delivered = false;
+            }
+        }
+        tokio::time::sleep(step).await;
+        waited += step;
+    }
+    assert!(all_delivered, "every message ends delivered");
+}

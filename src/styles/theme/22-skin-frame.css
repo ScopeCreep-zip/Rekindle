@@ -1,0 +1,30 @@
+@layer components {
+  /* A window the shaper cuts (the buddy list and a chat window, plan SK0
+   * S3 `windows/shape/skin.rs`) is the skin's silhouette, or its whole
+   * rectangle where the skin lays no frame for it; either way the shaper
+   * leaves its corners square, so the drawing must not round them
+   * (`.app-frame`'s radius would leave four see-through corner pixels
+   * inside the cut). */
+  .app-frame[data-skin-window] {
+    border-radius: 0;
+  }
+
+  /* A skin's window frame (plan SK0 S2, `SkinFrame`). Hidden until the
+   * served `@layer shape` rules show it for a window the skin lays. Under
+   * the isolated `.app-frame` (also set there), z-index -1 paints the
+   * tiles above the content ground and beneath every in-flow child, so a
+   * decoration never covers the UI or a `@layer sec` surface. */
+  .skin-frame {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+  }
+
+  /* One tile: its box, image and repeat come from the served rule. */
+  .skin-frame > i {
+    display: none;
+    position: absolute;
+    image-rendering: pixelated;
+  }
+}

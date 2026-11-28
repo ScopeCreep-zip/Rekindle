@@ -1,0 +1,109 @@
+//! Our favourite game servers (plan E7.2), on both hosts: stored locally in
+//! `favourite_servers`, never sent. Each view carries `invitable`, the
+//! Host's answer to whether a `GameInvite` may name it (the game is not
+//! hidden and current-game sharing is on), so no frontend decides it.
+
+use rekindle_db::repo::favourite_servers::{self, FavouriteServer};
+use rekindle_ipc::protocol::{IpcResponse, ServersRequest};
+use rekindle_types::dto::presence::FavouriteServerView;
+use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
+
+use super::{state_error, DaemonContext};
+use crate::daemon::DaemonState;
+
+/// Route one of the favourite-server requests (`host::servers::route`'s
+/// arm).
+pub(crate) async fn route(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: ServersRequest,
+) -> IpcResponse {
+    let write = !matches!(request, ServersRequest::FavouritesGet);
+    if write && !state.can_write() {
+        return state_error(state, "write");
+    }
+    if !write && !state.can_query() {
+        return state_error(state, "query");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    let added_at = ctx.clock.now_ms_i64() / 1000;
+    // Published once the add is stored (the activity feed folds it, lead
+    // decision (51)).
+    let added = match &request {
+        ServersRequest::FavouriteAdd {
+            game_id,
+            server,
+            label,
+        } => Some(SystemEvent::FavouriteServerAdded {
+            game_id: *game_id,
+            server: server.as_str().to_owned(),
+            label: label.trim().to_owned(),
+        }),
+        _ => None,
+    };
+    let removed = matches!(request, ServersRequest::FavouriteRemove { .. });
+    let read = db
+        .call(move |conn| {
+            match request {
+                ServersRequest::FavouriteAdd {
+                    game_id,
+                    server,
+                    label,
+                } => favourite_servers::add(
+                    conn,
+                    &owner,
+                    &FavouriteServer {
+                        game_id,
+                        address: server.as_str().to_owned(),
+                        label: label.trim().to_owned(),
+                        added_at,
+                    },
+                )?,
+                ServersRequest::FavouriteRemove { game_id, server } => {
+                    favourite_servers::remove(conn, &owner, game_id, server.as_str())?;
+                }
+                _ => {}
+            }
+            let shared = rekindle_db::repo::preferences::load(conn, &owner)?.share_current_game;
+            let hidden = rekindle_db::repo::hidden_games::list(conn, &owner)?;
+            let stored = favourite_servers::list(conn, &owner)?;
+            Ok(stored
+                .into_iter()
+                .map(|f| {
+                    let invitable = shared && !hidden.contains(&f.game_id);
+                    view(f, invitable)
+                })
+                .collect::<Vec<_>>())
+        })
+        .await;
+    match read {
+        Ok(views) => {
+            if let Some(added) = added {
+                ctx.publish_event(SubscriptionEvent::System(added));
+            }
+            // The Servers view lists favourites (plan E7.2 G3): a removal
+            // names no journal event, so its worker is told directly.
+            if removed {
+                ctx.servers.mark_stale();
+            }
+            IpcResponse::ok(&views)
+        }
+        Err(e) => IpcResponse::error(500, format!("favourite servers: {e}")),
+    }
+}
+
+fn view(f: FavouriteServer, invitable: bool) -> FavouriteServerView {
+    let entry = rekindle_game_detect::GameDatabase::shared().lookup_by_id(f.game_id);
+    FavouriteServerView {
+        game_id: f.game_id,
+        game_name: entry.map_or_else(|| format!("Game {}", f.game_id), |e| e.name.clone()),
+        icon_key: entry.and_then(rekindle_game_detect::database::GameEntry::icon_key),
+        address: f.address,
+        label: f.label,
+        added_at: f.added_at,
+        invitable,
+    }
+}

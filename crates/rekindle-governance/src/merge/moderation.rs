@@ -1,27 +1,40 @@
 //! `merge` moderation CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{
-    AdmissionDecision, AutoModRuleState, GovernanceEntry, GovernanceState, PendingMemberState,
+    AdmissionDecision, AutoModRuleState, GovernanceEntry, GovernanceState, MemberState,
     PseudonymKey, TimeoutState,
 };
+use crate::state::ModReportState;
 
-pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceState) {
+pub(super) fn apply_moderation(
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     match entry {
-        GovernanceEntry::BanEntry {
-            target, lamport, ..
-        } => {
-            let prev = state.ban_lamports.get(target).copied().unwrap_or(0);
-            if *lamport > prev {
+        GovernanceEntry::BanEntry { target, .. } => {
+            let prev = state
+                .ban_stamps
+                .get(target)
+                .copied()
+                .unwrap_or(OpStamp::MIN);
+            if stamp > prev {
                 state.bans.insert(target.clone());
-                state.ban_lamports.insert(target.clone(), *lamport);
+                state.ban_stamps.insert(target.clone(), stamp);
             }
         }
 
-        GovernanceEntry::UnbanEntry { target, lamport } => {
-            let prev = state.ban_lamports.get(target).copied().unwrap_or(0);
-            if *lamport > prev {
+        GovernanceEntry::UnbanEntry { target } => {
+            let prev = state
+                .ban_stamps
+                .get(target)
+                .copied()
+                .unwrap_or(OpStamp::MIN);
+            if stamp > prev {
                 state.bans.remove(target);
-                state.ban_lamports.insert(target.clone(), *lamport);
+                state.ban_stamps.insert(target.clone(), stamp);
             }
         }
 
@@ -30,32 +43,27 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
             target,
             duration_seconds,
             started_at,
-            lamport,
-            ..
+            reason,
         } => {
-            let existing_lamport = state.timeouts.get(target).map_or(0, |t| t.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.timeouts.get(target).map_or(OpStamp::MIN, |t| t.stamp);
+            if stamp > existing_stamp {
                 state.timeouts.insert(
                     target.clone(),
                     TimeoutState {
                         duration_seconds: *duration_seconds,
                         started_at: *started_at,
-                        lamport: *lamport,
+                        reason: reason.clone(),
+                        stamp,
                     },
                 );
             }
         }
 
-        GovernanceEntry::RemoveTimeoutEntry { target, lamport } => {
-            let existing_lamport = state.timeouts.get(target).map_or(0, |t| t.lamport);
-            if *lamport > existing_lamport {
+        GovernanceEntry::RemoveTimeoutEntry { target } => {
+            let existing_stamp = state.timeouts.get(target).map_or(OpStamp::MIN, |t| t.stamp);
+            if stamp > existing_stamp {
                 state.timeouts.remove(target);
             }
-        }
-
-        // ── Metadata: LWW ──
-        GovernanceEntry::AdminDelete { message_id, .. } => {
-            state.admin_deletes.insert(*message_id);
         }
 
         // ── Plate Gate lazy channel records (architecture §15.4):
@@ -68,18 +76,20 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
             enabled,
             trigger_json,
             action,
-            lamport,
         } => {
-            let existing_lamport = state.automod_rules.get(rule_id).map_or(0, |r| r.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state
+                .automod_rules
+                .get(rule_id)
+                .map_or(OpStamp::MIN, |r| r.stamp);
+            if stamp > existing_stamp {
                 state.automod_rules.insert(
                     *rule_id,
                     AutoModRuleState {
                         name: name.clone(),
                         enabled: *enabled,
                         trigger_json: trigger_json.clone(),
-                        action: action.clone(),
-                        lamport: *lamport,
+                        action: *action,
+                        stamp,
                     },
                 );
             }
@@ -92,44 +102,22 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
 
 /// Admission CRDT: pending requests and the decisions that clear them.
 ///
-/// `JoinRequested` is a Grow-Only Set insert; the two decision variants
+/// A `MemberJoined` under approval waits in `pending_members`; the two decision variants
 /// are an LWW-Flag per target that removes the pending entry. A decision
 /// is idempotent and order-independent — replaying it, or seeing it
 /// before the request it answers, converges to the same state, which is
 /// what the merge property tests require.
-pub(super) fn apply_admission(entry: &GovernanceEntry, state: &mut GovernanceState) {
+pub(super) fn apply_admission(
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     match entry {
-        GovernanceEntry::JoinRequested {
-            requester,
-            display_name,
-            lamport,
-        } => {
-            // A decision already recorded at or after this request wins:
-            // otherwise a replayed request would resurrect a pending row
-            // for someone already approved or rejected.
-            if state.admitted.contains_key(requester) {
-                return;
-            }
-            let slot = state
-                .pending_members
-                .entry(requester.clone())
-                .or_insert_with(|| PendingMemberState {
-                    display_name: display_name.clone(),
-                    lamport: *lamport,
-                });
-            // Later request from the same pseudonym refreshes the name.
-            if *lamport >= slot.lamport {
-                slot.display_name.clone_from(display_name);
-                slot.lamport = *lamport;
-            }
+        GovernanceEntry::MemberApproved { target } => {
+            record_decision(state, target, true, stamp);
         }
-        GovernanceEntry::MemberApproved { target, lamport } => {
-            record_decision(state, target, true, *lamport);
-        }
-        GovernanceEntry::MemberRejected {
-            target, lamport, ..
-        } => {
-            record_decision(state, target, false, *lamport);
+        GovernanceEntry::MemberRejected { target, .. } => {
+            record_decision(state, target, false, stamp);
         }
         _ => {}
     }
@@ -143,16 +131,58 @@ fn record_decision(
     state: &mut GovernanceState,
     target: &PseudonymKey,
     approved: bool,
-    lamport: u64,
+    stamp: OpStamp,
 ) {
     let supersedes = state
         .admitted
         .get(target)
-        .is_none_or(|existing| lamport >= existing.lamport);
+        .is_none_or(|existing| stamp >= existing.stamp);
     if supersedes {
         state
             .admitted
-            .insert(target.clone(), AdmissionDecision { approved, lamport });
-        state.pending_members.remove(target);
+            .insert(target.clone(), AdmissionDecision { approved, stamp });
+        if let Some(pending) = state.pending_members.remove(target) {
+            if approved {
+                state.members.insert(
+                    target.clone(),
+                    MemberState {
+                        member_record: pending.member_record,
+                        member_record_owner: pending.member_record_owner,
+                        joined: pending.stamp,
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// `ModReport`: a G-Set per report id. Two reports under one id keep the
+/// lowest `(lamport, reporter)`, so every peer's queue is the same.
+pub(super) fn apply_mod_report(
+    author: &PseudonymKey,
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
+    let GovernanceEntry::ModReport {
+        report_id,
+        target,
+        reason,
+    } = entry
+    else {
+        return;
+    };
+    let incoming = ModReportState {
+        reporter: author.clone(),
+        target: target.clone(),
+        reason: reason.clone(),
+        stamp,
+    };
+    let slot = state
+        .mod_reports
+        .entry(*report_id)
+        .or_insert_with(|| incoming.clone());
+    if (incoming.stamp, &incoming.reporter.0) < (slot.stamp, &slot.reporter.0) {
+        *slot = incoming;
     }
 }

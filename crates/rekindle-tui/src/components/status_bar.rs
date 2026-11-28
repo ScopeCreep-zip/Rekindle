@@ -18,7 +18,129 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+use rekindle_types::subscription_events::{
+    NetworkEvent, OwnRouteClass, OwnRouteDownSet, OwnRouteOutage, RoutePauseCause,
+};
+
 use crate::theme::ThemeManager;
+
+/// The route warnings the status line shows (plan RV1, threat model L2):
+/// the Host's `RoutePaused` and `RouteDeathsAboveBaseline`, folded in as
+/// they arrive.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RouteAlert {
+    /// Why a route class is down with no new route, if one is.
+    paused: Option<RoutePauseCause>,
+    /// The latest death warning: the class, its deaths within the window,
+    /// how many were young, and the window in seconds.
+    deaths: Option<(OwnRouteClass, u32, u32, u64)>,
+    /// Which own route classes are down, and since when (plan RV1g).
+    down: OwnRouteDownSet,
+}
+
+/// "since HH:MM" of an epoch-ms instant in local clock time, with the
+/// date when it is not today; an instant chrono cannot represent says
+/// only how long it has been retrying, never a made-up time.
+fn since_text(since_ms: u64) -> String {
+    match local_clock(since_ms, chrono::Local::now()) {
+        Some(at) => format!(" since {at}"),
+        None => String::new(),
+    }
+}
+
+/// `since_ms` as local "HH:MM", or "YYYY-MM-DD HH:MM" when its local day is
+/// not `now`'s.
+fn local_clock(since_ms: u64, now: chrono::DateTime<chrono::Local>) -> Option<String> {
+    let millis = i64::try_from(since_ms).ok()?;
+    let at = chrono::DateTime::from_timestamp_millis(millis)?.with_timezone(&chrono::Local);
+    let format = if at.date_naive() == now.date_naive() {
+        "%H:%M"
+    } else {
+        "%Y-%m-%d %H:%M"
+    };
+    Some(at.format(format).to_string())
+}
+
+impl RouteAlert {
+    /// Fold a network event in; any other event leaves it as it is.
+    pub fn fold(&mut self, event: &NetworkEvent) {
+        match event {
+            NetworkEvent::RoutePaused { cause } => self.paused = Some(*cause),
+            NetworkEvent::RouteResumed {} => self.paused = None,
+            NetworkEvent::RouteDeathsAboveBaseline {
+                class,
+                deaths,
+                young,
+                window_secs,
+                ..
+            } => self.deaths = Some((*class, *deaths, *young, *window_secs)),
+            NetworkEvent::OwnRouteDown {
+                class,
+                since_ms,
+                reason,
+            } => {
+                *self.down.entry(*class) = Some(OwnRouteOutage {
+                    since_ms: *since_ms,
+                    reason: reason.clone(),
+                });
+            }
+            NetworkEvent::OwnRouteUp { class } => *self.down.entry(*class) = None,
+            _ => {}
+        }
+    }
+
+    /// The down set a status snapshot carries (a TUI started mid-outage).
+    pub fn load_down(&mut self, down: &OwnRouteDownSet) {
+        self.down = down.clone();
+    }
+
+    /// The outage text: "Unreachable — retrying since HH:MM" (local) for the
+    /// general class, "Calls unreachable — …" for the media class.
+    fn down_text(&self) -> Option<String> {
+        let general = self
+            .down
+            .general
+            .as_ref()
+            .map(|o| format!("Unreachable — retrying{}", since_text(o.since_ms)));
+        let media = self
+            .down
+            .media
+            .as_ref()
+            .map(|o| format!("Calls unreachable — retrying{}", since_text(o.since_ms)));
+        match (general, media) {
+            (Some(g), Some(m)) => Some(format!("{g} · {m}")),
+            (g, m) => g.or(m),
+        }
+    }
+
+    /// The status line's warning text, if there is one.
+    #[must_use]
+    pub fn text(&self) -> Option<String> {
+        let paused = self.paused.map(|cause| match cause {
+            RoutePauseCause::Exhausted => {
+                "inbound route paused after repeated failures: possible attack".to_string()
+            }
+            RoutePauseCause::Unreadable => {
+                "inbound route paused: route budget unreadable".to_string()
+            }
+        });
+        let deaths = self.deaths.map(|(class, deaths, young, window)| {
+            let class = match class {
+                OwnRouteClass::General => "general",
+                OwnRouteClass::Media => "media",
+            };
+            format!(
+                "{class} route deaths above baseline: {deaths} in {}m ({young} young)",
+                window / 60
+            )
+        });
+        let parts: Vec<String> = [self.down_text(), paused, deaths]
+            .into_iter()
+            .flatten()
+            .collect();
+        (!parts.is_empty()).then(|| parts.join(" · "))
+    }
+}
 
 /// Current input mode for display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,10 +158,13 @@ pub struct StatusBarState {
     pub breadcrumb: String,
     /// Whether the node is attached to the network.
     pub node_attached: bool,
-    /// Number of known peers.
-    pub peer_count: usize,
+    /// Veilid's attachment strength as the Host smoothed it, 0-5
+    /// (`NetworkEvent::Strength`, plan E7.2): the GUI's bars.
+    pub bars: u8,
     /// Keybinding hint string.
     pub hints: String,
+    /// The route warning ([`RouteAlert::text`]), if any.
+    pub route_alert: Option<String>,
 }
 
 /// Render the status bar into a single-line area.
@@ -76,7 +201,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &The
 
     let node_glyph = theme.status_glyph(state.node_attached);
     let node_text = if state.node_attached {
-        format!(" {node_glyph} {} peers ", state.peer_count)
+        format!(
+            " {node_glyph} {} ",
+            bars_text(state.bars, theme.use_unicode())
+        )
     } else {
         format!(" {node_glyph} offline ")
     };
@@ -86,14 +214,33 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &The
 
     let hints = Span::styled(format!(" {} ", state.hints), Style::new().dim());
 
-    let line = Line::from(vec![
-        mode_badge,
-        breadcrumb,
-        separator.clone(),
-        node_span,
-        separator,
-        hints,
-    ]);
+    let mut spans = vec![mode_badge, breadcrumb, separator.clone(), node_span];
+    if let Some(alert) = &state.route_alert {
+        spans.push(Span::styled(
+            format!(" {alert} "),
+            Style::default().fg(theme.color("warning")).bold(),
+        ));
+    }
+    spans.push(separator);
+    spans.push(hints);
+    let line = Line::from(spans);
 
     frame.render_widget(Paragraph::new(line), area);
 }
+
+/// The indicator's five bars, rising, lit up to `bars`.
+fn bars_text(bars: u8, unicode: bool) -> String {
+    const LIT: [char; 5] = ['▁', '▂', '▄', '▆', '█'];
+    (1..=5u8)
+        .map(|level| match (bars >= level, unicode) {
+            (true, true) => LIT[usize::from(level - 1)],
+            (false, true) => '·',
+            (true, false) => '|',
+            (false, false) => '.',
+        })
+        .collect()
+}
+
+#[cfg(test)]
+#[path = "status_bar_tests.rs"]
+mod tests;

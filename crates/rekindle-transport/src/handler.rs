@@ -7,9 +7,11 @@
 //! 1. Frame-decoded (version + type validated)
 //! 2. Signature-verified (Ed25519, no exceptions)
 //! 3. Dedup-checked (gossip only)
-//! 4. Decrypted (if applicable: Signal for DM, MEK for channel/voice)
+//! 4. Decrypted (if applicable: MEK for channel/voice)
 //!
-//! The handler receives only authenticated, deserialized, plaintext payloads.
+//! The handler receives only authenticated, deserialized, plaintext payloads,
+//! except a 1:1 message (`on_direct`), which carries its own signed envelope
+//! and is opened by `operations::direct` on both hosts (plan E2.1).
 //!
 //! # Async trait design
 //!
@@ -22,7 +24,6 @@
 
 use std::future::Future;
 
-use crate::payload::dm::DmPayload;
 use crate::payload::rpc::{CallResponse, InboundCall};
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_codec::community::envelope::SignedEnvelope;
@@ -60,43 +61,34 @@ pub enum TransportEvent {
 /// decrypted payloads from the transport layer. The transport guarantees
 /// that every call to these methods has passed full authentication.
 pub trait InboundHandler: Send + Sync + 'static {
-    /// Our identity key while an identity is unlocked. Signed DMs and RPCs
+    /// Our identity key while an identity is unlocked. Signed framed RPCs
     /// are verified as addressed to it; with none, they are dropped.
     fn local_identity(&self) -> Option<[u8; 32]>;
 
-    /// An authenticated DM payload arrived from a verified peer.
-    ///
-    /// W16.4 — `DmPayload` includes call signaling variants
-    /// (`CallInvite`, `CallAccept`, `CallDecline`, `CallEnd`,
-    /// `CallRinging`, `CallMediaState`, `CallReaction`,
-    /// `GroupCallOffer`, `GroupCallAccept`, `GroupCallDecline`) and
-    /// DM invite request/reply variants
-    /// (`DmInviteRequest`, `DmInviteReply`, `GroupDmInviteRequest`,
-    /// `GroupDmInviteReply`).
-    ///
-    /// W16.7 — `seq` and `correlation_id` are envelope-level metadata
-    /// from the [`SignedPayload`](crate::crypto::envelope::SignedPayload)
-    /// wrapper. Implementers MUST dedup via
-    /// [`crate::SeqTracker::check_and_record`] before processing —
-    /// Veilid's `app_message` has no built-in dedup and a duplicate
-    /// CallInvite would mount a second IncomingCallModal, etc.
-    ///
-    /// Implementations are expected to pattern-match on the payload
-    /// variant and route to:
-    /// - **Call signaling** → [`crate::operations::calls::CallRuntime`]
-    ///   via [`crate::operations::calls::CallRuntime::route_dm_payload`].
-    /// - **DM invite reply** → [`crate::EnvelopeQueue::deliver_reply`]
-    ///   (the `correlation_id` parameter wakes the request-side oneshot).
-    /// - **DM body / friend-add / presence / etc.** → existing handler
-    ///   logic (subscription event, persisted history row, etc.).
-    fn on_dm(
+    /// The host's wall clock (plan C9.2): the time buckets of the gossip
+    /// dedup key.
+    fn clock(&self) -> &dyn rekindle_utils::Clock;
+
+    /// The unlocked session's scope (a closed one while none is unlocked):
+    /// a bare request's handler runs on it, so its work goes on to
+    /// completion past [`crate::operations::direct::CALL_DEADLINE`] (plan
+    /// JP1, review RV5 H1), as a 1:1 call's does on its host's scope.
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
+    /// A 1:1 `app_message` arrived: `datagram` starts with the `'D'` tag
+    /// (`operations::dm::DIRECT_TAG`). The handler opens it with
+    /// `operations::direct::receive`, which opens the frame by its carrier.
+    fn on_direct(&self, datagram: &[u8]) -> impl Future<Output = ()> + Send;
+
+    /// A 1:1 `app_call` arrived (tagged as for [`Self::on_direct`]) over
+    /// our route `route` (Veilid's route id, `None` with no private route):
+    /// the reply (`operations::direct`'s receipt, `NAK` or `RETRY_LATER`,
+    /// or a frame), or `None` for no reply at all (no host to judge it).
+    fn on_direct_call(
         &self,
-        sender: &VerifiedSender,
-        payload: DmPayload,
-        timestamp: u64,
-        seq: u64,
-        correlation_id: Option<&str>,
-    ) -> impl Future<Output = ()> + Send;
+        datagram: &[u8],
+        route: Option<&str>,
+    ) -> impl Future<Output = Option<Vec<u8>>> + Send;
 
     /// An authenticated gossip broadcast arrived from a community member.
     fn on_gossip(
@@ -121,6 +113,19 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// the 5-hop TTL; without it a message reaches six people in a
     /// forty-member community.
     fn on_gossip_forward(&self, envelope: &SignedEnvelope) -> impl Future<Output = ()> + Send;
+
+    /// A ring watcher's `HeadAdvanced` hint (plan E3.2 S7, `headAdvanced
+    /// @76`) arrived, its envelope verified: `true` when the hint passed
+    /// the member gate, the sender's gossip rate limit and its own
+    /// signature, so it is relayed one hop further. It is gated before it
+    /// is relayed, never relayed first (register S7l): a non-member's or a
+    /// flooder's hint stops at the first member.
+    fn on_head_advanced(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        hint: &[u8],
+    ) -> impl Future<Output = bool> + Send;
 
     /// An authenticated RPC request arrived, expecting a response.
     fn on_call(

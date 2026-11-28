@@ -1,7 +1,10 @@
-//! Key derivation functions — pseudonyms and SMPL slot keypairs.
+//! Key derivation functions — pseudonyms, SMPL slot keypairs and the
+//! file-cache name key.
 //!
 //! Pseudonyms: HKDF-SHA256(master_secret, community_id) → Ed25519 keypair.
 //! Slot keypairs: HKDF-SHA256(slot_seed, "rekindle-slot-{index}") → Ed25519 keypair.
+//! File-cache names: HKDF-SHA256(salt none, master_secret, info
+//! `FILE_CACHE_NAMES`) → 32-byte BLAKE3 key.
 
 use ed25519_dalek::SigningKey;
 use hkdf::Hkdf;
@@ -9,6 +12,7 @@ use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
 use sha2::Sha256;
 use x25519_dalek::StaticSecret;
+use zeroize::Zeroizing;
 
 /// Derive a unique, unlinkable Ed25519 keypair for a specific community.
 ///
@@ -47,6 +51,22 @@ pub fn derive_governance_overflow_keypair(
     hkdf.expand(format!("{community_id}:{page_index}").as_bytes(), &mut seed)
         .expect("32-byte output is a valid HKDF-SHA256 length");
     SigningKey::from_bytes(&seed)
+}
+
+/// The key that names an identity's file-cache directories (plan E3.0a):
+/// every directory under `state/{pk}.files/` is a keyed BLAKE3 hash under
+/// it, so the names are stable across restarts and say nothing about the
+/// communities, conversations or attachments they hold to anyone without
+/// the identity secret. Domain-separated by its label in HKDF `info`
+/// (RFC 5869 §3.2: `info` binds the output to its context; the salt is
+/// for extraction and is omitted for an input that is already a uniform
+/// key, §3.1).
+pub fn derive_file_cache_name_key(master_secret: &[u8; 32]) -> Zeroizing<[u8; 32]> {
+    let hkdf = Hkdf::<Sha256>::new(None, master_secret);
+    let mut key = Zeroizing::new([0u8; 32]);
+    hkdf.expand(domains::FILE_CACHE_NAMES.as_bytes(), key.as_mut())
+        .expect("32-byte output is a valid HKDF-SHA256 length");
+    key
 }
 
 /// Sign arbitrary bytes with a pseudonym key, returning a 64-byte Ed25519 signature.
@@ -99,85 +119,5 @@ pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<SigningKey, Cry
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ed25519_dalek::{Signer, VerifyingKey};
-
-    #[test]
-    fn pseudonym_deterministic() {
-        let secret = [42u8; 32];
-        let k1 = derive_community_pseudonym(&secret, "community_abc");
-        let k2 = derive_community_pseudonym(&secret, "community_abc");
-        assert_eq!(k1.to_bytes(), k2.to_bytes());
-    }
-
-    #[test]
-    fn pseudonym_unlinkable_across_communities() {
-        let secret = [42u8; 32];
-        let k1 = derive_community_pseudonym(&secret, "community_abc");
-        let k2 = derive_community_pseudonym(&secret, "community_xyz");
-        assert_ne!(k1.to_bytes(), k2.to_bytes());
-    }
-
-    #[test]
-    fn pseudonym_different_secrets() {
-        let k1 = derive_community_pseudonym(&[1u8; 32], "c");
-        let k2 = derive_community_pseudonym(&[2u8; 32], "c");
-        assert_ne!(k1.to_bytes(), k2.to_bytes());
-    }
-
-    #[test]
-    fn pseudonym_produces_valid_key() {
-        let key = derive_community_pseudonym(&[99u8; 32], "test");
-        let verifying = VerifyingKey::from(&key);
-        let sig = key.sign(b"test message");
-        assert!(verifying.verify_strict(b"test message", &sig).is_ok());
-    }
-
-    #[test]
-    fn pseudonym_x25519_conversion() {
-        let key = derive_community_pseudonym(&[77u8; 32], "test");
-        let _x25519 = pseudonym_to_x25519(&key);
-    }
-
-    #[test]
-    fn sign_and_verify() {
-        let key = derive_community_pseudonym(&[1u8; 32], "c");
-        let sig = sign_with_pseudonym(&key, b"hello");
-        let verifying = VerifyingKey::from(&key);
-        let signature = ed25519_dalek::Signature::from_bytes(&sig);
-        assert!(verifying.verify_strict(b"hello", &signature).is_ok());
-    }
-
-    #[test]
-    fn slot_keypair_deterministic() {
-        let seed = [42u8; 32];
-        let k1 = derive_slot_keypair(&seed, 0).unwrap();
-        let k2 = derive_slot_keypair(&seed, 0).unwrap();
-        assert_eq!(k1.to_bytes(), k2.to_bytes());
-    }
-
-    #[test]
-    fn slot_keypair_different_slots() {
-        let seed = [42u8; 32];
-        let k1 = derive_slot_keypair(&seed, 0).unwrap();
-        let k2 = derive_slot_keypair(&seed, 1).unwrap();
-        assert_ne!(k1.to_bytes(), k2.to_bytes());
-    }
-
-    #[test]
-    fn slot_keypair_different_seeds() {
-        let k1 = derive_slot_keypair(&[1u8; 32], 0).unwrap();
-        let k2 = derive_slot_keypair(&[2u8; 32], 0).unwrap();
-        assert_ne!(k1.to_bytes(), k2.to_bytes());
-    }
-
-    #[test]
-    fn slot_keypair_valid_range() {
-        let seed = [1u8; 32];
-        // Should work for all 255 SMPL slots
-        for i in 0..255u32 {
-            assert!(derive_slot_keypair(&seed, i).is_ok());
-        }
-    }
-}
+#[path = "derive_tests.rs"]
+mod tests;

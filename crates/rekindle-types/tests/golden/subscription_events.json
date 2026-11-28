@@ -1,0 +1,2885 @@
+{
+  "call.connected.direct": {
+    "call": {
+      "connected": {
+        "callId": "call_99999999999999999999999999999999",
+        "direct": {
+          "expectedLocalCamera": true,
+          "kind": "video",
+          "peerDisplayName": "Bob",
+          "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "groupId": null
+      }
+    }
+  },
+  "call.connected.group": {
+    "call": {
+      "connected": {
+        "callId": "call_99999999999999999999999999999999",
+        "direct": null,
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d"
+      }
+    }
+  },
+  "call.declined": {
+    "call": {
+      "declined": {
+        "callId": "call_99999999999999999999999999999999",
+        "reason": "busy"
+      }
+    }
+  },
+  "call.ended": {
+    "call": {
+      "ended": {
+        "callId": "call_99999999999999999999999999999999",
+        "reason": "hangup"
+      }
+    }
+  },
+  "call.groupStarted": {
+    "call": {
+      "groupStarted": {
+        "callId": "call_99999999999999999999999999999999",
+        "expiresAtMs": 1760000030000,
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "kind": "audio",
+        "participants": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    }
+  },
+  "call.incoming": {
+    "call": {
+      "incoming": {
+        "callId": "call_99999999999999999999999999999999",
+        "displayName": "Bob",
+        "expiresAtMs": 1760000030000,
+        "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "isGroup": true,
+        "kind": "video",
+        "participants": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ]
+      }
+    }
+  },
+  "call.mediaStateChanged": {
+    "call": {
+      "mediaStateChanged": {
+        "audio": true,
+        "callId": "call_99999999999999999999999999999999",
+        "screen": false,
+        "timestampMs": 1760000040000,
+        "video": true
+      }
+    }
+  },
+  "call.missed": {
+    "call": {
+      "missed": {
+        "callId": "call_99999999999999999999999999999999",
+        "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "call.participantJoined": {
+    "call": {
+      "participantJoined": {
+        "callId": "call_99999999999999999999999999999999",
+        "participantPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }
+  },
+  "call.participantLeft": {
+    "call": {
+      "participantLeft": {
+        "callId": "call_99999999999999999999999999999999",
+        "participantPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "reason": "left"
+      }
+    }
+  },
+  "call.reactionReceived": {
+    "call": {
+      "reactionReceived": {
+        "callId": "call_99999999999999999999999999999999",
+        "emoji": "👍",
+        "sender": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "timestampMs": 1760000041000
+      }
+    }
+  },
+  "call.ringing": {
+    "call": {
+      "ringing": {
+        "callId": "call_99999999999999999999999999999999"
+      }
+    }
+  },
+  "call.selfMuteChanged": {
+    "call": {
+      "selfMuteChanged": {
+        "muted": true,
+        "timestampMs": 1760000042000
+      }
+    }
+  },
+  "call.started": {
+    "call": {
+      "started": {
+        "callId": "call_99999999999999999999999999999999",
+        "expiresAtMs": 1760000030000,
+        "kind": "audio",
+        "peerDisplayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "call.timedOut": {
+    "call": {
+      "timedOut": {
+        "callId": "call_99999999999999999999999999999999"
+      }
+    }
+  },
+  "channelMessage.attachmentDownloaded": {
+    "channelMessage": {
+      "attachmentDownloaded": {
+        "attachmentId": "att_11111111111111111111111111111111",
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "channelMessage.channelHistoryGap": {
+    "channelMessage": {
+      "channelHistoryGap": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "senderPseudonym": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "throughSeq": 4
+      }
+    }
+  },
+  "channelMessage.channelHistoryGapClosed": {
+    "channelMessage": {
+      "channelHistoryGapClosed": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "senderPseudonym": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "throughSeq": 4
+      }
+    }
+  },
+  "channelMessage.channelSendStatus": {
+    "channelMessage": {
+      "channelSendStatus": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "state": "sent"
+      }
+    }
+  },
+  "channelMessage.conversationFocusRequested": {
+    "channelMessage": {
+      "conversationFocusRequested": {
+        "displayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "incomingCall"
+      }
+    }
+  },
+  "channelMessage.deleted": {
+    "channelMessage": {
+      "deleted": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "removedBy": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }
+  },
+  "channelMessage.directMessageReceived": {
+    "channelMessage": {
+      "directMessageReceived": {
+        "automodBlurred": true,
+        "body": "hi there",
+        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "decryptionFailed": false,
+        "isOwn": false,
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "replyToId": "dm_33333333333333333333333333333333",
+        "senderName": "Bob",
+        "serverMessageId": "dm_22222222222222222222222222222222",
+        "timestamp": 1760000002000
+      }
+    }
+  },
+  "channelMessage.directMessageSent": {
+    "channelMessage": {
+      "directMessageSent": {
+        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "message": {
+          "body": "gg",
+          "expireAt": 1700000300000,
+          "expireSeconds": 300,
+          "historyGapThrough": null,
+          "id": 42,
+          "isOwn": true,
+          "messageId": "01900000-0000-7000-8000-000000000002",
+          "replyToId": null,
+          "sendState": "queued",
+          "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timerNoticeSeconds": null,
+          "timestamp": 1700000000000
+        },
+        "replyToId": "01900000-0000-7000-8000-000000000001"
+      }
+    }
+  },
+  "channelMessage.disappearingTimerChanged": {
+    "channelMessage": {
+      "disappearingTimerChanged": {
+        "clientId": "0190a0b0-0000-7000-8000-000000000002",
+        "context": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "seconds": 3600,
+        "setBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "timestamp": 1760000003000
+      }
+    }
+  },
+  "channelMessage.dmHistoryGap": {
+    "channelMessage": {
+      "dmHistoryGap": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "throughSeq": 17
+      }
+    }
+  },
+  "channelMessage.dmSendStatus": {
+    "channelMessage": {
+      "dmSendStatus": {
+        "clientId": "01900000-0000-7000-8000-000000000002",
+        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "retry": {
+          "attempts": 3,
+          "nextAttemptAt": 1700000004000
+        },
+        "state": "sent"
+      }
+    }
+  },
+  "channelMessage.edited": {
+    "channelMessage": {
+      "edited": {
+        "body": "hello channel, edited",
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "editedAt": 1760000001000,
+        "messageId": "msg_11111111111111111111111111111111"
+      }
+    }
+  },
+  "channelMessage.expressionAssetReady": {
+    "channelMessage": {
+      "expressionAssetReady": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "expressionId": "exp_11111111111111111111111111111111"
+      }
+    }
+  },
+  "channelMessage.messagesExpired": {
+    "channelMessage": {
+      "messagesExpired": {
+        "clientIds": [
+          "0190a0b0-0000-7000-8000-000000000001"
+        ],
+        "context": {
+          "groupDm": {
+            "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+          }
+        }
+      }
+    }
+  },
+  "channelMessage.new": {
+    "channelMessage": {
+      "new": {
+        "automodBlurred": true,
+        "body": "hello channel",
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "forwardedFromAuthor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "forwardedFromName": "bbbb bbbb",
+        "messageId": "msg_11111111111111111111111111111111",
+        "replyToMessageId": "msg_41",
+        "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sequence": 42,
+        "timestamp": 1760000000000
+      }
+    }
+  },
+  "channelMessage.new.undecryptable": {
+    "channelMessage": {
+      "new": {
+        "automodBlurred": false,
+        "body": null,
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "forwardedFromAuthor": null,
+        "forwardedFromName": null,
+        "messageId": "msg_22222222222222222222222222222222",
+        "replyToMessageId": null,
+        "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sequence": 43,
+        "timestamp": 1760000000001,
+        "undecryptable": {
+          "reason": "damaged",
+          "reasonText": "This message could not be read: it is damaged and does not open under the key it names."
+        }
+      }
+    }
+  },
+  "crypto.mekRequested": {
+    "crypto": {
+      "mekRequested": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "neededGeneration": 4,
+        "requesterPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "crypto.mekRotated": {
+    "crypto": {
+      "mekRotated": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "generation": 5,
+        "rotatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "crypto.mekTransferred": {
+    "crypto": {
+      "mekTransferred": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "generation": 5,
+        "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "crypto.prekeyRecordPublished.headAndSlots": {
+    "crypto": {
+      "prekeyRecordPublished": {
+        "head": true,
+        "slots": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  },
+  "crypto.prekeyRecordPublished.slots": {
+    "crypto": {
+      "prekeyRecordPublished": {
+        "head": false,
+        "slots": [
+          37
+        ]
+      }
+    }
+  },
+  "friend.accepted": {
+    "friend": {
+      "accepted": {
+        "displayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.added": {
+    "friend": {
+      "added": {
+        "displayName": "Bob",
+        "friendshipState": "pendingOut",
+        "groupLabel": "Friends",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.bioChanged": {
+    "friend": {
+      "bioChanged": {
+        "bioDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.blockChanged": {
+    "friend": {
+      "blockChanged": {
+        "blocked": false,
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.coCreationFinished": {
+    "friend": {
+      "coCreationFinished": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created": true
+      }
+    }
+  },
+  "friend.coCreatorStatus": {
+    "friend": {
+      "coCreatorStatus": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "status": "accepted"
+      }
+    }
+  },
+  "friend.creatorInviteWithdrawn": {
+    "friend": {
+      "creatorInviteWithdrawn": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.creatorInvited": {
+    "friend": {
+      "creatorInvited": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "communityName": "LAN Party",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.displayNameChanged": {
+    "friend": {
+      "displayNameChanged": {
+        "displayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.gameInvite": {
+    "friend": {
+      "gameInvite": {
+        "gameId": 4181,
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "server": "203.0.113.7:27015"
+      }
+    }
+  },
+  "friend.groupChanged": {
+    "friend": {
+      "groupChanged": {
+        "group": "Raid team",
+        "groupId": 7,
+        "groupLabel": "Raid team",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.handshakeFailed": {
+    "friend": {
+      "handshakeFailed": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "identity key mismatch"
+      }
+    }
+  },
+  "friend.handshakeRetrying": {
+    "friend": {
+      "handshakeRetrying": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.identityPinMismatch": {
+    "friend": {
+      "identityPinMismatch": {
+        "displayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.identityPinRestored": {
+    "friend": {
+      "identityPinRestored": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.keyChanged": {
+    "friend": {
+      "keyChanged": {
+        "newKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.nicknameChanged": {
+    "friend": {
+      "nicknameChanged": {
+        "nickname": "Bobby",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.profileKeyRotated": {
+    "friend": {
+      "profileKeyRotated": {
+        "newProfileDhtKey": "VLD0:ppppppppppppppppppppppppppppppppppppppppppp",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.reachability": {
+    "friend": {
+      "reachability": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reachable": false
+      }
+    }
+  },
+  "friend.rejected": {
+    "friend": {
+      "rejected": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.removeAcknowledged": {
+    "friend": {
+      "removeAcknowledged": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.removed": {
+    "friend": {
+      "removed": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.requestAcknowledged": {
+    "friend": {
+      "requestAcknowledged": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.requestReceived": {
+    "friend": {
+      "requestReceived": {
+        "displayName": "Bob",
+        "fromKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "message": "remember me from LAN night?"
+      }
+    }
+  },
+  "friend.verificationChanged": {
+    "friend": {
+      "verificationChanged": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "verified": true
+      }
+    }
+  },
+  "governance.bansChanged": {
+    "governance": {
+      "bansChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "governance.catchUp": {
+    "governance": {
+      "catchUp": {
+        "catchingUp": true,
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pending": [
+          {
+            "kind": "kick",
+            "label": "Kick Bea",
+            "opId": "9999999999999999",
+            "state": "catchingUp",
+            "target": {
+              "channel": null,
+              "member": "5555555555555555555555555555555555555555555555555555555555555555",
+              "role": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  "governance.channelPermissionsChanged": {
+    "governance": {
+      "channelPermissionsChanged": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "governance.channelsChanged": {
+    "governance": {
+      "channelsChanged": {
+        "categories": [
+          {
+            "id": "cat_44444444444444444444444444444444",
+            "name": "Text Channels",
+            "sortOrder": 0
+          }
+        ],
+        "channels": [
+          {
+            "categoryId": "cat_44444444444444444444444444444444",
+            "id": "ch_cccccccccccccccccccccccccccccccc",
+            "kind": "text",
+            "logKey": "VLD0:hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+            "mekGeneration": 5,
+            "name": "general",
+            "slowmodeSeconds": 30,
+            "sortOrder": 1,
+            "topic": "Say hi"
+          }
+        ],
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "governance.checkpointSnapshotMismatch": {
+    "governance": {
+      "checkpointSnapshotMismatch": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "digest": "8888888888888888888888888888888888888888888888888888888888888888",
+        "height": 2
+      }
+    }
+  },
+  "governance.communitySuccessorOffered": {
+    "governance": {
+      "communitySuccessorOffered": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "creators": [
+          "5555555555555555555555555555555555555555555555555555555555555555",
+          "6666666666666666666666666666666666666666666666666666666666666666"
+        ],
+        "newAnchor": "VLD0:newanchor",
+        "reason": "transfer",
+        "signer": "5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    }
+  },
+  "governance.effectivePermissionsChanged": {
+    "governance": {
+      "effectivePermissionsChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "denied": {
+          "banMembers": "You're timed out until 14:05."
+        },
+        "member": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      }
+    }
+  },
+  "governance.governanceOpQuarantined": {
+    "governance": {
+      "governanceOpQuarantined": {
+        "author": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cause": "9999999999999999999999999999999999999999999999999999999999999999",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "op": "8888888888888888888888888888888888888888888888888888888888888888",
+        "reason": "afterAuthorRemoval"
+      }
+    }
+  },
+  "governance.governanceRebuilt": {
+    "governance": {
+      "governanceRebuilt": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "governance.inviteCreated": {
+    "governance": {
+      "inviteCreated": {
+        "codeHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "createdAt": 1760000000000,
+        "createdBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expiresAt": 1760086400000,
+        "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+        "maxUses": 10,
+        "uses": 0
+      }
+    }
+  },
+  "governance.inviteExpired": {
+    "governance": {
+      "inviteExpired": {
+        "codeHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "governance.inviteRevoked": {
+    "governance": {
+      "inviteRevoked": {
+        "codeHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "governance.inviteUsed": {
+    "governance": {
+      "inviteUsed": {
+        "codeHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "uses": 1
+      }
+    }
+  },
+  "governance.keyStatus": {
+    "governance": {
+      "keyStatus": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "status": {
+          "have": 3,
+          "need": 4,
+          "sinceMs": 1760000000000,
+          "state": "pending"
+        }
+      }
+    }
+  },
+  "governance.metadataChanged": {
+    "governance": {
+      "metadataChanged": {
+        "bannerHash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "description": "Friday night frags",
+        "iconHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "name": "LAN Party"
+      }
+    }
+  },
+  "governance.opPublication": {
+    "governance": {
+      "opPublication": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "op": "8888888888888888888888888888888888888888888888888888888888888888",
+        "state": {
+          "kind": "failed",
+          "reason": "refused at convergence"
+        }
+      }
+    }
+  },
+  "governance.rolesChanged": {
+    "governance": {
+      "rolesChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "roles": [
+          {
+            "color": 65280,
+            "exclusionGroup": "rank",
+            "hoist": true,
+            "id": "03030303030303030303030303030303",
+            "mentionable": true,
+            "name": "Moderator",
+            "permissions": 2251799813685247,
+            "position": 1,
+            "selfAssignable": false,
+            "tagColours": {
+              "dark": 65280,
+              "light": 27392
+            }
+          }
+        ]
+      }
+    }
+  },
+  "governance.segmentsChanged": {
+    "governance": {
+      "segmentsChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "segments": [
+          {
+            "anchor": "VLD0:sssssssssssssssssssssssssssssssssssssssssss",
+            "registryKey": "VLD0:rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+            "segmentIndex": 1,
+            "slotRangeEnd": 510,
+            "slotRangeStart": 255
+          }
+        ]
+      }
+    }
+  },
+  "governance.successorLinkRequested": {
+    "governance": {
+      "successorLinkRequested": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "newAnchor": "VLD0:newanchor",
+        "recipient": "5555555555555555555555555555555555555555555555555555555555555555",
+        "request": "7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    }
+  },
+  "groupDm.historyGap": {
+    "groupDm": {
+      "historyGap": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "throughSeq": 4
+      }
+    }
+  },
+  "groupDm.invited": {
+    "groupDm": {
+      "invited": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "inviter": {
+          "displayName": "Alice",
+          "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "members": [
+          {
+            "displayName": "Alice",
+            "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "displayName": "Bob",
+            "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "displayName": "cccc-cccc",
+            "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "name": "raid night"
+      }
+    }
+  },
+  "groupDm.joined": {
+    "groupDm": {
+      "joined": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    }
+  },
+  "groupDm.keyRotated": {
+    "groupDm": {
+      "keyRotated": {
+        "epoch": 2,
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    }
+  },
+  "groupDm.left": {
+    "groupDm": {
+      "left": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "cccc-cccc",
+          "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    }
+  },
+  "groupDm.lobby": {
+    "groupDm": {
+      "lobby": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "lobby": {
+          "close": {
+            "allowed": false,
+            "reason": "notHost"
+          },
+          "gameId": 4181,
+          "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "join": {
+            "allowed": false,
+            "reason": "notOpen"
+          },
+          "launch": {
+            "allowed": false,
+            "reason": "notHost"
+          },
+          "leave": {
+            "allowed": true
+          },
+          "lobbyId": "abababababababababababababababab",
+          "members": [
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          ],
+          "state": {
+            "kind": "launched",
+            "server": "203.0.113.7:27015"
+          }
+        }
+      }
+    }
+  },
+  "groupDm.lobby.none": {
+    "groupDm": {
+      "lobby": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "lobby": null
+      }
+    }
+  },
+  "groupDm.message": {
+    "groupDm": {
+      "message": {
+        "body": "hello group",
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "messageId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5b",
+        "replyTo": null,
+        "sender": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "timestamp": 1700000000000
+      }
+    }
+  },
+  "groupDm.messageSent": {
+    "groupDm": {
+      "messageSent": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "message": {
+          "body": "gg group",
+          "expireAt": null,
+          "expireSeconds": 0,
+          "historyGapThrough": null,
+          "id": 43,
+          "isOwn": true,
+          "messageId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5c",
+          "replyToId": null,
+          "sendState": "queued",
+          "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timerNoticeSeconds": null,
+          "timestamp": 1700000000000
+        },
+        "replyToId": null
+      }
+    }
+  },
+  "groupDm.renamed": {
+    "groupDm": {
+      "renamed": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "name": "raid night II"
+      }
+    }
+  },
+  "groupDm.sendStatus": {
+    "groupDm": {
+      "sendStatus": {
+        "clientId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5a",
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "retry": {
+          "attempts": 2,
+          "nextAttemptAt": 1700000003000
+        },
+        "state": "sent"
+      }
+    }
+  },
+  "intent.escalation.attachment": {
+    "attachment": {
+      "fileName": "photo.jpg",
+      "metadataRemoved": false,
+      "sizeBytes": 2048
+    }
+  },
+  "intent.escalation.containerNotEmpty": {
+    "containerNotEmpty": {
+      "members": 57,
+      "messages": 1204
+    }
+  },
+  "intent.escalation.crossAudience": {
+    "crossAudience": {
+      "fromMembers": 12,
+      "toMembers": 340
+    }
+  },
+  "intent.escalation.firstMediaInCall": "firstMediaInCall",
+  "intent.escalation.lastAdmin": "lastAdmin",
+  "intent.escalation.massMention": {
+    "massMention": {
+      "notified": 214
+    }
+  },
+  "intent.escalation.pendingWork": {
+    "pendingWork": {
+      "inCall": true,
+      "unsent": 3,
+      "uploading": false
+    }
+  },
+  "intent.escalation.soleMember": "soleMember",
+  "intent.escalation.startsMekBallot": "startsMekBallot",
+  "intent.escalation.verifiedKeyChanged": {
+    "verifiedKeyChanged": {
+      "newSafetyNumber": "5e6f7a8b",
+      "oldSafetyNumber": "1a2b3c4d"
+    }
+  },
+  "intent.escalation.visibleBeforeUnlock": "visibleBeforeUnlock",
+  "intent.fact.creatorsLeave": {
+    "creatorsLeave": {
+      "creators": [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ]
+    }
+  },
+  "intent.fact.fingerprint": {
+    "fingerprint": {
+      "fingerprint": "abcd 0123"
+    }
+  },
+  "intent.fact.ipAddressLeaves": {
+    "ipAddressLeaves": {
+      "to": {
+        "gameServer": {
+          "address": "192.0.2.10:25565",
+          "game": "Team Fortress 2"
+        }
+      }
+    }
+  },
+  "intent.fact.keyChanged": {
+    "keyChanged": {
+      "newFingerprint": "4567 89ef",
+      "oldFingerprint": "abcd 0123"
+    }
+  },
+  "intent.fact.membersAffected": {
+    "membersAffected": {
+      "count": 41
+    }
+  },
+  "intent.fact.messagesDeleted": {
+    "messagesDeleted": {
+      "count": 1204
+    }
+  },
+  "intent.fact.newCreatorSet": {
+    "newCreatorSet": {
+      "creators": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+    }
+  },
+  "intent.fact.noHistoryCopied": "noHistoryCopied",
+  "intent.fact.pendingMessagesDropped": "pendingMessagesDropped",
+  "intent.fact.presenceVisible": "presenceVisible",
+  "intent.fact.rejoinNeedsInvite": "rejoinNeedsInvite",
+  "intent.fact.safetyNumber": {
+    "safetyNumber": {
+      "safetyNumber": "1a2b3c4d"
+    }
+  },
+  "intent.fact.safetyNumberChanged": {
+    "safetyNumberChanged": {
+      "newSafetyNumber": "5e6f7a8b",
+      "oldSafetyNumber": "1a2b3c4d"
+    }
+  },
+  "intent.fact.sessionDeleted": "sessionDeleted",
+  "intent.fact.sessionKeptUntilReplaced": "sessionKeptUntilReplaced",
+  "intent.fact.subjectNotTold": "subjectNotTold",
+  "intent.fact.successorLinked": {
+    "successorLinked": {
+      "signer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "intent.fact.transferLinksMissing": {
+    "transferLinksMissing": {
+      "creators": [
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      ]
+    }
+  },
+  "intent.fact.unopenedMessagesLost": "unopenedMessagesLost",
+  "intent.intentClass.consequential": "consequential",
+  "intent.intentClass.destructive": "destructive",
+  "intent.intentClass.protected": "protected",
+  "intent.intentClass.routine": "routine",
+  "intent.intentClass.trustChanging": "trustChanging",
+  "intent.intentId": "01900000-0000-7000-8000-000000000001",
+  "intent.intentKind.deleteChannel": "deleteChannel",
+  "intent.intentProof.acknowledged": "acknowledged",
+  "intent.intentProof.commit": "commit",
+  "intent.intentProof.passphrase": {
+    "passphrase": "correct horse"
+  },
+  "intent.intentProof.typed": {
+    "typed": "general"
+  },
+  "intent.intentReview": {
+    "acknowledgement": null,
+    "cancelSends": true,
+    "class": "destructive",
+    "escalations": [
+      {
+        "containerNotEmpty": {
+          "members": 57,
+          "messages": 1204
+        }
+      }
+    ],
+    "expiresAtMs": 1700000300000,
+    "facts": [
+      {
+        "messagesDeleted": {
+          "count": 1204
+        }
+      }
+    ],
+    "intentId": "01900000-0000-7000-8000-000000000001",
+    "kind": "deleteChannel",
+    "notifies": {
+      "members": 57
+    },
+    "proof": "typeSubject",
+    "reversibility": "never",
+    "subject": {
+      "channel": {
+        "communityName": "Raiders",
+        "id": "ch_cccccccccccccccccccccccccccccccc",
+        "name": "general"
+      }
+    }
+  },
+  "intent.notifies.members": {
+    "members": 57
+  },
+  "intent.notifies.nobody": "nobody",
+  "intent.notifies.subject": "subject",
+  "intent.proofRequired.acknowledge": "acknowledge",
+  "intent.proofRequired.commit": "commit",
+  "intent.proofRequired.none": "none",
+  "intent.proofRequired.passphrase": "passphrase",
+  "intent.proofRequired.typeSubject": "typeSubject",
+  "intent.recipient.gameServer": {
+    "gameServer": {
+      "address": "192.0.2.10:25565",
+      "game": "Team Fortress 2"
+    }
+  },
+  "intent.recipient.site": {
+    "site": {
+      "host": "example.org"
+    }
+  },
+  "intent.reversibility.needsOthers": "needsOthers",
+  "intent.reversibility.never": "never",
+  "intent.reversibility.neverBecause": {
+    "neverBecause": {
+      "disclosureCannotBeRecalled": {
+        "to": "gameServer"
+      }
+    }
+  },
+  "intent.reversibility.reversibleByInverse": {
+    "reversibleByInverse": "unblockUser"
+  },
+  "intent.reversibility.undoable": "undoable",
+  "intent.subject.channel": {
+    "channel": {
+      "communityName": "Raiders",
+      "id": "ch_cccccccccccccccccccccccccccccccc",
+      "name": "general"
+    }
+  },
+  "intent.subject.community": {
+    "community": {
+      "id": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+      "name": "Raiders"
+    }
+  },
+  "intent.subject.file": {
+    "file": {
+      "name": "photo.jpg"
+    }
+  },
+  "intent.subject.link": {
+    "link": {
+      "host": "example.org"
+    }
+  },
+  "intent.subject.named": {
+    "named": {
+      "name": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "intent.subject.ownIdentity": {
+    "ownIdentity": {
+      "name": "Me"
+    }
+  },
+  "intent.subject.person": {
+    "person": {
+      "displayName": "alice_g",
+      "fingerprint": "abcd 0123",
+      "localNickname": "Alice"
+    }
+  },
+  "intent.subject.role": {
+    "role": {
+      "id": "role_1",
+      "name": "officer"
+    }
+  },
+  "intentPending.intentPending": {
+    "intentPending": {
+      "acknowledgement": null,
+      "cancelSends": true,
+      "class": "destructive",
+      "escalations": [
+        {
+          "containerNotEmpty": {
+            "members": 57,
+            "messages": 1204
+          }
+        }
+      ],
+      "expiresAtMs": 1700000300000,
+      "facts": [
+        {
+          "messagesDeleted": {
+            "count": 1204
+          }
+        }
+      ],
+      "intentId": "01900000-0000-7000-8000-000000000001",
+      "kind": "deleteChannel",
+      "notifies": {
+        "members": 57
+      },
+      "proof": "typeSubject",
+      "reversibility": "never",
+      "subject": {
+        "channel": {
+          "communityName": "Raiders",
+          "id": "ch_cccccccccccccccccccccccccccccccc",
+          "name": "general"
+        }
+      }
+    }
+  },
+  "membership.banned": {
+    "membership": {
+      "banned": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "reason": "spam",
+        "removedBy": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "removedByName": "Mod",
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.forgotten": {
+    "membership": {
+      "forgotten": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "membership.joinProgress": {
+    "membership": {
+      "joinProgress": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "stage": "slotClaim",
+        "status": "done"
+      }
+    }
+  },
+  "membership.joinRequested": {
+    "membership": {
+      "joinRequested": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "displayName": "Eve",
+        "hasInvite": true,
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.joinWithdrawn": {
+    "membership": {
+      "joinWithdrawn": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "reason": "INVITE_USED_UP",
+        "reasonText": "The inviter refused this join. This invite has already been used. Ask for a new invite."
+      }
+    }
+  },
+  "membership.joined": {
+    "membership": {
+      "joined": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "displayName": "Eve",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "roleIds": [
+          "00000000000000000000000000000000",
+          "03030303030303030303030303030303"
+        ]
+      }
+    }
+  },
+  "membership.kicked": {
+    "membership": {
+      "kicked": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "reason": null,
+        "removedBy": null,
+        "removedByName": null,
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.left": {
+    "membership": {
+      "left": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.memberCardChanged": {
+    "membership": {
+      "memberCardChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "customStatus": "brb",
+        "displayName": "Eve",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.memberDiscovered": {
+    "membership": {
+      "memberDiscovered": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "displayName": "Eve",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "subkeyIndex": 17
+      }
+    }
+  },
+  "membership.membersRefreshed": {
+    "membership": {
+      "membersRefreshed": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "membership.onboardingAnswersSubmitted": {
+    "membership": {
+      "onboardingAnswersSubmitted": {
+        "answerCount": 3,
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "senderPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.onboardingCompleted": {
+    "membership": {
+      "onboardingCompleted": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "roleIds": [
+          "00000000000000000000000000000000",
+          "05050505050505050505050505050505"
+        ]
+      }
+    }
+  },
+  "membership.removed": {
+    "membership": {
+      "removed": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.rolesChanged": {
+    "membership": {
+      "rolesChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "roleIds": [
+          "00000000000000000000000000000000",
+          "03030303030303030303030303030303",
+          "07070707070707070707070707070707"
+        ]
+      }
+    }
+  },
+  "membership.selfJoined": {
+    "membership": {
+      "selfJoined": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "name": "Frag Night"
+      }
+    }
+  },
+  "membership.timedOut": {
+    "membership": {
+      "timedOut": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "durationSeconds": 600,
+        "reason": "spamming",
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.timeoutRemoved": {
+    "membership": {
+      "timeoutRemoved": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "membership.timeoutStatusChanged": {
+    "membership": {
+      "timeoutStatusChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "timeoutUntil": 1760000600000
+      }
+    }
+  },
+  "membership.unbanned": {
+    "membership": {
+      "unbanned": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "network.attachmentChanged.allocating": {
+    "network": {
+      "attachmentChanged": {
+        "attachmentState": "attaching",
+        "canWrite": false,
+        "generalRoute": "allocating",
+        "isAttached": false,
+        "mediaRoute": "allocating",
+        "publicInternetReady": false
+      }
+    }
+  },
+  "network.attachmentChanged.available": {
+    "network": {
+      "attachmentChanged": {
+        "attachmentState": "attached_good",
+        "canWrite": true,
+        "generalRoute": "available",
+        "isAttached": true,
+        "mediaRoute": "available",
+        "publicInternetReady": true
+      }
+    }
+  },
+  "network.attachmentChanged.failed": {
+    "network": {
+      "attachmentChanged": {
+        "attachmentState": "attached_weak",
+        "canWrite": true,
+        "generalRoute": "failed",
+        "isAttached": true,
+        "mediaRoute": "failed",
+        "publicInternetReady": true
+      }
+    }
+  },
+  "network.attachmentChanged.idle": {
+    "network": {
+      "attachmentChanged": {
+        "attachmentState": "detached",
+        "canWrite": false,
+        "generalRoute": "idle",
+        "isAttached": false,
+        "mediaRoute": "idle",
+        "publicInternetReady": false
+      }
+    }
+  },
+  "network.attachmentChanged.unavailable": {
+    "network": {
+      "attachmentChanged": {
+        "attachmentState": "attached_weak",
+        "canWrite": true,
+        "generalRoute": "available",
+        "isAttached": true,
+        "mediaRoute": "unavailable",
+        "publicInternetReady": true
+      }
+    }
+  },
+  "network.localRoutesDied": {
+    "network": {
+      "localRoutesDied": {
+        "count": 2
+      }
+    }
+  },
+  "network.ownRecordsChanged.failed": {
+    "network": {
+      "ownRecordsChanged": {
+        "error": "no record pool",
+        "phase": "failed"
+      }
+    }
+  },
+  "network.ownRecordsChanged.held": {
+    "network": {
+      "ownRecordsChanged": {
+        "error": null,
+        "phase": "held"
+      }
+    }
+  },
+  "network.ownRecordsChanged.pending": {
+    "network": {
+      "ownRecordsChanged": {
+        "error": null,
+        "phase": "pending"
+      }
+    }
+  },
+  "network.ownRouteDown.general": {
+    "network": {
+      "ownRouteDown": {
+        "class": "general",
+        "reason": "allocated route failed to test",
+        "sinceMs": 1700000000000
+      }
+    }
+  },
+  "network.ownRouteDown.media": {
+    "network": {
+      "ownRouteDown": {
+        "class": "media",
+        "reason": "allocated route failed to test",
+        "sinceMs": 1700000060000
+      }
+    }
+  },
+  "network.ownRouteUp.general": {
+    "network": {
+      "ownRouteUp": {
+        "class": "general"
+      }
+    }
+  },
+  "network.ownRouteUp.media": {
+    "network": {
+      "ownRouteUp": {
+        "class": "media"
+      }
+    }
+  },
+  "network.remoteRoutesDied": {
+    "network": {
+      "remoteRoutesDied": {
+        "peerKeys": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ]
+      }
+    }
+  },
+  "network.routeDeathsAboveBaseline.general": {
+    "network": {
+      "routeDeathsAboveBaseline": {
+        "baseline": 3,
+        "class": "general",
+        "deaths": 4,
+        "windowSecs": 3600,
+        "young": 2
+      }
+    }
+  },
+  "network.routeDeathsAboveBaseline.media": {
+    "network": {
+      "routeDeathsAboveBaseline": {
+        "baseline": 3,
+        "class": "media",
+        "deaths": 5,
+        "windowSecs": 3600,
+        "young": 0
+      }
+    }
+  },
+  "network.routePaused.exhausted": {
+    "network": {
+      "routePaused": {
+        "cause": "exhausted"
+      }
+    }
+  },
+  "network.routePaused.unreadable": {
+    "network": {
+      "routePaused": {
+        "cause": "unreadable"
+      }
+    }
+  },
+  "network.routeResumed": {
+    "network": {
+      "routeResumed": {}
+    }
+  },
+  "network.strength": {
+    "network": {
+      "strength": {
+        "bars": 3
+      }
+    }
+  },
+  "network.valueChanged": {
+    "network": {
+      "valueChanged": {
+        "changedSubkeys": [
+          0,
+          5
+        ],
+        "recordKey": "VLD0:vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      }
+    }
+  },
+  "notification.callIncoming": {
+    "notification": {
+      "callIncoming": {
+        "callId": "call_99999999999999999999999999999999",
+        "displayName": "Bob",
+        "expiresAtMs": 1760000030000,
+        "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "isGroup": false,
+        "kind": "video"
+      }
+    }
+  },
+  "notification.messageReceived": {
+    "notification": {
+      "messageReceived": {
+        "body": "Alice: hello channel",
+        "channelId": "ch_cccccccccccccccccccccccccccccccc",
+        "communityId": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "soundRef": "ping",
+        "title": "#general"
+      }
+    }
+  },
+  "notification.systemAlert": {
+    "notification": {
+      "systemAlert": {
+        "body": "Reconnected",
+        "subject": null,
+        "title": "Network"
+      }
+    }
+  },
+  "notification.updateAvailable": {
+    "notification": {
+      "updateAvailable": {
+        "version": "1.2.3"
+      }
+    }
+  },
+  "presence.communityMemberChanged": {
+    "presence": {
+      "communityMemberChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "snapshot": {
+          "game": {
+            "playing": {
+              "elapsedSeconds": 1234,
+              "gameId": 4101,
+              "gameName": "Battlefield 2",
+              "iconKey": "xfire/4101",
+              "joinable": false,
+              "joinableReason": "cannotLaunch",
+              "serverAddress": "10.0.0.1:16567"
+            }
+          },
+          "idle": null,
+          "status": "online",
+          "statusMessage": "fragging"
+        }
+      }
+    }
+  },
+  "presence.friendChanged": {
+    "presence": {
+      "friendChanged": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "snapshot": {
+          "game": "idle",
+          "idle": null,
+          "status": "away",
+          "statusMessage": "brb"
+        }
+      }
+    }
+  },
+  "presence.selfChanged": {
+    "presence": {
+      "selfChanged": {
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshot": {
+          "game": {
+            "playing": {
+              "elapsedSeconds": 1234,
+              "gameId": 4101,
+              "gameName": "Battlefield 2",
+              "iconKey": "xfire/4101",
+              "joinable": false,
+              "joinableReason": "cannotLaunch",
+              "serverAddress": "10.0.0.1:16567"
+            }
+          },
+          "idle": "active",
+          "status": "online",
+          "statusMessage": "fragging"
+        }
+      }
+    }
+  },
+  "presence.selfChanged.autoAway": {
+    "presence": {
+      "selfChanged": {
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshot": {
+          "game": null,
+          "idle": "autoAway",
+          "status": "away",
+          "statusMessage": null
+        }
+      }
+    }
+  },
+  "presence.selfChanged.idleUnavailable": {
+    "presence": {
+      "selfChanged": {
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshot": {
+          "game": null,
+          "idle": "unavailable",
+          "status": null,
+          "statusMessage": null
+        }
+      }
+    }
+  },
+  "presence.selfProfileChanged": {
+    "presence": {
+      "selfProfileChanged": {
+        "avatarChanged": false,
+        "displayName": "Kali",
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    }
+  },
+  "social.eventCreated.external": {
+    "social": {
+      "eventCreated": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "event": {
+          "channelId": "ch_cccccccccccccccccccccccccccccccc",
+          "coverImageRef": "blake3:8888888888888888888888888888888888888888888888888888888888888888",
+          "createdAt": 1760000000000,
+          "creatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "description": "Bring potions",
+          "endTime": 1760107200000,
+          "id": "evt_55555555555555555555555555555555",
+          "location": {
+            "data": "https://example.org/lan",
+            "type": "external"
+          },
+          "maxAttendees": 40,
+          "recurrence": {
+            "count": 10,
+            "daysOfWeek": [
+              "friday"
+            ],
+            "frequency": "weekly",
+            "interval": 1,
+            "until": 1770000000000
+          },
+          "rsvps": [
+            {
+              "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "status": "going"
+            }
+          ],
+          "startTime": 1760100000000,
+          "status": "scheduled",
+          "title": "Raid night"
+        }
+      }
+    }
+  },
+  "social.eventCreated.voiceChannel": {
+    "social": {
+      "eventCreated": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "event": {
+          "channelId": "ch_cccccccccccccccccccccccccccccccc",
+          "coverImageRef": "blake3:8888888888888888888888888888888888888888888888888888888888888888",
+          "createdAt": 1760000000000,
+          "creatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "description": "Bring potions",
+          "endTime": 1760107200000,
+          "id": "evt_55555555555555555555555555555555",
+          "location": {
+            "data": [
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171,
+              171
+            ],
+            "type": "voice_channel"
+          },
+          "maxAttendees": 40,
+          "recurrence": {
+            "count": 10,
+            "daysOfWeek": [
+              "friday"
+            ],
+            "frequency": "weekly",
+            "interval": 1,
+            "until": 1770000000000
+          },
+          "rsvps": [
+            {
+              "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "status": "going"
+            }
+          ],
+          "startTime": 1760100000000,
+          "status": "scheduled",
+          "title": "Raid night"
+        }
+      }
+    }
+  },
+  "social.eventDeleted": {
+    "social": {
+      "eventDeleted": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "eventId": "evt_55555555555555555555555555555555"
+      }
+    }
+  },
+  "social.eventReminder": {
+    "social": {
+      "eventReminder": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "eventId": "evt_55555555555555555555555555555555",
+        "minutesUntilStart": 15,
+        "title": "Raid night"
+      }
+    }
+  },
+  "social.eventRsvpChanged": {
+    "social": {
+      "eventRsvpChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "eventId": "evt_55555555555555555555555555555555",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "rsvpStatus": "interested"
+      }
+    }
+  },
+  "social.eventUpdated.inGame": {
+    "social": {
+      "eventUpdated": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "event": {
+          "channelId": "ch_cccccccccccccccccccccccccccccccc",
+          "coverImageRef": "blake3:8888888888888888888888888888888888888888888888888888888888888888",
+          "createdAt": 1760000000000,
+          "creatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "description": "Bring potions",
+          "endTime": 1760107200000,
+          "id": "evt_55555555555555555555555555555555",
+          "location": {
+            "data": {
+              "gameId": 4101,
+              "serverAddress": "10.0.0.1:16567"
+            },
+            "type": "in_game"
+          },
+          "maxAttendees": 40,
+          "recurrence": {
+            "count": 10,
+            "daysOfWeek": [
+              "friday"
+            ],
+            "frequency": "weekly",
+            "interval": 1,
+            "until": 1770000000000
+          },
+          "rsvps": [
+            {
+              "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "status": "going"
+            }
+          ],
+          "startTime": 1760100000000,
+          "status": "scheduled",
+          "title": "Raid night"
+        }
+      }
+    }
+  },
+  "social.eventUpdated.stageChannel": {
+    "social": {
+      "eventUpdated": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "event": {
+          "channelId": "ch_cccccccccccccccccccccccccccccccc",
+          "coverImageRef": "blake3:8888888888888888888888888888888888888888888888888888888888888888",
+          "createdAt": 1760000000000,
+          "creatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "description": "Bring potions",
+          "endTime": 1760107200000,
+          "id": "evt_55555555555555555555555555555555",
+          "location": {
+            "data": [
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205,
+              205
+            ],
+            "type": "stage_channel"
+          },
+          "maxAttendees": 40,
+          "recurrence": {
+            "count": 10,
+            "daysOfWeek": [
+              "friday"
+            ],
+            "frequency": "weekly",
+            "interval": 1,
+            "until": 1770000000000
+          },
+          "rsvps": [
+            {
+              "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "status": "going"
+            }
+          ],
+          "startTime": 1760100000000,
+          "status": "scheduled",
+          "title": "Raid night"
+        }
+      }
+    }
+  },
+  "social.gameServerAdded": {
+    "social": {
+      "gameServerAdded": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "server": {
+          "addedBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "address": "10.0.0.1:27015",
+          "createdAt": 1760000000000,
+          "gameId": "4101",
+          "id": "gs_33333333333333333333333333333333",
+          "label": "Friday CTF"
+        }
+      }
+    }
+  },
+  "social.gameServerRemoved": {
+    "social": {
+      "gameServerRemoved": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "serverId": "gs_33333333333333333333333333333333"
+      }
+    }
+  },
+  "social.messagePinned": {
+    "social": {
+      "messagePinned": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "pinnedBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "social.messageUnpinned": {
+    "social": {
+      "messageUnpinned": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111"
+      }
+    }
+  },
+  "social.pollChanged": {
+    "social": {
+      "pollChanged": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pollId": "poll_11111111111111111111111111111111"
+      }
+    }
+  },
+  "social.reactionAdded": {
+    "social": {
+      "reactionAdded": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "emoji": "🔥",
+        "messageId": "msg_11111111111111111111111111111111",
+        "reactorPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "social.reactionRemoved": {
+    "social": {
+      "reactionRemoved": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "emoji": "🔥",
+        "messageId": "msg_11111111111111111111111111111111",
+        "reactorPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "social.threadArchiveChanged": {
+    "social": {
+      "threadArchiveChanged": {
+        "archived": true,
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "threadId": "thr_66666666666666666666666666666666"
+      }
+    }
+  },
+  "social.threadCreated": {
+    "social": {
+      "threadCreated": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "thread": {
+          "archived": false,
+          "autoArchiveSeconds": 86400,
+          "channelId": "ch_cccccccccccccccccccccccccccccccc",
+          "createdAt": 1760000000000,
+          "creatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "forumTag": "guides",
+          "id": "thr_66666666666666666666666666666666",
+          "lastMessageAt": 1760000500000,
+          "messageCount": 4,
+          "name": "Strategy",
+          "starterMessageId": "msg_11111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  "social.threadMessagePosted": {
+    "social": {
+      "threadMessagePosted": {
+        "body": "flank left",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_77777777777777777777777777777777",
+        "replyToId": "msg_11111111111111111111111111111111",
+        "senderPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "threadId": "thr_66666666666666666666666666666666",
+        "timestamp": 1760000500000
+      }
+    }
+  },
+  "system.activityAppended": {
+    "system": {
+      "activityAppended": {
+        "entries": [
+          {
+            "at": 1700000000000,
+            "displayName": "Alice",
+            "id": 42,
+            "identityPinMismatch": false,
+            "kind": {
+              "data": {
+                "friend": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "gameId": 4100,
+                "server": "203.0.113.7:27015"
+              },
+              "type": "startedGame"
+            },
+            "nickname": "Al"
+          }
+        ]
+      }
+    }
+  },
+  "system.auditChainBroken": {
+    "system": {
+      "auditChainBroken": {
+        "cursor": 99
+      }
+    }
+  },
+  "system.autoModAlert": {
+    "system": {
+      "autoModAlert": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "ruleName": "no-invite-links"
+      }
+    }
+  },
+  "system.bootstrapReceived": {
+    "system": {
+      "bootstrapReceived": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
+  "system.bootstrapRequested": {
+    "system": {
+      "bootstrapRequested": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "joinerPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "system.favouriteServerAdded": {
+    "system": {
+      "favouriteServerAdded": {
+        "gameId": 4100,
+        "label": "Frag Night",
+        "server": "203.0.113.7:27015"
+      }
+    }
+  },
+  "system.infoview": {
+    "system": {
+      "infoview": {
+        "updated": {
+          "view": {
+            "sections": [
+              {
+                "servers": [
+                  {
+                    "address": "203.0.113.7:27015",
+                    "gameId": "4100",
+                    "join": {
+                      "gameId": 4100,
+                      "joinable": true,
+                      "joinableReason": null,
+                      "server": "203.0.113.7:27015",
+                      "source": "community",
+                      "type": "joinServer"
+                    },
+                    "label": "Frag Night"
+                  }
+                ],
+                "type": "gameServers"
+              }
+            ],
+            "subject": {
+              "community": "c1",
+              "type": "community"
+            }
+          },
+          "window": "main"
+        }
+      }
+    }
+  },
+  "system.quickWipeChanged": {
+    "system": {
+      "quickWipeChanged": {
+        "armed": true,
+        "shortcut": "CommandOrControl+Shift+F12"
+      }
+    }
+  },
+  "system.raidDetected": {
+    "system": {
+      "raidDetected": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "joinIntervalSeconds": 60,
+        "joinsInWindow": 25,
+        "maxJoinsPerInterval": 10
+      }
+    }
+  },
+  "system.serversViewChanged": {
+    "system": {
+      "serversViewChanged": {
+        "view": {
+          "categories": [
+            {
+              "community": null,
+              "kind": "recent",
+              "rows": []
+            }
+          ],
+          "refresh": {
+            "allowed": true
+          }
+        }
+      }
+    }
+  },
+  "system.skinApplyFailed": {
+    "system": {
+      "skinApplyFailed": {
+        "cause": {
+          "data": {
+            "path": "skin://pkg/frame/top.png"
+          },
+          "type": "imageDecode"
+        },
+        "reverted": true,
+        "skin": "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "window": "chat-0123456789abcdef"
+      }
+    }
+  },
+  "system.skinChanged": {
+    "system": {
+      "skinChanged": {
+        "skin": {
+          "base": "dark",
+          "id": "builtin:symbiosis",
+          "images": [
+            "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210.png"
+          ],
+          "palette": [
+            {
+              "rgb": [
+                52,
+                145,
+                216
+              ],
+              "role": "accent.primary"
+            }
+          ],
+          "regions": [
+            "frame"
+          ],
+          "tokensHref": "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/tokens.css"
+        }
+      }
+    }
+  },
+  "system.skinShell": {
+    "system": {
+      "skinShell": {
+        "op": {
+          "arg": "communities",
+          "kind": "showView"
+        },
+        "window": "buddy-list"
+      }
+    }
+  },
+  "system.skinSignals": {
+    "system": {
+      "skinSignals": {
+        "set": {
+          "can": [
+            "chat",
+            "profile"
+          ],
+          "cannot": [
+            "join"
+          ],
+          "disabledReasons": {
+            "join": "Your friend isn't in a game you can join from here."
+          },
+          "disconnected": false,
+          "focused": true,
+          "newNotification": true,
+          "talking": false,
+          "userTyping": true,
+          "voiceRinging": false
+        },
+        "window": "chat-0123456789abcdef"
+      }
+    }
+  },
+  "system.skinTrialChanged": {
+    "system": {
+      "skinTrialChanged": {
+        "trial": {
+          "id": "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "name": "Carbon Fiber",
+          "previous": "builtin:symbiosis",
+          "revertsAtMs": 1700000015000
+        }
+      }
+    }
+  },
+  "transfer.downloadComplete": {
+    "transfer": {
+      "downloadComplete": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "transfer.progress": {
+    "transfer": {
+      "progress": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bytesDone": 786432,
+        "chunkCount": 8,
+        "chunksDone": 3,
+        "total": 2000000
+      }
+    }
+  },
+  "transfer.removed": {
+    "transfer": {
+      "removed": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "transfer.stateChanged.active": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "active"
+      }
+    }
+  },
+  "transfer.stateChanged.done": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "done"
+      }
+    }
+  },
+  "transfer.stateChanged.failed": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "failed"
+      }
+    }
+  },
+  "transfer.stateChanged.paused": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "paused"
+      }
+    }
+  },
+  "transfer.stateChanged.queued": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "queued"
+      }
+    }
+  },
+  "typing.started.channel": {
+    "typing": {
+      "started": {
+        "context": {
+          "channel": {
+            "channel": "ch_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        },
+        "name": "Ann",
+        "who": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "typing.started.dm": {
+    "typing": {
+      "started": {
+        "context": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "name": "Bob",
+        "who": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "typing.started.groupDm": {
+    "typing": {
+      "started": {
+        "context": {
+          "groupDm": {
+            "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d"
+          }
+        },
+        "name": "Carol",
+        "who": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }
+  },
+  "typing.stopped.channel": {
+    "typing": {
+      "stopped": {
+        "context": {
+          "channel": {
+            "channel": "ch_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        },
+        "who": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "typing.stopped.dm": {
+    "typing": {
+      "stopped": {
+        "context": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "who": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "unreadChanged.unreadChanged.channel": {
+    "unreadChanged": {
+      "context": {
+        "channel": {
+          "channel": "ch_cccccccccccccccccccccccccccccccc",
+          "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+        }
+      },
+      "count": 3
+    }
+  },
+  "unreadChanged.unreadChanged.dm": {
+    "unreadChanged": {
+      "context": {
+        "dm": {
+          "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "count": 7
+    }
+  },
+  "unreadChanged.unreadChanged.friendRequests": {
+    "unreadChanged": {
+      "context": "friendRequests",
+      "count": 1
+    }
+  },
+  "voice.connectionQuality.community": {
+    "voice": {
+      "connectionQuality": {
+        "ingressDrops": 3,
+        "link": {
+          "bitrateBps": 32000,
+          "discardQ8": 1,
+          "jitterMs": 12,
+          "lossQ8": 3,
+          "mosCq": 4.0,
+          "mosLq": 4.25,
+          "mouthToEarMs": 120,
+          "oneWayP50Ms": 40,
+          "oneWayP95Ms": 65,
+          "outsideG114": false,
+          "rFactor": 88,
+          "rttMs": 80
+        },
+        "quality": "good",
+        "rxKeyDrops": 0,
+        "rxLateDrops": 2,
+        "rxOverflowDrops": 1,
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.connectionQuality.dm": {
+    "voice": {
+      "connectionQuality": {
+        "ingressDrops": 3,
+        "link": {
+          "bitrateBps": 32000,
+          "discardQ8": 1,
+          "jitterMs": 12,
+          "lossQ8": 3,
+          "mosCq": 4.0,
+          "mosLq": 4.25,
+          "mouthToEarMs": 120,
+          "oneWayP50Ms": 40,
+          "oneWayP95Ms": 65,
+          "outsideG114": false,
+          "rFactor": 88,
+          "rttMs": 80
+        },
+        "quality": "good",
+        "rxKeyDrops": 0,
+        "rxLateDrops": 2,
+        "rxOverflowDrops": 1,
+        "scope": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      }
+    }
+  },
+  "voice.deafenChanged": {
+    "voice": {
+      "deafenChanged": {
+        "deafened": true,
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        },
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "voice.deviceChanged": {
+    "voice": {
+      "deviceChanged": {
+        "deviceName": "USB Headset",
+        "deviceType": "input",
+        "reason": "unplugged"
+      }
+    }
+  },
+  "voice.joinHandshake": {
+    "voice": {
+      "joinHandshake": {
+        "displayName": "Alice",
+        "peer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        },
+        "state": "seen"
+      }
+    }
+  },
+  "voice.joined.community": {
+    "voice": {
+      "joined": {
+        "displayName": "Eve",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "routeBlob": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.joined.dm": {
+    "voice": {
+      "joined": {
+        "displayName": "Eve",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "routeBlob": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "scope": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      }
+    }
+  },
+  "voice.left": {
+    "voice": {
+      "left": {
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.localJoined.community": {
+    "voice": {
+      "localJoined": {
+        "joinHandshake": "connected",
+        "mediaReady": {
+          "ready": true,
+          "reason": "ready"
+        },
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.localJoined.dm": {
+    "voice": {
+      "localJoined": {
+        "joinHandshake": "announced",
+        "mediaReady": {
+          "ready": false,
+          "reason": "handshake-announced"
+        },
+        "scope": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      }
+    }
+  },
+  "voice.mediaReady": {
+    "voice": {
+      "mediaReady": {
+        "ready": true,
+        "reason": "mediaRouteAvailable",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.modeChanged": {
+    "voice": {
+      "modeChanged": {
+        "hostPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mode": "sfu",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.muteChanged": {
+    "voice": {
+      "muteChanged": {
+        "muted": true,
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        },
+        "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "voice.packetsDropped": {
+    "voice": {
+      "packetsDropped": {
+        "count": 9,
+        "reason": "jitterOverflow",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.peerConfirmed": {
+    "voice": {
+      "peerConfirmed": {
+        "pseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.rosterUpdated": {
+    "voice": {
+      "rosterUpdated": {
+        "participants": [
+          {
+            "displayName": "Eve",
+            "pseudonymKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          {
+            "displayName": "aaaa aaaa",
+            "pseudonymKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.soundboardPlayed": {
+    "voice": {
+      "soundboardPlayed": {
+        "actorPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "expressionId": "exp_22222222222222222222222222222222",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.speakRequested": {
+    "voice": {
+      "speakRequested": {
+        "requesterPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.speakResponded": {
+    "voice": {
+      "speakResponded": {
+        "granted": true,
+        "moderatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requesterPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "voice.speakingChanged": {
+    "voice": {
+      "speakingChanged": {
+        "pseudonym": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "scope": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "speaking": true
+      }
+    }
+  },
+  "voice.stageUpdated": {
+    "voice": {
+      "stageUpdated": {
+        "moderatorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scope": {
+          "community": {
+            "channel": "vc_cccccccccccccccccccccccccccccccc",
+            "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        },
+        "speakers": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "topic": "Patch notes"
+      }
+    }
+  }
+}

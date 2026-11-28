@@ -88,32 +88,32 @@ echo ""
 # Step 1: Alice creates community (or reuses existing)
 echo "Step 1: Alice creates community 'dev-team'..."
 CREATE_JSON=$(rk alice community create dev-team --description "Development team coordination" --format json || true)
-GOV_KEY=$(echo "${CREATE_JSON}" | jq -r '.governance_key // empty' 2>/dev/null || echo "")
+ANCHOR=$(echo "${CREATE_JSON}" | jq -r '.anchor // empty' 2>/dev/null || echo "")
 
-if [[ -z "${GOV_KEY}" ]]; then
-  # Community may already exist — try to get governance key from community list
+if [[ -z "${ANCHOR}" ]]; then
+  # Community may already exist — try to get anchor key from community list
   LIST_JSON=$(rk alice community list --format json || true)
-  GOV_KEY=$(echo "${LIST_JSON}" | jq -r '.[] | select(.name == "dev-team") | .governance_key // empty' 2>/dev/null || echo "")
-  if [[ -z "${GOV_KEY}" ]]; then
+  ANCHOR=$(echo "${LIST_JSON}" | jq -r '.[] | select(.name == "dev-team") | .anchor // empty' 2>/dev/null || echo "")
+  if [[ -z "${ANCHOR}" ]]; then
     echo "   ❌ Community creation failed and not found in list"
     echo "   Create output: ${CREATE_JSON}"
     echo "   List output: ${LIST_JSON}"
     exit 1
   fi
-  echo "   ✅ Using existing community. Governance key: ${GOV_KEY}"
+  echo "   ✅ Using existing community. Anchor key: ${ANCHOR}"
 else
-  echo "   ✅ Created. Governance key: ${GOV_KEY}"
+  echo "   ✅ Created. Anchor key: ${ANCHOR}"
 fi
 echo ""
 
 # Step 2: Bob joins
 echo "Step 2: Bob joins 'dev-team'..."
-rk bob community join -i "${GOV_KEY}" || echo "   (already a member or join in progress)"
+rk bob community join -i "${ANCHOR}" || echo "   (already a member or join in progress)"
 echo "   ✅ Bob joined"
 
 # Step 3: Carol joins
 echo "Step 3: Carol joins 'dev-team'..."
-rk carol community join -i "${GOV_KEY}" || echo "   (already a member or join in progress)"
+rk carol community join -i "${ANCHOR}" || echo "   (already a member or join in progress)"
 echo "   ✅ Carol joined"
 echo ""
 
@@ -148,7 +148,7 @@ echo ""
 echo "🎉 Setup complete!"
 echo ""
 echo "   Community: dev-team"
-echo "   Governance: ${GOV_KEY}"
+echo "   Anchor: ${ANCHOR}"
 echo "   Members: alice (owner), bob, carol"
 echo "   Friend requests: 6 (full mesh)"
 echo ""

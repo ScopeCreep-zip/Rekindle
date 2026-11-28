@@ -18,12 +18,12 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use super::error::Result;
-use super::message::SecurityLevel;
 use super::registry::ClearanceRegistry;
 use super::transport::{Listener, PeerCredentials};
 
 mod connection;
 mod routing;
+mod stream;
 
 /// Rate limit: max requests per second per connection.
 const RATE_LIMIT_MAX_TOKENS: u32 = 100;
@@ -57,8 +57,6 @@ struct ConnectionState {
     static_key: [u8; 32],
     /// Peer OS-level credentials.
     peer: PeerCredentials,
-    /// Security clearance level from registry lookup.
-    security_clearance: SecurityLevel,
     /// When this connection was established.
     connected_at: Instant,
     /// Token bucket rate limiter: tokens remaining this window.
@@ -88,6 +86,53 @@ struct ServerState {
     event_router: parking_lot::RwLock<crate::event_router::EventRouter>,
     /// Woken whenever a connection finishes its cleanup.
     connection_closed: tokio::sync::Notify,
+    /// The host's event journal (`start_event_delivery`); subscriptions
+    /// are refused until it is set.
+    journal: std::sync::OnceLock<Arc<rekindle_events::SessionJournal>>,
+    /// Each subscribed connection's stream task (`stream`).
+    streams: parking_lot::Mutex<HashMap<u64, tokio::task::JoinHandle<()>>>,
+    /// The server's tasks (the connections' and their streams), so
+    /// shutdown can wait for them.
+    tasks: tokio_util::task::TaskTracker,
+    /// Stops the accept loop and every stream.
+    stopping: tokio_util::sync::CancellationToken,
+    /// Told each closed connection's id (`BusServer::on_disconnect`).
+    on_disconnect: std::sync::OnceLock<Arc<dyn Fn(u64) + Send + Sync>>,
+}
+
+impl ServerState {
+    /// Whether `conn_id`'s key holds at least `Authenticated` clearance in
+    /// the registry now (an agent also `events:read`).
+    async fn is_cleared(&self, conn_id: u64) -> bool {
+        let registry = self.registry.read().await;
+        self.connections
+            .read()
+            .await
+            .get(&conn_id)
+            .and_then(|conn| registry.lookup(&conn.static_key))
+            .is_some_and(|identity| {
+                identity.security_level >= crate::message::SecurityLevel::Authenticated
+                    && identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
+            })
+    }
+
+    /// The connections whose key holds at least `Authenticated` clearance
+    /// in the registry now (an agent also `events:read`).
+    async fn cleared_connections(&self) -> std::collections::HashSet<u64> {
+        let registry = self.registry.read().await;
+        self.connections
+            .read()
+            .await
+            .iter()
+            .filter(|(_, conn)| {
+                registry.lookup(&conn.static_key).is_some_and(|identity| {
+                    identity.security_level >= crate::message::SecurityLevel::Authenticated
+                        && identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
+                })
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
 }
 
 /// The IPC bus server.
@@ -114,6 +159,8 @@ impl BusServer {
         let listener = Listener::bind(path)?;
 
         tracing::info!(path = %path.display(), "IPC bus server bound");
+        let tasks = tokio_util::task::TaskTracker::new();
+        let stopping = tokio_util::sync::CancellationToken::new();
 
         Ok(Self {
             listener,
@@ -128,10 +175,15 @@ impl BusServer {
                 registry,
                 event_router: parking_lot::RwLock::new(crate::event_router::EventRouter::new()),
                 connection_closed: tokio::sync::Notify::new(),
+                journal: std::sync::OnceLock::new(),
+                streams: parking_lot::Mutex::new(HashMap::new()),
+                tasks: tasks.clone(),
+                stopping: stopping.clone(),
+                on_disconnect: std::sync::OnceLock::new(),
             }),
             keypair: Arc::new(keypair),
-            connections: tokio_util::task::TaskTracker::new(),
-            stopping: tokio_util::sync::CancellationToken::new(),
+            connections: tasks,
+            stopping,
         })
     }
 
@@ -141,7 +193,10 @@ impl BusServer {
     /// the Noise handshake and bidirectional encrypted I/O.
     pub async fn run(&self) -> Result<()> {
         loop {
+            // Biased, stopping first: a stopping server accepts no client
+            // that is waiting at the same instant.
             let accepted = tokio::select! {
+                biased;
                 () = self.stopping.cancelled() => return Ok(()),
                 accepted = self.listener.accept() => accepted,
             };
@@ -249,30 +304,20 @@ impl BusServer {
         &self.socket_path
     }
 
-    /// Start the event delivery system using a watch channel.
-    ///
-    /// The watch carries the subscription event source while the daemon is
-    /// unlocked. The delivery task follows it across lock cycles
-    /// ([`crate::event_source::follow`]) and routes each event through the
-    /// EventRouter to subscribed connections, until the server shuts down.
-    pub fn start_event_delivery(&self, source: crate::event_source::EventSource) {
-        let state = Arc::clone(&self.state);
-        let stopping = self.stopping.clone();
-        self.connections.spawn(async move {
-            crate::event_source::follow(&stopping, source, |event| {
-                let (delivered, dropped) = state.event_router.read().deliver(&event);
-                if dropped > 0 {
-                    tracing::debug!(
-                        delivered,
-                        dropped,
-                        "event delivery: some recipients dropped"
-                    );
-                }
-                std::future::ready(())
-            })
-            .await;
-            tracing::info!("event delivery stopped");
-        });
+    /// Tell `hook` each connection that closes (plan D3.3: the host drops the
+    /// actions it held for it).
+    pub fn on_disconnect(&self, hook: Arc<dyn Fn(u64) + Send + Sync>) {
+        if self.state.on_disconnect.set(hook).is_err() {
+            tracing::warn!("disconnect hook already set");
+        }
+    }
+
+    /// Hand the server the host's event journal (plan D3.2): from here on
+    /// a `Subscribe` starts that connection's stream from it.
+    pub fn start_event_delivery(&self, journal: Arc<rekindle_events::SessionJournal>) {
+        if self.state.journal.set(journal).is_err() {
+            tracing::warn!("event journal already set");
+        }
     }
 }
 

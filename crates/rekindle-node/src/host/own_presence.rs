@@ -1,0 +1,580 @@
+//! Our own presence, one owner on both hosts (plan E1.1): the status, the
+//! status message, the game and the idle state, and the unlock's one STATUS
+//! publisher (plan C7.8c). Every change is published as
+//! `PresenceEvent::SelfChanged` from here, and written to the profile.
+//!
+//! The publisher reads the profile key at write time from the session
+//! projection: a created identity's profile appears only after the
+//! own-records stage, which wakes the publisher then. The teardown writes
+//! Offline once the unlock's tasks have stopped; nothing else writes it.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use parking_lot::RwLock;
+use rekindle_presence::{PresenceError, StatusPublisherDeps};
+use rekindle_transport::{Session, TransportNode};
+use rekindle_types::dht_layout::profile as subkeys;
+use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
+use rekindle_types::game_server::ServerAddress;
+use rekindle_types::presence::{IdleState, SessionStatus};
+use rekindle_types::subscription_events::{
+    GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
+};
+
+mod game;
+
+/// How long the teardown waits for the Offline write; the write itself runs
+/// on (Signal Desktop bounds its shutdown queue drain the same way).
+const OFFLINE_WRITE_WAIT: Duration = Duration::from_secs(10);
+/// How often a failed status-message or game write is tried again.
+const DETAILS_RETRY: Duration = Duration::from_secs(15);
+
+/// The game we are playing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Game {
+    /// Its id in the game database (0 when set by hand without one).
+    pub id: u32,
+    pub name: String,
+    /// The game's own detail line ("map @ server"), when it reports one.
+    pub server_info: Option<String>,
+    pub server_address: Option<ServerAddress>,
+    /// When it started, ms since the epoch.
+    pub started_at_ms: u64,
+}
+
+/// What we show.
+#[derive(Debug, Clone)]
+struct State {
+    status: SessionStatus,
+    /// The status auto-away replaced, while it holds.
+    pre_away: Option<SessionStatus>,
+    message: String,
+    game: Option<Game>,
+    idle: IdleState,
+}
+
+impl State {
+    fn unlocked() -> Self {
+        Self {
+            status: SessionStatus::Online,
+            pre_away: None,
+            message: String::new(),
+            game: None,
+            idle: IdleState::Unavailable,
+        }
+    }
+}
+
+/// What one profile subkey was last written with.
+#[derive(Debug, Default)]
+enum Written<T> {
+    /// Not known: a new unlock, or a write that failed.
+    #[default]
+    Unknown,
+    Is(T),
+}
+
+impl<T: PartialEq> Written<T> {
+    fn is(&self, value: &T) -> bool {
+        matches!(self, Self::Is(written) if written == value)
+    }
+}
+
+/// The status message and the game (as shown: `None` while hidden) last
+/// written to the profile.
+#[derive(Debug, Default)]
+struct Published {
+    message: Written<Vec<u8>>,
+    game: Written<Option<Game>>,
+}
+
+/// Our presence and what it needs to publish itself. Cloned into the
+/// unlock's tasks (the publisher, the idle and game stages).
+#[derive(Clone)]
+pub(crate) struct OwnPresence {
+    state: Arc<RwLock<State>>,
+    wake: Arc<tokio::sync::Notify>,
+    /// The one writer of the status message and game: held across each
+    /// write, which computes its bytes from the state once it holds it.
+    details: Arc<tokio::sync::Mutex<Published>>,
+    /// A details write failed: the retry task writes again.
+    details_pending: Arc<std::sync::atomic::AtomicBool>,
+    session: Arc<RwLock<Option<Session>>>,
+    transport: Option<std::sync::Weak<TransportNode>>,
+    journal: Arc<rekindle_events::SessionJournal>,
+    clock: Arc<dyn rekindle_utils::Clock>,
+    /// The community beat engine (`host::adapters::presence`, plan E3.4 S2).
+    pub(crate) beats: crate::host::adapters::presence::BeatSlot,
+    /// Woken on every change: the card's game writer (`presence::card_game`).
+    pub(crate) card_game: Arc<tokio::sync::Notify>,
+}
+
+impl OwnPresence {
+    pub(crate) fn new(
+        session: Arc<RwLock<Option<Session>>>,
+        transport: Option<std::sync::Weak<TransportNode>>,
+        journal: Arc<rekindle_events::SessionJournal>,
+        clock: Arc<dyn rekindle_utils::Clock>,
+    ) -> Self {
+        Self {
+            state: Arc::new(RwLock::new(State::unlocked())),
+            wake: Arc::new(tokio::sync::Notify::new()),
+            details: Arc::new(tokio::sync::Mutex::new(Published::default())),
+            details_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            session,
+            transport,
+            journal,
+            clock,
+            beats: crate::host::adapters::presence::BeatSlot::default(),
+            card_game: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// The Host's clock port (plan C9.2), for the records published
+    /// beside our presence.
+    pub(crate) fn clock(&self) -> &dyn rekindle_utils::Clock {
+        &*self.clock
+    }
+
+    /// Start the unlock Online, with no message or game, and run the STATUS
+    /// publisher in `scope`.
+    pub(crate) fn start(&self, scope: &Arc<rekindle_lifecycle::SessionScope>) {
+        *self.state.write() = State::unlocked();
+        if let Ok(mut published) = self.details.try_lock() {
+            *published = Published::default();
+        }
+        if self.transport.is_some() {
+            let deps = Arc::new(self.clone());
+            let wake = Arc::clone(&self.wake);
+            scope.spawn_with_token_or_drop("status publisher", move |stop| {
+                rekindle_presence::run_status_publisher(deps, wake, stop)
+            });
+            let this = self.clone();
+            scope.spawn_with_token_or_drop("presence details retry", move |stop| async move {
+                this.retry_details(stop).await;
+            });
+            if let Some(ready) = self
+                .transport
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade)
+                .map(|t| t.shared().subscribe_ready())
+            {
+                let this = self.clone();
+                scope.spawn_with_token_or_drop("presence on ready", move |stop| async move {
+                    this.publish_on_ready(ready, stop).await;
+                });
+            }
+        }
+        self.changed();
+    }
+
+    /// Our status now.
+    pub(crate) fn status(&self) -> SessionStatus {
+        self.state.read().status
+    }
+
+    /// A status the user picked: auto-away no longer holds it. Entering Invisible or Offline writes
+    /// the status message and the game empty ([`hides_details`]); leaving them writes both again
+    /// from what we hold (prod research batch 7 G1: Discord and Steam show an invisible user with no activity).
+    pub(crate) async fn set_status(&self, status: SessionStatus) {
+        let flipped = {
+            let mut state = self.state.write();
+            let flipped = hides_details(state.status) != hides_details(status);
+            state.status = status;
+            state.pre_away = None;
+            if state.idle == IdleState::AutoAway {
+                state.idle = IdleState::Active;
+            }
+            flipped
+        };
+        self.changed();
+        if let Some(beats) = self.beats.read().as_ref() {
+            beats.status_changed();
+        }
+        if flipped {
+            if let Err(e) = self.write_details(false).await {
+                tracing::warn!(error = %e, "presence details not rewritten for the status; retrying");
+            }
+        }
+    }
+
+    /// Write the status message and the game as the state now shows them,
+    /// each only if it differs from what was last written (`force_game`
+    /// writes the game anyway: a reseal). One writer at a time, reading the
+    /// state once it holds the lock, so the last write always matches the
+    /// latest status; a failure is retried by [`Self::retry_details`].
+    async fn write_details(&self, force_game: bool) -> Result<(), String> {
+        let mut published = self.details.lock().await;
+        let message = self.published_message();
+        let mut result = Ok(());
+        if !published.message.is(&message) {
+            published.message = Written::Unknown;
+            match self
+                .write_profile(subkeys::STATUS_MESSAGE, message.clone())
+                .await
+            {
+                Ok(()) => published.message = Written::Is(message),
+                Err(e) => result = Err(e),
+            }
+        }
+        let game = {
+            let state = self.state.read();
+            state.game.clone().filter(|_| !hides_details(state.status))
+        };
+        if force_game || !published.game.is(&game) {
+            published.game = Written::Unknown;
+            match self.write_game(game.as_ref()).await {
+                Ok(()) => published.game = Written::Is(game),
+                Err(e) => result = result.and(Err(e)),
+            }
+        }
+        self.details_pending
+            .store(result.is_err(), std::sync::atomic::Ordering::SeqCst);
+        result
+    }
+
+    /// Write the details again every [`DETAILS_RETRY`] while a write
+    /// failed, until `stop`.
+    async fn retry_details(&self, stop: tokio_util::sync::CancellationToken) {
+        loop {
+            // Biased, stop first: a lock as the retry falls due writes
+            // nothing more.
+            tokio::select! {
+                biased;
+                () = stop.cancelled() => return,
+                () = tokio::time::sleep(DETAILS_RETRY) => {}
+            }
+            if self
+                .details_pending
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                if let Err(e) = self.write_details(false).await {
+                    tracing::debug!(error = %e, "presence details still not written; retrying");
+                }
+            }
+        }
+    }
+
+    /// Each time the network turns ready (the transport's public-internet
+    /// watch, fed on both hosts), publish a **new** beat with the status we
+    /// hold now, and the details a failed write left unwritten. A status
+    /// picked while detached is kept, never queued: a held beat landing late
+    /// would claim reachability we did not have (`rekindle-record-pool`
+    /// `durable.rs`), so the beat is built at the edge, with the edge's time.
+    async fn publish_on_ready(
+        &self,
+        mut ready: tokio::sync::watch::Receiver<bool>,
+        stop: tokio_util::sync::CancellationToken,
+    ) {
+        ready.borrow_and_update();
+        while stop
+            .run_until_cancelled(ready.changed())
+            .await
+            .is_some_and(|changed| changed.is_ok())
+        {
+            if !*ready.borrow_and_update() {
+                continue;
+            }
+            self.republish();
+            if self
+                .details_pending
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                if let Err(e) = self.write_details(false).await {
+                    tracing::debug!(error = %e, "presence details not written on ready; retrying");
+                }
+            }
+        }
+    }
+
+    /// The status message as published: empty while the status hides it.
+    fn published_message(&self) -> Vec<u8> {
+        let state = self.state.read();
+        if hides_details(state.status) {
+            Vec::new()
+        } else {
+            state.message.clone().into_bytes()
+        }
+    }
+
+    /// Our status message, written to profile subkey 1 (empty while
+    /// Invisible or Offline).
+    ///
+    /// # Errors
+    /// The profile write failed (the message is kept and shown).
+    pub(crate) async fn set_message(&self, message: String) -> Result<(), String> {
+        self.state.write().message.clone_from(&message);
+        self.changed();
+        self.write_details(false).await
+    }
+
+    /// The game we play, or none: written to profile subkey 4 as the schema's packed `GameStatus`,
+    /// empty for none (plan E1.1), sealed under our friend-presence key (plan E2.5). Written empty
+    /// while Invisible or Offline: the game is kept and published on leaving them.
+    ///
+    /// # Errors
+    /// The profile write failed (the game is kept and shown).
+    pub(crate) async fn set_game(&self, game: Option<Game>) -> Result<(), String> {
+        self.state.write().game.clone_from(&game);
+        self.changed();
+        self.write_details(false).await
+    }
+
+    /// Our presence key moved to a new epoch: STATUS and GAME_INFO are
+    /// written again under it, so the friends who hold only the new key
+    /// read them.
+    pub(crate) async fn reseal(&self) {
+        self.republish();
+        if let Err(e) = self.write_details(true).await {
+            tracing::warn!(error = %e, "game info not resealed; retrying");
+        }
+    }
+
+    /// The idle stage's reading: auto-away sets Away over Online, keeping
+    /// the status it replaced.
+    pub(crate) fn auto_away(&self) {
+        {
+            let mut state = self.state.write();
+            if state.status != SessionStatus::Online || state.idle == IdleState::AutoAway {
+                return;
+            }
+            state.pre_away = Some(state.status);
+            state.status = SessionStatus::Away;
+            state.idle = IdleState::AutoAway;
+        }
+        self.changed();
+    }
+
+    /// Activity is back (or auto-away was turned off): what it replaced comes back.
+    pub(crate) fn active(&self) {
+        self.idle_now(IdleState::Active);
+    }
+
+    /// No idle time can be read here: auto-away cannot arm, and one that held ends.
+    pub(crate) fn idle_unavailable(&self) {
+        self.idle_now(IdleState::Unavailable);
+    }
+
+    /// Idle is now `to`, not auto-away: an auto-away that held ends with its reason, restoring the
+    /// status it replaced; a status the user picked (`set_status`) is never auto-away's to end.
+    fn idle_now(&self, to: IdleState) {
+        {
+            let mut state = self.state.write();
+            if state.idle == to {
+                return;
+            }
+            if state.idle == IdleState::AutoAway {
+                state.status = state.pre_away.take().unwrap_or(SessionStatus::Online);
+            }
+            state.idle = to;
+        }
+        self.changed();
+    }
+
+    /// Publish the current status now (the own-records stage once our
+    /// profile exists; a profile moved to a new record).
+    pub(crate) fn republish(&self) {
+        self.wake.notify_one();
+    }
+
+    /// What `PresenceGet` answers.
+    pub(crate) fn view(&self) -> OwnPresenceView {
+        let state = self.state.read().clone();
+        OwnPresenceView {
+            status: state.status,
+            status_message: state.message,
+            game: state.game.as_ref().map(|game| OwnGame {
+                game_id: game.id,
+                game_name: game.name.clone(),
+                elapsed_seconds: self.elapsed_seconds(game),
+                server_address: game.server_address.clone().map(String::from),
+                icon_key: rekindle_game_detect::GameDatabase::icon_key_for(game.id),
+            }),
+            idle: state.idle,
+        }
+    }
+
+    /// The teardown, once the unlock's tasks stopped: Offline, waiting at
+    /// most [`OFFLINE_WRITE_WAIT`]. Nothing was published without a pool
+    /// or a profile.
+    pub(crate) async fn publish_offline(&self) {
+        if self.profile_dht_info().is_none()
+            || self
+                .transport
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade)
+                .and_then(|t| t.records())
+                .is_none()
+        {
+            // Never a silent skip: friends would read us online until the
+            // status expires.
+            tracing::warn!(
+                profile = self.profile_dht_info().is_some(),
+                "offline status not written: no profile record or no record pool"
+            );
+            return;
+        }
+        let flipped = {
+            let mut state = self.state.write();
+            let flipped = !hides_details(state.status);
+            state.status = SessionStatus::Offline;
+            flipped
+        };
+        if !flipped {
+            // Already Invisible or Offline: that offline STATUS was written
+            // once, and a second write at quit would set Invisible apart
+            // from a real Offline.
+            return;
+        }
+        let details = async {
+            if let Err(e) = self.write_details(false).await {
+                tracing::warn!(error = %e, "presence details not cleared at the lock");
+            }
+        };
+        let status =
+            rekindle_presence::publish_status(Arc::new(self.clone()), SessionStatus::Offline);
+        let beats = crate::host::adapters::presence::quit(&self.beats);
+        match tokio::time::timeout(OFFLINE_WRITE_WAIT, async {
+            tokio::join!(status, details, beats).0
+        })
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "failed to publish offline status"),
+            Err(_) => tracing::info!("offline status still publishing; the lock continues"),
+        }
+    }
+
+    fn elapsed_seconds(&self, game: &Game) -> u32 {
+        u32::try_from(self.clock.now_ms().saturating_sub(game.started_at_ms) / 1000)
+            .unwrap_or(u32::MAX)
+    }
+
+    /// Wake the publisher and tell every frontend.
+    fn changed(&self) {
+        self.wake.notify_one();
+        self.card_game.notify_one();
+        let owner = self
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone());
+        let Some(public_key) = owner else {
+            return;
+        };
+        let view = self.view();
+        let game = view.game.map_or(GameActivity::Idle, |game| {
+            GameActivity::from_parts(
+                Some(game.game_name),
+                Some(game.game_id),
+                Some(game.elapsed_seconds),
+                game.server_address,
+                game.icon_key,
+            )
+        });
+        // Our own device sees our real status, Invisible included; peers
+        // see the wire value (Invisible folds to "offline").
+        let status = serde_json::to_value(view.status)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned));
+        let snapshot = PresenceSnapshot {
+            status,
+            status_message: Some(view.status_message),
+            game: Some(game),
+            idle: Some(view.idle),
+        };
+        let event = PresenceEvent::SelfChanged {
+            public_key,
+            snapshot,
+        };
+        super::journal_entry::publish(&self.journal, SubscriptionEvent::Presence(event));
+    }
+
+    /// Write one of our profile's subkeys through the session's pool.
+    ///
+    /// # Errors
+    /// No profile yet, no pool, or the write failed.
+    pub(crate) async fn write_profile(&self, subkey: u32, value: Vec<u8>) -> Result<(), String> {
+        let Some(profile_key) = self.profile_dht_info() else {
+            return Err("no profile yet: it is published when the network is up".into());
+        };
+        let pool = self
+            .transport
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+            .and_then(|t| t.records())
+            .ok_or("record pool not running")?;
+        let outcome = rekindle_protocol::dht::profile::set_own_profile_subkey(
+            pool.as_ref(),
+            &profile_key,
+            subkey,
+            value,
+        )
+        .await
+        .map_err(|e| format!("profile write: {e}"))?;
+        if outcome.missed() {
+            tracing::warn!(subkey, ?outcome, "profile write not stored at consensus");
+        }
+        Ok(())
+    }
+}
+
+/// Whether `status` shows no status message and no game to friends:
+/// Invisible (which peers read as offline) and Offline.
+fn hides_details(status: SessionStatus) -> bool {
+    rekindle_presence::hides_presence(status)
+}
+
+#[async_trait]
+impl StatusPublisherDeps for OwnPresence {
+    fn profile_dht_info(&self) -> Option<String> {
+        self.session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.profile_dht_key.clone())
+            .filter(|key| !key.is_empty())
+    }
+
+    async fn write_profile_status_subkey(
+        &self,
+        profile_key: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), PresenceError> {
+        let pool = self
+            .transport
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+            .and_then(|t| t.records())
+            .ok_or_else(|| PresenceError::Dht("record pool not running".into()))?;
+        let outcome = rekindle_protocol::dht::profile::set_own_profile_status(
+            pool.as_ref(),
+            profile_key,
+            payload,
+        )
+        .await
+        .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        if outcome.missed() {
+            return Err(PresenceError::Dht(format!(
+                "status not stored ({outcome:?})"
+            )));
+        }
+        Ok(())
+    }
+
+    fn presence_key(&self) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)> {
+        self.session
+            .read()
+            .as_ref()
+            .and_then(|s| Some((s.identity.public_key_hex.clone(), s.presence_key.clone()?)))
+    }
+
+    fn current_identity_status(&self) -> Option<SessionStatus> {
+        Some(self.status())
+    }
+
+    fn now_ms(&self) -> i64 {
+        self.clock.now_ms_i64()
+    }
+}

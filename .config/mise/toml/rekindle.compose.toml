@@ -223,8 +223,8 @@ for node in alice bob carol; do
   init_status=$(docker exec "${container}" systemctl is-active rekindle-init.service 2>/dev/null || echo "unknown")
   case "${init_status}" in
     active|inactive)
-      # Check if session file exists (init completed successfully)
-      if docker exec "${container}" test -f /home/rekindle/.local/share/com.rekindle.app/state/session.json 2>/dev/null; then
+      # Check if the identity registry exists (init completed successfully)
+      if docker exec "${container}" test -f /home/rekindle/.local/share/com.rekindle.app/state/identities.json 2>/dev/null; then
         echo "   ✅ Identity initialized"
         # Show public key
         pubkey=$(docker exec --user rekindle "${container}" rekindle identity show --json 2>/dev/null | jq -r '.public_key // empty' 2>/dev/null || echo "")

@@ -1,11 +1,9 @@
 //! Tail of [`ControlPayload::into_event`] — see `into_event_control.rs`
-//! for the split rationale. Handles events, threads, game servers,
-//! governance, voice signaling, admin delegation, bootstrap, sync, and
-//! system payloads.
+//! for the split rationale. Handles events, game servers, voice
+//! signaling, bootstrap, sync, and system payloads.
 
 use rekindle_types::subscription_events::{
-    CryptoEvent, GovernanceEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent,
-    VoiceScope,
+    SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
 
 /// Every voice signal on the gossip mesh is community-scoped — a DM
@@ -17,8 +15,8 @@ fn scope(community: String, channel: String) -> VoiceScope {
 use rekindle_codec::community::envelope::ControlPayload;
 
 /// Tail of [`ControlPayload::into_event`] — see that method for the split
-/// rationale. Handles events, threads, game servers, governance, voice
-/// signaling, admin delegation, bootstrap, sync, and system payloads.
+/// rationale. Handles events, game servers, voice signaling,
+/// bootstrap, sync, and system payloads.
 /// Earlier variants are routed by `into_event` and never reach the
 /// `unreachable!` arm below.
 pub fn control_into_event_rest(
@@ -59,51 +57,6 @@ pub fn control_into_event_rest(
             pseudonym: pseudonym_key,
             rsvp_status: status,
         }),
-        ControlPayload::EventReminder {
-            event_id,
-            title,
-            minutes_until_start,
-        } => SubscriptionEvent::Social(SocialEvent::EventReminder {
-            community: c(),
-            event_id,
-            title,
-            minutes_until_start,
-        }),
-
-        // ── Threads ─────────────────────────────────────────
-        ControlPayload::ThreadCreated { thread } => {
-            SubscriptionEvent::Social(SocialEvent::ThreadCreated {
-                community: c(),
-                thread: Box::new(thread),
-            })
-        }
-        ControlPayload::ThreadMessageReceived {
-            thread_id,
-            message_id,
-            sender_pseudonym,
-            timestamp,
-            reply_to_id,
-            ..
-        } => SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted {
-            community: c(),
-            thread_id,
-            message_id,
-            sender_pseudonym,
-            timestamp,
-            // The payload carries `ciphertext` and a `mek_generation`,
-            // not a plaintext body — decryption happens above this
-            // layer, so this decoder cannot fill it.
-            body: None,
-            reply_to_id,
-        }),
-        ControlPayload::ThreadArchived {
-            thread_id,
-            archived,
-        } => SubscriptionEvent::Social(SocialEvent::ThreadArchiveChanged {
-            community: c(),
-            thread_id,
-            archived,
-        }),
 
         // ── Game servers ────────────────────────────────────
         ControlPayload::GameServerAdded { server } => {
@@ -119,36 +72,7 @@ pub fn control_into_event_rest(
             })
         }
 
-        // ── Governance ──────────────────────────────────────
-        ControlPayload::GovernanceUpdated {
-            subkey_index,
-            lamport_ts,
-            ..
-        } => SubscriptionEvent::Governance(GovernanceEvent::GovernanceSubkeyUpdated {
-            community: c(),
-            subkey_index,
-            lamport_ts,
-        }),
-
         // ── Voice signaling ─────────────────────────────────
-        ControlPayload::VoiceJoin {
-            channel_id,
-            route_blob,
-            display_name,
-            ..
-        } => {
-            // Both were being discarded here, under a comment claiming
-            // gossip carried neither. `VoiceJoin` has always had them:
-            // the display name rides the handshake so a roster never
-            // waits on registry-scan timing, and the route blob is how
-            // a peer is reached at all.
-            SubscriptionEvent::Voice(VoiceEvent::Joined {
-                scope: scope(c(), channel_id),
-                pseudonym: s(),
-                display_name,
-                route_blob: Some(route_blob),
-            })
-        }
         ControlPayload::VoiceLeave { channel_id } => SubscriptionEvent::Voice(VoiceEvent::Left {
             scope: scope(c(), channel_id),
             pseudonym: s(),
@@ -180,23 +104,6 @@ pub fn control_into_event_rest(
             target_pseudonym,
             deafened,
         }),
-        ControlPayload::VoiceRoster {
-            channel_id,
-            participants,
-        } => SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
-            scope: scope(c(), channel_id),
-            // The roster's whole purpose is telling a joiner *who* is
-            // already present, so the members travel with it rather
-            // than a count that cannot seed anything.
-            participants: participants
-                .into_iter()
-                .map(|p| rekindle_types::subscription_events::VoiceParticipant {
-                    pseudonym_key: p.pseudonym_key,
-                    display_name: p.display_name,
-                })
-                .collect(),
-        }),
-
         // ── Stage signalling ────────────────────────────────
         ControlPayload::StageUpdate {
             channel_id,
@@ -240,20 +147,6 @@ pub fn control_into_event_rest(
             actor_pseudonym,
         }),
 
-        // ── Admin delegation ────────────────────────────────
-        ControlPayload::AdminKeypairGrant { .. } => {
-            SubscriptionEvent::Crypto(CryptoEvent::AdminKeypairGranted { community: c() })
-        }
-        ControlPayload::SlotKeypairGrant {
-            slot_index,
-            segment_index,
-            ..
-        } => SubscriptionEvent::Crypto(CryptoEvent::SlotKeypairGranted {
-            community: c(),
-            slot_index,
-            segment_index,
-        }),
-
         // ── Bootstrap ───────────────────────────────────────
         ControlPayload::BootstrapRequest {
             joiner_pseudonym, ..
@@ -261,48 +154,8 @@ pub fn control_into_event_rest(
             community: c(),
             joiner_pseudonym,
         }),
-        ControlPayload::BootstrapResponse { .. } => {
+        ControlPayload::BootstrapResponseV2 { .. } => {
             SubscriptionEvent::System(SystemEvent::BootstrapReceived { community: c() })
-        }
-
-        // ── Sync ────────────────────────────────────────────
-        ControlPayload::SyncRequest {
-            channel_id,
-            since_timestamp,
-        } => SubscriptionEvent::System(SystemEvent::SyncRequested {
-            community: c(),
-            channel: channel_id,
-            since_timestamp,
-        }),
-        ControlPayload::SyncResponse {
-            channel_id,
-            messages,
-        } => SubscriptionEvent::System(SystemEvent::SyncReceived {
-            community: c(),
-            channel: channel_id,
-            message_count: messages.len(),
-        }),
-
-        // ── System ──────────────────────────────────────────
-        ControlPayload::SystemMessage { body, timestamp } => {
-            SubscriptionEvent::System(SystemEvent::Announcement {
-                community: Some(c()),
-                body,
-                timestamp,
-            })
-        }
-        ControlPayload::RaidAlert { active } => SubscriptionEvent::System(SystemEvent::RaidAlert {
-            community: c(),
-            active,
-        }),
-        ControlPayload::ChannelLockdown { locked } => {
-            SubscriptionEvent::System(SystemEvent::ChannelLockdown {
-                community: c(),
-                locked,
-            })
-        }
-        ControlPayload::KickedNotification => {
-            SubscriptionEvent::System(SystemEvent::Kicked { community: c() })
         }
 
         // Unreachable: every variant above the split is routed here by

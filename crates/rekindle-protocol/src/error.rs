@@ -31,11 +31,20 @@ pub enum ProtocolError {
     #[error("message send failed: {0}")]
     SendFailed(String),
 
+    /// An encoded envelope larger than Veilid's message cap
+    /// ([`rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN`]), refused
+    /// before Veilid sees it. Permanent: no retry or other path fits it.
+    #[error("message of {len} bytes exceeds the {max}-byte Veilid message limit")]
+    MessageTooLarge { len: usize, max: usize },
+
     #[error("message receive failed: {0}")]
     ReceiveFailed(String),
 
     #[error("serialization error: {0}")]
     Serialization(String),
+
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
 
     #[error("deserialization error: {0}")]
     Deserialization(String),
@@ -90,7 +99,7 @@ pub enum ProtocolError {
 
     /// A write that a structure depends on did not reach consensus (or lost
     /// to a newer value), so the structure was not updated
-    /// ([`SetOutcome::missed`](crate::dht::pool::SetOutcome::missed)).
+    /// ([`SetOutcome::missed`](rekindle_records::port::SetOutcome::missed)).
     #[error("subkey {subkey} not stored: {outcome}")]
     NotStored { subkey: u32, outcome: String },
 }
@@ -100,8 +109,11 @@ impl From<rekindle_codec::CodecError> for ProtocolError {
         use rekindle_codec::CodecError;
         match e {
             CodecError::Serialization(m) => Self::Serialization(m),
+            CodecError::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             CodecError::Deserialization(m) => Self::Deserialization(m),
-            CodecError::UnknownVariant(m) => Self::UnknownVariant(m),
+            CodecError::UnknownVariant(m) | CodecError::UnknownGovernanceArm(m) => {
+                Self::UnknownVariant(m)
+            }
             CodecError::Verification(m) => Self::Verification(m),
         }
     }
@@ -112,3 +124,66 @@ impl From<rekindle_crypto::CryptoError> for ProtocolError {
         Self::CryptoError(e.to_string())
     }
 }
+
+impl From<rekindle_records::port::PortError> for ProtocolError {
+    fn from(e: rekindle_records::port::PortError) -> Self {
+        use rekindle_records::port::PortError;
+        match e {
+            PortError::Dht(m) => Self::DhtError(m),
+            PortError::Unreachable(m) => Self::DhtRecordUnreachable(m),
+            PortError::Routing(m) => Self::RoutingError(m),
+            // A lost call's outcome is unknown, as a failed send's is.
+            PortError::Send(m) | PortError::Timeout(m) => Self::SendFailed(m),
+            PortError::RouteUnusable(m) => Self::RouteUnusable(m),
+            PortError::MessageTooLarge { len, max } => Self::MessageTooLarge { len, max },
+            PortError::SubkeyTooLarge { subkey, len, cap } => {
+                Self::SubkeyTooLarge { subkey, len, cap }
+            }
+            PortError::LeaseNotHeld(id) => Self::LeaseNotHeld(id),
+            PortError::Closed => Self::PoolClosed,
+            PortError::NotWritable(key) => Self::NotWritable(key),
+            PortError::NotStored { subkey, outcome } => Self::NotStored { subkey, outcome },
+            PortError::KeyText(m) => Self::DhtError(format!("bad key text: {m}")),
+            PortError::Node(m) => Self::Internal(m),
+            PortError::Codec(m) => Self::Deserialization(m),
+            PortError::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
+            PortError::Crypto(m) => Self::CryptoError(m),
+        }
+    }
+}
+
+impl From<ProtocolError> for rekindle_records::port::PortError {
+    fn from(e: ProtocolError) -> Self {
+        match e {
+            ProtocolError::DhtError(m) => Self::Dht(m),
+            ProtocolError::DhtRecordUnreachable(m) => Self::Unreachable(m),
+            ProtocolError::RoutingError(m) => Self::Routing(m),
+            ProtocolError::SendFailed(m) | ProtocolError::ReceiveFailed(m) => Self::Send(m),
+            ProtocolError::RouteUnusable(m) => Self::RouteUnusable(m),
+            ProtocolError::MessageTooLarge { len, max } => Self::MessageTooLarge { len, max },
+            ProtocolError::SubkeyTooLarge { subkey, len, cap } => {
+                Self::SubkeyTooLarge { subkey, len, cap }
+            }
+            ProtocolError::LeaseNotHeld(id) => Self::LeaseNotHeld(id),
+            ProtocolError::PoolClosed => Self::Closed,
+            ProtocolError::NotWritable(key) => Self::NotWritable(key),
+            ProtocolError::NotStored { subkey, outcome } => Self::NotStored { subkey, outcome },
+            ProtocolError::PeerNotFound(m) => Self::Routing(format!("peer not found: {m}")),
+            ProtocolError::NodeStartup(m)
+            | ProtocolError::AttachFailed(m)
+            | ProtocolError::Network(m)
+            | ProtocolError::Internal(m) => Self::Node(m),
+            ProtocolError::NodeNotInitialized => Self::Node("node not initialized".into()),
+            ProtocolError::Serialization(m) => Self::Codec(format!("serialization: {m}")),
+            ProtocolError::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
+            ProtocolError::Deserialization(m) => Self::Codec(format!("deserialization: {m}")),
+            ProtocolError::UnknownVariant(m) => Self::Codec(format!("unknown variant: {m}")),
+            ProtocolError::Verification(m) => Self::Crypto(format!("verification: {m}")),
+            ProtocolError::CryptoError(m) => Self::Crypto(m),
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "error_tests.rs"]
+mod tests;

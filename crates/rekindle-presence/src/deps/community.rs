@@ -12,111 +12,53 @@ use crate::deps::PresenceError;
 
 #[async_trait]
 pub trait CommunityPresenceDeps: Send + Sync + 'static {
+    /// The shell's voice state (plan E3.4 S8-pre): the same port the beat
+    /// path reads, so the registry row and the beat say the same voice
+    /// channel until S8a removes the row.
+    fn session_presence(&self) -> std::sync::Arc<dyn super::SessionPresence>;
+
     /// The scope of the session this work belongs to. A poll tick stops
     /// before its next Veilid call once it is closed (plan C4.L1).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
 
-    // === Initial-sync handshake surface (21.k-REDO) ===
+    /// The host's clock port in seconds (plan C9.2): heartbeats, join
+    /// times and the poll's freshness checks read it, never the wall clock.
+    fn now_secs(&self) -> u64;
 
     /// Pseudonym key (hex) the local user holds in `community_id`,
     /// or empty string when missing.
     fn my_pseudonym_for_community(&self, community_id: &str) -> String;
 
-    /// Our published private route blob (if attached), used by the
-    /// gossip `PresenceUpdate` broadcast. This is the GENERAL route
+    /// Our published private route blob (if attached), written on our
+    /// presence row. This is the GENERAL route
     /// (Reliable + PreferOrdered) for chat / governance / gossip.
     fn our_route_blob(&self) -> Option<Vec<u8>>;
 
-    /// String form of the local user's current presence status —
-    /// "online" / "away" / "busy" / "offline" (Invisible folds to
-    /// "offline"). Defaults to "online" when no identity is loaded.
-    ///
-    /// `community_id` is the wire-up point for per-community
-    /// `MemberPresence.custom_status` (architecture spec
-    /// `rekindle-communities-architecture.md` line 754 — custom
-    /// status text like "Playing Halo" is published per-community).
-    /// The current adapter impl returns global identity status; the
-    /// parameter stays so a follow-up commit can resolve
-    /// `community.my_custom_status` first and fall back to identity
-    /// status without breaking the trait signature.
-    fn current_presence_status_str(&self, community_id: &str) -> String;
-
-    /// List of every joined channel in the community.
-    fn channel_ids_for_community(&self, community_id: &str) -> Vec<String>;
-
-    /// `(channel_id, smpl_record_key)` pairs for every channel that
-    /// has an SMPL log record allocated.
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
-
-    /// The community's writer index: the slot of every member the
-    /// presence scan placed in our segment, and our own. A channel
-    /// catch-up reads only these slots, never the whole range (plan
-    /// C7.12); slots are where members joined, not `0..member count`.
-    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32>;
-
-    /// Fire-and-forget gossip broadcast of a community envelope.
-    /// Mirrors `services::community::send_to_mesh` semantics: the
-    /// transport pipeline is spawned + errors logged inside.
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: rekindle_codec::community::envelope::CommunityEnvelope,
-    );
-
-    /// Highest timestamp persisted locally for the given channel —
-    /// the orchestrator uses this as the `since_timestamp` on
-    /// `SyncRequest` envelopes.
-    async fn last_channel_message_timestamp(&self, community_id: &str, channel_id: &str) -> i64;
-
-    /// Record that a `SyncRequest` was just fired for the channel
-    /// (so the retry sweep in `presence_poll_tick` can detect stale
-    /// outstanding requests).
-    fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32);
-
-    /// Read the `member_slots` of an SMPL channel record that hold a
-    /// value: each message with the subkey it was written to. The record
-    /// key and subkey are the body's AAD position, so a reader that drops
-    /// them cannot open the body.
-    async fn read_channel_message_items(
-        &self,
-        record_key: &str,
-        member_slots: &[u32],
-    ) -> Result<
-        Vec<(
-            u32,
-            rekindle_codec::community::channel_record::ChannelMessage,
-        )>,
-        PresenceError,
-    >;
-
-    /// Persist a batch of newly-fetched channel messages, read from
-    /// `record_key`, into the local message log (skips rows already
-    /// stored by message_id). The host opens each body at its position.
-    fn persist_channel_catchup(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        record_key: &str,
-        messages: Vec<(
-            u32,
-            rekindle_codec::community::channel_record::ChannelMessage,
-        )>,
-    );
-
-    /// Flip `gossip.needs_initial_sync` to false after the initial
-    /// sync round completes.
-    fn mark_initial_sync_done(&self, community_id: &str);
+    /// Return once our general route is live: the record port's own
+    /// `available_own(General)`, the wait the own-records stage takes, so
+    /// the first presence row names a route peers can import (live
+    /// finding 25). At once when no transport runs: the tick reports that.
+    async fn own_route_available(&self);
 
     // === Registry write surface (21.j-REDO) ===
-
-    /// Local user's display name (used as the default for the
-    /// presence row's `display_name` field).
-    fn identity_display_name(&self) -> String;
 
     /// Snapshot of every per-community profile field the presence
     /// row carries — read once under the communities lock so the
     /// write path doesn't have to juggle six clones inline.
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot;
+
+    /// The local user's session in this community (status, game, focused
+    /// channel, last-active), as the Host holds it (plan E3.4 S8-pre
+    /// ruling: never a shell copy), the same session our beat seals.
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession;
+
+    /// The local user's per-community sharing policy (default-deny), the
+    /// Host's (`set_presence_policy`). Local-only, never published:
+    /// applied before the row is signed.
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy;
 
     /// W11.2 — encrypt the local history ranges with the current
     /// community MEK. Returns `None` when MEK is missing (the caller
@@ -126,21 +68,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         community_id: &str,
         ranges: &[rekindle_types::presence::HistoryRange],
     ) -> Option<rekindle_types::presence::EncryptedHistoryRanges>;
-
-    /// The local user's current session for this community — typed
-    /// status (mapped from identity `UserStatus`), focused channel
-    /// (`my_session_location`), and last-active. Built under the
-    /// communities lock. The single source of truth the write path
-    /// derives the loose `status` string from.
-    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession;
-
-    /// The local user's per-community presence sharing policy
-    /// (default-deny). Local-only — never published. Applied to the
-    /// session before signing + publishing.
-    fn presence_policy(
-        &self,
-        community_id: &str,
-    ) -> rekindle_types::presence::PresenceSharingPolicy;
 
     /// Encrypt the identity-revealing `SessionExtras` (location +
     /// activity) under the current community MEK so only current
@@ -204,14 +131,9 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
 
     /// Fire a `MemberDiscovered` community event for a freshly-seen
     /// pseudonym. The adapter renders the matching src-tauri event
-    /// shape.
-    fn emit_member_discovered(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        display_name: &str,
-        subkey_index: u32,
-    );
+    /// shape; no presence row names the member (plan E3.4 S6: a name is
+    /// the member's verified card's).
+    fn emit_member_discovered(&self, community_id: &str, pseudonym_key: &str, subkey_index: u32);
 
     // === Outer-loop hook (21.h-REDO) ===
 
@@ -266,34 +188,15 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         skip_subkey: Option<u32>,
     ) -> Vec<(u32, Vec<u8>)>;
 
-    /// Snapshot the in-memory `community.member_roles` map for
-    /// `community_id` (read-only). The crate orchestrator composes
-    /// this with the governance assignments + local role-ids to
-    /// produce the merged map via
-    /// [`crate::community::role_merge::compute_merged_roles`].
-    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>>;
-
-    /// Snapshot the merged-governance `role_assignments` map
-    /// (keyed by pseudonym) for `community_id`. Returns empty when
-    /// the community has no governance state loaded yet.
-    fn read_governance_role_assignments(
-        &self,
-        community_id: &str,
-    ) -> HashMap<rekindle_types::id::PseudonymKey, HashSet<rekindle_types::id::RoleId>>;
-
-    /// Local user's role-ids for `community_id` (the authoritative
-    /// override that overrides governance-state lag).
-    fn read_my_role_ids(&self, community_id: &str) -> Vec<u32>;
-
     /// Apply the post-scan member-state update: drop bans from
     /// every in-memory collection, extend `known_members` with the
-    /// freshly-scanned keys, replace `member_roles` with the
-    /// merged map. The crate orchestrator computes the inputs;
-    /// this method does the AppState write under one lock.
+    /// freshly-scanned keys. Member roles are the merged governance's
+    /// role assignments, which no scan writes. The crate orchestrator
+    /// computes the inputs; this method does the state write under one
+    /// lock.
     fn apply_member_state_update(
         &self,
         community_id: &str,
-        merged_member_roles: HashMap<String, Vec<u32>>,
         known_member_keys: HashSet<String>,
         banned_members: &HashSet<String>,
     );
@@ -317,97 +220,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         updates: HashMap<String, crate::community::MemberProfileSnapshot>,
         emit_refreshed: bool,
     );
-
-    /// Re-inject still-fresh peers from the prior gossip overlay
-    /// into `online_members` (architecture §3 — TTL-based eviction
-    /// over a 180 s threshold so a peer briefly missing from one
-    /// scan doesn't drop them from the overlay).
-    fn extend_online_with_recent_gossip(
-        &self,
-        community_id: &str,
-        online_members: &mut HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-        eviction_threshold_secs: u64,
-    );
-
-    /// Peers that WERE in the prior gossip overlay's online set but
-    /// are absent from the freshly-scanned `online_members`. Used
-    /// to emit one `MemberPresenceChanged{status:"offline"}` event
-    /// per gone-offline peer.
-    fn gossip_offline_diff(
-        &self,
-        community_id: &str,
-        online_members: &HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-    ) -> Vec<String>;
-
-    /// Snapshot the prior gossip overlay's mutation-relevant
-    /// fields (lamport counter + needs_initial_sync flag + the
-    /// drained pending-mesh queue). The crate orchestrator hands
-    /// this to
-    /// [`crate::community::overlay_rebuild::compute_rebuild_plan`]
-    /// to compute the new overlay state.
-    fn read_gossip_snapshot(&self, community_id: &str) -> crate::community::GossipOverlaySnapshot;
-
-    /// Atomically write the rebuilt overlay back into the
-    /// community state. The orchestrator passes the plan returned
-    /// from `compute_rebuild_plan` after the write lock releases —
-    /// the adapter does the actual `peers` / `online_members` /
-    /// `needs_initial_sync` /
-    /// `pending_mesh_broadcasts` writes under one lock.
-    fn apply_gossip_rebuild_plan(
-        &self,
-        community_id: &str,
-        plan: crate::community::GossipOverlayPlan,
-    );
-
-    /// Resend a drained signed envelope through the gossip mesh.
-    /// Adapter forwards to `services::community::send_to_mesh_raw`.
-    fn send_to_mesh_raw(
-        &self,
-        community_id: &str,
-        envelope: rekindle_codec::community::envelope::SignedEnvelope,
-    );
-
-    /// Emit a `MemberPresenceChanged{status:"offline"}` community
-    /// event for a peer that's just gone offline.
-    fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str);
-
-    /// Voice channel the LOCAL user is currently connected to in this
-    /// community, if any. Rides the MEK-encrypted `SessionExtras` on
-    /// our presence row (MatrixRTC `m.rtc.member` pattern) so the
-    /// channel roster has a durable, heartbeat-renewed backstop.
-    fn active_voice_channel(&self, community_id: &str) -> Option<String>;
-
-    /// Hand the scan's presence-derived voice membership view to the
-    /// voice layer for roster reconciliation (add lost-VoiceJoin
-    /// members, expire ghosts). Fire-and-forget — the add/remove
-    /// DECISIONS live in `rekindle-voice`; the adapter only bridges.
-    fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<VoicePresenceRow>);
-
-    /// Pending-sync entries the orchestrator should retry (older
-    /// than `stale_window_secs` with attempt count below
-    /// `max_attempts`).
-    fn stale_pending_syncs(
-        &self,
-        community_id: &str,
-        now_secs: u64,
-        stale_window_secs: u64,
-        max_attempts: u32,
-    ) -> Vec<(String, u32)>;
-
-    /// Update the pending-sync timestamp + attempt count for a
-    /// channel. Pre-port wrote `pending_syncs.insert(channel, (ts, attempt))`.
-    fn update_pending_sync(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        now_secs: u64,
-        attempt: u32,
-    );
-
-    /// Drop pending-sync entries that have hit their attempt cap.
-    fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32);
 
     /// Architecture §15 A5/P4.3 — admin-side trigger for Plate
     /// Gate segment expansion. Spawns a background task; returns
@@ -438,29 +250,11 @@ pub enum RowWrite {
     Stored,
     /// The network held another value at our sequence number or above:
     /// Veilid adopted it and stored it locally (`set_value.rs:620-645`).
-    Superseded { seq: Option<u32>, data: Vec<u8> },
+    Superseded { seq: u32, data: Vec<u8> },
 }
 
-/// Presence-derived voice membership view of one community member,
-/// handed from the registry scan to the voice roster reconcile
-/// (architecture three-path: the SMPL presence row is the DURABLE
-/// roster; gossip VoiceJoin/VoiceLeave is the fast path).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VoicePresenceRow {
-    pub pseudonym_hex: String,
-    pub display_name: Option<String>,
-    /// The cleartext voice channel claim on the row. The row carries no
-    /// media route (plan C7.15): the reconcile introduces us through the
-    /// call's signaling instead.
-    pub voice_channel_id: Option<String>,
-    /// Row passed the scan's liveness gate (fresh heartbeat +
-    /// non-offline). Stale rows still flow through so the reconcile
-    /// can expire ghosts.
-    pub fresh: bool,
-}
-
-/// In-memory snapshot of one online community member used by the
-/// gossip overlay rebuild. Mirrors src-tauri's `OnlineMember`
+/// In-memory snapshot of one online community member a fresh registry
+/// row decodes to. Mirrors src-tauri's `OnlineMember`
 /// shape without forcing the crate to depend on the AppState type.
 ///
 /// `location` / `last_active` are the decoded session signals used by

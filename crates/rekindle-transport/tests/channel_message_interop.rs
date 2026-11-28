@@ -25,6 +25,7 @@ fn sample() -> ChannelMessage {
         mek_generation: 4,
         timestamp: 5,
         reply_to: None,
+        revives: None,
         lamport_ts: 6,
         message_id: None,
         attachment: None,

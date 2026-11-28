@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
 use rekindle_voice::{VoiceSessionDeps, VoiceShutdownOpts};
+pub use route_heal::heal_call_routes;
 
 use crate::state::AppState;
 use rekindle_db::Db;
@@ -38,6 +39,7 @@ pub mod io_helpers;
 pub mod media_egress;
 pub mod media_feedback;
 pub mod media_keys;
+mod route_heal;
 pub mod session_setup;
 pub mod video_allocation;
 
@@ -128,30 +130,16 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     else {
         return;
     };
-    // Capture the active slot BEFORE teardown drops the engine handle
-    // — the media-ready gate must flip not-ready for the session that
-    // is ending.
-    let active_slot = {
-        let ve = state.voice_engine.lock();
-        ve.as_ref()
-            .and_then(|h| h.community_id.clone().map(|c| (c, h.channel_id.clone())))
-    };
+    // A FULL shutdown ends the channel session inside the crate's
+    // teardown (`VoiceSessionDeps::end_channel_session`), so the Leave
+    // button, which calls the crate directly, ends it as well.
     let adapter = VoiceAdapter::new(Arc::clone(&state_arc), app_handle, pool);
     let deps: Arc<dyn VoiceSessionDeps> = adapter;
     rekindle_voice::session::shutdown_voice(&deps, opts).await;
-    if let Some((community_id, channel_id)) = active_slot {
-        crate::services::community::media_ready_runtime::clear_media_ready(
-            &state_arc,
-            &community_id,
-            &channel_id,
-        );
-        // The channel session's keys end with it; a rejoin draws new ones
-        // (plan C7.20).
-        state_arc.voice_sender_keys.end(&community_id, &channel_id);
+    if opts.stop_devices {
+        // The session is gone, whichever call owned its media (plan CE2).
+        state.call_media.clear();
     }
-    // Native camera session dies with the voice session — its frames
-    // have nowhere to go without the roster's routes.
-    crate::services::native_video::stop(state);
 
     // Belt-and-suspenders: clear voice channels even if the adapter
     // path early-returned (no AppHandle in tests, etc.).

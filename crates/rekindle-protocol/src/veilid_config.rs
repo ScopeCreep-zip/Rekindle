@@ -17,7 +17,7 @@ use veilid_core::VeilidConfig;
 /// non-default values to unless built with `footgun-config` (we are not).
 /// It is not an upper bound on a DHT call: before consensus a fanout's
 /// deadline moves to a full timeout past its last accepting node
-/// (`rpc_processor/fanout/fanout_call.rs:642-656`), plus the operation-gate
+/// (0.5.8 `rpc_processor/fanout/fanout_call.rs:809-826`), plus the operation-gate
 /// and record-lock waits. There is no cancellation API (veilid issue #516).
 pub const LONGEST_VEILID_CALL: Duration = Duration::from_secs(10);
 
@@ -46,8 +46,9 @@ pub fn build_veilid_config(
     // veilid-core 0.5.3's keyring-manager 0.7.1 reached secret-service's
     // BLOCKING zbus API on Linux and panicked inside our Tokio runtime
     // ("cannot start a runtime from within a runtime") before any
-    // fallback could run. 0.5.7 resolves keyring-manager 0.8.3, which is
-    // UNTESTED against that panic — retest protocol in
+    // fallback could run. 0.5.8 pins keyring-manager =0.10.0
+    // (veilid-core/Cargo.toml:194), UNTESTED against that panic — retest
+    // protocol in
     // docs/contributor/veilid-0.5.7-migration-plan.md §2.3. Low stakes:
     // this store only guards Veilid's own node/route secrets (they live
     // in `storage_dir` regardless); user identity keys are in the
@@ -58,11 +59,13 @@ pub fn build_veilid_config(
     // UPnP/IGD automatic port mapping. Defaults off; without it a NAT'd
     // node degrades gracefully to inbound relays via VICE. History and
     // the flip protocol: docs/contributor/veilid-0.5.7-gap-audit.md §1.1
-    // (the 0.5.3-era panic is gone in 0.5.7, but the
-    // restart-on-IGD-failure loop is not, and the original failure was
+    // (the 0.5.3-era panic is gone since 0.5.7, but the
+    // restart-on-IGD-failure loop is not: 0.5.8
+    // `network/native/tasks/upnp_task.rs:21-28`; the original failure was
     // never conclusively diagnosed — flip only under attachment-flap
-    // monitoring). Note: 0.5.7 silently disables UPnP whenever
-    // `privacy.require_inbound_relay` is set.
+    // monitoring). Note: Veilid silently disables UPnP whenever
+    // `privacy.require_inbound_relay` is set (0.5.8
+    // `network_manager/network/native/mod.rs:1367-1370`).
     vc.network.upnp = opts.upnp;
 
     // Inbound private-route hops. Default 1: compiled paths are
@@ -88,74 +91,26 @@ pub fn build_veilid_config(
     // #492), and VeilidChat disables it on its nodes until then
     // (`veilid_support/lib/src/config.dart:230-234`). Disabled, the node
     // answers others' get/set/inspect/watch with "dht is not available"
-    // (`rpc_get_value.rs:191-198` and siblings) and fanouts skip it; our own
+    // (0.5.8 `rpc_get_value.rs:191-198` and siblings) and fanouts skip it; our own
     // DHT calls fan out to DHTV nodes as before, and the keepalive's
-    // rehydrate is an outbound set (`rehydrate.rs:50-57`), so mutual aid is
+    // rehydrate is an outbound set (`rehydrate.rs:318-330`), so mutual aid is
     // unchanged. It also stops this node caching others' records, whose
     // reads a caching node can observe (veilid #319). Not a knob: no app
     // node should serve until #492 lands.
     vc.capabilities.disable = vec![veilid_core::VEILID_CAPABILITY_DHT];
 
+    // While attached, keep a hidden app from being throttled (plan VU
+    // decision 5): Veilid holds a foreground guard while the node is not
+    // Detached (0.5.8 `attachment_manager/mod.rs:603-620`; on macOS
+    // `beginActivityWithOptions(UserInitiatedAllowingIdleSystemSleep)`,
+    // veilid-tools `app_lifecycle/macos.rs:65-66`). Without it a hidden tray
+    // app is App-Napped, its ticks stall and Veilid re-sends its attachment
+    // after every stall (synthesis #6, #13). Pinned, not left to a default.
+    vc.attachment.app_lifecycle.prefer_foreground = true;
+
     vc
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn longest_call_matches_veilid_defaults() {
-        let net = veilid_core::VeilidConfigInternal::default().network;
-        let longest_ms = [
-            net.dht.get_value_timeout_ms,
-            net.dht.set_value_timeout_ms,
-            net.dht.resolve_node_timeout_ms,
-            2 * net.rpc.timeout_ms,
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or_default();
-        assert_eq!(
-            LONGEST_VEILID_CALL,
-            Duration::from_millis(u64::from(longest_ms))
-        );
-        assert!(rekindle_types::config::SESSION_STOP_DEADLINE > LONGEST_VEILID_CALL);
-    }
-
-    #[test]
-    fn defaults_preserve_pre_upgrade_behavior() {
-        let opts = VeilidStartupOptions::default();
-        let vc = build_veilid_config("rekindle", "rekindle", "/tmp/x", &opts);
-        assert!(!vc.network.upnp, "UPnP stays off by default");
-        assert!(vc.protected_store.always_use_insecure_storage);
-        assert!(!vc.protected_store.allow_insecure_fallback);
-        assert_eq!(vc.network.rpc.default_route_hop_count, 1);
-        assert_eq!(vc.network.dht.max_concurrent_operations, 16);
-        assert_eq!(vc.network.dht.remote_max_records, 65_536);
-        assert_eq!(
-            vc.capabilities.disable,
-            vec![veilid_core::VEILID_CAPABILITY_DHT],
-            "app nodes do not serve the DHT"
-        );
-        assert_eq!(vc.program_name, "rekindle");
-    }
-
-    #[test]
-    fn options_flow_through() {
-        let opts = VeilidStartupOptions {
-            upnp: true,
-            always_use_insecure_storage: false,
-            allow_insecure_fallback: true,
-            route_hop_count: 3,
-            max_concurrent_dht_operations: 32,
-            remote_max_records: 1_000,
-        };
-        let vc = build_veilid_config("ns", "q", "/tmp/y", &opts);
-        assert!(vc.network.upnp);
-        assert!(!vc.protected_store.always_use_insecure_storage);
-        assert!(vc.protected_store.allow_insecure_fallback);
-        assert_eq!(vc.network.rpc.default_route_hop_count, 3);
-        assert_eq!(vc.network.dht.max_concurrent_operations, 32);
-        assert_eq!(vc.network.dht.remote_max_records, 1_000);
-    }
-}
+#[path = "veilid_config_tests.rs"]
+mod tests;

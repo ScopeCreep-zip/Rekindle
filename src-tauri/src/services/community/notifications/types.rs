@@ -52,14 +52,3 @@ impl QuietHoursSettings {
         i64::from(self.end_hour) * 60
     }
 }
-
-/// Cleartext mention metadata pulled directly from the inbound
-/// `ChannelMessage` envelope (architecture §28.5 line 3105-3120). The
-/// notification resolver consults this without decrypting the body.
-/// `flags` is the wire `ChannelMessage.flags` u32 — the resolver reads
-/// `MENTION_EVERYONE` / `MENTION_HERE` bits from it.
-pub struct CleartextMentions<'a> {
-    pub mentioned_pseudonyms: &'a [String],
-    pub mentioned_roles: &'a [String],
-    pub flags: u32,
-}

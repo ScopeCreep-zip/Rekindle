@@ -4,9 +4,9 @@
 //! Components emit [`Action`] variants — they never call async code directly.
 
 pub mod channel_tree;
-pub mod confirm_dialog;
 pub mod help_bar;
 pub mod input_box;
+pub mod intent_overlay;
 pub mod message_list;
 pub mod peer_list;
 pub mod search_overlay;

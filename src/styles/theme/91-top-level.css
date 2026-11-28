@@ -34,6 +34,44 @@
     color: var(--color-xfire-text-secondary);
   }
 
+  /* KP: a post that does not open under the key it names: damaged, said in
+   * the Host's words, in the danger tone (no key will come). */
+  .message-damaged {
+    padding: 8px 12px;
+    color: var(--color-xfire-danger-text);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .message-damaged-icon {
+    color: var(--color-xfire-danger-text);
+  }
+
+  /* FX3: waiting for the community key from a member: a notice, never a block. */
+  .key-pending-notice {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, var(--color-xfire-bg-dark));
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-accent) 45%, transparent);
+  }
+
+  .key-pending-since {
+    color: var(--color-xfire-text-secondary);
+  }
+
+  /* FX3: a restricted channel we are not on the roster of: listed, with a lock. */
+  .channel-locked {
+    display: inline-flex;
+    margin-left: 4px;
+  }
+
+  .channel-locked-icon {
+    color: var(--color-xfire-text-secondary);
+  }
+
   .message-automod-blur {
     padding: 8px 12px;
     color: var(--color-xfire-text-secondary);
@@ -42,6 +80,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+  }
+
+  /* A moderator's delete (plan E3.3 M4): the body is gone, the line
+   * names the moderator. */
+  .message-removed {
+    padding: 8px 12px;
+    color: var(--color-xfire-text-secondary);
+    font-style: italic;
   }
 
   .message-automod-blur-text {
@@ -137,8 +183,6 @@
     margin-top: 10px;
   }
 
-  .poll-card-submit,
-
   .poll-card-submit:disabled {
     cursor: default;
     opacity: 0.5;
@@ -173,58 +217,9 @@
     font-size: 12px;
   }
 
-  .dm-invite-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 4px;
-  }
-
-  .dm-invite-empty {
-    color: var(--color-xfire-text-secondary);
-    font-size: 13px;
-    margin: 0;
-  }
-
-  .dm-invite-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--color-xfire-border-subtle);
-    border-radius: 4px;
-    background: var(--color-xfire-bg-elevated);
-  }
-
-
-  .dm-invite-meta strong {
-    color: var(--color-xfire-text-primary);
-    font-size: 13px;
-  }
-
-  .dm-invite-kind {
-    color: var(--color-xfire-text-secondary);
-    font-size: 12px;
-  }
-
-  .dm-invite-key {
-    color: var(--color-xfire-text-tertiary);
-    font-size: 11px;
-    font-family: var(--font-mono, monospace);
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .dm-invite-actions {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  /* Consent prompts (deep-link consent, session reset): a question the
-   * user answers explicitly, with the key they should check. */
+  /* Consent prompts (deep-link consent): a question the user answers
+   * explicitly. Its statement and the key to check are the `.sec-review`
+   * card (`16-security-surfaces.css`); the error line is chrome. */
   .consent-dialog {
     display: flex;
     flex-direction: column;
@@ -232,29 +227,9 @@
     padding: 8px 4px;
   }
 
-  .consent-dialog-text {
-    margin: 0;
-    color: var(--color-xfire-text-primary);
-    font-size: 13px;
-    line-height: 1.4;
-  }
-
-  .consent-dialog-key {
-    margin: 0;
-    color: var(--color-xfire-text-secondary);
-    font-size: 12px;
-  }
-
-  .consent-dialog-key code {
-    color: var(--color-xfire-text-primary);
-    font-family: var(--font-mono, monospace);
-    font-size: 14px;
-    letter-spacing: 0.08em;
-  }
-
   .consent-dialog-error {
     margin: 0;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-size: 12px;
   }
 
@@ -273,7 +248,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--color-xfire-border-subtle);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
   }
 
   .relay-row:last-of-type {
@@ -284,7 +259,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-xfire-accent, #4a90e2);
+    color: var(--color-xfire-accent-text);
   }
 
   .push-relay-row {
@@ -292,7 +267,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--color-xfire-border-subtle);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     gap: 12px;
   }
 
@@ -310,7 +285,7 @@
 
   .push-relay-watch-count {
     font-size: 11px;
-    color: var(--color-xfire-text-tertiary);
+    color: var(--color-xfire-text-secondary);
   }
 
   /* Architecture §28.5 mention rendering. Privileged classes
@@ -321,25 +296,25 @@
   .chat-mention {
     padding: 0 4px;
     border-radius: 3px;
-    background: rgba(74, 144, 226, 0.18);
-    color: var(--color-xfire-accent, #4a90e2);
+    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
+    color: var(--color-xfire-accent-text);
     font-weight: 500;
   }
 
   .chat-mention-everyone,
   .chat-mention-here {
-    background: rgba(255, 184, 108, 0.22);
-    color: #c2570a;
+    background: color-mix(in srgb, var(--color-xfire-mention-everyone) 22%, transparent);
+    color: var(--color-xfire-mention-everyone);
   }
 
   .chat-mention-role {
-    background: rgba(140, 99, 197, 0.2);
-    color: #6f42c1;
+    background: color-mix(in srgb, var(--color-xfire-mention-role) 20%, transparent);
+    color: var(--color-xfire-mention-role);
   }
 
   .chat-mention-self {
-    background: rgba(255, 96, 96, 0.28);
-    color: #b3261e;
+    background: color-mix(in srgb, var(--color-xfire-mention-self) 28%, transparent);
+    color: var(--color-xfire-mention-self);
   }
 
   /* Shared LoadingButton component — async submit + aria-busy. */
@@ -377,13 +352,53 @@
     text-align: center;
   }
 
-  /* ─── Architecture §32 a11y — high-contrast / forced-colors support ───
-   * Windows High Contrast (forced-colors) and macOS "Increase Contrast"
-   * (prefers-contrast: more) take over color decisions. Map our chrome
-   * to the platform-supplied keywords (CanvasText, ButtonText, etc.) so
-   * focus rings + borders survive the override. APCA Lc target: ≥75 for
-   * essential UI text. */
+  /* Every <select> is drawn by the skin, never by the platform theme.
+   * WebKitGTK painted the native menulist as a light Adwaita box under a
+   * dark skin, its text unreadable (WCAG 1.4.3); `appearance: none` (CSS
+   * UI 4 §5.2) makes every engine paint the class's skin background, and
+   * the arrow is drawn here in the select's own text colour. `color-scheme`
+   * (CSS Color Adjustment 1 §2) follows the skin's base for whatever the
+   * platform still draws (the option popup). The background is longhand in
+   * each select's class rule so it does not reset this arrow. The
+   * `:not([multiple])` outranks those class rules' `padding`. */
+  select:not([multiple]) {
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentcolor 50%),
+      linear-gradient(135deg, currentcolor 50%, transparent 50%);
+    background-position:
+      calc(100% - 13px) 50%,
+      calc(100% - 8px) 50%;
+    background-repeat: no-repeat;
+    background-size: 5px 5px;
+    padding-right: 24px;
+  }
 
+  select,
+  option {
+    color-scheme: dark;
+  }
+
+  :root[data-skin-base="light"] select,
+  :root[data-skin-base="light"] option {
+    color-scheme: light;
+  }
+
+  option {
+    background-color: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text);
+  }
+}
+
+/* The user's accessibility settings beat any skin (wiring guide §14d): the
+ * `forced-colors` and `prefers-contrast: more` rules are in `@layer a11y`,
+ * beside `global.css`'s token overrides for contrast and reduced motion.
+ * Only `@layer sec` sits above them. */
+@layer a11y {
+  /* ─── Architecture §32 a11y — forced-colors support ───
+   * Windows High Contrast (forced-colors) takes over colour decisions. Map
+   * our chrome to the platform-supplied system colours (CanvasText,
+   * ButtonText, …) so focus rings and borders survive the override. */
   @media (forced-colors: active) {
     /* Restore borders on chrome elements that rely on background tinting
      * for separation — forced-colors strips backgrounds. */
@@ -395,6 +410,7 @@
     .form-textarea,
     .form-btn-primary,
     .form-btn-secondary,
+    .skin-row-btn,
     .form-btn-danger,
     .channel-item,
     .member-item,
@@ -419,35 +435,59 @@
       forced-color-adjust: none;
     }
 
+    /* The drawn checkboxes and radios (plan ST1): forced colours strip the
+     * checked fill, so a checked box takes the system highlight and its
+     * mark the highlight text, and every box keeps a system outline. */
+    input[type="checkbox"],
+    input[type="radio"] {
+      border-color: ButtonText;
+    }
+
+    input[type="checkbox"]:checked,
+    input[type="radio"]:checked {
+      background-color: Highlight;
+      border-color: Highlight;
+      forced-color-adjust: none;
+    }
+
+    input[type="checkbox"]:checked::after {
+      border-color: HighlightText;
+    }
+
+    input[type="radio"]:checked::after {
+      background-color: HighlightText;
+    }
+
     /* Focus rings — forced-colors strips outline colors unless we ask
-     * for the system focus token explicitly. */
+     * for the system focus token explicitly. The offset stays the
+     * components' (outset, or inset on rows and tabs in clipping lists). */
     *:focus-visible {
       outline: 2px solid Highlight;
-      outline-offset: 2px;
     }
 
     /* Icons rendered as font glyphs lose their decorative role; let the
      * platform pick the foreground. */
-    .nf-icon {
+    .nf-icon,
+    .skin-glyph {
       color: ButtonText;
     }
   }
 
   @media (prefers-contrast: more) {
-    :root {
-      --color-xfire-border: rgba(255, 255, 255, 0.55);
-      --color-xfire-text-dim: rgba(255, 255, 255, 0.85);
-      --color-xfire-text-status: rgba(255, 255, 255, 0.85);
-    }
-
     .form-btn-primary,
     .form-btn-secondary,
+    .skin-row-btn,
     .form-btn-danger {
       border-width: 2px;
     }
 
     *:focus-visible {
       outline-width: 3px;
+    }
+
+    /* The thicker ring reaches 5px; keep that room when scrolled to. */
+    * {
+      scroll-margin: 5px;
     }
   }
 }

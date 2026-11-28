@@ -23,7 +23,6 @@ export default defineConfig({
       "@tauri-apps/api/core",
       "@tauri-apps/api/event",
       "@tauri-apps/api/window",
-      "@tauri-apps/api/mocks",
       "solid-js",
       "solid-js/web",
       "solid-js/store",
@@ -36,7 +35,7 @@ export default defineConfig({
     // coexists with other Tauri/Vite projects on this machine instead of
     // colliding on 1420 — a collision silently loaded the wrong app into
     // the Rekindle shell. Keep in sync with tauri.conf.json devUrl,
-    // package.json `dev`, the mac/linux dev scripts, and playwright.
+    // package.json `dev` and the mac/linux dev scripts.
     port: 1430,
     strictPort: true,
     host: host || false,
@@ -64,13 +63,22 @@ export default defineConfig({
   },
 
   build: {
+    // The floor is Safari 16.4 on macOS (system WKWebView) and WebKitGTK
+    // 2.40 on Linux, Chromium 111 on Windows: Tailwind 4 needs Safari 16.4
+    // and Chrome 111 (`color-mix()` is Chromium 111), and neither esbuild nor
+    // Lightning CSS lowers `@layer` or `@property`. Keep in sync with
+    // tauri.conf.json `minimumSystemVersion` and the `.deb`/`.rpm` WebKitGTK depends
+    // (docs/contributor/release-process.md, "Platform floor").
     target:
       process.env.TAURI_ENV_PLATFORM === "windows"
-        ? "chrome105"
-        : "safari13",
+        ? "chrome111"
+        : "safari16.4",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     chunkSizeWarningLimit: 1024,
     reportCompressedSize: false,
+    // Game icons (plan E7.2, ~3800 small PNGs) are emitted as files, never
+    // inlined into the bundle as data URLs.
+    assetsInlineLimit: (file: string) => (file.includes("/assets/game-icons/") ? false : undefined),
   },
 });

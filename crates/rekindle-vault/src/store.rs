@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use aes_gcm::{aead::Aead, AeadCore, Aes256Gcm, KeyInit};
 use parking_lot::Mutex;
-use rand::RngCore;
+use rekindle_secrets::locked::LockedBox;
 use rekindle_types::domains;
 use rusqlite::{params, Connection, OptionalExtension};
 use zeroize::Zeroizing;
@@ -11,39 +11,165 @@ use crate::error::VaultError;
 use crate::key::VaultKey;
 use crate::schema;
 
+mod export;
+
+/// The SQLCipher key of the identity's database (plan D1), derived from the
+/// vault passphrase, so unlocking the vault opens the database too.
+/// Held in locked memory (plan E7.1, roadmap 5.2).
+pub struct AppDbKey(LockedBox<32>);
+
+impl AppDbKey {
+    /// The raw key, for `PRAGMA key`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.0.expose()
+    }
+}
+
+impl std::fmt::Debug for AppDbKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AppDbKey(<redacted>)")
+    }
+}
+
 /// SQLCipher + per-entry AES-256-GCM keystore.
 ///
-/// One `VaultStore` corresponds to one `.vault` file on disk plus its
-/// sidecar `.vault.salt` file. Open with [`VaultStore::open`]; the same
-/// passphrase is used to re-derive both layer keys.
+/// One `VaultStore` is one `.vault` file plus its `.hdr` (Argon2id
+/// parameters and salt, [`crate::header`]). [`VaultStore::create`] makes a
+/// new one; [`VaultStore::open`] never creates anything.
 pub struct VaultStore {
     conn: Mutex<Connection>,
-    entry_key: Zeroizing<[u8; 32]>,
+    /// Locked for the store's lifetime (plan E7.1, roadmap 5.2).
+    entry_key: LockedBox<32>,
     path: PathBuf,
 }
 
+/// The three keys a passphrase unlocks.
+struct Keys {
+    sqlcipher: Zeroizing<[u8; 32]>,
+    entry: LockedBox<32>,
+    app_db: AppDbKey,
+}
+
 impl VaultStore {
-    /// Open the vault at `path`, creating it if absent. The 32-byte salt
-    /// lives in a sidecar file `{path}.salt`; on first open a random salt
-    /// is written. Subsequent opens reuse it.
-    pub fn open(path: &Path, passphrase: &str) -> Result<Self, VaultError> {
+    /// Create a new vault at `path` (and its `.hdr`), owner-only.
+    ///
+    /// # Errors
+    /// [`VaultError::AlreadyExists`] when a vault or header is there; I/O,
+    /// KDF or SQLite failures (the header is removed again on failure).
+    pub fn create(path: &Path, passphrase: &str) -> Result<(Self, AppDbKey), VaultError> {
+        if path.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let salt_path = salt_sidecar(path);
-        let salt = load_or_generate_salt(&salt_path)?;
-        let (sqlcipher_key, entry_key) = derive_two_keys(passphrase, &salt)?;
+        let header = crate::header::VaultHeader::fresh();
+        crate::header::write_new(path, &header)?;
+        let created = Self::open_with(path, passphrase, &header).and_then(|opened| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+            }
+            Ok(opened)
+        });
+        if created.is_err() {
+            let _ = std::fs::remove_file(crate::header::header_path(path));
+            let _ = std::fs::remove_file(path);
+        }
+        created
+    }
 
+    /// Open the existing vault at `path`. Nothing is created.
+    ///
+    /// # Errors
+    /// [`VaultError::NotFound`], [`VaultError::HeaderMissing`],
+    /// [`VaultError::WrongPassphrase`], or I/O, KDF and SQLite failures.
+    pub fn open(path: &Path, passphrase: &str) -> Result<(Self, AppDbKey), VaultError> {
+        if !path.exists() {
+            return Err(VaultError::NotFound);
+        }
+        let header = crate::header::read(path)?;
+        Self::open_with(path, passphrase, &header)
+    }
+
+    fn open_with(
+        path: &Path,
+        passphrase: &str,
+        header: &crate::header::VaultHeader,
+    ) -> Result<(Self, AppDbKey), VaultError> {
+        // The duress derivation first, the real one second, always both
+        // (plan E7.1): an open takes the same time armed or not.
+        let duress = crate::duress::matches(passphrase, header)?;
+        let keys = derive_keys(passphrase, header)?;
+        if duress {
+            return Err(VaultError::Duress);
+        }
+        Ok((Self::keyed(path, &keys.sqlcipher, keys.entry)?, keys.app_db))
+    }
+
+    /// Open (or, with `create`, make) the store at `path` under keys that
+    /// need no KDF: the device vault, whose random 32-byte key the identity
+    /// vault holds (plan E3.2 S7d-keys.7, [`crate::device`]).
+    pub(crate) fn open_raw(path: &Path, key: &[u8; 32], create: bool) -> Result<Self, VaultError> {
+        if create && path.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        if !create && !path.exists() {
+            return Err(VaultError::NotFound);
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let sqlcipher =
+            Zeroizing::new(blake3::derive_key(domains::DEVICE_VAULT_SQLCIPHER_KEY, key));
+        let entry = LockedBox::new_with(|buf| {
+            let mut hasher = blake3::Hasher::new_derive_key(domains::DEVICE_VAULT_ENTRY_KEY);
+            hasher.update(key);
+            hasher.finalize_xof().fill(buf);
+        });
+        let opened = Self::keyed(path, &sqlcipher, entry);
+        if create {
+            match &opened {
+                Ok(_) => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+                    }
+                }
+                Err(_) => {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        opened
+    }
+
+    /// Key the SQLCipher connection at `path` and read it once.
+    fn keyed(
+        path: &Path,
+        sqlcipher: &[u8; 32],
+        entry_key: LockedBox<32>,
+    ) -> Result<Self, VaultError> {
+        // A concurrent first open could key before SQLCipher's own
+        // initialization ends (finding DB1b; `rekindle_asql::init_sqlite`).
+        rekindle_asql::init_sqlite();
         let conn = Connection::open(path)?;
-        let key_pragma = format!("x'{}'", hex::encode(*sqlcipher_key));
-        // Keying, then the first reads, which make SQLCipher decrypt the
-        // header. A key that does not decrypt it surfaces from any of these
-        // as NOMEM or NOTADB (`VaultError::WrongPassphrase` says why).
+        let key_pragma = format!("x'{}'", hex::encode(sqlcipher));
+        // Keying, then the first read, which makes SQLCipher decrypt the
+        // header. A key that does not decrypt it surfaces as NOMEM or
+        // NOTADB (`VaultError::WrongPassphrase` says why).
         conn.pragma_update(None, "key", key_pragma)
             .and_then(|()| conn.pragma_update(None, "cipher_page_size", 4096_i64))
-            .and_then(|()| conn.query_row("PRAGMA cipher_version;", [], |_| Ok(())))
+            .and_then(|()| {
+                conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+            })
             .map_err(VaultError::Sqlite)
-            .and_then(|()| schema::ensure(&conn))
+            .and_then(|_| schema::ensure(&conn))
             .map_err(wrong_key_or)?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -52,10 +178,55 @@ impl VaultStore {
         })
     }
 
+    /// Remove the vault at `path` and its header. Missing files are not an
+    /// error.
+    ///
+    /// # Errors
+    /// I/O.
+    pub fn delete_files(path: &Path) -> Result<(), VaultError> {
+        for p in [path.to_path_buf(), crate::header::header_path(path)] {
+            match std::fs::remove_file(&p) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Install a vault and its header from an archive at `path`. Refuses to
+    /// replace either; nothing is opened (the caller opens it to verify).
+    ///
+    /// # Errors
+    /// [`VaultError::AlreadyExists`], a header that does not parse, or I/O
+    /// (the files written are removed again).
+    pub fn import_files(path: &Path, vault: &[u8], header: &[u8]) -> Result<(), VaultError> {
+        let parsed = crate::header::VaultHeader::decode(header)?;
+        if path.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        crate::header::write_new(path, &parsed)?;
+        let written = write_private_new(path, vault);
+        if written.is_err() {
+            let _ = std::fs::remove_file(crate::header::header_path(path));
+        }
+        written
+    }
+
     /// On-disk path of this vault file (the SQLCipher database — the salt
     /// sidecar lives at `{path}.salt`).
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Whether the OS locked the entry key's pages for this store's life
+    /// (false when the lock budget refused; the store still works).
+    #[must_use]
+    pub fn entry_key_locked(&self) -> bool {
+        self.entry_key.is_locked()
     }
 
     /// Insert-or-replace the entry addressed by `vault_key`. The value is
@@ -63,7 +234,7 @@ impl VaultStore {
     pub fn put(&self, vault_key: &VaultKey, value: &[u8]) -> Result<(), VaultError> {
         let namespace = vault_key.namespace();
         let key = vault_key.key();
-        let (nonce, ct) = seal_aes_gcm(&self.entry_key, value)?;
+        let (nonce, ct) = seal_aes_gcm(self.entry_key.expose(), &aad(namespace, &key), value)?;
         self.conn.lock().execute(
             "INSERT OR REPLACE INTO entries (namespace, key, nonce, ciphertext) VALUES (?1, ?2, ?3, ?4)",
             params![namespace, key.as_ref(), nonce, ct],
@@ -85,7 +256,12 @@ impl VaultStore {
             )
             .optional()?;
         match row {
-            Some((nonce, ct)) => Ok(Some(open_aes_gcm(&self.entry_key, &nonce, &ct)?)),
+            Some((nonce, ct)) => Ok(Some(open_aes_gcm(
+                self.entry_key.expose(),
+                &aad(namespace, &key),
+                &nonce,
+                &ct,
+            )?)),
             None => Ok(None),
         }
     }
@@ -115,6 +291,22 @@ impl VaultStore {
         Ok(count > 0)
     }
 
+    /// Every stored key in `namespace` that parses as a [`VaultKey`].
+    ///
+    /// # Errors
+    /// SQLite.
+    pub fn list(&self, namespace: &str) -> Result<Vec<VaultKey>, VaultError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT key FROM entries WHERE namespace = ?1 ORDER BY key")?;
+        let keys = stmt
+            .query_map(params![namespace], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(keys
+            .iter()
+            .filter_map(|k| VaultKey::parse(namespace, k))
+            .collect())
+    }
+
     /// Diagnostic: number of rows in the entries table.
     pub fn entry_count(&self) -> Result<usize, VaultError> {
         let conn = self.conn.lock();
@@ -123,58 +315,84 @@ impl VaultStore {
     }
 }
 
-fn salt_sidecar(vault_path: &Path) -> PathBuf {
-    let mut sidecar = vault_path.as_os_str().to_owned();
-    sidecar.push(".salt");
-    PathBuf::from(sidecar)
-}
-
-fn load_or_generate_salt(salt_path: &Path) -> Result<[u8; 32], VaultError> {
-    if salt_path.exists() {
-        let bytes = std::fs::read(salt_path)?;
-        if bytes.len() != 32 {
-            return Err(VaultError::Schema(format!(
-                "salt sidecar {} has length {} (expected 32)",
-                salt_path.display(),
-                bytes.len()
-            )));
-        }
-        let mut salt = [0u8; 32];
-        salt.copy_from_slice(&bytes);
-        Ok(salt)
-    } else {
-        let mut salt = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut salt);
-        std::fs::write(salt_path, salt)?;
-        Ok(salt)
+/// Write `bytes` to a new owner-only file at `path`, synced.
+fn write_private_new(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
+    let mut file = options.open(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
+        _ => e.into(),
+    })?;
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    if let Err(e) = written {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(e.into());
+    }
+    Ok(())
 }
 
-fn derive_two_keys(
-    passphrase: &str,
-    salt: &[u8; 32],
-) -> Result<(Zeroizing<[u8; 32]>, Zeroizing<[u8; 32]>), VaultError> {
-    // Argon2id default params: m_cost=19456 KiB, t_cost=2, p_cost=1 — OWASP
-    // 2023 minimum for interactive logins. 64-byte master output.
-    let mut master = Zeroizing::new([0u8; 64]);
-    argon2::Argon2::default()
-        .hash_password_into(passphrase.as_bytes(), salt, &mut *master)
-        .map_err(|e| VaultError::Kdf(e.to_string()))?;
-    let sqlcipher = Zeroizing::new(blake3::derive_key(domains::VAULT_SQLCIPHER_KEY, &*master));
-    let entry = Zeroizing::new(blake3::derive_key(domains::VAULT_ENTRY_KEY, &*master));
-    Ok((sqlcipher, entry))
+/// The AAD that binds an entry to its address: `namespace ‖ 0x00 ‖ key`,
+/// so a ciphertext moved to another key does not open.
+fn aad(namespace: &str, key: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(namespace.len() + 1 + key.len());
+    out.extend_from_slice(namespace.as_bytes());
+    out.push(0);
+    out.extend_from_slice(key.as_bytes());
+    out
 }
 
-fn seal_aes_gcm(key: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
+fn derive_keys(passphrase: &str, header: &crate::header::VaultHeader) -> Result<Keys, VaultError> {
+    let master = header.stretch(passphrase, &header.salt)?;
+    let derive = |label: &str| Zeroizing::new(blake3::derive_key(label, &master));
+    // The two keys that outlive the unlock go straight into locked memory.
+    let locked = |label: &str| {
+        LockedBox::new_with(|buf| {
+            let mut hasher = blake3::Hasher::new_derive_key(label);
+            hasher.update(&master);
+            hasher.finalize_xof().fill(buf);
+        })
+    };
+    Ok(Keys {
+        sqlcipher: derive(domains::VAULT_SQLCIPHER_KEY),
+        entry: locked(domains::VAULT_ENTRY_KEY),
+        app_db: AppDbKey(locked(domains::VAULT_APP_DB_KEY)),
+    })
+}
+
+fn seal_aes_gcm(
+    key: &[u8; 32],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
+    use aes_gcm::aead::Payload;
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| VaultError::Aead(e.to_string()))?;
     let nonce = Aes256Gcm::generate_nonce(&mut rand::rngs::OsRng);
     let ct = cipher
-        .encrypt(&nonce, plaintext)
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| VaultError::Aead(e.to_string()))?;
     Ok((nonce.to_vec(), ct))
 }
 
-fn open_aes_gcm(key: &[u8; 32], nonce: &[u8], ct: &[u8]) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+fn open_aes_gcm(
+    key: &[u8; 32],
+    aad: &[u8],
+    nonce: &[u8],
+    ct: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    use aes_gcm::aead::Payload;
     if nonce.len() != 12 {
         return Err(VaultError::Aead(format!(
             "nonce length {} (expected 12)",
@@ -183,7 +401,7 @@ fn open_aes_gcm(key: &[u8; 32], nonce: &[u8], ct: &[u8]) -> Result<Zeroizing<Vec
     }
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| VaultError::Aead(e.to_string()))?;
     let pt = cipher
-        .decrypt(nonce.into(), ct)
+        .decrypt(nonce.into(), Payload { msg: ct, aad })
         .map_err(|e| VaultError::Aead(e.to_string()))?;
     Ok(Zeroizing::new(pt))
 }
@@ -205,92 +423,5 @@ fn wrong_key_or(error: VaultError) -> VaultError {
 }
 
 #[cfg(test)]
-mod tests {
-
-    #[test]
-    fn a_wrong_passphrase_is_reported_as_one() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("x.vault");
-        drop(VaultStore::open(&path, "right").unwrap());
-        assert!(matches!(
-            VaultStore::open(&path, "wrong"),
-            Err(VaultError::WrongPassphrase)
-        ));
-        assert!(VaultStore::open(&path, "right").is_ok());
-    }
-    use super::*;
-    use tempfile::TempDir;
-
-    fn fresh_path() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("alice.vault");
-        (dir, path)
-    }
-
-    #[test]
-    fn round_trip_put_get_delete() {
-        let (_dir, path) = fresh_path();
-        let vault = VaultStore::open(&path, "passphrase-test-1").unwrap();
-        let k = VaultKey::AuditMacKey;
-        vault.put(&k, b"hello world").unwrap();
-        let got = vault.get(&k).unwrap().unwrap();
-        assert_eq!(&*got, b"hello world");
-        vault.delete(&k).unwrap();
-        assert!(vault.get(&k).unwrap().is_none());
-    }
-
-    #[test]
-    fn reopen_same_passphrase_decrypts() {
-        let (_dir, path) = fresh_path();
-        let k = VaultKey::AuditTail;
-        {
-            let vault = VaultStore::open(&path, "passphrase-test-2").unwrap();
-            vault.put(&k, b"persisted").unwrap();
-        }
-        let vault = VaultStore::open(&path, "passphrase-test-2").unwrap();
-        let got = vault.get(&k).unwrap().unwrap();
-        assert_eq!(&*got, b"persisted");
-    }
-
-    #[test]
-    fn wrong_passphrase_rejected() {
-        let (_dir, path) = fresh_path();
-        {
-            let vault = VaultStore::open(&path, "right-passphrase").unwrap();
-            vault.put(&VaultKey::AuditMacKey, b"secret").unwrap();
-        }
-        let result = VaultStore::open(&path, "wrong-passphrase");
-        assert!(result.is_err(), "wrong passphrase should be rejected");
-    }
-
-    #[test]
-    fn ciphertext_differs_for_same_plaintext() {
-        // Each put() uses a fresh nonce → ciphertexts must differ.
-        let (_dir, path) = fresh_path();
-        let vault = VaultStore::open(&path, "pp").unwrap();
-        vault
-            .put(&VaultKey::SignalPrekey { id: 1 }, b"same")
-            .unwrap();
-        vault
-            .put(&VaultKey::SignalPrekey { id: 2 }, b"same")
-            .unwrap();
-        let conn = vault.conn.lock();
-        let mut stmt = conn
-            .prepare("SELECT ciphertext FROM entries ORDER BY key")
-            .unwrap();
-        let mut rows = stmt.query([]).unwrap();
-        let ct_a: Vec<u8> = rows.next().unwrap().unwrap().get(0).unwrap();
-        let ct_b: Vec<u8> = rows.next().unwrap().unwrap().get(0).unwrap();
-        assert_ne!(ct_a, ct_b, "AES-GCM nonces must differ per put");
-    }
-
-    #[test]
-    fn key_exists_works() {
-        let (_dir, path) = fresh_path();
-        let vault = VaultStore::open(&path, "pp").unwrap();
-        let k = VaultKey::AuditMacKey;
-        assert!(!vault.key_exists(&k).unwrap());
-        vault.put(&k, b"v").unwrap();
-        assert!(vault.key_exists(&k).unwrap());
-    }
-}
+#[path = "store_tests.rs"]
+mod tests;

@@ -30,7 +30,8 @@ use crate::action::{Action, CommandResult};
 use crate::focus::{FocusId, FocusRing};
 use crate::helpers;
 use crate::theme::ThemeManager;
-use rekindle_types::display::{CommunityOverview, FriendDisplay};
+use rekindle_types::display::CommunityOverview;
+use rekindle_types::dto::friends::Friend;
 
 /// Dashboard view state.
 pub struct DashboardView {
@@ -40,6 +41,11 @@ pub struct DashboardView {
     /// Identity display data — set by the App before first render.
     identity_public_key: String,
     identity_display_name: String,
+    /// Our own presence, as the host reports it.
+    own_status: String,
+    own_message: String,
+    own_game: Option<String>,
+    own_idle: Option<rekindle_types::presence::IdleState>,
     /// Cached node status data.
     node_attached: bool,
     node_public_internet: bool,
@@ -49,7 +55,7 @@ pub struct DashboardView {
     /// Cached community list.
     communities: Vec<CommunityOverview>,
     /// Cached friend list summary.
-    friends: Vec<FriendDisplay>,
+    friends: Vec<Friend>,
     /// Whether initial data has been loaded from the transport.
     /// When false, draw() shows a loading indicator instead of empty-state messages.
     loaded: bool,
@@ -70,6 +76,10 @@ impl DashboardView {
             panel_rects: [Rect::default(); 4],
             identity_public_key: String::new(),
             identity_display_name: String::new(),
+            own_status: String::new(),
+            own_message: String::new(),
+            own_game: None,
+            own_idle: None,
             node_attached: false,
             node_public_internet: false,
             node_uptime_secs: 0,
@@ -88,6 +98,45 @@ impl DashboardView {
         self.identity_display_name = display_name.to_string();
     }
 
+    /// Our presence at load (`PresenceGet`).
+    pub fn set_own_presence(&mut self, view: &rekindle_types::dto::presence::OwnPresenceView) {
+        self.own_status = status_name(view.status);
+        self.own_message.clone_from(&view.status_message);
+        self.own_game = view.game.as_ref().map(|g| g.game_name.clone());
+        self.own_idle = Some(view.idle);
+    }
+
+    /// What the host observed of our presence (`SelfChanged`); a field it
+    /// did not observe is kept.
+    pub fn apply_own_presence(
+        &mut self,
+        snapshot: &rekindle_types::subscription_events::PresenceSnapshot,
+    ) {
+        if let Some(status) = &snapshot.status {
+            self.own_status.clone_from(status);
+        }
+        if let Some(message) = &snapshot.status_message {
+            self.own_message.clone_from(message);
+        }
+        if let Some(game) = &snapshot.game {
+            self.own_game = game.game_name().map(str::to_owned);
+        }
+        if snapshot.idle.is_some() {
+            self.own_idle = snapshot.idle;
+        }
+    }
+
+    /// The status with what auto-away is doing: "away (auto-away)", or
+    /// "online (no idle detection)" where no display reports idle time.
+    fn status_line(&self) -> String {
+        use rekindle_types::presence::IdleState;
+        match self.own_idle {
+            Some(IdleState::AutoAway) => format!("{} (auto-away)", self.own_status),
+            Some(IdleState::Unavailable) => format!("{} (no idle detection)", self.own_status),
+            Some(IdleState::Active) | None => self.own_status.clone(),
+        }
+    }
+
     /// Render the identity panel.
     fn render_identity(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
         let key_short = helpers::abbreviate_key(&self.identity_public_key);
@@ -99,6 +148,18 @@ impl DashboardView {
             Line::from(vec![
                 Span::styled("  Display name:  ", Style::new().dim()),
                 Span::styled(self.identity_display_name.clone(), Style::new().bold()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Status:        ", Style::new().dim()),
+                Span::raw(self.status_line()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Message:       ", Style::new().dim()),
+                Span::raw(self.own_message.clone()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Playing:       ", Style::new().dim()),
+                Span::raw(self.own_game.clone().unwrap_or_default()),
             ]),
         ];
 
@@ -209,12 +270,20 @@ impl DashboardView {
 
     /// Render the friends summary panel.
     fn render_friends(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
-        let online = self.friends.iter().filter(|f| f.status == "online").count();
-        let away = self.friends.iter().filter(|f| f.status == "away").count();
+        let online = self
+            .friends
+            .iter()
+            .filter(|f| f.status.as_wire_str() == "online")
+            .count();
+        let away = self
+            .friends
+            .iter()
+            .filter(|f| f.status.as_wire_str() == "away")
+            .count();
         let offline = self
             .friends
             .iter()
-            .filter(|f| f.status == "offline")
+            .filter(|f| f.status.as_wire_str() == "offline")
             .count();
         let total = self.friends.len();
 
@@ -251,7 +320,7 @@ impl DashboardView {
         let mut lines = vec![summary];
         let mut previews: Vec<Span<'_>> = vec![Span::raw("  ")];
         for f in self.friends.iter().take(preview_count) {
-            let glyph = match f.status.as_str() {
+            let glyph = match f.status.as_wire_str() {
                 "online" => {
                     if self.use_unicode {
                         "● "
@@ -376,7 +445,7 @@ impl View for DashboardView {
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
                         self.communities.first().map(|c| Action::ShowCommunityInfo {
-                            community: c.governance_key.clone(),
+                            community: c.anchor.clone(),
                         })
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),
@@ -423,7 +492,7 @@ impl View for DashboardView {
             KeyCode::Char('d') => Some(Action::ShowDmInbox),
             KeyCode::Char('f') => Some(Action::ShowFriendList),
             KeyCode::Char('c') => self.communities.first().map(|c| Action::ShowCommunityInfo {
-                community: c.governance_key.clone(),
+                community: c.anchor.clone(),
             }),
             // h/l for horizontal grid navigation — intercepted here as raw keys
             // because the global keymap maps h→Back and l→Select which get
@@ -452,7 +521,7 @@ impl View for DashboardView {
                     FocusId::ChannelTree => {
                         if let Some(c) = self.communities.first() {
                             Some(Action::ShowCommunityInfo {
-                                community: c.governance_key.clone(),
+                                community: c.anchor.clone(),
                             })
                         } else {
                             // No communities yet — still navigate to show the empty state
@@ -489,7 +558,7 @@ impl View for DashboardView {
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
                         self.communities.first().map(|c| Action::ShowCommunityInfo {
-                            community: c.governance_key.clone(),
+                            community: c.anchor.clone(),
                         })
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),
@@ -503,4 +572,12 @@ impl View for DashboardView {
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
     }
+}
+
+/// A status as the host names it.
+fn status_name(status: rekindle_types::presence::SessionStatus) -> String {
+    serde_json::to_value(status)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }

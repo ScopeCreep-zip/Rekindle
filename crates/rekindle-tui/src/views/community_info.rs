@@ -5,7 +5,7 @@
 //! ┌─ dev-team ───────────────────────────────────────────────┐
 //! │ Description: Development team coordination               │
 //! │ Members: 12          Channels: 3         Created: 2026…  │
-//! │ Governance: SMPL     MEK generation: 7                   │
+//! │ Active channel: #general (text)                          │
 //! ├─ Channels ───────────────────────────────────────────────┤
 //! │   #general      text                                     │
 //! │   #code-review  text                                     │
@@ -23,6 +23,9 @@ use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::display::CommunityDetail;
+use rekindle_types::dto::community::CommunityMemberView;
+use rekindle_types::presence::SessionLocation;
+use rekindle_utils::text::sanitize_for_display;
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -33,10 +36,11 @@ use crate::theme::ThemeManager;
 /// Community info view state.
 pub struct CommunityInfoView {
     focus: FocusRing,
-    /// Community governance key.
+    /// Community anchor key.
     community: String,
     /// Loaded community detail (None until CommandResult arrives).
     detail: Option<CommunityDetail>,
+    members: Vec<CommunityMemberView>,
     /// Whether data is loading.
     loading: bool,
     /// Selected channel index for navigation.
@@ -50,20 +54,47 @@ impl CommunityInfoView {
             focus: FocusRing::new(vec![FocusId::CommunityInfoPanel]),
             community,
             detail: None,
+            members: Vec::new(),
             loading: true,
             selected_channel: 0,
         }
     }
 
-    /// The community governance key.
+    /// The community anchor key.
     pub fn community(&self) -> &str {
         &self.community
     }
 
+    fn active_channel(&self, detail: &CommunityDetail) -> String {
+        let Some(member) = self
+            .members
+            .iter()
+            .find(|member| member.pseudonym_key == detail.our_pseudonym)
+        else {
+            return "unavailable".into();
+        };
+        let Some(location) = &member.location else {
+            return "none".into();
+        };
+        let id = location.channel_id();
+        let kind = match location {
+            SessionLocation::Text { .. } => "text",
+            SessionLocation::Voice { .. } => "voice",
+        };
+        let name = match detail.channels.iter().find(|channel| channel.id == id) {
+            Some(channel) => format!("#{}", sanitize_for_display(&channel.name)),
+            None => sanitize_for_display(id),
+        };
+        format!("{name} ({kind})")
+    }
+
     /// Render the metadata section.
-    fn render_metadata(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
-        let gov_short = helpers::abbreviate_key(&detail.governance_key);
-        let owner_short = helpers::abbreviate_key(&detail.owner_pseudonym);
+    fn render_metadata(&self, frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
+        let gov_short = helpers::abbreviate_key(&detail.anchor);
+        let owner_short = (detail.creator_pseudonyms.iter())
+            .map(|c| helpers::abbreviate_key(c))
+            .collect::<Vec<_>>()
+            .join(", ");
         let created = helpers::format_timestamp(detail.created_at);
         let our_key = helpers::abbreviate_key(&detail.our_pseudonym);
         let roles_str = if detail.our_roles.is_empty() {
@@ -111,6 +142,10 @@ impl CommunityInfoView {
                 Span::raw(our_key),
                 Span::styled("  Roles: ", Style::new().dim()),
                 Span::raw(roles_str),
+            ]),
+            Line::from(vec![
+                Span::styled("  Active channel: ", Style::new().dim()),
+                Span::raw(self.active_channel(detail)),
             ]),
         ];
 
@@ -230,13 +265,13 @@ impl View for CommunityInfoView {
         let role_height = role_count.saturating_add(2).min(area.height / 4);
 
         let [meta_area, channels_area, roles_area] = Layout::vertical([
-            Constraint::Length(8),
+            Constraint::Length(9),
             Constraint::Length(channel_height),
             Constraint::Min(role_height),
         ])
         .areas(area);
 
-        Self::render_metadata(frame, meta_area, detail);
+        self.render_metadata(frame, meta_area, detail);
         self.render_channels(frame, channels_area, detail);
         Self::render_roles(frame, roles_area, detail);
 
@@ -294,6 +329,12 @@ impl View for CommunityInfoView {
                 self.selected_channel = self.selected_channel.saturating_sub(1);
                 None
             }
+            // This community's Infoview (plan E7.15 IV7).
+            KeyCode::Char('i') => Some(Action::ShowInfoview {
+                subject: rekindle_types::dto::infoview::InfoviewSubject::Community {
+                    community: self.community.clone(),
+                },
+            }),
             KeyCode::Enter | KeyCode::Char('l') => {
                 if let Some(ref detail) = self.detail {
                     if let Some(ch) = detail.channels.get(self.selected_channel) {
@@ -305,16 +346,26 @@ impl View for CommunityInfoView {
                 }
                 None
             }
+            // Leave this community; the host asks to confirm.
+            KeyCode::Char('L') => Some(Action::LeaveCommunity {
+                community: self.community.clone(),
+            }),
             _ => None,
         }
     }
 
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
-        if let CommandResult::CommunityInfoLoaded { detail } = result {
-            if detail.governance_key == self.community {
+        match result {
+            CommandResult::CommunityInfoLoaded { detail } if detail.anchor == self.community => {
                 self.detail = Some(detail);
                 self.loading = false;
             }
+            CommandResult::CommunityMembersLoaded { community, members }
+                if community == self.community =>
+            {
+                self.members = members;
+            }
+            _ => {}
         }
         Ok(())
     }

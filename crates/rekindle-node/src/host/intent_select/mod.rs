@@ -1,0 +1,442 @@
+//! Step 1, Select (plan D3.3, ADR 0019): the facts the host knows about a
+//! request that is an intent, assembled from the crates that own them, for
+//! the gate in `HostApi::call`. They are computed again at commit, so a
+//! review whose facts changed is asked again.
+//!
+//! Facts the host cannot produce yet join with the port that brings their
+//! producer (the channel message count at E3.1, calls and uploads at
+//! E4.1/E5.1): none is a placeholder.
+
+use rekindle_idempotency::intent_gate::Selection;
+use rekindle_ipc::protocol::{
+    GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest, ServersRequest,
+};
+use rekindle_types::intent::{
+    Escalation, Fact, IntentKind, IrreversibleReason, Notifies, Recipient, Reversibility, Subject,
+};
+
+use crate::daemon::dispatch::DaemonContext;
+
+mod community;
+mod community_messages;
+mod events;
+mod friends;
+mod game_launch;
+mod game_servers;
+mod group_dm;
+mod rich_messaging;
+
+/// The selection for `request`, an intent of `kind`.
+///
+/// # Errors
+/// A fact the review needs cannot be read (the database, or a community
+/// whose governance is not loaded): the request is refused rather than
+/// reviewed without it.
+pub(crate) async fn select(
+    ctx: &DaemonContext,
+    request: &IpcRequest,
+    kind: IntentKind,
+) -> Result<Selection, IpcResponse> {
+    let mut s = Selection {
+        kind,
+        subject: Subject::Named {
+            name: request.name().to_string(),
+        },
+        facts: Vec::new(),
+        escalations: Vec::new(),
+        reversibility: Reversibility::Never,
+        notifies: Notifies::Nobody,
+    };
+    match request {
+        IpcRequest::Unlock { identity, .. } | IpcRequest::IdentityDelete { identity } => {
+            s.subject = own_identity(ctx, identity)?;
+        }
+        IpcRequest::Lock | IpcRequest::Logout => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::Login);
+            let unsent = unsent(ctx).await?;
+            // The daemon holds no call and uploads nothing until E4.1 and
+            // E5.1 bring those producers: both are true facts today.
+            if unsent > 0 {
+                s.escalations.push(Escalation::PendingWork {
+                    unsent,
+                    in_call: false,
+                    uploading: false,
+                });
+            }
+        }
+        IpcRequest::IdentityExport { .. } | IpcRequest::IdentityRotate { .. } => {
+            s.subject = unlocked_identity(ctx);
+            if matches!(request, IpcRequest::IdentityRotate { .. }) {
+                s.notifies = Notifies::Members(friend_count(ctx).await?);
+            }
+        }
+        IpcRequest::IdentityWipe | IpcRequest::QuickWipeTrigger => {
+            s.subject = Subject::Named {
+                name: "every identity on this device".into(),
+            };
+        }
+        // The review names exactly what a trigger destroys and that it
+        // cannot be undone (plan E7.1).
+        IpcRequest::QuickWipeArm { .. } => {
+            s.subject = Subject::Named {
+                name: crate::host::wipe::ARM_REVIEW.into(),
+            };
+        }
+        IpcRequest::IdentityCreate { display_name, .. } => {
+            s.subject = Subject::OwnIdentity {
+                name: display_name
+                    .clone()
+                    .unwrap_or_else(|| "a new identity".into()),
+            };
+        }
+        IpcRequest::FriendAddFromCode { .. }
+        | IpcRequest::FriendAddFromInvite { .. }
+        | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
+        | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendTokenRotate
+        | IpcRequest::FriendInviteCancel { .. }
+        | IpcRequest::FriendBlock { .. }
+        | IpcRequest::FriendUnblock { .. }
+        | IpcRequest::FriendSetNickname { .. }
+        | IpcRequest::FriendGroupMove { .. }
+        | IpcRequest::FriendGroupCreate { .. }
+        | IpcRequest::FriendGroupRename { .. }
+        | IpcRequest::FriendGroupDelete { .. }
+        | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionReinitiate { .. }
+        | IpcRequest::SessionResetAccept { .. }
+        | IpcRequest::IdentityRotationAccept { .. }
+        | IpcRequest::IdentityRotationDecline { .. }
+        | IpcRequest::SessionResetDecline { .. }
+        | IpcRequest::FriendAccept { .. }
+        | IpcRequest::FriendReject { .. }
+        | IpcRequest::FriendRemove { .. }
+        | IpcRequest::IdentityMarkVerified { .. }
+        | IpcRequest::IdentityClearVerification { .. }
+        | IpcRequest::DmSend { .. }
+        | IpcRequest::GameInviteSend { .. }
+        | IpcRequest::OutboxRetry { .. }
+        | IpcRequest::OutboxDiscard { .. } => friends::selection(ctx, request, &mut s).await?,
+        IpcRequest::GroupDm(
+            GroupDmRequest::Create { .. }
+            | GroupDmRequest::Accept { .. }
+            | GroupDmRequest::Decline { .. }
+            | GroupDmRequest::Leave { .. }
+            | GroupDmRequest::Rename { .. }
+            | GroupDmRequest::Invite { .. }
+            | GroupDmRequest::Send { .. },
+        )
+        | IpcRequest::Lobby(
+            LobbyRequest::Host { .. }
+            | LobbyRequest::Join { .. }
+            | LobbyRequest::Leave { .. }
+            | LobbyRequest::Close { .. }
+            | LobbyRequest::Launch { .. },
+        )
+        | IpcRequest::DisappearingSet { .. } => {
+            group_dm::selection(ctx, request, &mut s).await?;
+        }
+        IpcRequest::Community(request) => community::selection(ctx, request, &mut s).await?,
+        IpcRequest::PresenceSet { .. }
+        | IpcRequest::PresenceSetMessage { .. }
+        | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::GamePresenceSet { .. }
+        | IpcRequest::GamePresenceClear => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::Undoable;
+        }
+        IpcRequest::SetReadReceiptsEnabled { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility =
+                Reversibility::ReversibleByInverse(IntentKind::SetReadReceiptsEnabled);
+        }
+        IpcRequest::ProfileSetBio { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // Friends already received it: setting another one reverses it.
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetBio);
+        }
+        IpcRequest::SetGameDetection { .. } | IpcRequest::SetAutoAway { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // Local only: setting it back reverses it (plan E7.2).
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
+        }
+        // Asking the listed servers changes nothing we hold, but each server
+        // asked learns our IP address, addresses friends and communities
+        // supplied among them (plan E7.2 G4, r9 §7.2): one fact per server,
+        // as `JoinGameServer`'s, recomputed at commit.
+        IpcRequest::Servers(ServersRequest::Refresh) => {
+            let servers = crate::host::servers::refresh::disclosed(ctx).await?;
+            s.subject = Subject::Named {
+                name: match servers.len() {
+                    1 => "1 server in the Servers view".into(),
+                    n => format!("{n} servers in the Servers view"),
+                },
+            };
+            s.reversibility = Reversibility::Never;
+            for to in servers {
+                discloses_ip_address(&mut s, to);
+            }
+        }
+        // A forgotten server comes back only by visiting it again (plan E7.2 G3).
+        IpcRequest::Servers(ServersRequest::RecentRemove { .. }) => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::Never;
+        }
+        IpcRequest::SetKeepActivityLog { enabled } => {
+            s.subject = unlocked_identity(ctx);
+            // Local only. Turning it on is set back by turning it off;
+            // turning it off clears the feed, which nothing brings back.
+            if *enabled {
+                s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
+            }
+        }
+        IpcRequest::SetShareCurrentGame { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // Friends already saw the game: turning it off stops showing it.
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::ShareCurrentGame);
+        }
+        IpcRequest::GameHide { .. } | IpcRequest::GameUnhide { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::ShareCurrentGame);
+        }
+        IpcRequest::SetShareGameTotals { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // What friends already received stays with them (plan E7.2).
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::ShareGameTotals);
+        }
+        IpcRequest::ProfileSetAvatar { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // The old picture is not kept: another one replaces it.
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetAvatar);
+        }
+        IpcRequest::AuditExport { .. } | IpcRequest::QuickWipeDisarm => {
+            s.subject = unlocked_identity(ctx);
+        }
+        IpcRequest::SkinImport { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RemoveSkin);
+        }
+        IpcRequest::SkinRemove { id } => {
+            s.subject = Subject::Named { name: id.clone() };
+        }
+        // A favourite server is local only: adding undoes removing and back
+        // (plan E7.2).
+        IpcRequest::SkinSelect { .. }
+        | IpcRequest::SkinKeep { .. }
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteAdd { .. } | ServersRequest::FavouriteRemove { .. },
+        ) => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
+        }
+        IpcRequest::SkinSetLogin { id } => {
+            s.subject = Subject::Named {
+                name: "this device's login screen".into(),
+            };
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetLoginSkin);
+            // Only a built-in is Routine: any other skin will be shown
+            // before unlock, to anyone at the screen (plan E7.7.2).
+            if !id.starts_with(rekindle_skin::builtin::PREFIX) {
+                s.escalations.push(Escalation::VisibleBeforeUnlock);
+            }
+        }
+        IpcRequest::LinkOpen { url } => {
+            // `validate_request` passed it; the host as the browser will
+            // ask for it (punycode for an international name).
+            let host = rekindle_link_preview::https_url(url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_owned))
+                .ok_or_else(|| IpcResponse::error(400, "invalid link"))?;
+            s.subject = Subject::Link { host: host.clone() };
+            discloses_ip_address(&mut s, Recipient::Site { host });
+        }
+        IpcRequest::GameLaunch {
+            game_id,
+            server,
+            source,
+        } => game_launch::selection(ctx, *game_id, server.as_ref(), *source, &mut s).await?,
+        IpcRequest::VoiceJoin { channel, .. } => {
+            s.subject = Subject::Named {
+                name: channel.clone(),
+            };
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveVoice);
+        }
+        IpcRequest::AgentRegister { name, .. } => {
+            s.subject = Subject::Named { name: name.clone() };
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RevokeAgent);
+        }
+        IpcRequest::AgentRevoke { name } => {
+            s.subject = Subject::Named { name: name.clone() };
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RegisterAgent);
+        }
+        // The request itself is the subject (shutting the host down,
+        // importing an archive, reloading policy, leaving voice), and the
+        // rest are not intents (`COMMAND_TABLE`): the gate never selects
+        // them.
+        IpcRequest::Shutdown
+        | IpcRequest::IdentityImport { .. }
+        | IpcRequest::PolicyReload
+        | IpcRequest::VoiceLeave
+        | IpcRequest::Status
+        | IpcRequest::IdentityList
+        | IpcRequest::IdentityShow
+        | IpcRequest::PrekeyStatus
+        | IpcRequest::FriendCode
+        | IpcRequest::PresenceGet
+        | IpcRequest::GameTotalsGet
+        | IpcRequest::LocalSearch { .. }
+        | IpcRequest::HiddenGamesGet
+        | IpcRequest::ActivityList { .. }
+        | IpcRequest::InfoviewGet { .. }
+        | IpcRequest::InstalledGamesGet
+        | IpcRequest::Servers(ServersRequest::FavouritesGet | ServersRequest::View)
+        | IpcRequest::FriendGameTotalsGet { .. }
+        | IpcRequest::ProfileBioGet
+        | IpcRequest::FriendBioGet { .. }
+        | IpcRequest::AvatarGet { .. }
+        | IpcRequest::SkinList
+        | IpcRequest::SkinGet { .. }
+        | IpcRequest::SkinFile { .. }
+        | IpcRequest::SkinFrames
+        | IpcRequest::SkinValidateDraft { .. }
+        | IpcRequest::SkinDraftStart { .. }
+        | IpcRequest::SkinExportDraft { .. }
+        | IpcRequest::SkinDraftCheck { .. }
+        | IpcRequest::SkinExportSchema { .. }
+        | IpcRequest::RunSkinAction { .. }
+        | IpcRequest::SkinSelectionSet { .. }
+        | IpcRequest::SkinApplyFailed { .. }
+        | IpcRequest::AuditVerify
+        | IpcRequest::FriendList
+        | IpcRequest::FriendRequests
+        | IpcRequest::FriendInviteList
+        | IpcRequest::FriendBlockedList
+        | IpcRequest::IdentitySafetyNumber { .. }
+        | IpcRequest::DmHistory { .. }
+        | IpcRequest::DmMarkRead { .. }
+        | IpcRequest::GroupDm(
+            GroupDmRequest::List
+            | GroupDmRequest::Messages { .. }
+            | GroupDmRequest::MarkRead { .. }
+            | GroupDmRequest::Typing { .. },
+        )
+        | IpcRequest::Lobby(LobbyRequest::Get { .. })
+        | IpcRequest::DisappearingGet { .. }
+        | IpcRequest::DmTyping { .. }
+        | IpcRequest::DmInbox { .. }
+        | IpcRequest::IntentCommit { .. }
+        | IpcRequest::IntentCancel { .. }
+        | IpcRequest::Undo { .. }
+        | IpcRequest::Subscribe { .. }
+        | IpcRequest::Unsubscribe { .. }
+        | IpcRequest::NetworkStatus
+        | IpcRequest::NetworkPeers
+        | IpcRequest::Transfer(_) => {}
+    }
+    Ok(s)
+}
+
+fn unavailable(what: &str, e: impl std::fmt::Display) -> IpcResponse {
+    IpcResponse::error_with_remediation(
+        503,
+        format!("{what} cannot be read for review: {e}"),
+        "retry once the identity's state has loaded",
+    )
+}
+
+/// `s` sends our IP address to `to`: the review names it, and states why
+/// the action can never be taken back (ADR 0019 reversibility).
+pub(super) fn discloses_ip_address(s: &mut Selection, to: Recipient) {
+    s.reversibility = Reversibility::NeverBecause(IrreversibleReason::DisclosureCannotBeRecalled {
+        to: to.kind(),
+    });
+    s.facts.push(Fact::IpAddressLeaves { to });
+}
+
+/// The request that takes `request` back, computed from live state when
+/// the action is selected (plan E1.1): the status, message, name or game it
+/// replaces. `None` for an action that offers no undo.
+pub(crate) fn inverse(
+    ctx: &DaemonContext,
+    request: &IpcRequest,
+    reversibility: Reversibility,
+) -> Option<IpcRequest> {
+    if reversibility != Reversibility::Undoable {
+        return None;
+    }
+    let presence = ctx.own_presence.view();
+    match request {
+        IpcRequest::PresenceSet { .. } => Some(IpcRequest::PresenceSet {
+            status: presence.status,
+        }),
+        IpcRequest::PresenceSetMessage { .. } => Some(IpcRequest::PresenceSetMessage {
+            message: presence.status_message,
+        }),
+        IpcRequest::ProfileSetNickname { .. } => Some(IpcRequest::ProfileSetNickname {
+            display_name: ctx.identity_display_name(),
+        }),
+        IpcRequest::FriendSetNickname { public_key, .. } => {
+            let current = ctx
+                .session
+                .read()
+                .as_ref()
+                .and_then(|s| s.friends.get(public_key).map(|f| f.nickname.clone()))?;
+            Some(IpcRequest::FriendSetNickname {
+                public_key: public_key.clone(),
+                nickname: current,
+            })
+        }
+        IpcRequest::GamePresenceSet { .. } | IpcRequest::GamePresenceClear => {
+            Some(presence.game.map_or(IpcRequest::GamePresenceClear, |game| {
+                IpcRequest::GamePresenceSet {
+                    game_name: game.game_name,
+                    game_id: (game.game_id != 0).then_some(game.game_id),
+                    elapsed_seconds: game.elapsed_seconds,
+                    server_address: game.server_address,
+                }
+            }))
+        }
+        _ => None,
+    }
+}
+
+/// The unlocked identity, by its own name.
+fn unlocked_identity(ctx: &DaemonContext) -> Subject {
+    Subject::OwnIdentity {
+        name: ctx.identity_display_name(),
+    }
+}
+
+/// An identity of this root, by the name its registry entry holds.
+fn own_identity(ctx: &DaemonContext, public_key: &str) -> Result<Subject, IpcResponse> {
+    let entries = super::identity::list(&ctx.root).map_err(|e| unavailable("the identities", e))?;
+    let name = entries
+        .into_iter()
+        .find(|entry| entry.public_key == public_key)
+        .map(|entry| entry.display_name)
+        .ok_or_else(|| IpcResponse::error(404, "no such identity"))?;
+    Ok(Subject::OwnIdentity { name })
+}
+
+/// What a lock or logout leaves undelivered (`repo::intent_facts::unsent`).
+async fn unsent(ctx: &DaemonContext) -> Result<u32, IpcResponse> {
+    let (Ok(owner), Ok(db)) = (ctx.require_owner(), ctx.require_db()) else {
+        return Ok(0);
+    };
+    db.call(move |conn| rekindle_db::repo::intent_facts::unsent(conn, &owner))
+        .await
+        .map_err(|e| unavailable("the unsent work", e))
+}
+
+async fn friend_count(ctx: &DaemonContext) -> Result<u32, IpcResponse> {
+    let (Ok(owner), Ok(db)) = (ctx.require_owner(), ctx.require_db()) else {
+        return Ok(0);
+    };
+    let friends = db
+        .call(move |conn| rekindle_db::repo::friends::load_all(conn, &owner))
+        .await
+        .map_err(|e| unavailable("the friends", e))?;
+    Ok(u32::try_from(friends.len()).unwrap_or(u32::MAX))
+}

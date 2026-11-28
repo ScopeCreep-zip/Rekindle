@@ -1,85 +1,77 @@
-//! Phase 18.d — origin pipeline.
-//!
-//! Ported from `src-tauri/src/services/community/create.rs::create_community`.
-//! Creates a new community: derives the 255 slot pubkeys, creates the
-//! three SMPL DHT records (governance + registry + #general channel),
-//! writes the 5 genesis governance entries + creator presence, generates
-//! the initial MEK, builds the in-memory `CommunityState`, kicks off
-//! background services. Returns the governance record key as the
-//! community ID.
+//! Origin (plan E3.2, ADR 0011): create a community. The anchor `A`
+//! (DFLT(1)) holds the `GenesisCert`, signed by `A`'s owner `K_A` (written
+//! once, then released and zeroized) and by the creator pseudonym; the
+//! creator's member record `M(p)` (DFLT(8)) is owned by a random `K_M(p)`
+//! kept in the vault; the genesis ops are the creator's ops #0…n. The
+//! registry is still created until E3.4 deletes it; `#general` has no
+//! record (its posts ride `M`/4, plan E3.3). The community id is `A`'s
+//! record key.
 
-use rand::RngCore;
+use rekindle_codec::governance_op::genesis;
+use rekindle_crypto::keypair_text;
+use rekindle_governance::genesis::genesis_signing_bytes;
 use rekindle_governance::merge;
+use rekindle_governance::state::GovernanceState;
+use rekindle_records::schema;
 use rekindle_secrets::derive;
+use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_secrets::keys::{MediaEncryptionKey, SlotSeed};
-use rekindle_types::governance::{AdmissionMode, GovernanceEntry, GovernanceSubkeyPayload};
+use rekindle_types::dht_layout::community_anchor;
+use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry};
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions;
 use rekindle_types::presence::MemberPresence;
+use zeroize::Zeroizing;
 
 use crate::deps::{
     CommunityInsert, DhtRecordInfo, DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot,
 };
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+use crate::op_log;
 use rekindle_records::lease::CommunityLeases;
 
-// Slots per segment record — imported, not redeclared. See segments.rs.
-use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+use crate::origin_reserve::{
+    reserve_community, verified_creators, CoCreatorAcceptance, ReservedCommunity,
+};
 
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).
 const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+/// `@everyone`: the all-zero RoleId.
+const EVERYONE_ROLE_ID: RoleId = RoleId([0u8; 16]);
 
-/// Generate a fresh random 16-byte channel id.
-fn random_channel_id() -> ChannelId {
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    ChannelId(bytes)
+/// Generate a fresh random 16-byte channel id from the host's generator.
+fn random_channel_id(rng: &dyn rekindle_utils::RandomSource) -> ChannelId {
+    ChannelId(rekindle_utils::random::id_bytes_16_from(rng))
 }
 
-/// Map a `RoleId` to the legacy u32 form the src-tauri `RoleDefinition`
-/// uses for `my_role_ids`. Mirrors `super::join::helpers::role_id_to_legacy_u32`
-/// in src-tauri — first 4 LE bytes of the 16-byte RoleId.
-fn role_id_to_legacy_u32(role_id: &RoleId) -> u32 {
-    let mut bytes = [0u8; 4];
-    bytes.copy_from_slice(&role_id.0[..4]);
-    u32::from_le_bytes(bytes)
-}
+/// The number of genesis ops, the creator's ops #0…4.
+const GENESIS_OPS: usize = 5;
 
-/// The six entries every community starts with.
-///
-/// Extracted so the ordering can be tested: `AdmissionPolicy` is
-/// honoured **only** as the genesis entry, so its position at lamport 1
-/// is load-bearing. A later one is ignored by every honest peer, which
-/// is what makes the mode immutable — an administrator cannot flip a
-/// gated community open.
-///
-/// Nothing wrote this variant before; the mode was merged, validated and
-/// Cap'n Proto encoded, and unreachable, so every community was `Open`
-/// whatever its creator intended.
-fn genesis_entries(
+/// The seq of the creator's last genesis op (`ChannelCreated`): the base a
+/// join cites while no checkpoint exists (plan E3.2 S7c.0,
+/// [`join_deps`](crate::join_deps::join_deps)).
+pub const GENESIS_LAST_SEQ: u64 = 4;
+
+/// The genesis ops' bodies, the creator's ops #0…n in this order. The
+/// admission mode is not among them: `GenesisCert.policy` pins it (plan
+/// E3.2 decision (b)).
+pub(crate) fn genesis_entries(
     name: &str,
     my_pseudo: &PseudonymKey,
     channel_id: ChannelId,
-    channel_record_key: &str,
-    admission: AdmissionMode,
-) -> Vec<GovernanceEntry> {
-    vec![
-        GovernanceEntry::AdmissionPolicy {
-            mode: admission,
-            lamport: 1,
-        },
+) -> [GovernanceEntry; GENESIS_OPS] {
+    [
         GovernanceEntry::CommunityMeta {
             name: Some(name.to_string()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 2,
         },
         GovernanceEntry::RoleDefinition {
-            role_id: RoleId([0u8; 16]),
+            role_id: EVERYONE_ROLE_ID,
             name: "@everyone".into(),
             permissions: permissions::DEFAULT_EVERYONE,
             position: 0,
@@ -88,7 +80,6 @@ fn genesis_entries(
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 3,
         },
         GovernanceEntry::RoleDefinition {
             role_id: OWNER_ROLE_ID,
@@ -100,107 +91,339 @@ fn genesis_entries(
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 4,
         },
         GovernanceEntry::RoleAssignment {
             target: my_pseudo.clone(),
             role_id: OWNER_ROLE_ID,
-            lamport: 5,
         },
         GovernanceEntry::ChannelCreated {
             channel_id,
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: channel_record_key.to_string(),
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,
-            lamport: 6,
         },
     ]
 }
 
-/// Create a new community with flat SMPL governance (o_cnt:0 universal
-/// schema). Returns the governance record key as the community ID.
+/// How long a create may take, from the first record to the creator's
+/// beat. Veilid bounds a set's fanout (`set_value_timeout_ms`, 10 s,
+/// 0.5.8 `veilid_config.rs:1010`) but not its admission: the gate waits on
+/// the set concurrency and upload budgets with no deadline
+/// (`storage_manager/gated_operation.rs:460-465`), and with no deadline of
+/// ours a create held there never resolved (finding C-COM1). Two of the
+/// record pool's retry budgets (30 s each, `rekindle-record-pool`
+/// `RETRY_BUDGET`): room for the create's serial writes at a full fanout
+/// each, and the user is never left waiting on an unbounded review. At the
+/// deadline every record is released and an installed community discarded:
+/// the anchor's one-time key is gone, so the create cannot resume later.
+pub const CREATE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The records origin creates; every lease is released on a failure.
+pub(crate) struct OriginRecords {
+    pub(crate) anchor: DhtRecordInfo,
+    pub(crate) member: DhtRecordInfo,
+    pub(crate) registry: DhtRecordInfo,
+}
+
+/// Create a new community (plan E3.2, ADR 0011) with no co-creator: the
+/// anchor `A` with its `GenesisCert`, the creator's member record `M(p)`,
+/// the genesis ops, and (until E3.4 deletes it) the registry.
+/// Returns `A`'s record key, the community id.
 pub async fn create_community<D: GovernanceRuntimeDeps>(
     deps: &D,
     name: &str,
     admission: AdmissionMode,
 ) -> Result<String, GovernanceRuntimeError> {
-    // 1. Generate the shared slot seed (32 bytes) — derives all 255 member
-    //    slot keypairs deterministically.
-    let slot_seed = SlotSeed::generate();
+    let reserved = reserve_community(deps).await?;
+    finish_community(deps, reserved, name, admission, &[]).await
+}
 
-    // 2. Derive the 255 slot public keys for the universal SMPL schema.
-    let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
-    for i in 0..SLOTS_PER_SEGMENT {
-        let sk = derive::derive_slot_keypair(&slot_seed.0, i).map_err(|e| {
-            GovernanceRuntimeError::Crypto(format!(
-                "slot keypair derivation failed at index {i}: {e}"
-            ))
-        })?;
-        member_pubkeys.push(sk.verifying_key().to_bytes());
-    }
+/// Write the genesis of a reserved community within [`CREATE_DEADLINE`]:
+/// the cert lists `accepted` as further creators (each signature
+/// verified, the set checked by [`check_creator_set`]), then the genesis
+/// ops, the registry row, the first MEK, the install and the records.
+/// On a failure every record is released and an installed community
+/// discarded.
+///
+/// # Errors
+/// An acceptance does not verify, the creator set is malformed, a write
+/// failed, or the deadline passed.
+pub async fn finish_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    reserved: ReservedCommunity,
+    name: &str,
+    admission: AdmissionMode,
+    accepted: &[CoCreatorAcceptance],
+) -> Result<String, GovernanceRuntimeError> {
+    finish_with(deps, reserved, name, admission, accepted, None).await
+}
 
-    // 3-5. Create the three SMPL records. Each comes with its creator
-    // lease; a failure before they reach the host releases them.
-    let gov_record = deps.create_smpl_record(&member_pubkeys).await?;
-    let reg_record = match deps.create_smpl_record(&member_pubkeys).await {
-        Ok(record) => record,
-        Err(e) => {
-            deps.release_record(gov_record.lease).await;
-            return Err(e);
-        }
+/// Create a successor of `predecessor` (ADR 0011 "Successor community",
+/// plan E3.2 S7s.4) with no co-creator: a new community whose
+/// `GenesisCert.predecessor` names `predecessor`, the far link readers
+/// check before they offer it.
+///
+/// # Errors
+/// As [`create_community`].
+pub async fn create_successor_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    name: &str,
+    admission: AdmissionMode,
+    predecessor: &str,
+) -> Result<String, GovernanceRuntimeError> {
+    let reserved = reserve_community(deps).await?;
+    let predecessor = Some(predecessor.to_owned());
+    finish_with(deps, reserved, name, admission, &[], predecessor).await
+}
+
+/// Write the genesis of a reserved transfer successor of `predecessor`
+/// (plan E3.2 S7s.4): [`finish_community`] whose cert names `predecessor`
+/// and lists `accepted`, the linked co-creators' new pseudonyms.
+///
+/// # Errors
+/// As [`finish_community`].
+pub async fn finish_successor_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    reserved: ReservedCommunity,
+    name: &str,
+    admission: AdmissionMode,
+    accepted: &[CoCreatorAcceptance],
+    predecessor: &str,
+) -> Result<String, GovernanceRuntimeError> {
+    let predecessor = Some(predecessor.to_owned());
+    finish_with(deps, reserved, name, admission, accepted, predecessor).await
+}
+
+/// [`finish_community`] with the cert's `predecessor`.
+async fn finish_with<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    reserved: ReservedCommunity,
+    name: &str,
+    admission: AdmissionMode,
+    accepted: &[CoCreatorAcceptance],
+    predecessor: Option<String>,
+) -> Result<String, GovernanceRuntimeError> {
+    let deadline = tokio::time::Instant::now() + CREATE_DEADLINE;
+    let ReservedCommunity { slot_seed, records } = reserved;
+    let anchor_key = records.anchor.record_key.clone();
+    let leases = [
+        records.anchor.lease,
+        records.member.lease,
+        records.registry.lease,
+    ];
+    let mut installed = false;
+    let seeded = match verified_creators(&anchor_key, accepted) {
+        Ok(further) => tokio::time::timeout_at(
+            deadline,
+            seed_community(
+                deps,
+                Genesis {
+                    name,
+                    admission,
+                    further,
+                    predecessor,
+                },
+                &slot_seed,
+                records,
+                &mut installed,
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| Err(timed_out())),
+        Err(e) => Err(e),
     };
-    let ch_record = match deps.create_smpl_record(&member_pubkeys).await {
-        Ok(record) => record,
+    match seeded {
+        Ok(anchor) => Ok(anchor),
         Err(e) => {
-            deps.release_record(gov_record.lease).await;
-            deps.release_record(reg_record.lease).await;
-            return Err(e);
-        }
-    };
-    let creator_leases = [gov_record.lease, reg_record.lease, ch_record.lease];
-    match seed_community(
-        deps, name, admission, &slot_seed, gov_record, reg_record, ch_record,
-    )
-    .await
-    {
-        Ok(gov_key) => Ok(gov_key),
-        Err(e) => {
-            for lease in creator_leases {
+            for lease in leases {
                 deps.release_record(lease).await;
+            }
+            if installed {
+                deps.discard_created_community(&anchor_key).await;
             }
             Err(e)
         }
     }
 }
 
-/// Steps 6-13 of [`create_community`]: genesis, the creator's registry row,
-/// the first MEK, the local install, and handing the records to the host.
+/// What the cert says beyond the records: the name, the admission mode
+/// the further creators and the community this one succeeds.
+struct Genesis<'a> {
+    name: &'a str,
+    admission: AdmissionMode,
+    further: Vec<PseudonymKey>,
+    predecessor: Option<String>,
+}
+
+/// The deadline error, naming the bound in seconds.
+pub(crate) fn timed_out() -> GovernanceRuntimeError {
+    GovernanceRuntimeError::CreateTimedOut(CREATE_DEADLINE.as_secs())
+}
+
+/// Create `A`, `M(p)` and the registry in that order, pushing each into
+/// `created` as it exists (the caller releases them on a failure).
+pub(crate) async fn create_records<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    member_pubkeys: &[[u8; 32]],
+    created: &mut Vec<DhtRecordInfo>,
+) -> Result<(), GovernanceRuntimeError> {
+    created.push(deps.create_record(&schema::community_anchor()).await?);
+    created.push(deps.create_record(&schema::member_record()).await?);
+    created.push(deps.create_smpl_record(member_pubkeys).await?);
+    Ok(())
+}
+
+/// Parse a created record's owner keypair text into its signing key.
+fn owner_signing_key(
+    info: &DhtRecordInfo,
+    what: &str,
+) -> Result<(Zeroizing<String>, SigningKey), GovernanceRuntimeError> {
+    let text = info.owner_keypair.clone().ok_or_else(|| {
+        GovernanceRuntimeError::Adapter(format!("origin: the {what} has no owner keypair"))
+    })?;
+    let (_, secret) = keypair_text::parse_keypair_text(&text)
+        .map_err(|e| GovernanceRuntimeError::Crypto(format!("{what} owner: {e}")))?;
+    let secret = Zeroizing::new(secret);
+    Ok((text, SigningKey::from_bytes(&secret)))
+}
+
+/// Sign and write the `GenesisCert` to `A`/0 with `K_A`, then release `A`
+/// and drop `K_A` (zeroized; never persisted). Returns the cert and its
+/// stored bytes.
+async fn write_genesis<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &DhtRecordInfo,
+    cert: GenesisCert,
+    pseudonym: &SigningKey,
+) -> Result<(GenesisCert, Vec<u8>), GovernanceRuntimeError> {
+    let (k_a_text, k_a) = owner_signing_key(anchor, "anchor")?;
+    let anchor_owner = k_a.verifying_key().to_bytes();
+    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner)?;
+    let message = genesis_signing_bytes(&anchor.record_key, &unsigned);
+    let signed = genesis::SignedGenesis {
+        anchor_sig: k_a.sign(&message).to_bytes(),
+        creator_sig: pseudonym.sign(&message).to_bytes(),
+        cert,
+        anchor_owner,
+    };
+    drop(k_a);
+    let bytes = genesis::encode_genesis(&signed)
+        .map_err(|e| GovernanceRuntimeError::Encoding(format!("genesis cert: {e}")))?;
+    let outcome = deps
+        .set_dht_value(
+            anchor.lease,
+            community_anchor::GENESIS_CERT,
+            bytes.clone(),
+            Some(k_a_text),
+        )
+        .await;
+    deps.release_record(anchor.lease).await;
+    if let Some(stale) = outcome? {
+        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
+    }
+    Ok((signed.cert, bytes))
+}
+
+/// Origin after the records exist: the cert, the genesis ops, the
+/// creator's registry row, the first MEK, the local install (`installed`
+/// is set just before it), and handing the records to the host.
 async fn seed_community<D: GovernanceRuntimeDeps>(
     deps: &D,
-    name: &str,
-    admission: AdmissionMode,
+    genesis: Genesis<'_>,
     slot_seed: &SlotSeed,
-    gov_record: DhtRecordInfo,
-    reg_record: DhtRecordInfo,
-    ch_record: DhtRecordInfo,
+    records: OriginRecords,
+    installed: &mut bool,
 ) -> Result<String, GovernanceRuntimeError> {
-    let gov_key = gov_record.record_key.clone();
+    let Genesis {
+        name,
+        admission,
+        further,
+        predecessor,
+    } = genesis;
+    let OriginRecords {
+        anchor,
+        member,
+        registry: reg_record,
+    } = records;
+    let anchor_key = anchor.record_key.clone();
     let reg_key = reg_record.record_key.clone();
-    let ch_key = ch_record.record_key.clone();
 
-    // 6. Creator pseudonym from master secret + governance key.
+    // The creator pseudonym from the master secret and the anchor.
     let master_secret = deps
         .identity_secret()
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let pseudonym_signing = derive::derive_community_pseudonym(&master_secret, &gov_key);
+    let pseudonym_signing = derive::derive_community_pseudonym(&master_secret, &anchor_key);
     let my_pseudo_bytes = pseudonym_signing.verifying_key().to_bytes();
     let my_pseudo_hex = hex::encode(my_pseudo_bytes);
     let my_pseudo = PseudonymKey(my_pseudo_bytes);
 
-    // Creator's slot 0 keypair (writes to governance + registry under slot 0).
+    // M(p)'s owner K_M(p): the public half goes in the cert, the keypair
+    // to the vault through the insert (before the community row, D1).
+    let (k_m_text, k_m) = owner_signing_key(&member, "member record")?;
+    let member_owner = keypair_text::public_key_text(&k_m.verifying_key().to_bytes());
+    drop(k_m);
+    // This device's first op key signs the genesis ops; the cert carries
+    // `p`'s endorsement of it (ADR 0022 rule 3, plan S7d-keys.5).
+    let device = crate::device_signer::device_op_key(deps, &anchor_key, true)?;
+    let creator_device = crate::device_signer::first_endorsement(
+        &pseudonym_signing,
+        &anchor_key,
+        &device,
+        &member.record_key,
+        &member_owner,
+    );
+    let member_key = member.record_key.clone();
+    deps.release_record(member.lease).await;
+    let writer = k_m_text.clone();
+    let hpke_secret = crate::member_card::new_hpke_secret(deps.rng().as_ref());
+
+    let cert = GenesisCert {
+        name: name.to_string(),
+        policy: admission,
+        initial_roles: vec![EVERYONE_ROLE_ID, OWNER_ROLE_ID],
+        creator_pseudonym: my_pseudo.clone(),
+        creator_member_record: member_key.clone(),
+        creator_member_record_owner: member_owner,
+        created_at: deps.clock().now_secs(),
+        additional_creators: further,
+        predecessor,
+        creator_device: Some(creator_device),
+    };
+    rekindle_governance::genesis::check_creator_set(&cert).map_err(|e| {
+        GovernanceRuntimeError::Crypto(format!("origin: the creator set is refused: {e:?}"))
+    })?;
+    let (cert, cert_bytes) = write_genesis(deps, &anchor, cert, &pseudonym_signing).await?;
+
+    // The genesis ops: the creator's ops #0…n.
+    let channel_id = random_channel_id(deps.rng().as_ref());
+    let mut set = op_log::VerifiedSet::default();
+    let mut genesis_ops = Vec::new();
+    for body in genesis_entries(name, &my_pseudo, channel_id) {
+        let (op, encoded) = op_log::build_op(
+            &anchor_key,
+            &cert,
+            &GovernanceState::default(),
+            &set,
+            crate::device_signer::OpSigner {
+                author: my_pseudo.clone(),
+                device: &device,
+            },
+            body,
+            op_log::Deps::Frontier,
+            cert.created_at,
+        )?;
+        genesis_ops.push(op_log::held(
+            &op,
+            member_key.clone(),
+            encoded,
+            op_log::OpFate::Applied,
+        ));
+        set.ops.push(op);
+    }
+    let gov_state = merge::merge(&cert, &set.ops);
+
     let creator_slot_kp = derive::derive_slot_keypair(&slot_seed.0, CREATOR_SLOT).map_err(|e| {
         GovernanceRuntimeError::Crypto(format!("creator slot keypair derivation failed: {e}"))
     })?;
@@ -209,46 +432,16 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         creator_slot_kp.to_bytes(),
     );
 
-    // 7. Genesis governance entries.
-    let channel_id = random_channel_id();
-    let genesis_entries = genesis_entries(name, &my_pseudo, channel_id, &ch_key, admission);
-
-    // Architecture §26 W26 — sign the genesis payload with the creator's
-    // pseudonym secret so future readers can verify authorship.
-    let mut genesis_payload = GovernanceSubkeyPayload {
-        author_pseudonym: my_pseudo.clone(),
-        entries: genesis_entries.clone(),
-        // Genesis is 5 entries (community-meta + @everyone role + a welcome
-        // channel set) — far under one subkey, so it never spills.
-        overflow_next: None,
-        signature: Vec::new(),
-    };
-    let genesis_sig =
-        derive::sign_with_pseudonym(&pseudonym_signing, &genesis_payload.signing_bytes());
-    genesis_payload.signature = genesis_sig.to_vec();
-    let gov_payload = serde_json::to_vec(&genesis_payload).map_err(|e| {
-        GovernanceRuntimeError::Encoding(format!("genesis serialization failed: {e}"))
-    })?;
-    let write_outcome = deps
-        .set_dht_value(
-            gov_record.lease,
-            CREATOR_SLOT,
-            gov_payload,
-            Some(creator_writer.clone()),
-        )
-        .await?;
-    if let Some(stale) = write_outcome {
-        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
-    }
-
-    // 8. Write creator's MemberPresence to registry slot 0 — signed so
-    //    peers can verify the creator authored this row.
+    // The creator's MemberPresence in registry slot 0, signed so peers can
+    // verify the creator authored it (until E3.4 replaces the registry).
     let mut presence = MemberPresence {
         pseudonym_key: my_pseudo.clone(),
-        display_name: Some(deps.identity_display_name()),
+        // No name (plan E3.4 S6): the identity's name never reaches a
+        // community; readers show the short pseudonym fingerprint.
+        display_name: None,
         status: deps.identity_status().as_wire_str().into(),
         route_blob: deps.our_route_blob(),
-        last_heartbeat: rekindle_utils::timestamp_secs(),
+        last_heartbeat: deps.clock().now_secs(),
         ..Default::default()
     };
     let presence_sig = derive::sign_with_pseudonym(&pseudonym_signing, &presence.signing_bytes());
@@ -261,169 +454,124 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             reg_record.lease,
             CREATOR_SLOT,
             presence_bytes,
-            Some(creator_writer.clone()),
+            Some(Zeroizing::new(creator_writer.clone())),
         )
         .await?;
     if let Some(stale) = reg_outcome {
         return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
     }
 
-    // 9. Generate the initial community MEK.
-    let mek = MediaEncryptionKey::generate(1);
-    let mek_generation = mek.generation();
+    let mek = MediaEncryptionKey::generate_with(
+        rekindle_governance::state::GENESIS_MEK_GENERATION,
+        deps.rng().as_ref(),
+    );
     let mek_snapshot = MekSnapshot {
-        generation: mek_generation,
+        generation: mek.generation(),
         key_bytes: *mek.as_bytes(),
     };
-    deps.insert_community_mek(&gov_key, mek_snapshot.clone());
+    *installed = true;
+    deps.insert_community_mek(&anchor_key, mek_snapshot.clone());
 
-    // 10. Merge genesis entries into a fresh GovernanceState — joiners
-    //     re-merge from DHT reads; we precompute locally for the creator.
-    let gov_state = merge::merge(&[(my_pseudo.clone(), genesis_entries)]);
-
-    // 11. Build the CommunityInsert and hand it to the adapter to
-    //     install into AppState.communities.
-    let creator_role_ids = vec![0u32, role_id_to_legacy_u32(&OWNER_ROLE_ID)];
-    let channel_id_hex = hex::encode(channel_id.0);
     let insert = CommunityInsert {
-        id: gov_key.clone(),
+        id: anchor_key.clone(),
         name: name.to_string(),
-        channel_id_hex: channel_id_hex.clone(),
-        channel_record_key: ch_key.clone(),
-        governance_key: gov_key.clone(),
+        channel_id_hex: hex::encode(channel_id.0),
         registry_key: reg_key.clone(),
         registry_owner_keypair: reg_record.owner_keypair,
-        dht_owner_keypair: gov_record.owner_keypair,
         slot_seed_hex: hex::encode(slot_seed.0),
         slot_keypair: creator_writer,
         my_pseudonym_hex: my_pseudo_hex.clone(),
         mek: mek_snapshot,
         governance_state: gov_state,
-        governance_clock: 5,
-        creator_role_ids: creator_role_ids.clone(),
+        genesis_cert: cert_bytes,
+        member_record: member_key.clone(),
+        member_record_owner_keypair: k_m_text,
+        member_hpke_secret: hpke_secret.clone(),
     };
-    deps.insert_community(insert);
+    // The installed genesis state and the genesis ops it merges land as
+    // one step under the rebuild lock (D15: the state is the merge of the
+    // ops held), the ops after the row they reference: a convergence check
+    // reading between them would take the installed state for a lag and
+    // rebuild it from the ops stored so far, dropping the rest.
+    {
+        let lock = deps.rebuild_lock(&anchor_key);
+        let _installing = lock.lock().await;
+        deps.insert_community(insert);
+        // Every genesis op is ours, signed above: stored `signed_here`
+        // (plan E3.2 S7d-keys.3), the unlock barrier's local head (.8).
+        for op in &genesis_ops {
+            deps.op_store()
+                .store_signed_governance_op(&anchor_key, op)
+                .await?;
+        }
+    }
 
-    // 12. Lost Cargo file cache + creator member row (so the Members panel
-    //     populates immediately instead of waiting for the 30s presence
-    //     poll — architecture §Failure 4).
-    deps.ensure_files_cache_open(&gov_key);
+    // M(p) in §4.4's order: the card first (the record is openable), the
+    // genesis ops onto the governance-op stream, which appends them to M/2
+    // and writes M/3, then the beat.
+    let port = deps.record_port()?;
+    let own = crate::member_card::OwnRecord {
+        community_id: &anchor_key,
+        record: &member_key,
+        writer: &writer,
+        pseudonym: &pseudonym_signing,
+    };
+    let profile = crate::member_card::OwnProfile {
+        status: deps.identity_status(),
+        beat_seq: deps
+            .next_beat_seq(&anchor_key)
+            .await
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: beat seq: {e}")))?,
+        now_ms: deps.clock().now_ms(),
+        route: deps.our_route_blob(),
+    };
+    let publish_ops = async {
+        for op in genesis_ops {
+            // The row first, then the gossip (lead ruling 2026-11-26, item 2).
+            let publication = deps
+                .publish_governance_op(
+                    &anchor_key,
+                    op.encoded.clone(),
+                    crate::deps::OpLanding::FirstAttempt,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            deps.gossip_governance_op(&anchor_key, &op.encoded);
+            publication.landed().await.map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    };
+    crate::member_card::publish_own_record(&*port, &own, &profile, &hpke_secret, publish_ops)
+        .await
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
+
+    deps.ensure_files_cache_open(&anchor_key);
     deps.persist_discovered_registry_members(
-        &gov_key,
+        &anchor_key,
         vec![DiscoveredMember {
             segment_index: 0,
             slot_index: CREATOR_SLOT,
             presence: presence.clone(),
-            role_ids: creator_role_ids,
         }],
     );
 
-    // 12b. Publish the channel record: genesis and the creator's row
-    //     published the governance and registry records; nothing else
-    //     writes the channel record until a first message (plan C7.6d).
-    crate::records::publish_created(deps, ch_record.lease, &slot_seed.0, 0).await?;
-
-    // 13. Hand the records to the host, which watches them and starts the
-    //     community's inspect, keepalive and presence loops (plan C7.5).
     deps.community_records_ready(
-        &gov_key,
+        &anchor_key,
         CommunityLeases {
-            governance: Some(gov_record.lease),
             registry: Some(reg_record.lease),
-            channels: std::collections::HashMap::from([(channel_id, ch_record.lease)]),
             ..CommunityLeases::default()
         },
     )
     .await;
 
     deps.emit_event(GovernanceRuntimeEvent::CommunityCreated {
-        community_id: gov_key.clone(),
+        community_id: anchor_key.clone(),
         name: name.to_string(),
     });
 
-    Ok(gov_key)
+    Ok(anchor_key)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn role_id_to_legacy_u32_owner() {
-        // Owner role is all-0xFF → u32 first 4 LE bytes = 0xFFFFFFFF.
-        assert_eq!(role_id_to_legacy_u32(&OWNER_ROLE_ID), u32::MAX);
-    }
-
-    #[test]
-    fn role_id_to_legacy_u32_everyone() {
-        // @everyone is all-zero → u32 = 0.
-        assert_eq!(role_id_to_legacy_u32(&RoleId([0u8; 16])), 0);
-    }
-
-    #[test]
-    fn role_id_to_legacy_u32_arbitrary_bytes() {
-        let mut bytes = [0u8; 16];
-        bytes[..4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
-        assert_eq!(role_id_to_legacy_u32(&RoleId(bytes)), 0xDEAD_BEEF);
-    }
-
-    #[test]
-    fn random_channel_id_is_16_bytes_and_random() {
-        let a = random_channel_id();
-        let b = random_channel_id();
-        assert_ne!(a.0, b.0, "two consecutive channel ids should differ");
-    }
-
-    #[test]
-    fn constants_match_architecture_section_4_6() {
-        assert_eq!(SLOTS_PER_SEGMENT, 255);
-        assert_eq!(CREATOR_SLOT, 0);
-        assert_eq!(OWNER_ROLE_ID.0, [0xFFu8; 16]);
-    }
-}
-
-#[cfg(test)]
-mod genesis_tests {
-    use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
-
-    /// The mode is only honoured as the genesis entry, so it has to be
-    /// *first*. If it drifted to a later lamport the merge would ignore
-    /// it and every community would silently be `Open` again — which is
-    /// exactly the state this fixed.
-    #[test]
-    fn admission_policy_is_the_first_genesis_entry() {
-        let entries = super::genesis_entries(
-            "c",
-            &rekindle_types::id::PseudonymKey([1u8; 32]),
-            rekindle_types::id::ChannelId([2u8; 16]),
-            "rec",
-            AdmissionMode::ApprovalRequired,
-        );
-        assert!(
-            matches!(
-                entries.first(),
-                Some(GovernanceEntry::AdmissionPolicy {
-                    mode: AdmissionMode::ApprovalRequired,
-                    lamport: 1
-                })
-            ),
-            "AdmissionPolicy must be the genesis entry at lamport 1, got {:?}",
-            entries.first()
-        );
-    }
-
-    /// Lamports must stay dense and ordered — the merge uses them for
-    /// LWW, and a duplicate would make two genesis facts race.
-    #[test]
-    fn genesis_lamports_are_one_through_six_in_order() {
-        let entries = super::genesis_entries(
-            "c",
-            &rekindle_types::id::PseudonymKey([1u8; 32]),
-            rekindle_types::id::ChannelId([2u8; 16]),
-            "rec",
-            AdmissionMode::Open,
-        );
-        let lamports: Vec<u64> = entries.iter().map(GovernanceEntry::lamport).collect();
-        assert_eq!(lamports, vec![1, 2, 3, 4, 5, 6]);
-    }
-}
+#[path = "origin_tests.rs"]
+mod tests;

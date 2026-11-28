@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-game-detect"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Cross-platform game detection via process scanning for Rekindle"
 
 [lints]
@@ -11,7 +13,8 @@ workspace = true
 async-trait = "0.1"
 open = "5"
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
-rekindle-utils = { path = "../rekindle-utils" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = "0.32"
@@ -22,4 +25,5 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 parking_lot = { workspace = true }
+tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros", "rt-multi-thread" ] }

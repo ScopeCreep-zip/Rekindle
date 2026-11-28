@@ -6,14 +6,13 @@
 //! write) and `persist_discovered_registry_members` (diff + emit
 //! MemberDiscovered + batch SQLite upsert + delete banned rows).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::BuildHasher;
 
 use rekindle_records::lease::{max_subkey_bytes, SchemaShape};
 use rekindle_types::presence::{EncryptedHistoryRanges, HistoryRange, MemberPresence};
 
 use crate::community::scan_row::SUBKEYS_PER_SEGMENT;
-use crate::community::time::now_secs;
 use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow, RowWrite};
 use rekindle_codec::presence_row::{classify_superseding_row, SupersedingRow};
 
@@ -104,18 +103,12 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     // sharing policy permits BEFORE signing, then move the surviving
     // identity-revealing signals (location/activity) out of the plaintext
     // into a MEK-encrypted blob so only current members can read them.
-    let policy = deps.presence_policy(community_id);
-    let mut session =
-        crate::community::policy::apply_sharing_policy(deps.self_session(community_id), &policy);
-    let extras = rekindle_types::presence::SessionExtras {
-        location: session.location.take(),
-        activity: session.activity.take(),
-    };
-    let session_extras_encrypted = if extras.location.is_some() || extras.activity.is_some() {
-        deps.encrypt_session_extras_with_current_mek(community_id, &extras)
-    } else {
-        None
-    };
+    let (session, extras) = crate::community::policy::shared_session(
+        deps.self_session(community_id),
+        &deps.presence_policy(community_id),
+    );
+    let session_extras_encrypted = extras
+        .and_then(|extras| deps.encrypt_session_extras_with_current_mek(community_id, &extras));
     // Voice-roster membership claim (MatrixRTC `m.rtc.member` pattern) —
     // CLEARTEXT on the presence row, not in the MEK-encrypted extras.
     //
@@ -132,15 +125,16 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     // is already members-only (W26-signed, in the SMPL registry) and
     // already carries `in_call`/`call_type` in cleartext, so the channel
     // id adds no meaningful exposure.
-    let active_voice_channel = deps.active_voice_channel(community_id);
+    let active_voice_channel = deps.session_presence().active_voice_channel(community_id);
     let status = session.status.as_wire_str().to_string();
 
     let mut presence = MemberPresence {
         pseudonym_key: rekindle_types::id::PseudonymKey(pseudonym_bytes),
-        display_name: Some(deps.identity_display_name()),
+        // No name (plan E3.4 S6): a member's name is its card's.
+        display_name: None,
         status,
         route_blob: our_route_blob.unwrap_or_default(),
-        last_heartbeat: now_secs(),
+        last_heartbeat: deps.now_secs(),
         bio: snapshot.bio,
         pronouns: snapshot.pronouns,
         theme_color: snapshot.theme_color,
@@ -260,7 +254,7 @@ async fn resolve_superseded<D: CommunityPresenceDeps>(
     deps: &D,
     target: &RowTarget<'_>,
     presence_json: Vec<u8>,
-    seq: Option<u32>,
+    seq: u32,
     data: &[u8],
 ) {
     let RowTarget {
@@ -279,14 +273,14 @@ async fn resolve_superseded<D: CommunityPresenceDeps>(
                 Ok(RowWrite::Stored) => tracing::info!(
                     community = %community_id,
                     subkey,
-                    superseding_seq = ?seq,
+                    superseding_seq = seq,
                     "presence row was behind our own newer copy on the network; rewritten above it",
                 ),
                 Ok(RowWrite::Superseded { seq: again, .. }) => tracing::warn!(
                     community = %community_id,
                     subkey,
-                    superseding_seq = ?seq,
-                    again_seq = ?again,
+                    superseding_seq = seq,
+                    again_seq = again,
                     "presence row superseded again after the rewrite; the next tick writes",
                 ),
                 Err(error) => tracing::warn!(
@@ -300,14 +294,14 @@ async fn resolve_superseded<D: CommunityPresenceDeps>(
         SupersedingRow::Member(author) => tracing::warn!(
             community = %community_id,
             subkey,
-            superseding_seq = ?seq,
+            superseding_seq = seq,
             author = %author,
             "another member's row holds our presence slot (slot collision); not overwritten",
         ),
         SupersedingRow::Unverified(reason) => tracing::warn!(
             community = %community_id,
             subkey,
-            superseding_seq = ?seq,
+            superseding_seq = seq,
             reason,
             "an unverified value holds our presence slot; not overwritten",
         ),
@@ -357,21 +351,19 @@ fn fit_history_ad<D: CommunityPresenceDeps>(
 /// Diff against `known_members` to emit `MemberDiscovered` events
 /// for newly-seen pseudonyms, then ask the host to upsert every row
 /// (and delete banned-out members) in one batched SQLite transaction.
-pub fn persist_discovered_registry_members<D, S1, S2>(
+pub fn persist_discovered_registry_members<D, S>(
     deps: &D,
     community_id: &str,
     discovered_members: &[DiscoveredRow],
-    member_roles: &HashMap<String, Vec<u32>, S1>,
-    banned_members: &HashSet<String, S2>,
+    banned_members: &HashSet<String, S>,
 ) where
     D: CommunityPresenceDeps,
-    S1: BuildHasher,
-    S2: BuildHasher,
+    S: BuildHasher,
 {
     let rows: Vec<DiscoveredMemberRow> = discovered_members
         .iter()
         .map(|(segment_index, subkey, presence)| {
-            build_member_row(presence, *segment_index, *subkey, member_roles)
+            discovered_member_row(presence, *segment_index, *subkey)
         })
         .collect();
 
@@ -388,46 +380,37 @@ pub fn persist_discovered_registry_members<D, S1, S2>(
 
     for row in &rows {
         if newly_discovered.contains(&row.pseudonym_key) {
-            deps.emit_member_discovered(
-                community_id,
-                &row.pseudonym_key,
-                row.display_name.as_deref().unwrap_or_default(),
-                u32::try_from(row.subkey_index).unwrap_or(0),
-            );
+            deps.emit_member_discovered(community_id, &row.pseudonym_key, row.subkey_index);
         }
     }
 
+    // Our own row is never the scan's: its card fields are the verified
+    // card cache's and its profile the Host's (plan E3.4 S6), so a
+    // presence row's copy never overwrites them.
+    let me = deps.my_pseudonym_for_community(community_id);
+    let rows: Vec<DiscoveredMemberRow> =
+        rows.into_iter().filter(|r| r.pseudonym_key != me).collect();
     let banned: Vec<String> = banned_members.iter().cloned().collect();
-    let joined_at_secs = i64::try_from(now_secs()).unwrap_or(0);
+    let joined_at_secs = i64::try_from(deps.now_secs()).unwrap_or(0);
     deps.persist_discovered_member_rows(community_id, rows, banned, joined_at_secs);
 }
 
-fn build_member_row<S: BuildHasher>(
+/// The roster row for one registry `presence` at `segment_index`/`subkey`,
+/// (its roles are the merged role assignments, never stored on the row).
+#[must_use]
+pub fn discovered_member_row(
     presence: &MemberPresence,
     segment_index: u32,
     subkey: u32,
-    member_roles: &HashMap<String, Vec<u32>, S>,
 ) -> DiscoveredMemberRow {
-    let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
-    let role_ids_json = serde_json::to_string(
-        member_roles
-            .get(&pseudonym_hex)
-            .cloned()
-            .unwrap_or_else(|| vec![0])
-            .as_slice(),
-    )
-    .unwrap_or_else(|_| "[0]".to_string());
-    let badges_json = serde_json::to_string(&presence.badges).unwrap_or_else(|_| "[]".to_string());
     DiscoveredMemberRow {
-        pseudonym_key: pseudonym_hex,
-        display_name: presence.display_name.clone(),
-        role_ids_json,
-        subkey_index: i64::from(subkey),
-        segment_index: i64::from(segment_index),
+        pseudonym_key: hex::encode(presence.pseudonym_key.0),
+        subkey_index: subkey,
+        segment_index,
         bio: presence.bio.clone(),
         pronouns: presence.pronouns.clone(),
-        theme_color: presence.theme_color.map(i64::from),
-        badges_json,
+        theme_color: presence.theme_color,
+        badges: presence.badges.clone(),
         avatar_ref: presence.avatar_ref.clone(),
         banner_ref: presence.banner_ref.clone(),
     }

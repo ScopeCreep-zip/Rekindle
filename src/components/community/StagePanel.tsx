@@ -1,13 +1,6 @@
-import { Component, For, Show, createMemo } from "solid-js";
+import { type Component, createMemo, For, Show } from "solid-js";
 import type { Channel, Member, VoiceChannelState } from "../../stores/community.store";
-import {
-  ICON_CHECK,
-  ICON_CLOSE,
-  ICON_HEADPHONES,
-  ICON_MIC,
-  ICON_MIC_OFF,
-  ICON_PHONE,
-} from "../../icons";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface StagePanelProps {
   channel: Channel;
@@ -30,10 +23,12 @@ interface StagePanelProps {
 
 const StagePanel: Component<StagePanelProps> = (props) => {
   const memberName = (pseudonymKey: string): string =>
-    props.members.find((member) => member.pseudonymKey === pseudonymKey)?.displayName
-      ?? `${pseudonymKey.slice(0, 12)}...`;
+    props.members.find((member) => member.pseudonymKey === pseudonymKey)?.displayName ??
+    `${pseudonymKey.slice(0, 12)}...`;
 
-  const speakers = createMemo(() => props.voiceChannel?.speakers ?? props.channel.stageSpeakers ?? []);
+  const speakers = createMemo(
+    () => props.voiceChannel?.speakers ?? props.channel.stageSpeakers ?? []
+  );
   const participants = createMemo(() => props.voiceChannel?.participants ?? []);
   const pendingRequests = createMemo(() => props.voiceChannel?.pendingRequests ?? []);
   const isSpeaker = createMemo(() => {
@@ -45,7 +40,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
     return Boolean(myPseudonymKey && pendingRequests().includes(myPseudonymKey));
   });
   const audience = createMemo(() =>
-    participants().filter((participant) => !speakers().includes(participant)),
+    participants().filter((participant) => !speakers().includes(participant))
   );
 
   return (
@@ -61,26 +56,31 @@ const StagePanel: Component<StagePanelProps> = (props) => {
           <Show
             when={props.isConnectedToChannel}
             fallback={
-              <button class="stage-panel-join-btn" onClick={props.onJoinStage}>
-                <span class="nf-icon">{ICON_PHONE}</span>
+              <button type="button" class="stage-panel-join-btn" onClick={props.onJoinStage}>
+                <SkinGlyph name="phone" />
                 Join stage
               </button>
             }
           >
-            <button class="stage-panel-leave-btn" onClick={props.onLeaveStage}>
-              <span class="nf-icon">{ICON_HEADPHONES}</span>
+            <button type="button" class="stage-panel-leave-btn" onClick={props.onLeaveStage}>
+              <SkinGlyph name="speaker.on" />
               Leave stage
             </button>
           </Show>
           <Show when={props.isConnectedToChannel && !isSpeaker() && props.canRequestToSpeak}>
             <button
+              type="button"
               class="stage-panel-request-btn"
               onClick={props.onRequestToSpeak}
               disabled={hasRaisedHand()}
-              aria-label={hasRaisedHand() ? "Hand raised — waiting for moderator" : "Raise hand to request speaking"}
+              aria-label={
+                hasRaisedHand()
+                  ? "Hand raised — waiting for moderator"
+                  : "Raise hand to request speaking"
+              }
               aria-pressed={hasRaisedHand()}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_MIC_OFF}</span>
+              <SkinGlyph name="mic.off" />
               {hasRaisedHand() ? "Hand raised — waiting for moderator" : "Request to speak"}
             </button>
           </Show>
@@ -99,10 +99,13 @@ const StagePanel: Component<StagePanelProps> = (props) => {
       <div class="stage-panel-grid">
         <div class="stage-panel-section">
           <div class="stage-panel-section-title">
-            <span class="nf-icon">{ICON_MIC}</span>
+            <SkinGlyph name="mic.on" />
             Speakers ({speakers().length})
           </div>
-          <Show when={speakers().length > 0} fallback={<div class="stage-panel-empty">No speakers yet.</div>}>
+          <Show
+            when={speakers().length > 0}
+            fallback={<div class="stage-panel-empty">No speakers yet.</div>}
+          >
             <div class="stage-panel-list">
               <For each={speakers()}>
                 {(speaker) => (
@@ -118,10 +121,13 @@ const StagePanel: Component<StagePanelProps> = (props) => {
 
         <div class="stage-panel-section">
           <div class="stage-panel-section-title">
-            <span class="nf-icon">{ICON_HEADPHONES}</span>
+            <SkinGlyph name="speaker.on" />
             Audience ({audience().length})
           </div>
-          <Show when={audience().length > 0} fallback={<div class="stage-panel-empty">No audience members connected.</div>}>
+          <Show
+            when={audience().length > 0}
+            fallback={<div class="stage-panel-empty">No audience members connected.</div>}
+          >
             <div class="stage-panel-list">
               <For each={audience()}>
                 {(participant) => (
@@ -139,10 +145,13 @@ const StagePanel: Component<StagePanelProps> = (props) => {
       <Show when={props.canModerate}>
         <div class="stage-panel-section stage-panel-requests">
           <div class="stage-panel-section-title">
-            <span class="nf-icon">{ICON_MIC_OFF}</span>
+            <SkinGlyph name="mic.off" />
             Raised hands ({pendingRequests().length})
           </div>
-          <Show when={pendingRequests().length > 0} fallback={<div class="stage-panel-empty">No pending speak requests.</div>}>
+          <Show
+            when={pendingRequests().length > 0}
+            fallback={<div class="stage-panel-empty">No pending speak requests.</div>}
+          >
             <div class="stage-panel-list">
               <For each={pendingRequests()}>
                 {(requester) => (
@@ -153,20 +162,22 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                     </div>
                     <div class="stage-panel-request-actions">
                       <button
+                        type="button"
                         class="stage-panel-approve-btn"
                         onClick={() => props.onApproveRequest(requester)}
                         title="Approve request"
                         aria-label={`Approve speak request from ${memberName(requester)}`}
                       >
-                        <span class="nf-icon" aria-hidden="true">{ICON_CHECK}</span>
+                        <SkinGlyph name="check" />
                       </button>
                       <button
+                        type="button"
                         class="stage-panel-deny-btn"
                         onClick={() => props.onDenyRequest(requester)}
                         title="Deny request"
                         aria-label={`Deny speak request from ${memberName(requester)}`}
                       >
-                        <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+                        <SkinGlyph name="close" />
                       </button>
                     </div>
                   </div>

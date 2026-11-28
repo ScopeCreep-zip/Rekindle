@@ -39,6 +39,31 @@ pub fn display_name(s: &str) -> Result<&str, KeyFormatError> {
     key_format::name(s, MAX_DISPLAY_NAME_LEN)
 }
 
+/// Validate a display name as another party supplies it — a peer's own
+/// name in their friend request, or the one a request names for them: at
+/// most [`MAX_DISPLAY_NAME_LEN`] characters of [`key_format::text`] (no
+/// control or hidden format characters; empty means none given). The IPC
+/// validation and the 1:1 decoder both apply it (plan audit G6).
+///
+/// # Errors
+/// The name is too long or holds a forbidden character.
+pub fn peer_display_name(s: &str) -> Result<&str, KeyFormatError> {
+    key_format::text(s, MAX_DISPLAY_NAME_LEN)
+}
+
+/// Our bio, or a friend's in its `ProfileBio` (plan E7.2): blank is no bio
+/// (`None`); otherwise it is [`key_format::text`] within [`MAX_BIO_LEN`],
+/// kept as written and shown as untrusted text.
+///
+/// # Errors
+/// Over 190 characters, or a control character.
+pub fn bio(s: &str) -> Result<Option<&str>, KeyFormatError> {
+    if s.trim().is_empty() {
+        return Ok(None);
+    }
+    key_format::text(s, MAX_BIO_LEN).map(Some)
+}
+
 /// Validate the self-authored profile fields a presence row carries.
 ///
 /// # Errors
@@ -88,93 +113,5 @@ fn identifier(label: &str, s: &str, max: usize) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validate_profile_accepts_empty_inputs() {
-        assert!(validate_profile(None, None, &[], None, None).is_ok());
-    }
-
-    #[test]
-    fn validate_profile_accepts_boundary_inputs() {
-        let bio = "x".repeat(MAX_BIO_LEN);
-        let pronouns = "y".repeat(MAX_PRONOUNS_LEN);
-        let badges: Vec<String> = (0..MAX_BADGES).map(|_| "z".repeat(MAX_BADGE_LEN)).collect();
-        let avatar = "a".repeat(MAX_CONTENT_REF_LEN);
-        let banner = "b".repeat(MAX_CONTENT_REF_LEN);
-        assert!(validate_profile(
-            Some(&bio),
-            Some(&pronouns),
-            &badges,
-            Some(&avatar),
-            Some(&banner)
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn validate_profile_rejects_oversized_bio() {
-        let bio = "x".repeat(MAX_BIO_LEN + 1);
-        assert!(validate_profile(Some(&bio), None, &[], None, None).is_err());
-    }
-
-    #[test]
-    fn validate_profile_rejects_oversized_pronouns() {
-        let pronouns = "y".repeat(MAX_PRONOUNS_LEN + 1);
-        assert!(validate_profile(None, Some(&pronouns), &[], None, None).is_err());
-    }
-
-    #[test]
-    fn validate_profile_rejects_too_many_badges() {
-        let badges: Vec<String> = (0..=MAX_BADGES).map(|_| "a".to_string()).collect();
-        assert!(validate_profile(None, None, &badges, None, None).is_err());
-    }
-
-    #[test]
-    fn validate_profile_rejects_oversized_badge() {
-        let badges = vec!["z".repeat(MAX_BADGE_LEN + 1)];
-        assert!(validate_profile(None, None, &badges, None, None).is_err());
-    }
-
-    /// Badges and content refs are identifiers: a 32-emoji badge would be
-    /// 128 bytes, four times what the row budget allows for it.
-    #[test]
-    fn identifiers_must_be_printable_ascii() {
-        let emoji_badge = vec!["🔥".repeat(MAX_BADGE_LEN / 4)];
-        assert!(validate_profile(None, None, &emoji_badge, None, None).is_err());
-        let spaced = vec!["a b".to_string()];
-        assert!(validate_profile(None, None, &spaced, None, None).is_err());
-        assert!(validate_profile(None, None, &[], Some("ref\u{7f}"), None).is_err());
-        assert!(validate_profile(None, None, &[String::new()], None, None).is_err());
-    }
-
-    #[test]
-    fn validate_profile_counts_unicode_chars_not_bytes() {
-        // Each emoji is 4 bytes but 1 char. MAX_BIO_LEN emoji should pass.
-        let bio: String = "🔥".repeat(MAX_BIO_LEN);
-        assert!(validate_profile(Some(&bio), None, &[], None, None).is_ok());
-        let bio_over: String = "🔥".repeat(MAX_BIO_LEN + 1);
-        assert!(validate_profile(Some(&bio_over), None, &[], None, None).is_err());
-    }
-
-    #[test]
-    fn validate_profile_rejects_control_characters() {
-        assert!(validate_profile(Some("a\u{0}b"), None, &[], None, None).is_err());
-        assert!(validate_profile(None, Some("x\u{1b}"), &[], None, None).is_err());
-    }
-
-    #[test]
-    fn validate_profile_rejects_oversized_avatar_ref() {
-        let oversized = "a".repeat(MAX_CONTENT_REF_LEN + 1);
-        assert!(validate_profile(None, None, &[], Some(&oversized), None).is_err());
-    }
-
-    #[test]
-    fn display_name_is_bounded_and_trimmed() {
-        assert_eq!(display_name("  Kali  "), Ok("Kali"));
-        assert!(display_name(&"日".repeat(MAX_DISPLAY_NAME_LEN)).is_ok());
-        assert!(display_name(&"a".repeat(MAX_DISPLAY_NAME_LEN + 1)).is_err());
-        assert!(display_name("   ").is_err());
-    }
-}
+#[path = "limits_tests.rs"]
+mod tests;

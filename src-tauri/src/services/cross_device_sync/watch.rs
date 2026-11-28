@@ -7,11 +7,13 @@
 //! subkey, merges into local state, and emits a `cross-device-sync`
 //! Tauri event so the frontend re-hydrates.
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use rekindle_secrets::sync_key::{decrypt_subkey, SyncKey};
-use rekindle_types::cross_device_sync::{ReadState, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST};
-use veilid_core::{RecordKey, ValueSubkey};
+use rekindle_types::cross_device_sync::{
+    ReadScope, ReadState, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST,
+};
 
 use super::record::{open_personal_sync_record, PersonalSyncRecordHandle};
 use crate::db_helpers::db_fire;
@@ -31,20 +33,19 @@ pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &Db) -> Resu
         return Ok(());
     }
     let record_pool = state_helpers::record_pool(state)?;
-    let key: RecordKey = handle
-        .record_key
-        .parse()
-        .map_err(|e| format!("invalid sync record key: {e}"))?;
-    let owner_kp: veilid_core::KeyPair = handle
-        .owner_keypair_hex
-        .parse()
-        .map_err(|e| format!("invalid sync owner keypair: {e}"))?;
     let lease = record_pool
-        .acquire(&key, Some(owner_kp))
+        .acquire(
+            &handle.record_key,
+            Some(&handle.owner_keypair_hex),
+            OpenIntent::Hold,
+        )
         .await
         .map_err(|e| format!("open personal sync record: {e}"))?;
     if let Err(e) = record_pool
-        .watch(lease, (SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).collect())
+        .watch(
+            lease,
+            &(SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).collect::<Vec<u32>>(),
+        )
         .await
     {
         record_pool.release(lease).await;
@@ -64,7 +65,7 @@ pub async fn try_handle_personal_sync_change(
     state: &Arc<AppState>,
     pool: &Db,
     record_key: &str,
-    subkeys: &[ValueSubkey],
+    subkeys: &[u32],
     inline_value: Option<&[u8]>,
 ) -> bool {
     let Some(handle) = open_personal_sync_record(state, pool).await else {
@@ -73,10 +74,10 @@ pub async fn try_handle_personal_sync_change(
     if handle.record_key != record_key {
         return false;
     }
-    let Some(master_secret) = *state.identity_secret.lock() else {
+    let Some(master_secret) = crate::state_helpers::identity_secret(state) else {
         return false;
     };
-    let sync_key = SyncKey::from_master_secret(&master_secret);
+    let sync_key = SyncKey::from_master_secret(&master_secret[..]);
 
     for &subkey in subkeys {
         if !(SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).contains(&subkey) {
@@ -88,11 +89,11 @@ pub async fn try_handle_personal_sync_change(
             let Ok(record_pool) = state_helpers::record_pool(state) else {
                 return true;
             };
-            let Ok(key) = handle.record_key.parse::<RecordKey>() else {
-                return true;
-            };
-            match record_pool.read_once(&key, subkey, true).await {
-                Ok(Some(v)) => v.data().to_vec(),
+            match record_pool
+                .read_once(&handle.record_key, subkey, true)
+                .await
+            {
+                Ok(Some(v)) => v.data,
                 Ok(None) | Err(_) => continue,
             }
         };
@@ -111,7 +112,7 @@ pub async fn try_handle_personal_sync_change(
 fn apply_remote_subkey(
     pool: &Db,
     handle: &PersonalSyncRecordHandle,
-    subkey: ValueSubkey,
+    subkey: u32,
     plaintext: &[u8],
 ) {
     // Pure decode via the crate; this function owns the per-variant
@@ -147,20 +148,15 @@ fn merge_read_state_into_db(pool: &Db, owner_key: &str, _device_id: &str, remote
     let owner_key = owner_key.to_string();
     db_fire(pool, "merge remote read state", move |conn| {
         let tx = conn.transaction()?;
+        // A community or friend the other device holds and this one does
+        // not has no marker here (its rows belong to the parent row).
         for entry in &remote.entries {
-            tx.execute(
-                "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5) \
-                 ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
-                   last_read_lamport = MAX(last_read_lamport, excluded.last_read_lamport), \
-                   updated_at = excluded.updated_at",
-                rusqlite::params![
-                    owner_key,
-                    entry.community_id,
-                    entry.channel_id,
-                    i64::try_from(entry.last_read_lamport).unwrap_or(i64::MAX),
-                    now
-                ],
+            rekindle_db::repo::read_markers::advance(
+                &tx,
+                &owner_key,
+                &read_marker_scope(&entry.scope),
+                entry.last_read_seq,
+                now,
             )?;
         }
         // Architecture §28.4: the per-community pseudonym is deterministic
@@ -179,4 +175,21 @@ fn merge_read_state_into_db(pool: &Db, owner_key: &str, _device_id: &str, remote
         tx.commit()?;
         Ok(())
     });
+}
+
+/// The marker scope a personal-sync read-state entry names.
+fn read_marker_scope(scope: &ReadScope) -> rekindle_db::repo::read_markers::Scope {
+    use rekindle_db::repo::read_markers::Scope;
+    match scope {
+        ReadScope::Channel {
+            community_id,
+            channel_id,
+        } => Scope::Channel {
+            community_id: community_id.clone(),
+            channel_id: channel_id.clone(),
+        },
+        ReadScope::Dm { peer_key } => Scope::Dm {
+            peer_key: peer_key.clone(),
+        },
+    }
 }

@@ -18,19 +18,90 @@ feature-depth = 1
 
 # ─── Advisories ─────────────────────────────────────────────────────────
 #
-# RustSec advisory database. Any `vulnerability` is denied; `unmaintained`
-# / `unsound` / `notice` are warnings the maintainer must triage. Yanked
-# crates always fail.
+# RustSec advisory database. This is the single advisory policy (plan §3.0,
+# 2026-11-27): CI runs no separate cargo-audit, whose own ignore list drifted
+# from this one. Every vulnerability, and every unmaintained or unsound
+# advisory on any crate in the graph (direct or transitive), fails, which is
+# what `cargo audit --deny warnings` enforced. Yanked crates always fail.
 #
-# When a transient false-positive blocks CI, add the advisory ID to
-# `ignore` with a `// reason` line. Do not blanket-ignore.
+# An advisory that cannot be fixed by an upgrade goes in `ignore` with its
+# reachability analysis and a review date. Do not blanket-ignore.
 
 [advisories]
 db-path = "$CARGO_HOME/advisory-dbs"
 db-urls = [ "https://github.com/rustsec/advisory-db" ]
 yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+# Each ignore below records its reachability analysis (plan SC1, 2026-11-20)
+# and is reviewed at the next quarterly audit (docs/contributor/
+# dependency-audit.md), review by 2027-02-20, or as soon as a compatible
+# patched release exists, whichever comes first.
 ignore = [
-    # No active ignores. Add new entries as `{ id = "RUSTSEC-XXXX-XXXX", reason = "..." }`.
+    # capnp 0.20.6 (rekindle-codec, direct). Affected: the safe
+    # `capnp::constant::Reader::get` and `capnp::schema::StructSchema::new`
+    # build readers from caller-supplied words without validation. Not
+    # reachable with untrusted data: our schemas (schemas/*.capnp) declare
+    # no pointer constants, so no `constant::Reader` exists, and
+    # `StructSchema::new` is called only by capnpc-generated code with the
+    # generator's own static `RAW_SCHEMA` (governance_op's dynamic_struct
+    # clear of `sig` included); received bytes go through the validating
+    # message readers, never through either function. Fixed in 0.24
+    # (semver-incompatible codegen); the 0.20 -> 0.24+ bump is its own step.
+    { id = "RUSTSEC-2025-0143", reason = "capnp: unsound constructors reached only with capnpc-generated static schemas; no pointer consts in our schemas; fix needs 0.24 codegen bump (review by 2027-02-20)" },
+    # glib 0.18.5 (Linux only, via gtk/webkit2gtk 0.18 <- tauri/wry/tao).
+    # Affected: `glib::VariantStrIter` (Variant::array_iter_str). Not
+    # reachable: no crate in our tree calls it (grep of gtk 0.18.2, gio
+    # 0.18.4, gdk 0.18.2, webkit2gtk 2.0.2 sources: only glib itself
+    # defines it); our only glib use is `Cast` in src-tauri/src/platform.rs.
+    # Fixed in glib 0.20, which tauri's GTK 3 stack cannot take.
+    { id = "RUSTSEC-2024-0429", reason = "glib: VariantStrIter is never called in our tree; gtk-rs 0.18 is pinned by tauri/wry's GTK 3 stack (review by 2027-02-20)" },
+    # lru 0.7.8 (via reed-solomon-erasure 6.0.0, the latest release, which
+    # pins lru ^0.7.8 <- rekindle-video FEC, in the desktop app). Advisory:
+    # `LruCache::pop()` is not panic-safe; UB needs a key whose `Drop`
+    # panics during `pop()` and a later eviction after `catch_unwind`.
+    # Not reachable: reed-solomon-erasure-6.0.0/src/core.rs:349 declares
+    # `LruCache<Vec<usize>, Arc<Matrix<F>>>` (neither `Vec<usize>` nor
+    # `Arc<Matrix>` can panic on drop), and the crate only calls
+    # `cache.get` (core.rs:704) and `cache.put` (core.rs:728), never `pop`.
+    # The workspace does use `catch_unwind` (rekindle-lifecycle/src/scope.rs:207
+    # wraps every session task), so the analysis rests on the key and value
+    # types, not on the absence of `catch_unwind`. lru 0.16.4 (ratatui-core
+    # 0.1.0) is gone: ratatui-core 0.1.2 takes lru 0.18.5 (patched >= 0.18.2).
+    { id = "RUSTSEC-2026-0253", reason = "lru 0.7.8 via reed-solomon-erasure 6.0.0 (latest): key Vec<usize> and value Arc<Matrix> cannot panic on drop and the crate never calls pop (core.rs:349/704/728); no patched release takes lru >= 0.18.2 (review by 2027-02-20)" },
+    # libsqlite3-sys 0.37.0 (bundled SQLCipher; via rusqlite 0.39, ours and
+    # veilid-core 0.5.8's keyvaluedb-sqlite -> async-sqlite, ADR 0017).
+    # SQLite < 3.54.0 can return uninitialized page-cache memory when it
+    # opens a database with a sibling -wal of a different page size. We use
+    # WAL (rekindle-db/src/open.rs), and exploiting it needs write access to
+    # the owner-only data root. An attacker running as the user (threat model
+    # A6, compromised device post-unlock) already reads RAM and keys, so this
+    # adds nothing for them; an attacker who writes the disk of a locked,
+    # seized device and returns it (A7 with write access) could plant the
+    # pair: that residual risk is recorded in the plan (SC1) and tracked
+    # until a bundled SQLCipher on SQLite >= 3.54.0 can be taken.
+    # No fixed build exists for us: libsqlite3-sys 0.39's bundled-sqlcipher
+    # still bundles SQLite 3.53.4 (sqlcipher-src 419.0.6), and veilid-core's
+    # pinned tree requires rusqlite 0.39 -> libsqlite3-sys 0.37.
+    { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache disclosure needs a crafted db+wal pair in the owner-only data root (write access to the data root: A6 gains nothing; A7-with-write residual risk tracked in plan SC1); no patched SQLCipher bundle exists and veilid-core pins rusqlite 0.39 (review by 2027-02-20)" },
+    # ── Unmaintained (plan SC1, 2026-11-20). Fixed at the cause in this
+    # slice: `backoff` (unused dependency of rekindle-transport, removed;
+    # also drops its `instant` path), `bincode` (rekindle-voice's receiver
+    # report now uses postcard, our wire codec), `atty` (clap 3 came only
+    # from nnnoiseless's default `bin` CLI feature, now off). Each entry
+    # below has no maintained drop-in today; the reason names who pulls it.
+    { id = "RUSTSEC-2026-0150", reason = "audiopus_sys: libopus build crate under opus 0.3 (rekindle-voice, rekindle-files); libopus itself is maintained; advisory is the CMake 4 build break, not a defect in code; replacing the Opus binding is its own media-engine slice (ADR 0015) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: our direct use (quiet hours, CLI/TUI/xtask timestamps) moves to a maintained time crate in its own slice with chrono-tz; no safe upgrade exists (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz: quiet-hours IANA zones in src-tauri; replaced together with chrono in its own slice; no safe upgrade exists (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0559", reason = "chrono-tz-build: build-time only, under chrono-tz 0.9; goes with it (review by 2027-02-20)" },
+    { id = "RUSTSEC-2024-0384", reason = "instant: via parking_lot 0.11 <- reed-solomon-erasure 6 (rekindle-video FEC, latest release); on native targets it is std::time::Instant (review by 2027-02-20)" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: build-time proc-macro under veilid-core's pinned tree (netlink, macro_rules_attribute; ADR 0017 forbids bumping it here) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils: via futures-util 0.3 (the whole async stack); a one-macro crate with no open defect; goes when futures-util drops it (review by 2027-02-20)" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: build-time proc-macro under glib-macros/gtk3-macros 0.18, pinned by tauri/wry's GTK 3 stack (Linux only) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: build-time proc-macro under hax-lib-macros <- libcrux-ml-kem 0.0.12 (pinned for RUSTSEC-2026-0212, KAT-tested) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: folded into zbus upstream; zbus 5 is ours (os_notify, portal_shortcuts) and notify-rust's/tauri plugins'; all move together on the next zbus release they take (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: folded into zbus upstream; moves with zbus 5 as above (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: build-time, folded into zbus upstream; moves with zbus 5 as above (review by 2027-02-20)" },
 ]
 
 # ─── Licenses ───────────────────────────────────────────────────────────
@@ -39,11 +110,28 @@ ignore = [
 # licenses we accept in the dependency graph. Copyleft (GPL family),
 # OSL, RPSL, MS-RL, MS-PL, etc. are not on the allowlist; cargo-deny
 # will fail the check if they appear.
+#
+# Reviewed additions (plan E7.7.3, build-time importers only; neither is
+# linked into an app binary):
+#   pelite 0.10.0 (MIT; with dataview 1.1.0, pelite-macros 0.1.1 and
+#     no-std-compat 0.4.1, all MIT): xtask `import-xfire-data` reads
+#     `icons.dll` as PE resource data from its bytes, never loaded; built
+#     with `std` only, without the `mmap` (libc/winapi) feature.
+#   quick-xml 0.38 (MIT): rekindle-skin's legacy XML importers and the
+#     xtask's Xfire `sounds.xml` reader; no DTD or entity resolution (an
+#     entity reference refuses the file).
+#
+# Reviewed addition (plan E7.7.1 "Helper process", d4 §2.2; macOS only):
+#   libproc 0.14.11 (MIT; with errno 0.3 and libc, already in the tree;
+#     build-time bindgen 0.72, already in the tree): the Host's footprint
+#     watchdog reads the skin helper's `ri_phys_footprint` through the safe
+#     `pidrusage`, the `unsafe` FFI staying inside the crate.
 
 [licenses]
 confidence-threshold = 0.93
 allow = [
     "MIT",
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
@@ -82,16 +170,52 @@ license-files = [ { path = "LICENSE", hash = 0xbd0eed23 } ]
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace path dependencies carry no version (plan SC1, 2026-11-20):
+# every workspace crate is `publish = false` (Rekindle ships binaries,
+# docs/contributor/release-process.md, never crates), so a path dep is
+# always the in-tree copy; a version on it would only restate the
+# workspace. Registry and git dependencies still need versions/revs.
+allow-wildcard-paths = true
 highlight = "all"
 deny = [
-    # OpenSSL bindings are forbidden — we use Rustls / RustCrypto / ring.
-    # Tauri pulls in `openssl` indirectly on some platforms; if the
-    # check fires for that reason, file an upstream issue rather than
-    # whitelisting here.
-    { name = "openssl-sys", reason = "Use Rustls / RustCrypto / ring instead." },
+    # OpenSSL bindings are forbidden — we use Rustls / RustCrypto / ring
+    # (docs/security/supply-chain-policy.md §2). Tauri pulls in `openssl`
+    # indirectly on some platforms; if the check fires for that reason,
+    # file an upstream issue rather than whitelisting here.
+    #
+    # One recorded exception (plan SC1, 2026-11-20): `libsqlite3-sys` may
+    # link it on non-Apple targets, because SQLCipher is C and its page
+    # cipher needs a C crypto provider (OpenSSL, LibTomCrypt, NSS or Apple
+    # CommonCrypto); no Rust crypto crate can serve it. One libsqlite3 per
+    # process, SQLCipher winning feature unification (CLAUDE.md DB note;
+    # ADR 0017's veilid-core tree needs rusqlite 0.39 -> libsqlite3-sys
+    # 0.37). Per target (SC1 slice 3, rekindle-db and rekindle-vault
+    # Cargo.toml):
+    # - Apple (macOS, iOS): `rusqlite/bundled-sqlcipher` alone, so
+    #   libsqlite3-sys build.rs:219-222 defines SQLCIPHER_CRYPTO_CC and
+    #   links Security.framework: no `openssl-sys` in the graph. cargo-deny
+    #   cannot scope a ban to targets, so `cargo xtask check-supply-chain`
+    #   fails if `cargo tree -i openssl-sys` finds it for an Apple target;
+    #   `rekindle-db/tests/sqlcipher_provider.rs` asserts `PRAGMA
+    #   cipher_provider` = commoncrypto and opens a committed database the
+    #   OpenSSL build wrote.
+    # - Linux, Windows, Android: `bundled-sqlcipher-vendored-openssl`,
+    #   OpenSSL built statically from the pinned `openssl-src`; SQLCipher is
+    #   its only caller, no Rust code reaches it, and it serves only the
+    #   at-rest page cipher (crypto-primitives.md: AES-256-CBC +
+    #   HMAC-SHA512 via SQLCipher). Without it libsqlite3-sys links a system
+    #   `libcrypto` dynamically (build.rs:223-226) or, on Windows, panics
+    #   without OPENSSL_DIR (build.rs:170-171).
+    # Any other crate linking `openssl-sys` still fails here.
+    { crate = "openssl-sys", wrappers = [ "libsqlite3-sys" ], reason = "Use Rustls / RustCrypto / ring instead; only SQLCipher (libsqlite3-sys) may link it, as its C page-cipher provider on non-Apple targets (Apple: CommonCrypto, checked by xtask check-supply-chain)." },
 
-    # Old-style ed25519 / x25519 wrappers — only the dalek implementations are vetted.
-    { name = "ed25519", reason = "Use ed25519-dalek directly." },
+    # The `ed25519` crate is RustCrypto's signature-type/trait crate. It
+    # lets any Ed25519 backend plug in behind one type; only the dalek
+    # implementation is vetted (crypto-primitives.md §1), so no crate but
+    # `ed25519-dalek` may depend on it. Both copies in the tree are
+    # dalek's own (ours via ed25519-dalek 2.2, veilid-core-optimized's via
+    # ed25519-dalek 3.0, plan SC1).
+    { crate = "ed25519", wrappers = [ "ed25519-dalek" ], reason = "Only the vetted ed25519-dalek may use the ed25519 signature crate; depend on ed25519-dalek directly." },
 
     # ─── Tier-2 sole crypto boundary (PENDING enforcement) ──────────────
     #
@@ -116,15 +240,15 @@ deny = [
     # { name = "chacha20poly1305",  wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
     # { name = "hkdf",              wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
     #
-    # ─── Veilid centralisation (PENDING enforcement) ────────────────────
+    # ─── Veilid boundary (ADR 0014, PENDING enforcement here) ──────────
     #
-    # Only `rekindle-transport` (daemon track) and `rekindle-protocol`
-    # (desktop track) may import veilid-core directly. Several crates
-    # still violate this (rekindle-records, rekindle-route,
-    # rekindle-sync, rekindle-voice, rekindle-node) — same situation
-    # as the crypto rule.
+    # The boundary is transitive: only `rekindle-protocol`,
+    # `rekindle-transport`, `rekindle-node` and, until F1,
+    # `rekindle-desktop` may link veilid-core (ADR 0021 keeps the record
+    # pool's logic Veilid-free). `cargo xtask check` enforces it today;
+    # this entry would let cargo-deny enforce the direct-dependency half.
     #
-    # { name = "veilid-core",       wrappers = ["rekindle-transport", "rekindle-protocol"], reason = "Veilid integration is centralised." },
+    # { name = "veilid-core",       wrappers = ["rekindle-protocol", "rekindle-transport", "rekindle-node", "rekindle-desktop"], reason = "ADR 0014: the Veilid boundary is transitive." },
 ]
 skip = [
     # Tolerated duplicates. Each entry must be revisited when the
@@ -152,9 +276,14 @@ allow-git = [
     # Pinned git deps already in Cargo.toml. Keep this list in sync
     # with `[patch.crates-io]` and any `git = "..."` entries.
     "https://github.com/mcginty/snow",
-    # veilid-core 0.5.7 + the route select/release drain fix, until a Veilid
-    # release carries it (plan C7.18 note, root Cargo.toml [patch.crates-io]).
+    # veilid-core 0.5.8 + the route drain and route pool fixes (branch
+    # rekindle/v0.5.8-route-pool, rev e1158844), until a Veilid release
+    # carries them (ADR 0017, root Cargo.toml [patch.crates-io]).
     "https://github.com/radicalkjax/veilid.git",
+    # libdbus-sys at dbus-rs commit dd78d826 (HAVE_POLL in the vendored
+    # build, upstream PR #523) until a release carries it (plan E7.13 W7,
+    # root Cargo.toml [patch.crates-io]).
+    "https://github.com/diwic/dbus-rs",
 ]
 
 [sources.allow-org]

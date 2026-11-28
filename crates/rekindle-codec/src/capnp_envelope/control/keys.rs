@@ -57,6 +57,7 @@ pub(super) fn write_mek_transfer(
         generation,
         sender_pseudonym,
         wrapped_mek,
+        transfer_id,
     }) = payload
     else {
         unreachable!("write_mek_transfer: variant mismatch")
@@ -69,6 +70,7 @@ pub(super) fn write_mek_transfer(
     p.set_generation(*generation);
     p.set_sender_pseudonym(sender_pseudonym);
     p.set_wrapped_mek(wrapped_mek);
+    p.set_transfer_id(transfer_id);
 }
 
 pub(super) fn write_mek_transfer_ack(
@@ -80,6 +82,8 @@ pub(super) fn write_mek_transfer_ack(
         channel_id,
         generation,
         requester_pseudonym,
+        transfer_id,
+        ack_tag,
     }) = payload
     else {
         unreachable!("write_mek_transfer_ack: variant mismatch")
@@ -91,55 +95,8 @@ pub(super) fn write_mek_transfer_ack(
     }
     p.set_generation(*generation);
     p.set_requester_pseudonym(requester_pseudonym);
-}
-
-pub(super) fn write_admin_keypair_grant(
-    mut p: cap::admin_keypair_grant_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::AdminKeypairGrant {
-        wrapped_owner_keypair,
-        wrapped_slot_seed,
-    } = payload
-    else {
-        unreachable!("write_admin_keypair_grant: variant mismatch")
-    };
-    p.set_wrapped_owner_keypair(wrapped_owner_keypair);
-    p.set_wrapped_slot_seed(wrapped_slot_seed);
-}
-
-pub(super) fn write_slot_keypair_grant(
-    mut p: cap::slot_keypair_grant_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::SlotKeypairGrant {
-        slot_index,
-        segment_index,
-        wrapped_slot_keypair,
-    } = payload
-    else {
-        unreachable!("write_slot_keypair_grant: variant mismatch")
-    };
-    p.set_slot_index(*slot_index);
-    p.set_segment_index(*segment_index);
-    p.set_wrapped_slot_keypair(wrapped_slot_keypair);
-}
-
-pub(super) fn write_governance_updated(
-    mut p: cap::governance_updated_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::GovernanceUpdated {
-        governance_key,
-        subkey_index,
-        lamport_ts,
-    } = payload
-    else {
-        unreachable!("write_governance_updated: variant mismatch")
-    };
-    p.set_governance_key(governance_key);
-    p.set_subkey_index(*subkey_index);
-    p.set_lamport_ts(*lamport_ts);
+    p.set_transfer_id(transfer_id);
+    p.set_ack_tag(ack_tag);
 }
 
 pub(super) fn read_mek_rotated(
@@ -195,6 +152,7 @@ pub(super) fn read_mek_transfer(
         generation: p.get_generation(),
         sender_pseudonym: text_to_string(p.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
         wrapped_mek: p.get_wrapped_mek().map_err(|e| capnp_err(&e))?.to_vec(),
+        transfer_id: p.get_transfer_id().map_err(|e| capnp_err(&e))?.to_vec(),
     }))
 }
 
@@ -214,43 +172,7 @@ pub(super) fn read_mek_transfer_ack(
         requester_pseudonym: text_to_string(
             p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?,
         )?,
+        transfer_id: p.get_transfer_id().map_err(|e| capnp_err(&e))?.to_vec(),
+        ack_tag: p.get_ack_tag().map_err(|e| capnp_err(&e))?.to_vec(),
     }))
-}
-
-pub(super) fn read_admin_keypair_grant(
-    p: cap::admin_keypair_grant_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::AdminKeypairGrant {
-        wrapped_owner_keypair: p
-            .get_wrapped_owner_keypair()
-            .map_err(|e| capnp_err(&e))?
-            .to_vec(),
-        wrapped_slot_seed: p
-            .get_wrapped_slot_seed()
-            .map_err(|e| capnp_err(&e))?
-            .to_vec(),
-    })
-}
-
-pub(super) fn read_slot_keypair_grant(
-    p: cap::slot_keypair_grant_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::SlotKeypairGrant {
-        slot_index: p.get_slot_index(),
-        segment_index: p.get_segment_index(),
-        wrapped_slot_keypair: p
-            .get_wrapped_slot_keypair()
-            .map_err(|e| capnp_err(&e))?
-            .to_vec(),
-    })
-}
-
-pub(super) fn read_governance_updated(
-    p: cap::governance_updated_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::GovernanceUpdated {
-        governance_key: text_to_string(p.get_governance_key().map_err(|e| capnp_err(&e))?)?,
-        subkey_index: p.get_subkey_index(),
-        lamport_ts: p.get_lamport_ts(),
-    })
 }

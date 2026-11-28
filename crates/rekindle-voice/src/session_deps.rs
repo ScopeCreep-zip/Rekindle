@@ -123,6 +123,12 @@ pub struct VoiceLoopScopes {
     pub monitor: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
     /// The MCU mix loop, while this peer is the voice host.
     pub mcu: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The transport's per-peer egress drivers (`PeerLink::drive`). Taken
+    /// only when the session ends (`stop_devices`): a restart keeps the
+    /// transport. Nothing else stops a driver whose peer is still on the
+    /// roster, so without this every call's drivers kept pacing (and
+    /// padding) to the old routes until logout (plan CL1).
+    pub egress: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
 }
 
 /// The key sources SFrame needs for a voice session (`media_crypto`):
@@ -147,6 +153,16 @@ pub trait MediaKeySource: Send + Sync {
 /// Orchestration port for voice session work.
 #[async_trait]
 pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
+    /// Our community pseudonym's signature over our session key for
+    /// `(community, channel)`, announced in our `VoiceJoin` (plan C7.29),
+    /// or `None` without a pseudonym key.
+    fn sign_media_session_key(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        session_key: &[u8],
+    ) -> Option<Vec<u8>>;
+
     // --- Identity ---
 
     /// Current owner key (Ed25519 public key hex). Errors if no
@@ -308,15 +324,6 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// (caller must convert to CallDecline / CallEnd).
     async fn resolve_peer_route(&self, peer_pubkey_hex: &str) -> Option<Vec<u8>>;
 
-    /// Load member display names for a community into a
-    /// `pseudonym_hex → display_name` map. Used by the receive loop
-    /// to surface friendly names on UserJoined events. Empty map for
-    /// 1:1 calls.
-    async fn load_member_names(
-        &self,
-        community_id: Option<&str>,
-    ) -> std::collections::HashMap<String, String>;
-
     /// §10.6 — broadcast our media decode capabilities to a community
     /// voice channel so other senders cap their VP9 bitrate at the
     /// lowest common denominator. Best-effort: errors log but don't
@@ -328,6 +335,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// `start_session` after loops are spawned.
     fn emit_local_joined(
         &self,
+        session: &crate::session_state::VoiceSessionState,
         channel_id: &str,
         community_id: Option<&str>,
         public_key: &str,
@@ -338,7 +346,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// create one), pull capture_rx + playback_tx + (noise_supp,
     /// echo_cancel) off the engine handle, spawn the three loops
     /// (send / receive / device_monitor) using the deps + transport
-    /// + member_names, store all shutdown senders + JoinHandles
+    /// and store all shutdown senders + JoinHandles
     /// back on the engine handle.
     ///
     /// All AppState mutation lives here. The crate's `start_session`
@@ -350,7 +358,6 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
         transport: std::sync::Arc<tokio::sync::Mutex<crate::transport::VoiceTransport>>,
         muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
         deafened_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        member_names: std::collections::HashMap<String, String>,
     ) -> Result<(), VoiceError>;
 
     // ── Restart-loops (hot-swap path) deps (Phase 14.l-restart) ─────
@@ -379,7 +386,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     >;
 
     /// Currently bound community_id (or `None` for 1:1 calls / no
-    /// engine). Used by restart_loops to re-fetch member_names.
+    /// engine).
     fn active_community_id(&self) -> Option<String>;
 
     /// Snapshot of the active engine's (channel_id, community_id).
@@ -394,6 +401,18 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     fn send_community_envelope(
         &self,
         community_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    );
+
+    /// Send a community envelope to every peer on the voice channel's
+    /// roster and return once the sends are handed to Veilid. Unlike
+    /// [`Self::send_community_envelope`] it does not spawn onto the
+    /// session scope, so it still delivers while the session is being
+    /// torn down: the `VoiceLeave` of a quit or logout (plan C7.27).
+    async fn send_channel_envelope_now(
+        &self,
+        community_id: &str,
+        channel_id: &str,
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     );
 
@@ -440,6 +459,13 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// Stop cpal capture + playback AND clear the voice engine
     /// handle (set to `None`). Used by `shutdown_voice(FULL)`.
     fn stop_devices_and_clear_engine(&self);
+
+    /// The community channel session ended (`shutdown_voice(FULL)`, on
+    /// every path: the Leave button, a call's end, logout): its keyring
+    /// with the session key, its queued key deliveries and its
+    /// media-ready slot end with it (plans C7.20, C7.29), so a rejoin
+    /// is a new session that announces a new session key.
+    async fn end_channel_session(&self, community_id: &str, channel_id: &str);
 
     /// Stop cpal capture + playback WITHOUT clearing the engine
     /// handle. Used by device hot-swap before
@@ -515,10 +541,7 @@ pub struct SendLinkStats {
 #[derive(Debug, Clone)]
 pub enum VoiceSessionEvent {
     /// A new participant joined the voice channel.
-    UserJoined {
-        peer_pubkey: String,
-        display_name: String,
-    },
+    UserJoined { peer_pubkey: String },
     /// A participant left.
     UserLeft { peer_pubkey: String },
     /// A participant started/stopped speaking (VAD edge).

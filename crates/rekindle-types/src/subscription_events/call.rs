@@ -64,6 +64,10 @@ pub enum CallEvent {
         participants: Vec<String>,
         is_group: bool,
         expires_at_ms: u64,
+        /// The group DM a group call belongs to (`GroupCallOffer.group_id`,
+        /// checked against its roster); `None` for a 1:1 or a buddy-list
+        /// group call.
+        group_id: Option<String>,
     },
 
     /// Our outbound call reached the peer and is ringing there.
@@ -78,6 +82,20 @@ pub enum CallEvent {
         expires_at_ms: u64,
     },
 
+    /// We started a group call; it rings out to `participants` until the
+    /// first of them accepts (`Connected`).
+    GroupStarted {
+        call_id: String,
+        /// `"audio"` or `"video"`.
+        kind: String,
+        /// Everyone invited, us first.
+        participants: Vec<String>,
+        /// The group DM the call belongs to (`GroupCallOffer.group_id`);
+        /// `None` for a buddy-list group call.
+        group_id: Option<String>,
+        expires_at_ms: u64,
+    },
+
     /// The call is up and media should flow.
     Connected {
         call_id: String,
@@ -85,6 +103,8 @@ pub enum CallEvent {
         /// only the call id, because the kind and the participants were
         /// established when the call came in and have not changed.
         direct: Option<DirectCallInfo>,
+        /// The group DM of a group call, as on `Incoming`.
+        group_id: Option<String>,
     },
 
     /// The peer declined.
@@ -129,16 +149,25 @@ pub enum CallEvent {
         participant_pubkey: String,
         reason: String,
     },
+
+    /// Our own microphone mute in the call or voice session changed (the
+    /// mute button or the mute shortcut). It names no call: the desktop
+    /// call engine holds the mute for whatever session is live, and the
+    /// Host's skin signals fold it into `MuteSelf`/`UnmuteSelf` (lead
+    /// decision 58).
+    SelfMuteChanged { muted: bool, timestamp_ms: u64 },
 }
 
 impl CallEvent {
-    /// The call this event belongs to. Every variant has one.
+    /// The call this event belongs to; `None` only for
+    /// [`CallEvent::SelfMuteChanged`], which is ours, not a call's.
     #[must_use]
-    pub fn call_id(&self) -> &str {
-        match self {
+    pub fn call_id(&self) -> Option<&str> {
+        let id = match self {
             Self::Incoming { call_id, .. }
             | Self::Ringing { call_id }
             | Self::Started { call_id, .. }
+            | Self::GroupStarted { call_id, .. }
             | Self::Connected { call_id, .. }
             | Self::Declined { call_id, .. }
             | Self::Missed { call_id, .. }
@@ -148,147 +177,12 @@ impl CallEvent {
             | Self::ReactionReceived { call_id, .. }
             | Self::ParticipantJoined { call_id, .. }
             | Self::ParticipantLeft { call_id, .. } => call_id,
-        }
+            Self::SelfMuteChanged { .. } => return None,
+        };
+        Some(id)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_group_call_connects_without_a_peer() {
-        let group = CallEvent::Connected {
-            call_id: "c1".into(),
-            direct: None,
-        };
-        let one_to_one = CallEvent::Connected {
-            call_id: "c2".into(),
-            direct: Some(DirectCallInfo {
-                kind: "video".into(),
-                peer_key: "pk".into(),
-                peer_display_name: "Ada".into(),
-                expected_local_camera: true,
-            }),
-        };
-        assert_eq!(group.call_id(), "c1");
-        assert_eq!(one_to_one.call_id(), "c2");
-        // The four direct-call facts travel together or not at all —
-        // there is no state where the peer key is known but the kind
-        // is not.
-        assert!(matches!(group, CallEvent::Connected { direct: None, .. }));
-    }
-
-    #[test]
-    fn every_variant_reports_its_call_id() {
-        for event in sample_events() {
-            assert!(
-                !event.call_id().is_empty(),
-                "every call event names its call"
-            );
-        }
-    }
-
-    /// The daemon IPC is postcard: `flatten` and `tag = "..."` fail
-    /// there at runtime, so only a real round trip catches them.
-    #[test]
-    fn postcard_round_trips_every_variant() {
-        for event in sample_events() {
-            let bytes = postcard::to_allocvec(&event).expect("postcard encode");
-            let back: CallEvent = postcard::from_bytes(&bytes).expect("postcard decode");
-            assert_eq!(format!("{event:?}"), format!("{back:?}"));
-        }
-    }
-
-    /// Pins the JSON `src/ipc/channels/call_events.ts` parses.
-    #[test]
-    fn json_shape_is_what_the_webview_parses() {
-        let event = CallEvent::Ended {
-            call_id: "c1".into(),
-            reason: "hangup".into(),
-        };
-        assert_eq!(
-            serde_json::to_string(&event).unwrap(),
-            r#"{"ended":{"callId":"c1","reason":"hangup"}}"#
-        );
-
-        let connected = CallEvent::Connected {
-            call_id: "c1".into(),
-            direct: Some(DirectCallInfo {
-                kind: "audio".into(),
-                peer_key: "pk".into(),
-                peer_display_name: "Ada".into(),
-                expected_local_camera: false,
-            }),
-        };
-        assert_eq!(
-            serde_json::to_string(&connected).unwrap(),
-            r#"{"connected":{"callId":"c1","direct":{"kind":"audio","peerKey":"pk","peerDisplayName":"Ada","expectedLocalCamera":false}}}"#
-        );
-    }
-
-    fn sample_events() -> Vec<CallEvent> {
-        vec![
-            CallEvent::Incoming {
-                call_id: "c".into(),
-                from: "pk".into(),
-                display_name: "Ada".into(),
-                kind: "video".into(),
-                participants: vec!["a".into(), "b".into()],
-                is_group: true,
-                expires_at_ms: 1,
-            },
-            CallEvent::Ringing {
-                call_id: "c".into(),
-            },
-            CallEvent::Started {
-                call_id: "c".into(),
-                kind: "audio".into(),
-                peer_key: "pk".into(),
-                peer_display_name: "Ada".into(),
-                expires_at_ms: 1,
-            },
-            CallEvent::Connected {
-                call_id: "c".into(),
-                direct: None,
-            },
-            CallEvent::Declined {
-                call_id: "c".into(),
-                reason: "busy".into(),
-            },
-            CallEvent::Missed {
-                call_id: "c".into(),
-                from: "pk".into(),
-            },
-            CallEvent::TimedOut {
-                call_id: "c".into(),
-            },
-            CallEvent::Ended {
-                call_id: "c".into(),
-                reason: "hangup".into(),
-            },
-            CallEvent::MediaStateChanged {
-                call_id: "c".into(),
-                audio: true,
-                video: false,
-                screen: false,
-                timestamp_ms: 1,
-            },
-            CallEvent::ReactionReceived {
-                call_id: "c".into(),
-                sender: "pk".into(),
-                emoji: "👍".into(),
-                timestamp_ms: 1,
-            },
-            CallEvent::ParticipantJoined {
-                call_id: "c".into(),
-                participant_pubkey: "pk".into(),
-            },
-            CallEvent::ParticipantLeft {
-                call_id: "c".into(),
-                participant_pubkey: "pk".into(),
-                reason: "left".into(),
-            },
-        ]
-    }
-}
+#[path = "call_tests.rs"]
+mod tests;

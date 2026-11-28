@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "Custom workspace tasks beyond what cargo provides natively. See README at /docs/contributor/architecture-rules.md."
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -35,3 +35,25 @@ toml_edit = "0.22"
 syn = { version = "2", features = ["full", "parsing", "printing", "visit"] }
 quote = "1"
 proc-macro2 = "1"
+# `gen-skin-registry` / `check-skin-registry` (plan E7.7.1) write and compare
+# the closed token registry's artefacts from the crate that owns it.
+rekindle-skin = { path = "../crates/rekindle-skin" }
+# `import-xfire-data` (plan E7.7.3 "Xfire app data"): `icons.dll` is read
+# as PE resource data, never loaded (MIT; std only, no mmap); the sound
+# packs' `sounds.xml` with the same XML reader rekindle-skin uses (MIT);
+# the packs inflated and CRC-checked (already in the tree through png);
+# provenance hashes; the icon PNG encoder; the bank's manifest types.
+pelite = { version = "0.10.0", default-features = false, features = ["std"] }
+quick-xml = "0.42"
+miniz_oxide = "0.8"
+crc32fast = "1.5"
+blake3 = "1"
+rekindle-image = { path = "../crates/rekindle-image" }
+rekindle-types = { path = "../crates/rekindle-types" }
+# `check-icon-glyphs` (plan E7.12) reads the bundled WOFF2 font's `cmap` and
+# `post` tables; its one Brotli stream is decoded with the decompressor
+# already in the lockfile through reqwest's `brotli` (BSD-3-Clause/MIT).
+brotli-decompressor = "5"
+
+[dev-dependencies]
+rekindle-test-fixtures = { path = "../crates/rekindle-test-fixtures" }

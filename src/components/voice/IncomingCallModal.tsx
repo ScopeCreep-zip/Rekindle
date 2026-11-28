@@ -1,11 +1,9 @@
-import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { callsState } from "../../stores/calls.store";
-import {
-  handleAcceptIncomingCall,
-  handleDeclineIncomingCall,
-} from "../../actions/calls.actions";
+import { type Component, createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { handleAcceptIncomingCall, handleDeclineIncomingCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
+import { callsState } from "../../stores/calls.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 /// Wave 12 W12.1+W12.3 — incoming-call modal mounted globally in
 /// CallController. Reads the head of `callsState.incomingCalls`. While
@@ -14,7 +12,7 @@ import { commands } from "../../ipc/commands";
 /// the active call's controls. The queue advances naturally as the
 /// user accepts / declines and the store removes entries.
 const IncomingCallModal: Component = () => {
-  const head = (): typeof callsState.incomingCalls[number] | undefined => {
+  const head = (): (typeof callsState.incomingCalls)[number] | undefined => {
     if (callsState.activeCall != null) return undefined;
     return callsState.incomingCalls[0];
   };
@@ -51,7 +49,10 @@ const IncomingCallModal: Component = () => {
           <Dialog.Portal>
             <Dialog.Overlay class="modal-overlay" />
             <div class="modal-overlay-positioner">
-              <Dialog.Content class="modal-container modal-container-sm incoming-call-modal">
+              <Dialog.Content
+                class="modal-container modal-container-sm incoming-call-modal"
+                {...returnFocusToOpener()}
+              >
                 <div class="incoming-call-modal-header">
                   <Dialog.Title class="incoming-call-title">
                     Incoming {entry().kind} call
@@ -89,7 +90,7 @@ const IncomingCallModal: Component = () => {
                   </button>
                 </div>
                 <Show when={showDeclineOptions()}>
-                  <div class="incoming-call-decline-options" role="group" aria-label="Decline with reason">
+                  <fieldset class="incoming-call-decline-options" aria-label="Decline with reason">
                     <button
                       type="button"
                       class="form-btn-secondary"
@@ -112,9 +113,9 @@ const IncomingCallModal: Component = () => {
                       type="button"
                       class="form-btn-secondary"
                       onClick={() => {
-                        const reason = window.prompt("Decline reason:");
-                        if (reason && reason.trim()) {
-                          void handleDeclineIncomingCall(entry().callId, reason.trim());
+                        const reason = window.prompt("Decline reason:")?.trim();
+                        if (reason) {
+                          void handleDeclineIncomingCall(entry().callId, reason);
                         }
                       }}
                     >
@@ -127,15 +128,12 @@ const IncomingCallModal: Component = () => {
                         await commands
                           .muteCallerTemp(entry().peerKey, 60 * 60 * 1000)
                           .catch((e) => console.warn("muteCallerTemp:", e));
-                        void handleDeclineIncomingCall(
-                          entry().callId,
-                          "user is unavailable",
-                        );
+                        void handleDeclineIncomingCall(entry().callId, "user is unavailable");
                       }}
                     >
                       Mute caller for 1 hour
                     </button>
-                  </div>
+                  </fieldset>
                 </Show>
               </Dialog.Content>
             </div>

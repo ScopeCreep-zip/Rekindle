@@ -1,0 +1,322 @@
+//! The governance projection (plan E3.1 B2c): merged governance state laid
+//! onto a community's [`CommunityState`] — our role ids, the channels, roles,
+//! categories, metadata, MEK generation, the Plate Gate segments, and banned
+//! members pruned from the overlay — and its snapshot for SQLite. One body
+//! for both hosts: the store runs [`project`] under its write lock
+//! (`CommunityStore::project_governance`), and every merge, rebuild and
+//! watched change goes through it.
+
+use std::collections::{HashMap, HashSet};
+
+use rekindle_db::repo::communities::snapshot::{
+    SnapshotCategory, SnapshotChannel, SnapshotOverwrite, SnapshotRole, StoredGovernance,
+};
+use rekindle_governance::state::GovernanceState;
+use rekindle_types::id::{PseudonymKey, RoleId};
+
+use crate::host::community::state::{
+    CategoryInfo, ChannelInfo, ChannelType, CommunityState, RoleDefinition,
+};
+
+/// What a projection changed that the shell acts on.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GovernanceProjected {
+    /// The merge named a record to watch (a Plate Gate segment's
+    /// records) that the previous state did not.
+    pub new_watch_targets: bool,
+}
+
+/// Every record the community's state names to watch: segment governance
+/// and registry records, channel-segment records (a channel has no record
+/// of its own, plan E3.3).
+fn watch_targets(cs: &CommunityState) -> HashSet<String> {
+    (cs.governance_state.iter())
+        .flat_map(|g| {
+            g.segments
+                .iter()
+                .flat_map(|s| [s.anchor.clone(), s.registry_key.clone()])
+        })
+        .collect()
+}
+
+fn channel_type(wire: &str) -> ChannelType {
+    match wire {
+        "voice" => ChannelType::Voice,
+        "announcement" => ChannelType::Announcement,
+        "forum" => ChannelType::Forum,
+        "stage" => ChannelType::Stage,
+        "directory" => ChannelType::Directory,
+        "media" => ChannelType::Media,
+        "events" => ChannelType::Events,
+        "dm" => ChannelType::Dm,
+        _ => ChannelType::Text,
+    }
+}
+
+/// The channels merged governance names, ordered by position then name,
+/// keeping what is local to each existing channel (unread count, record
+/// key, notification settings).
+fn project_channels(cs: &mut CommunityState, gov: &GovernanceState) {
+    let existing: HashMap<String, ChannelInfo> =
+        cs.channels.drain(..).map(|c| (c.id.clone(), c)).collect();
+    let mut channels: Vec<(u32, ChannelInfo)> = gov
+        .channels
+        .iter()
+        .map(|(id, ch)| {
+            let id = hex::encode(id.0);
+            let local = existing.get(&id);
+            let info = ChannelInfo {
+                name: ch.name.clone(),
+                channel_type: channel_type(&ch.channel_type),
+                category_id: ch.category_id.map(|c| hex::encode(c.0)),
+                topic: ch.topic.clone().unwrap_or_default(),
+                forum_tags: ch.forum_tags.clone(),
+                stage_speakers: Vec::new(),
+                stage_moderator: None,
+                slowmode_seconds: ch.slowmode_seconds,
+                nsfw: ch.nsfw.unwrap_or(false),
+                mek_generation: 0,
+                notification_level: local
+                    .map_or_else(|| "all".to_string(), |c| c.notification_level.clone()),
+                notification_sound_ref: local.and_then(|c| c.notification_sound_ref.clone()),
+                parent_voice_channel_id: None,
+                id,
+            };
+            (ch.position, info)
+        })
+        .collect();
+    channels.sort_by(|(a_pos, a), (b_pos, b)| a_pos.cmp(b_pos).then_with(|| a.name.cmp(&b.name)));
+    cs.channels = channels.into_iter().map(|(_, c)| c).collect();
+}
+
+fn project_roles_and_categories(cs: &mut CommunityState, gov: &GovernanceState) {
+    cs.roles = gov
+        .roles
+        .iter()
+        .map(|(id, r)| RoleDefinition {
+            id: *id,
+            name: r.name.clone(),
+            color: r.color,
+            permissions: r.permissions,
+            position: r.position,
+            hoist: r.hoist,
+            mentionable: r.mentionable,
+            self_assignable: r.self_assignable,
+            exclusion_group: r.exclusion_group.clone(),
+        })
+        .collect();
+    cs.roles.sort_by_key(|role| role.position);
+    cs.categories = gov
+        .categories
+        .iter()
+        .map(|(id, c)| CategoryInfo {
+            id: hex::encode(id.0),
+            name: c.name.clone(),
+            sort_order: c.position.cast_signed(),
+        })
+        .collect();
+    cs.categories.sort_by_key(|category| category.sort_order);
+}
+
+/// A role set in one order every reader shows: by the id's bytes.
+fn sorted_role_ids(held: &HashSet<RoleId>) -> Vec<RoleId> {
+    let mut ids: Vec<RoleId> = held.iter().copied().collect();
+    ids.sort_unstable_by_key(|id| id.0);
+    ids
+}
+
+/// Our role ids from the merged role assignments.
+pub(crate) fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
+    let me = cs
+        .my_pseudonym_key
+        .as_deref()
+        .and_then(|hex| hex::decode(hex).ok())
+        .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+        .map(PseudonymKey);
+    cs.my_role_ids = me
+        .and_then(|me| gov.role_assignments.get(&me))
+        .map(sorted_role_ids)
+        .unwrap_or_default();
+}
+
+/// Every member's role ids by hex pseudonym, from the merged role
+/// assignments (plan E3.2, D15), built once per read. The member list, the
+/// presence scan and the channel adapter read roles only from here or from
+/// [`project_my_roles`]; no row or map caches them (review RV7 M1).
+pub(crate) fn member_role_ids(gov: &GovernanceState) -> HashMap<String, Vec<RoleId>> {
+    gov.role_assignments
+        .iter()
+        .map(|(pseudonym, held)| (hex::encode(pseudonym.0), sorted_role_ids(held)))
+        .collect()
+}
+
+/// The members merged governance has departed, by hex pseudonym: a banned
+/// member, and one the durable kick `MemberRemoved` took out of the merged
+/// `members` (plan E3.2; a re-join after the removal is in `members`
+/// again). The overlay prunes them and the member list leaves them out.
+pub(crate) fn departed(gov: &GovernanceState) -> HashSet<String> {
+    gov.bans
+        .iter()
+        .chain(gov.removed.keys())
+        .chain(gov.op_log_records.keys())
+        .filter(|p| gov.is_departed(p))
+        .map(|p| hex::encode(p.0))
+        .collect()
+}
+
+/// The members merged governance counts, by hex pseudonym
+/// ([`GovernanceState::is_counted_member`]): the only keys a member list
+/// shows (finding I1). A roster row, a beat or a gossip announce of any
+/// other key (a joiner the invite's `max_uses` refused, a pending joiner,
+/// a departed member) is never listed.
+pub(crate) fn listed(gov: &GovernanceState) -> HashSet<String> {
+    gov.counted_members().map(|p| hex::encode(p.0)).collect()
+}
+
+/// A [`departed`] member stops receiving our gossip and leaves the known
+/// members at once (architecture §13).
+fn prune_departed(cs: &mut CommunityState, gov: &GovernanceState) {
+    let departed = departed(gov);
+    if departed.is_empty() {
+        return;
+    }
+    if let Some(gossip) = cs.gossip.as_mut() {
+        gossip.peers.retain(|key, _| !departed.contains(key));
+        gossip
+            .online_members
+            .retain(|key, _| !departed.contains(key));
+    }
+    cs.known_members.retain(|key| !departed.contains(key));
+}
+
+/// Lay `gov` onto `cs` and install it as the community's governance state.
+pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProjected {
+    let prior = watch_targets(cs);
+    project_my_roles(cs, &gov);
+    project_channels(cs, &gov);
+    project_roles_and_categories(cs, &gov);
+    if let Some(meta) = &gov.metadata {
+        cs.name.clone_from(&meta.name);
+        cs.description.clone_from(&meta.description);
+        cs.icon_hash.clone_from(&meta.icon_hash);
+        cs.banner_hash.clone_from(&meta.banner_hash);
+    }
+    cs.mek_generation = gov.mek_generation;
+    prune_departed(cs, &gov);
+    super::event_rsvps::project(cs, &gov);
+    // Segment 0 stays implicit (`rekindle_governance_runtime::segments`).
+    cs.segments = gov
+        .segments
+        .iter()
+        .filter(|s| s.segment_index != 0)
+        .map(|s| rekindle_types::presence::SegmentDescriptor {
+            segment_index: s.segment_index,
+            registry_key: s.registry_key.clone(),
+            anchor: s.anchor.clone(),
+            slot_range_start: s.slot_range_start,
+            slot_range_end: s.slot_range_end,
+        })
+        .collect();
+    cs.governance_state = Some(gov);
+    let new_watch_targets = !watch_targets(cs).is_subset(&prior);
+    GovernanceProjected { new_watch_targets }
+}
+
+/// The SQLite snapshot of a projected community; `None` before its
+/// governance has merged.
+#[must_use]
+pub fn snapshot(cs: &CommunityState) -> Option<StoredGovernance> {
+    let gov = cs.governance_state.as_ref()?;
+    let mek_generation = i64::try_from(cs.mek_generation).unwrap_or(i64::MAX);
+    let mut channels: Vec<SnapshotChannel> = gov
+        .channels
+        .iter()
+        .map(|(id, ch)| {
+            let id = hex::encode(id.0);
+            SnapshotChannel {
+                id,
+                name: ch.name.clone(),
+                channel_type: ch.channel_type.clone(),
+                sort_order: i64::from(ch.position),
+                category_id: ch.category_id.map(|c| hex::encode(c.0)),
+                topic: ch.topic.clone().unwrap_or_default(),
+                slowmode_seconds: i64::from(ch.slowmode_seconds.unwrap_or(0)),
+                nsfw: ch.nsfw.unwrap_or(false),
+                mek_generation,
+            }
+        })
+        .collect();
+    channels.sort_by(|a, b| {
+        a.sort_order
+            .cmp(&b.sort_order)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let mut roles: Vec<SnapshotRole> = gov
+        .roles
+        .iter()
+        .map(|(id, r)| SnapshotRole {
+            role_id: *id,
+            name: r.name.clone(),
+            color: r.color,
+            permissions: r.permissions,
+            position: r.position,
+            hoist: r.hoist,
+            mentionable: r.mentionable,
+            self_assignable: r.self_assignable,
+            exclusion_group: r.exclusion_group.clone(),
+        })
+        .collect();
+    roles.sort_by(|a, b| {
+        a.position
+            .cmp(&b.position)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let mut categories: Vec<SnapshotCategory> = gov
+        .categories
+        .iter()
+        .map(|(id, c)| SnapshotCategory {
+            id: hex::encode(id.0),
+            name: c.name.clone(),
+            sort_order: i64::from(c.position),
+        })
+        .collect();
+    categories.sort_by(|a, b| {
+        a.sort_order
+            .cmp(&b.sort_order)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let mut overwrites: Vec<SnapshotOverwrite> = gov
+        .overwrites
+        .iter()
+        .map(|((channel, target), o)| SnapshotOverwrite {
+            channel_id: hex::encode(channel.0),
+            target_type: o.target_type.clone(),
+            target_id: target.clone(),
+            allow: o.allow,
+            deny: o.deny,
+        })
+        .collect();
+    overwrites.sort_by(|a, b| {
+        (&a.channel_id, &a.target_type, &a.target_id).cmp(&(
+            &b.channel_id,
+            &b.target_type,
+            &b.target_id,
+        ))
+    });
+    let metadata = gov.metadata.as_ref();
+    Some(StoredGovernance {
+        name: cs.name.clone(),
+        description: cs.description.clone(),
+        icon_hash: metadata.and_then(|m| m.icon_hash.clone()),
+        banner_hash: metadata.and_then(|m| m.banner_hash.clone()),
+        mek_generation,
+        channels,
+        roles,
+        categories,
+        overwrites,
+    })
+}
+
+#[cfg(test)]
+#[path = "projection_tests.rs"]
+mod tests;

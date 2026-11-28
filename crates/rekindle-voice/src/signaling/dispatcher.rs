@@ -10,7 +10,7 @@ use std::sync::Arc;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
-use crate::signaling::{mute, presence, stage};
+use crate::signaling::{media_keys, mute, presence, stage};
 
 /// Whether [`handle_voice_signaling`] handles `payload`. Hosts route on
 /// this rather than keeping their own list, which is how `VoiceJoinAck`
@@ -47,30 +47,44 @@ pub async fn handle_voice_signaling(
         ControlPayload::VoiceJoin {
             channel_id,
             route_blob,
-            display_name,
+            display_name: _,
+            session_key,
         } => {
+            media_keys::learn_session_key(
+                deps.as_ref(),
+                community_id,
+                &channel_id,
+                sender_pseudonym,
+                &session_key,
+            );
             presence::handle_voice_join(
                 &deps,
                 community_id,
                 sender_pseudonym,
                 channel_id,
                 route_blob,
-                display_name,
             );
         }
         ControlPayload::VoiceJoinAck {
             channel_id,
             joiner_pseudonym,
-            display_name,
+            display_name: _,
             route_blob,
+            session_key,
         } => {
+            media_keys::learn_session_key(
+                deps.as_ref(),
+                community_id,
+                &channel_id,
+                sender_pseudonym,
+                &session_key,
+            );
             presence::handle_voice_join_ack(
                 &deps,
                 community_id,
                 sender_pseudonym,
                 channel_id,
                 &joiner_pseudonym,
-                display_name,
                 route_blob,
             );
         }
@@ -83,7 +97,13 @@ pub async fn handle_voice_signaling(
             );
         }
         ControlPayload::VoiceLeave { channel_id } => {
-            presence::handle_voice_leave(&deps, community_id, sender_pseudonym, channel_id);
+            presence::handle_voice_leave(
+                &deps,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+                media_keys::Departure::LeftChannel,
+            );
         }
         ControlPayload::VoiceModeSwitch {
             channel_id,
@@ -159,6 +179,15 @@ pub async fn handle_voice_signaling(
             channel_id,
             participants,
         } => {
+            for entry in &participants {
+                media_keys::learn_session_key(
+                    deps.as_ref(),
+                    community_id,
+                    &channel_id,
+                    &entry.pseudonym_key,
+                    &entry.session_key,
+                );
+            }
             presence::handle_voice_roster(&deps, community_id, channel_id, participants);
         }
         ControlPayload::SoundboardPlay {
@@ -188,7 +217,7 @@ pub(super) fn broadcast_mode_switch(
     mode: &str,
     host: Option<String>,
 ) {
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceModeSwitch {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceModeSwitch {
         channel_id: channel_id.to_string(),
         mode: mode.to_string(),
         host_pseudonym: host,

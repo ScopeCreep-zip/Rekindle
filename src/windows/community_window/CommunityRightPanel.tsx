@@ -1,18 +1,21 @@
-import { Component, Show, Switch, Match } from "solid-js";
-import MemberList from "../../components/community/MemberList";
-import ThreadPanel from "../../components/community/ThreadPanel";
-import ThreadListPanel from "../../components/community/ThreadListPanel";
-import PinnedMessagesPanel from "../../components/community/PinnedMessagesPanel";
-import { communityState } from "../../stores/community.store";
+import { type Component, Match, Show, Switch } from "solid-js";
 import {
-  handlePinMessage,
-  handleUnpinMessage,
-  handleSendThreadMessage,
   handleAddReaction,
-  handleRemoveReaction,
-  handleVotePoll,
   handleClosePoll,
+  handleDeleteChannelMessage,
+  handlePinMessage,
+  handleRemoveReaction,
+  handleSendThreadMessage,
+  handleUnarchiveThread,
+  handleUnpinMessage,
+  handleVotePoll,
 } from "../../actions/community.actions";
+import MemberList from "../../components/community/MemberList";
+import PinnedMessagesPanel from "../../components/community/PinnedMessagesPanel";
+import ThreadListPanel from "../../components/community/ThreadListPanel";
+import ThreadPanel from "../../components/community/ThreadPanel";
+import { communityState } from "../../stores/community.store";
+import { channelDeniedFor } from "../../utils/denied";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Phase 3 unified right rail: members, pinned messages, thread list, or
@@ -26,8 +29,8 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
           <Match when={vm.rightPanel() === "members"}>
             <MemberList
               members={vm.activeCommunity()!.members}
+              state={vm.activeCommunity()!.membersState}
               communityId={vm.selectedCommunityId()}
-              myRoleIds={vm.myRoleIds()}
               roles={vm.activeCommunity()!.roles}
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
             />
@@ -61,11 +64,31 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               communityId={vm.selectedCommunityId()}
               messages={vm.threadMessages()}
               onClose={vm.handleCloseThread}
+              replyDenied={channelDeniedFor(
+                vm.activeCommunity(),
+                vm.activeThread()?.channelId,
+                "sendInThreads"
+              )}
               onSend={handleSendThreadMessage}
               onArchive={vm.handleArchiveActiveThread}
+              onUnarchive={handleUnarchiveThread}
               onReply={vm.handleReply}
-              onReaction={(messageId, emoji) => handleAddReaction(vm.selectedCommunityId(), vm.selectedChannelId(), messageId, emoji)}
-              onRemoveReaction={(messageId, emoji) => handleRemoveReaction(vm.selectedCommunityId(), vm.selectedChannelId(), messageId, emoji)}
+              onReaction={(messageId, emoji) =>
+                handleAddReaction(
+                  vm.selectedCommunityId(),
+                  vm.selectedChannelId(),
+                  messageId,
+                  emoji
+                )
+              }
+              onRemoveReaction={(messageId, emoji) =>
+                handleRemoveReaction(
+                  vm.selectedCommunityId(),
+                  vm.selectedChannelId(),
+                  messageId,
+                  emoji
+                )
+              }
               onPin={(messageId) => {
                 const msg = vm.channelMessages().find((m) => m.serverMessageId === messageId);
                 if (msg?.pinned) {
@@ -76,14 +99,22 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               }}
               onCreatePoll={(messageId) => vm.setCreatePollTarget(messageId)}
               onEdit={(messageId, currentBody) => vm.setEditState({ messageId, body: currentBody })}
-              onDelete={(messageId) => vm.setDeleteTarget(messageId)}
+              onDelete={(messageId) =>
+                void handleDeleteChannelMessage(vm.selectedChannelId(), messageId)
+              }
               onVotePoll={(pollId, selectedAnswers) =>
-                handleVotePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId, selectedAnswers)
+                handleVotePoll(
+                  vm.selectedCommunityId(),
+                  vm.selectedChannelId(),
+                  pollId,
+                  selectedAnswers
+                )
               }
               onClosePoll={(pollId) =>
                 handleClosePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId)
               }
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey}
+              nameOf={vm.memberName}
             />
           </Match>
         </Switch>

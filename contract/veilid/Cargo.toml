@@ -1,0 +1,52 @@
+# Veilid contract tests (plan VU decision 6, ADR 0021 amendment "contract-test
+# workspace"): `rekindle-protocol`'s real Veilid adapters (the `DhtBackend`
+# impl, the `VeilidAPIError` -> port error mapping, `VeilidUpdate` ->
+# `PortEvent`) driven by veilid-core's `mock-api`, the code the netsim bypasses.
+#
+# Its own workspace, excluded from the root one (root Cargo.toml
+# `[workspace] exclude`): `mock-api` replaces the whole VeilidAPI, and Cargo's
+# feature unification would mock the real node in every crate built beside it.
+# Run: cargo test --manifest-path contract/veilid/Cargo.toml
+# Its CI job joins at plan phase F.
+[workspace]
+resolver = "2"
+
+[package]
+name = "rekindle-veilid-contract"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Contract tests of rekindle-protocol's Veilid adapters over veilid-core's mock API"
+
+[dependencies]
+rekindle-protocol = { path = "../../crates/rekindle-protocol" }
+rekindle-records = { path = "../../crates/rekindle-records" }
+rekindle-types = { path = "../../crates/rekindle-types" }
+tokio = { version = "1", features = ["full"] }
+# The same fork and rev as the root (patched below); `mock-api` serves every
+# API path in process (veilid-core Cargo.toml `mock-api`).
+veilid-core = { version = "0.5", default-features = true, features = ["mock-api"] }
+
+[lints.rust]
+warnings = "deny"
+unused-imports = "deny"
+dead-code = "deny"
+unused-variables = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing-panics-doc = "allow"
+missing-errors-doc = "allow"
+must-use-candidate = "allow"
+
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.veilid-core-optimized]
+opt-level = 3
+
+# Mirrors the root Cargo.toml `[patch.crates-io]` (ADR 0017): veilid-core
+# 0.5.8 plus the route-drain and route-pool fixes (e1158844). Keep the two revs equal.
+[patch.crates-io]
+veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "e1158844e181f311db3747367254f06cf8d2a760" }

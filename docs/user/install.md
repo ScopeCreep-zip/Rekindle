@@ -6,8 +6,16 @@ systems with the standard distribution format for each:
 | OS | Format | Notes |
 |----|--------|-------|
 | Windows | NSIS installer (`.exe`) | Windows 10 1903+ / Windows 11; uses the system WebView2 runtime |
-| macOS | DMG (`.dmg`) | macOS 11 Big Sur or later, both Intel and Apple Silicon |
-| Linux | AppImage and `.deb` | x86_64; GTK 3 + WebKitGTK 4.1 required |
+| macOS | DMG (`.dmg`) | macOS 14 Sonoma or later, both Intel and Apple Silicon; uses the system WebKit |
+| Linux | AppImage and `.deb` | x86_64; GTK 3 + WebKitGTK 4.1 (2.40 or later) required |
+
+The macOS floor tracks the oldest macOS release Apple still patches.
+On macOS the app renders in the system WebKit, which only receives
+security fixes with OS updates, and Rekindle displays content from
+peers in it, so an unpatched macOS is not supported. Every release
+at or above the floor ships a WebKit with everything the UI's CSS
+needs (Safari 16.4: cascade layers and `@property`). The policy lives
+in [`../contributor/release-process.md`](../contributor/release-process.md#platform-floor).
 
 > Pre-1.0 status: until the first tagged release lands, we do not
 > publish pre-built artifacts. The only install path today is to
@@ -55,9 +63,10 @@ sudo dpkg -i rekindle_x.y.z_amd64.deb
 sudo apt --fix-broken install   # in case dependencies are missing
 ```
 
-WebKitGTK 4.1 must be available. On Ubuntu 24.04 it ships in the
-default repos; on older versions you may need to enable the
-`universe` repo.
+WebKitGTK 4.1 at version 2.40 or later must be available (the
+`.deb` depends on `libwebkit2gtk-4.1-0 (>= 2.40)`). Ubuntu 24.04 and
+Pop!_OS 24.04 ship 2.44 in the default repos, and their updates carry
+newer releases.
 
 ## Building from source
 
@@ -98,7 +107,7 @@ sudo apt install \
 # Install Rust + Node toolchains via rustup / nvm.
 pnpm install
 pnpm tauri dev   # development run
-pnpm tauri build # produce AppImage + .deb
+pnpm bundle # produce AppImage + .deb
 ```
 
 #### macOS
@@ -109,7 +118,7 @@ xcode-select --install   # if you don't already have CLT
 # Install Rust + Node via your package manager of choice.
 pnpm install
 pnpm tauri dev
-pnpm tauri build         # produces .dmg
+pnpm bundle         # produces .dmg
 ```
 
 #### Windows
@@ -122,33 +131,46 @@ pnpm tauri build         # produces .dmg
 # Install Rust + Node + pnpm via your package manager.
 pnpm install
 pnpm tauri dev
-pnpm tauri build         # produces NSIS .exe installer
+pnpm bundle         # produces NSIS .exe installer
 ```
 
 ## What gets installed where
 
-Rekindle stores user data under each platform's standard app-data
-directory:
+Rekindle keeps its files in three per-user folders, named after the app
+identifier `com.rekindle.app` (the same folders on every Rekindle program:
+the desktop app, `rekindled` and the CLI).
 
-| OS | Path |
-|----|------|
-| Windows | `%APPDATA%\com.rekindle.app\` |
-| macOS | `~/Library/Application Support/com.rekindle.app/` |
-| Linux | `~/.local/share/com.rekindle.app/` |
+| OS | Data folder | Config folder | Logs |
+|----|-------------|---------------|------|
+| Windows | `%APPDATA%\com.rekindle.app\` | `%APPDATA%\com.rekindle.app\` | `%LOCALAPPDATA%\com.rekindle.app\logs\` |
+| macOS | `~/Library/Application Support/com.rekindle.app/` | the data folder | `~/Library/Logs/com.rekindle.app/` |
+| Linux | `~/.local/share/com.rekindle.app/` | `~/.config/com.rekindle.app/` | `~/.local/share/com.rekindle.app/logs/` |
 
-Within that directory you'll find:
+In the data folder:
 
-- `db.sqlite3` — local message and friend cache.
-- `<identity_pubkey>.vault` + `<identity_pubkey>.vault.salt` — your
-  encrypted vault file (SQLCipher double-encrypted) and its salt
-  sidecar. Each identity has its own pair of files.
-- `file_cache/<community_id>/` — Lost Cargo file chunks per
-  community.
-- `veilid/` — Veilid node storage.
+- `state/identities.json` — the list of identities on this device (public
+  key, display name, creation time), shown on the login screen.
+- `state/<identity_pubkey>.db` — that identity's encrypted database
+  (SQLCipher): messages, friends, communities and settings.
+- `state/<identity_pubkey>.vault` + `state/<identity_pubkey>.vault.hdr` —
+  that identity's encrypted vault (its keys) and the header that holds
+  the passphrase-derivation parameters.
+- `state/<identity_pubkey>.files/` — that identity's Lost Cargo file
+  chunks, in directories with hashed names.
+- `state/veilid/` — Veilid node storage.
+- `state/layout-version` — the storage version this folder was laid out
+  for; when it differs from the app's, everything under `state/` is
+  reset.
+- `node.lock` — held while a Rekindle node runs on this folder, so only
+  one runs at a time.
+
+In the config folder: `config.toml` (your settings) and `agent-keys/`
+(the keys the CLI and TUI use to connect to the background service).
 
 If you want to **wipe and start over** (forget all identities, all
-communities, all messages), close the app and delete the entire
-`com.rekindle.app/` directory. There is no central account to also
+communities, all messages), close the app and delete the
+`com.rekindle.app` data, config and log folders above. There is no
+central account to also
 delete — your identity exists only in your local vault.
 
 ## URL-scheme registration

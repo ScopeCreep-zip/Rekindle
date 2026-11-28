@@ -9,7 +9,10 @@
 //! quiet hours and the channel's notification level
 //! (`should_emit_message_notification`); the rest are filtered here.
 
-use rekindle_types::subscription_events::{NotificationEvent, SocialEvent, SubscriptionEvent};
+use rekindle_types::preferences::NotificationContent;
+use rekindle_types::subscription_events::{
+    FriendEvent, NotificationEvent, SocialEvent, SubscriptionEvent,
+};
 
 /// The user's state that decides whether to interrupt them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -26,7 +29,13 @@ pub struct NotifyInputs {
     pub call_active: bool,
     /// Our own status is Busy.
     pub status_busy: bool,
+    /// What a notification may show of who and what
+    /// (`Preferences.notification_content`).
+    pub content: NotificationContent,
 }
+
+/// The title shown for a message when the content setting hides its sender.
+const HIDDEN_MESSAGE_TITLE: &str = "New message";
 
 /// An OS notification to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +61,7 @@ pub fn is_candidate(event: &SubscriptionEvent) -> bool {
         event,
         SubscriptionEvent::Notification(_)
             | SubscriptionEvent::Social(SocialEvent::EventReminder { .. })
+            | SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch { .. })
     )
 }
 
@@ -61,6 +71,25 @@ pub fn os_notification_for(
     event: &SubscriptionEvent,
     inputs: &NotifyInputs,
 ) -> Option<OsNotification> {
+    // A security alert: the user must learn that a friend's keys are not
+    // signed by the identity they know, whatever silences the rest (the
+    // "show notifications" preference, Do Not Disturb, quiet hours, Busy,
+    // a call).
+    if let SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch { display_name, .. }) = event
+    {
+        let whose = if inputs.content == NotificationContent::Nothing {
+            "A contact's".to_string()
+        } else {
+            format!("{display_name}'s")
+        };
+        return Some(OsNotification::new(
+            "Identity key mismatch",
+            format!(
+                "{whose} keys are not signed by the identity you know. Nothing was \
+                 sent; verify their safety number."
+            ),
+        ));
+    }
     if !inputs.enabled || inputs.do_not_disturb {
         return None;
     }
@@ -68,11 +97,28 @@ pub fn os_notification_for(
     match event {
         SubscriptionEvent::Notification(n) => match n {
             NotificationEvent::MessageReceived { title, body, .. } => {
-                (!in_call_silenced).then(|| OsNotification::new(title, body))
+                // `title` names the sender, or the channel and community for
+                // a community message: a name, not content, so `nameOnly`
+                // keeps it and drops only the body.
+                (!in_call_silenced).then(|| match inputs.content {
+                    NotificationContent::NameAndMessage => OsNotification::new(title, body),
+                    NotificationContent::NameOnly => OsNotification::new(title, ""),
+                    NotificationContent::Nothing => OsNotification::new(HIDDEN_MESSAGE_TITLE, ""),
+                })
             }
-            NotificationEvent::SystemAlert { title, body } => {
-                Some(OsNotification::new(title, body))
-            }
+            // An alert carries no message content; one about a contact
+            // names them in `subject`, and under `nothing` it is shown
+            // with its unnamed text.
+            NotificationEvent::SystemAlert {
+                title,
+                body,
+                subject,
+            } => Some(match (inputs.content, subject) {
+                (NotificationContent::Nothing, Some(subject)) => {
+                    OsNotification::new(title, subject.unnamed_body.clone())
+                }
+                _ => OsNotification::new(title, body),
+            }),
             NotificationEvent::UpdateAvailable { version } => (!inputs.status_busy).then(|| {
                 OsNotification::new(
                     "Update Available",
@@ -90,135 +136,32 @@ pub fn os_notification_for(
                 } else {
                     format!("Incoming {kind} call")
                 };
-                OsNotification::new(title, display_name)
+                let shown = if inputs.content == NotificationContent::Nothing {
+                    ""
+                } else {
+                    display_name.as_str()
+                };
+                OsNotification::new(title, shown)
             }),
-            // Answered in the app (the buddy list is brought forward),
-            // after an out-of-band safety-number check; a banner adds
-            // nothing the user can act on.
-            NotificationEvent::SessionResetRequested { .. } => None,
         },
         SubscriptionEvent::Social(SocialEvent::EventReminder {
             title,
             minutes_until_start,
             ..
         }) => (!inputs.quiet_hours_active && !in_call_silenced).then(|| {
-            OsNotification::new(
-                "Event Reminder",
-                format!("{title} starts in {minutes_until_start} min"),
-            )
+            // An event's title is what its organiser wrote, so it counts as
+            // content: shown only under `nameAndMessage`.
+            let body = if inputs.content == NotificationContent::NameAndMessage {
+                format!("{title} starts in {minutes_until_start} min")
+            } else {
+                format!("An event starts in {minutes_until_start} min")
+            };
+            OsNotification::new("Event Reminder", body)
         }),
         _ => None,
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn on() -> NotifyInputs {
-        NotifyInputs {
-            enabled: true,
-            ..NotifyInputs::default()
-        }
-    }
-
-    fn message() -> SubscriptionEvent {
-        SubscriptionEvent::Notification(NotificationEvent::MessageReceived {
-            title: "Gamers".into(),
-            body: "hi".into(),
-            community_id: "c".into(),
-            channel_id: "ch".into(),
-            sound_ref: None,
-        })
-    }
-
-    fn call() -> SubscriptionEvent {
-        SubscriptionEvent::Notification(NotificationEvent::CallIncoming {
-            call_id: "id".into(),
-            from: "pk".into(),
-            display_name: "Ada".into(),
-            kind: "video".into(),
-            expires_at_ms: 0,
-            is_group: false,
-        })
-    }
-
-    #[test]
-    fn disabled_or_dnd_shows_nothing() {
-        for inputs in [
-            NotifyInputs::default(),
-            NotifyInputs {
-                do_not_disturb: true,
-                ..on()
-            },
-        ] {
-            assert_eq!(os_notification_for(&message(), &inputs), None);
-            assert_eq!(os_notification_for(&call(), &inputs), None);
-        }
-    }
-
-    #[test]
-    fn calls_silence_messages_only_with_the_preference() {
-        let in_call = NotifyInputs {
-            call_active: true,
-            ..on()
-        };
-        assert!(os_notification_for(&message(), &in_call).is_some());
-        let silenced = NotifyInputs {
-            in_call_dnd: true,
-            ..in_call
-        };
-        assert_eq!(os_notification_for(&message(), &silenced), None);
-    }
-
-    #[test]
-    fn quiet_hours_hold_back_calls_and_busy_holds_back_updates() {
-        let quiet = NotifyInputs {
-            quiet_hours_active: true,
-            ..on()
-        };
-        assert_eq!(os_notification_for(&call(), &quiet), None);
-        assert_eq!(
-            os_notification_for(&call(), &on()),
-            Some(OsNotification::new("Incoming video call", "Ada"))
-        );
-        let update = SubscriptionEvent::Notification(NotificationEvent::UpdateAvailable {
-            version: "1.2".into(),
-        });
-        let busy = NotifyInputs {
-            status_busy: true,
-            ..on()
-        };
-        assert_eq!(os_notification_for(&update, &busy), None);
-        assert!(os_notification_for(&update, &on()).is_some());
-    }
-
-    #[test]
-    fn session_resets_are_answered_in_the_app() {
-        let reset = SubscriptionEvent::Notification(NotificationEvent::SessionResetRequested {
-            peer_public_key: "pk".into(),
-            peer_display_name: "Ada".into(),
-            safety_number: "0011aabb".into(),
-        });
-        assert!(is_candidate(&reset));
-        assert_eq!(os_notification_for(&reset, &on()), None);
-    }
-
-    #[test]
-    fn event_reminders_notify() {
-        let reminder = SubscriptionEvent::Social(SocialEvent::EventReminder {
-            community: "c".into(),
-            event_id: "e".into(),
-            title: "Raid night".into(),
-            minutes_until_start: 15,
-        });
-        assert!(is_candidate(&reminder));
-        assert_eq!(
-            os_notification_for(&reminder, &on()),
-            Some(OsNotification::new(
-                "Event Reminder",
-                "Raid night starts in 15 min"
-            ))
-        );
-    }
-}
+#[path = "notify_policy_tests.rs"]
+mod tests;

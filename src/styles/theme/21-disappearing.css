@@ -1,0 +1,157 @@
+@layer components {
+
+  /* Disappearing messages (plan E7.1): the chat header's timer button, its
+   * drop-down of the Host's presets and a custom value, the timeline
+   * notice of a change, and each message's countdown. */
+  .chat-disappearing {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .chat-disappearing-btn {
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 4px;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    font-family: var(--font-family-xfire);
+    cursor: pointer;
+  }
+
+  .chat-disappearing-btn:hover,
+  .chat-disappearing-btn:focus-visible {
+    background: color-mix(in srgb, var(--color-xfire-text-dim) 15%, transparent);
+  }
+
+  .chat-disappearing-btn-on {
+    color: var(--color-xfire-text);
+  }
+
+  .chat-disappearing-value {
+    white-space: nowrap;
+  }
+
+  .chat-disappearing-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 20;
+    width: 220px;
+    max-width: calc(100vw - 16px);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+    box-shadow: 0 4px 12px var(--color-xfire-shadow);
+    min-inline-size: 0;
+  }
+
+  .chat-disappearing-help {
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.4;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .chat-disappearing-presets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    min-inline-size: 0;
+  }
+
+  .chat-disappearing-preset {
+    padding: 3px 6px;
+    font-size: 11px;
+    font-family: var(--font-family-xfire);
+    text-align: left;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--color-xfire-text);
+    cursor: pointer;
+  }
+
+  .chat-disappearing-preset:hover,
+  .chat-disappearing-preset:focus-visible {
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
+  }
+
+  .chat-disappearing-preset[aria-pressed="true"] {
+    border-color: var(--color-xfire-accent);
+    font-weight: 600;
+  }
+
+  .chat-disappearing-custom-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .chat-disappearing-amount {
+    width: 48px;
+    min-width: 0;
+    padding: 2px 4px;
+    font-size: 11px;
+    font-family: var(--font-family-xfire);
+    background: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+  }
+
+  .chat-disappearing-unit {
+    flex: 1;
+    min-width: 0;
+    padding: 2px;
+    font-size: 11px;
+    font-family: var(--font-family-xfire);
+    background: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+  }
+
+  .chat-disappearing-set {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-family-xfire);
+    border: none;
+    border-radius: 3px;
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-text-on-fill);
+    cursor: pointer;
+  }
+
+  .chat-disappearing-set:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .dm-timer-notice {
+    text-align: center;
+    padding: 4px 0;
+    margin: 4px 0;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  .message-expiry {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    font-size: 10px;
+    white-space: nowrap;
+    color: var(--color-xfire-text-timestamp);
+  }
+}

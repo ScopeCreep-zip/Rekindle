@@ -16,7 +16,7 @@ Before starting, make sure:
 
 - [ ] CI on `main` is green (`cargo test --workspace`, `cargo clippy
   --workspace -- -D warnings`, `cargo fmt --all -- --check`).
-- [ ] `cargo audit` and `cargo deny check` from the most recent
+- [ ] `cargo deny check` from the most recent
   scheduled `audit.yml` run are green (or known issues are tracked).
 - [ ] No open issues tagged `security`, `kev`, or `dependency` are
   unresolved.
@@ -27,8 +27,7 @@ Before starting, make sure:
 
 ```sh
 # Rust
-cargo audit
-cargo deny check
+cargo deny check   # also run by `cargo xtask check` (check-supply-chain)
 
 # JavaScript
 pnpm audit --prod --audit-level high
@@ -111,7 +110,7 @@ the dep graph since last quarter need explicit allowlist entries in
 Maintain a running log at `/audit-logs/YYYY-QN.md` (not yet
 created — first quarter post-1.0 starts the log). Each entry:
 
-```
+```text
 ## YYYY-QN audit — YYYY-MM-DD
 
 Auditor: <handle>

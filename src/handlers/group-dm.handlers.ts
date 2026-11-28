@@ -1,0 +1,198 @@
+import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
+import { handleLoadGroupDms } from "../actions/group-dm.actions";
+import { subscribeChatEvents, subscribeGroupDmEvents, type UnlistenFn } from "../ipc/channels";
+import type { DeliveryRetry } from "../ipc/channels/chat_events";
+import {
+  type ChannelMessageEvent,
+  conversationId,
+  type GroupDmEvent,
+} from "../ipc/channels/chat_events";
+import type { SendState } from "../ipc/commands";
+import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
+import { withOwnRow } from "../utils/own_rows";
+import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
+
+// Group-DM events (plan E2.6). The Host decides every change; an invite
+// arrives whole and is shown as is, and a roster change (join, leave, key
+// rotation) re-reads the Host's list instead of editing it here.
+
+function applyListEvent(event: GroupDmEvent): void {
+  // An invite, a join, a leave or a key rotation: the Host's list is read
+  // again, its view (pending, and each verdict in the Host's words) as given;
+  // the shell builds no group view of its own.
+  if ("invited" in event || "joined" in event || "left" in event || "keyRotated" in event) {
+    void handleLoadGroupDms();
+  }
+  if ("renamed" in event) {
+    // The Host accepted the creator's rename (plan E7.2 G7): its name, as sent.
+    const { groupId, name } = event.renamed;
+    if (groupDmState.groups[groupId]) setGroupDmState("groups", groupId, "name", name);
+  }
+}
+
+/** The buddy list: invites and roster changes of every group. */
+export function subscribeBuddyListGroupDmEvents(): Promise<UnlistenFn> {
+  return subscribeGroupDmEvents(applyListEvent);
+}
+
+function applySendStatus(
+  groupId: string,
+  clientId: string,
+  state: SendState,
+  retry: DeliveryRetry | null
+): void {
+  const convo = groupDmState.conversations[groupId];
+  if (!convo) return;
+  const idx = convo.messages.findIndex((m) => m.serverMessageId === clientId);
+  if (idx < 0) return;
+  setGroupDmState("conversations", groupId, "messages", idx, "status", state);
+  setGroupDmState("conversations", groupId, "messages", idx, "retry", retry);
+}
+
+// A live member message carries no row id: it takes a local negative one
+// (below any history-gap marker's) until a reload reads the stored row.
+let liveRows = 0;
+
+/** Our own committed row into the group's list, by its stored message id:
+ *  the row holding it is replaced, else it joins in time order. */
+function upsertOwnRow(groupId: string, row: ReturnType<typeof transformDmMessage>): void {
+  const convo = groupDmState.conversations[groupId];
+  if (!convo) {
+    setGroupDmState("conversations", groupId, { messages: [row], typing: {} });
+    return;
+  }
+  setGroupDmState("conversations", groupId, "messages", (msgs) => withOwnRow(msgs, row));
+}
+
+function appendMessage(
+  groupId: string,
+  m: Extract<GroupDmEvent, { message: unknown }>["message"]
+): void {
+  const convo = groupDmState.conversations[groupId];
+  if (!convo) {
+    setGroupDmState("conversations", groupId, { messages: [], typing: {} });
+  } else if (convo.messages.some((x) => x.serverMessageId === m.messageId)) {
+    return;
+  }
+  liveRows += 1;
+  const row = transformDmMessage({
+    id: -1_000_000_000 - liveRows,
+    messageId: m.messageId,
+    // The parent it replies to, as the sender named it (plan G-replies).
+    replyToId: m.replyTo,
+    senderId: m.sender.publicKey,
+    body: m.body,
+    timestamp: m.timestamp,
+    isOwn: false,
+    sendState: "delivered",
+    historyGapThrough: null,
+    expireSeconds: 0,
+    expireAt: null,
+    timerNoticeSeconds: null,
+  });
+  // The live copy's timer is unknown until its row is read.
+  row.expireSeconds = undefined;
+  row.expireAt = undefined;
+  setGroupDmState("conversations", groupId, "messages", (rows) => [...rows, row]);
+  setGroupDmState("conversations", groupId, "typing", m.sender.publicKey, null);
+}
+
+// A member's chain retired entries we never read (`historyGap`): the
+// backend stored the marker row, appended here as history shows it (the
+// DM marker's shape and rendering), once per member and `throughSeq`.
+function applyHistoryGap(groupId: string, member: string, throughSeq: number): void {
+  const marker = transformHistoryGap({ peerKey: member, throughSeq });
+  const convo = groupDmState.conversations[groupId];
+  if (!convo) {
+    setGroupDmState("conversations", groupId, { messages: [marker], typing: {} });
+    return;
+  }
+  const held = convo.messages.some(
+    (m) => m.senderId === member && m.historyGapThrough === throughSeq
+  );
+  if (held) return;
+  setGroupDmState("conversations", groupId, "messages", (msgs) => [...msgs, marker]);
+}
+
+function setTyping(groupId: string, who: string, name: string | null): void {
+  if (!groupDmState.conversations[groupId]) {
+    setGroupDmState("conversations", groupId, { messages: [], typing: {} });
+  }
+  setGroupDmState("conversations", groupId, "typing", who, name);
+}
+
+// The group's disappearing timer changed (its notice joins the timeline),
+// or the Host deleted expired messages (plan E7.1).
+function applyDisappearing(
+  groupId: string,
+  event: ChannelMessageEvent,
+  ownKey: () => string
+): void {
+  if ("disappearingTimerChanged" in event) {
+    const change = event.disappearingTimerChanged;
+    if (conversationId(change.context) !== groupId) return;
+    const notice = applyTimerChanged(change, ownKey());
+    if (!groupDmState.conversations[groupId]) {
+      setGroupDmState("conversations", groupId, { messages: [], typing: {} });
+    }
+    setGroupDmState("conversations", groupId, "messages", (rows) => [...rows, notice]);
+    return;
+  }
+  if ("messagesExpired" in event) {
+    const gone = event.messagesExpired;
+    if (conversationId(gone.context) !== groupId || !groupDmState.conversations[groupId]) return;
+    setGroupDmState("conversations", groupId, "messages", (rows) =>
+      withoutExpired(rows, gone.clientIds)
+    );
+  }
+}
+
+/** One group's chat window: its roster, members' messages, our sends'
+ *  states and typing. */
+export function subscribeGroupChatEvents(
+  groupId: string,
+  ownKey: () => string,
+  onDisplayed: () => void
+): Promise<UnlistenFn>[] {
+  const lifecycle = subscribeGroupDmEvents((event) => {
+    applyListEvent(event);
+    if ("sendStatus" in event && event.sendStatus.groupId === groupId) {
+      applySendStatus(
+        groupId,
+        event.sendStatus.clientId,
+        event.sendStatus.state,
+        event.sendStatus.retry
+      );
+    }
+    // Our own committed row (plan E6.11): the Host's row, once, by its
+    // stored id; never an unread or a notification.
+    if ("messageSent" in event && event.messageSent.groupId === groupId) {
+      upsertOwnRow(groupId, transformDmMessage(event.messageSent.message));
+      onDisplayed();
+      return;
+    }
+    if ("message" in event && event.message.groupId === groupId) {
+      appendMessage(groupId, event.message);
+      onDisplayed();
+      return;
+    }
+    if ("historyGap" in event && event.historyGap.groupId === groupId) {
+      const gap = event.historyGap;
+      applyHistoryGap(groupId, gap.member.publicKey, gap.throughSeq);
+    }
+  });
+  const typing = subscribeChatEvents((event) => {
+    if ("channelMessage" in event) {
+      applyDisappearing(groupId, event.channelMessage, ownKey);
+      return;
+    }
+    if (!("typing" in event)) return;
+    const t = event.typing;
+    const inner = "started" in t ? t.started : t.stopped;
+    if ("groupDm" in inner.context && inner.context.groupDm.groupId === groupId) {
+      // The typist's name is the Host's (plan E3.4 S9b), never the window's.
+      setTyping(groupId, inner.who, "started" in t ? t.started.name : null);
+    }
+  });
+  return [lifecycle, typing];
+}

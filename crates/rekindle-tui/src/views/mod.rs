@@ -4,16 +4,33 @@
 //! The [`ViewRegistry`] manages view lifecycle, transitions, and
 //! routing of events/actions to the active view.
 
+pub mod activity;
 pub mod channel_watch;
 pub mod community_info;
 pub mod dashboard;
 pub mod dm_inbox;
 pub mod doctor;
+pub mod favourites;
 pub mod friend_list;
+pub mod group_dm;
 pub mod identity_settings;
+pub mod infoview;
+pub mod installed_games;
+pub mod profile;
+pub mod servers;
 pub mod voice_session;
 
 use anyhow::Result;
+
+/// A panel's border: bold while its slot has focus.
+pub fn focus_border(focus: &FocusRing, id: crate::focus::FocusId) -> ratatui::style::Style {
+    let style = ratatui::style::Style::new();
+    if focus.is_focused(id) {
+        style.add_modifier(ratatui::style::Modifier::BOLD)
+    } else {
+        style
+    }
+}
 
 /// Route a mouse click to the focus slot whose rect contains it.
 ///
@@ -54,13 +71,41 @@ use crate::theme::ThemeManager;
 pub enum ViewKind {
     Dashboard,
     IdentitySettings,
-    ChannelWatch { community: String, channel: String },
+    ChannelWatch {
+        community: String,
+        channel: String,
+    },
     DmInbox,
-    DmThread { peer_key: String },
-    VoiceSession { community: String, channel: String },
+    DmThread {
+        peer_key: String,
+    },
+    VoiceSession {
+        community: String,
+        channel: String,
+    },
     FriendList,
+    GroupDms,
     Doctor,
-    CommunityInfo { community: String },
+    CommunityInfo {
+        community: String,
+    },
+    /// A friend's profile, or ours (`peer_key` `None`), plan E7.2.
+    Profile {
+        peer_key: Option<String>,
+        name: String,
+    },
+    /// Our favourite game servers (plan E7.2).
+    Favourites,
+    /// The local activity feed (plan E7.15, TU1(a)).
+    Activity,
+    /// The games we can launch (plan E7.15 IV3).
+    InstalledGames,
+    /// Favourite, recent, friends' and communities' servers (plan E7.2 G3).
+    Servers,
+    /// A subject's Infoview as the Host composes it (plan E7.15 IV7).
+    Infoview {
+        subject: rekindle_types::dto::infoview::InfoviewSubject,
+    },
 }
 
 /// Trait for all TUI views.
@@ -132,8 +177,15 @@ pub struct ViewRegistry {
     dm_inbox: Option<dm_inbox::DmInboxView>,
     voice_session: Option<voice_session::VoiceSessionView>,
     friend_list: Option<friend_list::FriendListView>,
+    group_dms: Option<group_dm::GroupDmListView>,
     doctor_view: Option<doctor::DoctorView>,
     community_info: Option<community_info::CommunityInfoView>,
+    profile: Option<profile::ProfileView>,
+    favourites: Option<favourites::FavouritesView>,
+    activity: Option<activity::ActivityView>,
+    installed_games: Option<installed_games::InstalledGamesView>,
+    servers: Option<servers::GameServersView>,
+    infoview: Option<infoview::InfoviewPage>,
 }
 
 impl ViewRegistry {
@@ -147,8 +199,15 @@ impl ViewRegistry {
             dm_inbox: None,
             voice_session: None,
             friend_list: None,
+            group_dms: None,
             doctor_view: None,
             community_info: None,
+            profile: None,
+            favourites: None,
+            activity: None,
+            installed_games: None,
+            servers: None,
+            infoview: None,
         }
     }
 
@@ -197,6 +256,11 @@ impl ViewRegistry {
                     self.friend_list = Some(friend_list::FriendListView::new(use_unicode));
                 }
             }
+            ViewKind::GroupDms => {
+                if self.group_dms.is_none() {
+                    self.group_dms = Some(group_dm::GroupDmListView::new());
+                }
+            }
             ViewKind::Doctor => {
                 if self.doctor_view.is_none() {
                     self.doctor_view = Some(doctor::DoctorView::new(use_unicode));
@@ -210,6 +274,44 @@ impl ViewRegistry {
                 if needs_create {
                     self.community_info =
                         Some(community_info::CommunityInfoView::new(community.clone()));
+                }
+            }
+            ViewKind::Profile { peer_key, name } => {
+                let needs_create = self
+                    .profile
+                    .as_ref()
+                    .is_none_or(|v| v.peer_key() != peer_key.as_deref());
+                if needs_create {
+                    self.profile = Some(profile::ProfileView::new(peer_key.clone(), name.clone()));
+                }
+            }
+            ViewKind::Favourites => {
+                if self.favourites.is_none() {
+                    self.favourites = Some(favourites::FavouritesView::new());
+                }
+            }
+            ViewKind::Activity => {
+                if self.activity.is_none() {
+                    self.activity = Some(activity::ActivityView::new());
+                }
+            }
+            ViewKind::InstalledGames => {
+                if self.installed_games.is_none() {
+                    self.installed_games = Some(installed_games::InstalledGamesView::new());
+                }
+            }
+            ViewKind::Servers => {
+                if self.servers.is_none() {
+                    self.servers = Some(servers::GameServersView::new());
+                }
+            }
+            ViewKind::Infoview { subject } => {
+                if self
+                    .infoview
+                    .as_ref()
+                    .is_none_or(|v| v.subject() != subject)
+                {
+                    self.infoview = Some(infoview::InfoviewPage::new(subject.clone()));
                 }
             }
         }
@@ -245,6 +347,10 @@ impl ViewRegistry {
                 .friend_list
                 .as_mut()
                 .expect("friend_list view should exist after transition"),
+            ViewKind::GroupDms => self
+                .group_dms
+                .as_mut()
+                .expect("group_dms view should exist after transition"),
             ViewKind::Doctor => self
                 .doctor_view
                 .as_mut()
@@ -253,6 +359,30 @@ impl ViewRegistry {
                 .community_info
                 .as_mut()
                 .expect("community_info view should exist after transition"),
+            ViewKind::Profile { .. } => self
+                .profile
+                .as_mut()
+                .expect("profile view should exist after transition"),
+            ViewKind::Favourites => self
+                .favourites
+                .as_mut()
+                .expect("favourites view should exist after transition"),
+            ViewKind::Activity => self
+                .activity
+                .as_mut()
+                .expect("activity view should exist after transition"),
+            ViewKind::InstalledGames => self
+                .installed_games
+                .as_mut()
+                .expect("installed_games view should exist after transition"),
+            ViewKind::Servers => self
+                .servers
+                .as_mut()
+                .expect("servers view should exist after transition"),
+            ViewKind::Infoview { .. } => self
+                .infoview
+                .as_mut()
+                .expect("infoview should exist after transition"),
         }
     }
 }

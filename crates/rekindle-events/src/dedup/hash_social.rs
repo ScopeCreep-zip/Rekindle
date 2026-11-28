@@ -1,7 +1,7 @@
 //! Content hashers for governance-state-change and social (reactions,
 //! pins, threads, events, game servers) subscription events.
 
-use rekindle_types::subscription_events::{GovernanceEvent, SocialEvent};
+use rekindle_types::subscription_events::{GovernanceEvent, OpPublicationState, SocialEvent};
 
 pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
     // Community first, since every variant has one.
@@ -49,7 +49,7 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::RolesChanged { roles, .. } => {
             h.update(b"roles|");
             for r in roles {
-                h.update(&r.id.to_le_bytes());
+                h.update(r.id.as_bytes());
                 h.update(r.name.as_bytes());
                 h.update(&r.permissions.to_le_bytes());
                 h.update(&r.position.to_le_bytes());
@@ -67,7 +67,7 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             for s in segments {
                 h.update(&s.segment_index.to_le_bytes());
                 h.update(s.registry_key.as_bytes());
-                h.update(s.governance_key.as_bytes());
+                h.update(s.anchor.as_bytes());
                 h.update(&s.slot_range_start.to_le_bytes());
                 h.update(&s.slot_range_end.to_le_bytes());
                 h.update(b",");
@@ -75,6 +75,42 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         }
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
+        }
+        // The full held list: each change is a new event.
+        GovernanceEvent::CatchUp {
+            catching_up,
+            pending,
+            ..
+        } => {
+            h.update(b"catch_up|");
+            h.update(&[u8::from(*catching_up)]);
+            for op in pending {
+                h.update(b"|");
+                h.update(op.op_id.as_bytes());
+                h.update(b"|");
+                h.update(op.label.as_bytes());
+                h.update(match op.state {
+                    rekindle_types::display_catch_up::PendingGovState::CatchingUp => b"|c",
+                    rekindle_types::display_catch_up::PendingGovState::Signing => b"|s",
+                });
+            }
+        }
+        // Every field: a status that changed is a new event.
+        GovernanceEvent::KeyStatus { status, .. } => {
+            h.update(b"key_status|");
+            h.update(format!("{status:?}").as_bytes());
+        }
+        GovernanceEvent::OpPublication { op, state, .. } => {
+            h.update(b"op_publication|");
+            h.update(op.as_bytes());
+            match state {
+                OpPublicationState::Pending => h.update(b"|pending"),
+                OpPublicationState::Landed => h.update(b"|landed"),
+                OpPublicationState::Failed(reason) => {
+                    h.update(b"|failed|");
+                    h.update(reason.as_bytes())
+                }
+            };
         }
         GovernanceEvent::InviteCreated { code_hash, .. } => {
             h.update(b"invite_new|");
@@ -94,8 +130,46 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(b"invite_rev|");
             h.update(code_hash.as_bytes());
         }
+        GovernanceEvent::InviteExpired { code_hash, .. } => {
+            h.update(b"invite_exp|");
+            h.update(code_hash.as_bytes());
+        }
         GovernanceEvent::GovernanceRebuilt { .. } => {
             h.update(b"rebuilt");
+        }
+        // One per op: the op names it, the reason and cause fixed with it.
+        GovernanceEvent::GovernanceOpQuarantined { op, .. } => {
+            h.update(b"quarantined|");
+            h.update(op.as_bytes());
+        }
+        // One per backfill: the hint's checkpoint names it.
+        GovernanceEvent::CheckpointSnapshotMismatch { height, digest, .. } => {
+            h.update(b"false_snapshot|");
+            h.update(&height.to_le_bytes());
+            h.update(digest.as_bytes());
+        }
+        // One per link request: its op hash names it.
+        GovernanceEvent::SuccessorLinkRequested {
+            community, request, ..
+        } => {
+            h.update(b"link_request|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(request.as_bytes());
+        }
+        // One per successor op: its new anchor and signer name it.
+        GovernanceEvent::CommunitySuccessorOffered {
+            community,
+            new_anchor,
+            signer,
+            ..
+        } => {
+            h.update(b"successor|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(new_anchor.as_bytes());
+            h.update(b"|");
+            h.update(signer.as_bytes());
         }
         GovernanceEvent::ChannelPermissionsChanged { community, channel } => {
             h.update(b"perms|");
@@ -103,17 +177,23 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(b"|");
             h.update(channel.as_bytes());
         }
-        GovernanceEvent::GovernanceSubkeyUpdated {
+        GovernanceEvent::EffectivePermissionsChanged {
             community,
-            subkey_index,
-            lamport_ts,
+            member,
+            denied,
         } => {
-            h.update(b"subkey|");
+            h.update(b"effective_perms|");
             h.update(community.as_bytes());
             h.update(b"|");
-            h.update(&subkey_index.to_le_bytes());
-            h.update(b"|");
-            h.update(&lamport_ts.to_le_bytes());
+            h.update(member.as_bytes());
+            // Two changes for one member with different verdicts are two
+            // events, never one deduplicated away.
+            for (cap, reason) in denied {
+                h.update(b"|");
+                h.update(format!("{cap:?}").as_bytes());
+                h.update(b"=");
+                h.update(reason.as_bytes());
+            }
         }
     }
 }
@@ -182,6 +262,18 @@ pub(super) fn hash_social(h: &mut blake3::Hasher, s: &SocialEvent) {
             h.update(channel.as_bytes());
             h.update(b"|");
             h.update(message_id.as_bytes());
+        }
+        SocialEvent::PollChanged {
+            community,
+            channel,
+            poll_id,
+        } => {
+            h.update(b"poll|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(poll_id.as_bytes());
         }
         SocialEvent::ThreadCreated { community, thread } => {
             h.update(b"thread+|");

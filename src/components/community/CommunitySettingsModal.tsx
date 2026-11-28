@@ -1,95 +1,102 @@
-import { Component, For, Show, createSignal, createEffect, createMemo } from "solid-js";
-import Modal from "../common/Modal";
-import ConfirmDialog from "../common/ConfirmDialog";
-import type { Community } from "../../stores/community.store";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
 import {
-  calculateBasePermissions,
+  BAN_MEMBERS,
+  CREATE_INVITES,
   hasPermission,
+  KICK_MEMBERS,
   MANAGE_CHANNELS,
   MANAGE_COMMUNITY,
+  MANAGE_EXPRESSIONS,
   MANAGE_ROLES,
-  KICK_MEMBERS,
-  BAN_MEMBERS,
-  MODERATE_MEMBERS,
-  CREATE_INSTANT_INVITE,
+  servedPermissions,
   VIEW_AUDIT_LOG,
-  VIEW_INSIGHTS,
 } from "../../ipc/permissions";
-import OverviewTab from "./settings/OverviewTab";
-import ChannelsTab from "./settings/ChannelsTab";
-import MembersTab from "./settings/MembersTab";
-import RolesTab from "./settings/RolesTab";
-import BansTab from "./settings/BansTab";
-import SecurityTab from "./settings/SecurityTab";
-import InvitesTab from "./settings/InvitesTab";
+import type { Community } from "../../stores/community.store";
+import { deniedFor } from "../../utils/denied";
+import ConfirmDialog from "../common/ConfirmDialog";
+import Modal from "../common/Modal";
+import AnalyticsTab from "./settings/AnalyticsTab";
 import AuditLogTab from "./settings/AuditLogTab";
 import AutoModTab from "./settings/AutoModTab";
-import AnalyticsTab from "./settings/AnalyticsTab";
+import BansTab from "./settings/BansTab";
+import ChannelsTab from "./settings/ChannelsTab";
+import ExpressionsTab from "./settings/ExpressionsTab";
+import InvitesTab from "./settings/InvitesTab";
+import MembersTab from "./settings/MembersTab";
+import OverviewTab from "./settings/OverviewTab";
 import PrivacyTab from "./settings/PrivacyTab";
-
-// Declared in ./settings/types.ts and re-exported here for existing
-// import sites. This file renders every tab and each tab's props name
-// the type, so declaring it here closed six module cycles.
-export type { ConfirmOptions } from "./settings/types";
+import RolesTab from "./settings/RolesTab";
+import SecurityTab from "./settings/SecurityTab";
 import type { ConfirmOptions } from "./settings/types";
+import WelcomeTab from "./settings/WelcomeTab";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;
   community: Community;
-  myRoleIds: number[];
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy";
+type TabId =
+  | "overview"
+  | "channels"
+  | "members"
+  | "invites"
+  | "roles"
+  | "bans"
+  | "audit-log"
+  | "security"
+  | "automod"
+  | "analytics"
+  | "privacy"
+  | "welcome"
+  | "expressions";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
   const [confirmAction, setConfirmAction] = createSignal<ConfirmOptions | null>(null);
 
-  const myPerms = createMemo(() =>
-    calculateBasePermissions(props.myRoleIds, props.community.roles),
-  );
+  // The backend's base flags (plan E3.2 S9).
+  const myPerms = createMemo(() => servedPermissions(props.community));
 
   const canManageCommunity = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
   const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));
   const canManageRoles = createMemo(() => hasPermission(myPerms(), MANAGE_ROLES));
   const canKick = createMemo(() => hasPermission(myPerms(), KICK_MEMBERS));
   const canBan = createMemo(() => hasPermission(myPerms(), BAN_MEMBERS));
-  const canModerate = createMemo(() => hasPermission(myPerms(), MODERATE_MEMBERS));
-  const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INSTANT_INVITE));
+  const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INVITES));
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
-  const canViewInsights = createMemo(() => hasPermission(myPerms(), VIEW_INSIGHTS));
+  const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
 
-  const isAdmin = createMemo(() =>
-    canManageCommunity() || canManageChannels() || canManageRoles() || canKick() || canBan()
+  const isAdmin = createMemo(
+    () =>
+      canManageCommunity() ||
+      canManageChannels() ||
+      canManageRoles() ||
+      canKick() ||
+      canBan() ||
+      canManageExpressions()
   );
 
-  const tabs = createMemo((): { id: TabId; label: string }[] => {
-    if (!isAdmin()) {
-      // Non-admins see read-only overview + members, plus their own
-      // privacy/presence consent (a personal setting, not moderation).
-      return [
-        { id: "overview", label: "Overview" },
-        { id: "members", label: "Members" },
-        { id: "privacy", label: "Privacy" },
-      ];
-    }
-
-    const base: { id: TabId; label: string }[] = [
-      { id: "overview", label: "Overview" },
-      { id: "channels", label: "Channels" },
-      { id: "members", label: "Members" },
-      { id: "privacy", label: "Privacy" },
+  // Never-hide: every tab is listed; one we may not open is disabled with
+  // the Host's reason (`denied`), never left out. The bits decide nothing.
+  const tabs = createMemo((): { id: TabId; label: string; denied: string | null }[] => {
+    const why = (cap: CommunityCapability): string | null => deniedFor(props.community, cap);
+    return [
+      { id: "overview", label: "Overview", denied: null },
+      { id: "channels", label: "Channels", denied: why("manageChannels") },
+      { id: "members", label: "Members", denied: null },
+      { id: "privacy", label: "Privacy", denied: null },
+      { id: "invites", label: "Invites", denied: why("createInvite") },
+      { id: "roles", label: "Roles", denied: why("manageRoles") },
+      { id: "bans", label: "Bans", denied: why("banMembers") },
+      { id: "welcome", label: "Welcome", denied: why("manageWelcome") },
+      { id: "expressions", label: "Emoji", denied: why("manageExpressions") },
+      { id: "automod", label: "AutoMod", denied: why("manageAutomod") },
+      { id: "analytics", label: "Analytics", denied: why("viewInsights") },
+      { id: "audit-log", label: "Audit Log", denied: why("viewAuditLog") },
+      { id: "security", label: "Security", denied: why("manageSecurity") },
     ];
-    if (canCreateInvite() || canManageCommunity()) base.push({ id: "invites", label: "Invites" });
-    if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
-    if (canBan()) base.push({ id: "bans", label: "Bans" });
-    if (canManageCommunity()) base.push({ id: "automod", label: "AutoMod" });
-    if (canViewInsights()) base.push({ id: "analytics", label: "Analytics" });
-    // Merge audit log into security for admins; show standalone if only audit log perm
-    if (canViewAuditLog() && !canManageCommunity()) base.push({ id: "audit-log", label: "Audit Log" });
-    if (canManageCommunity()) base.push({ id: "security", label: "Security" });
-    return base;
   });
 
   createEffect(() => {
@@ -103,7 +110,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
     setConfirmAction(opts);
   }
 
-  const modalTitle = createMemo(() => isAdmin() ? "Community Settings" : "Community Info");
+  const modalTitle = createMemo(() => (isAdmin() ? "Community Settings" : "Community Info"));
 
   return (
     <Modal isOpen={props.isOpen} title={modalTitle()} onClose={props.onClose} size="lg">
@@ -111,7 +118,11 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         <For each={tabs()}>
           {(tab) => (
             <button
+              type="button"
               class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
+              disabled={tab.denied !== null}
+              title={tab.denied ?? undefined}
+              aria-description={tab.denied ?? undefined}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -122,32 +133,29 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
 
       <div class="settings-content">
         <Show when={activeTab() === "overview"}>
-          <OverviewTab community={props.community} canManage={canManageCommunity()} />
+          <OverviewTab
+            community={props.community}
+            manageDenied={deniedFor(props.community, "manageCommunity")}
+          />
         </Show>
         <Show when={activeTab() === "channels"}>
-          <ChannelsTab community={props.community} canManageChannels={canManageChannels()} requestConfirm={requestConfirm} />
+          <ChannelsTab community={props.community} canManageChannels={canManageChannels()} />
         </Show>
         <Show when={activeTab() === "members"}>
           <MembersTab
             community={props.community}
-            myRoleIds={props.myRoleIds}
-            canManageRoles={canManageRoles()}
-            canKick={canKick()}
-            canBan={canBan()}
-            canModerate={canModerate()}
-            canManageCommunity={canManageCommunity()}
-            requestConfirm={requestConfirm}
+            manageDenied={deniedFor(props.community, "manageCommunity")}
           />
         </Show>
         <Show when={activeTab() === "invites"}>
           <InvitesTab
             communityId={props.community.id}
             canCreateInvite={canCreateInvite()}
-            canManage={canManageCommunity()}
+            revokeDenied={deniedFor(props.community, "manageCommunity")}
           />
         </Show>
         <Show when={activeTab() === "roles"}>
-          <RolesTab community={props.community} requestConfirm={requestConfirm} />
+          <RolesTab community={props.community} />
         </Show>
         <Show when={activeTab() === "bans"}>
           <BansTab communityId={props.community.id} canBan={canBan()} />
@@ -157,6 +165,12 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         </Show>
         <Show when={activeTab() === "analytics"}>
           <AnalyticsTab community={props.community} />
+        </Show>
+        <Show when={activeTab() === "welcome"}>
+          <WelcomeTab community={props.community} />
+        </Show>
+        <Show when={activeTab() === "expressions"}>
+          <ExpressionsTab community={props.community} />
         </Show>
         <Show when={activeTab() === "privacy"}>
           <PrivacyTab community={props.community} />
@@ -182,7 +196,10 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         message={confirmAction()?.message ?? ""}
         danger
         confirmLabel={confirmAction()?.confirmLabel ?? "Confirm"}
-        onConfirm={() => { confirmAction()?.action(); setConfirmAction(null); }}
+        onConfirm={() => {
+          confirmAction()?.action();
+          setConfirmAction(null);
+        }}
         onCancel={() => setConfirmAction(null)}
       />
     </Modal>

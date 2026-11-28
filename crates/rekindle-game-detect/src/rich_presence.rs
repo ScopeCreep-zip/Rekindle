@@ -36,13 +36,16 @@ impl RichPresence {
         }
     }
 
-    /// Return the combined server address as `"ip:port"`, if both are present.
-    pub fn server_address(&self) -> Option<String> {
-        match (&self.server_ip, self.server_port) {
-            (Some(ip), Some(port)) => Some(format!("{ip}:{port}")),
-            (Some(ip), None) => Some(ip.clone()),
-            _ => None,
-        }
+    /// The server to join, when both halves are known and form a valid
+    /// `host:port` (plan E1.1: a launcher substitutes only a parsed one).
+    pub fn server_address(&self) -> Option<crate::launcher::ServerAddress> {
+        let (ip, port) = (self.server_ip.as_ref()?, self.server_port?);
+        let text = if ip.contains(':') {
+            format!("[{ip}]:{port}")
+        } else {
+            format!("{ip}:{port}")
+        };
+        crate::launcher::ServerAddress::parse(&text).ok()
     }
 
     /// Serialize to JSON bytes for DHT publication.
@@ -105,45 +108,5 @@ fn parse_host_port(s: &str) -> Option<(String, u16)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_plus_connect() {
-        let args: Vec<String> = vec!["cs2".into(), "+connect".into(), "192.168.1.1:27015".into()];
-        let result = parse_connect_args(&args);
-        assert_eq!(result, Some(("192.168.1.1".into(), 27015)));
-    }
-
-    #[test]
-    fn parse_dash_connect() {
-        let args: Vec<String> = vec![
-            "game.exe".into(),
-            "-connect".into(),
-            "10.0.0.1:27960".into(),
-        ];
-        let result = parse_connect_args(&args);
-        assert_eq!(result, Some(("10.0.0.1".into(), 27960)));
-    }
-
-    #[test]
-    fn parse_equals_form() {
-        let args: Vec<String> = vec!["game.exe".into(), "+connect=1.2.3.4:28000".into()];
-        let result = parse_connect_args(&args);
-        assert_eq!(result, Some(("1.2.3.4".into(), 28000)));
-    }
-
-    #[test]
-    fn parse_no_match() {
-        let args: Vec<String> = vec!["game.exe".into(), "--fullscreen".into()];
-        let result = parse_connect_args(&args);
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn parse_bare_ip_defaults_port() {
-        let args: Vec<String> = vec!["game.exe".into(), "+connect".into(), "192.168.1.1".into()];
-        let result = parse_connect_args(&args);
-        assert_eq!(result, Some(("192.168.1.1".into(), 27015)));
-    }
-}
+#[path = "rich_presence_tests.rs"]
+mod tests;

@@ -2,26 +2,32 @@
 // former monolithic commands.ts; re-exported by ../commands.ts so
 // existing `import { ... } from "../ipc/commands"` call sites work.
 
-import type { RouteAvailability } from "../channels/notification_events";
+import type {
+  OwnRecordsPhase,
+  OwnRouteClass,
+  RouteAvailability,
+  RoutePauseCause,
+} from "../channels/notification_events";
 
-export interface LoginResult {
-  publicKey: string;
-  displayName: string;
+/** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
+/** Why a stored message's body could not be read (the Host's words in `reasonText`). */
+type UndecryptableReason = "damaged";
+
+export interface Undecryptable {
+  reason: UndecryptableReason;
+  reasonText: string;
 }
 
-export interface IdentitySummary {
-  publicKey: string;
-  displayName: string;
-  createdAt: number;
-  hasAvatar: boolean;
-  avatarBase64: string | null;
-}
+export type SendState = "awaiting_key" | "queued" | "sent" | "delivered" | "read" | "failed";
 
 export interface Message {
   id: number;
   senderId: string;
   body: string;
   decryptionFailed?: boolean;
+  /** Stored without its body, and why (KP: the Host's reason and its words,
+   *  shown in place of the body); absent or null for a readable message. */
+  undecryptable?: Undecryptable | null;
   automodBlurred?: boolean;
   timestamp: number;
   isOwn: boolean;
@@ -38,6 +44,22 @@ export interface Message {
     selectedAnswers: number[];
   };
   forwardedFromAuthor?: string | null;
+  /** The forward's author as the community names them (the display form a
+   *  sender header shows); absent when not a forward. */
+  forwardedFromName?: string | null;
+  sendState: SendState;
+  /** Why our `failed` post was not delivered, as the backend words it
+   *  (plan E3.2 S9, F9-3; S7l's key deadline); absent otherwise. */
+  failureReason?: string;
+  /** When its author last edited it, in seconds (plan E3.3); absent when
+   *  unedited. Stored on every reader, so it survives a reload. */
+  editedAt?: number;
+  /** The moderator's pseudonym when a moderator removed it (plan E3.3 M4):
+   *  its body is gone and the window shows "Removed by". */
+  removedBy?: string;
+  /** A history-gap row, not a message (plan E3.3, D23): the sender's
+   *  channel outbox reaches this chain seq and no read reached it. */
+  historyGapThrough?: number | null;
   attachment?: {
     attachmentId: string;
     filename: string;
@@ -84,9 +106,8 @@ export interface QuietHoursSettings {
   endHour: number;
   /**
    * Architecture §17.2 — IANA timezone identifier (e.g.,
-   * `"America/Los_Angeles"`). Frontend seeds with
-   * `Intl.DateTimeFormat().resolvedOptions().timeZone` on first
-   * configuration; backend uses `chrono-tz` so DST is automatic.
+   * `"America/Los_Angeles"`). The stored row defaults to `"UTC"`;
+   * backend uses `chrono-tz` so DST is automatic.
    */
   timezone: string;
 }
@@ -97,12 +118,12 @@ export interface AutoModRuleInfo {
   enabled: boolean;
   keywords: string[];
   regexPatterns: string[];
-  action: "block_locally" | "blur_content" | "alert_moderators";
+  action: "blockLocally" | "blurContent" | "alertModerators";
   lamport: number;
 }
 
 export interface SendChannelMessageResult {
-  status: "delivered" | "queued";
+  status: SendState;
   messageId: string;
 }
 
@@ -113,19 +134,43 @@ export interface FriendInfo {
   status: string;
   statusMessage: string | null;
   gameInfo: GameStatus | null;
+  /** Our group they are in, the id the group commands take; null for none. */
+  groupId: number | null;
   group: string | null;
-  unreadCount: number;
+  /** The group the buddy list shows them under: `group`, or the Host's
+   *  default group name when `group` is null. */
+  groupLabel: string;
   lastSeenAt: number | null;
   friendshipState: "pendingOut" | "accepted";
+  /** Why the secure session could not be set up, while it is failed (C7.25). */
+  handshakeError: string | null;
+  /** Our first contact is being resent from a fresh key (plan E2.4, B6). */
+  handshakeRetrying: boolean;
+  /** Their keys are not signed by the identity we know for them: a trust
+   *  alert shown on their row until it is resolved (plan E2.4, B3). */
+  identityPinMismatch: boolean;
+  /** Why the Host cannot put them in a new group DM yet; `null` when it
+   *  can (plan E2.6, GC3). */
+  groupDmBlock: string | null;
 }
 
-export interface GameStatus {
+interface GameStatus {
   gameId: number;
   gameName: string;
   serverInfo: string | null;
   elapsedSeconds: number;
   serverAddress: string | null;
+  /** `src/assets/game-icons/<key>.png`, resolved by the backend (plan E7.2). */
+  iconKey: string | null;
+  /** Whether "Join Game" can start this game on their server, stated by the
+   *  Host's launch check (plan E7.15 IV3c). */
+  joinable: boolean;
+  /** Why not, while `joinable` is false. */
+  joinableReason: NotJoinableReason | null;
 }
+
+/** `rekindle_types::friend::NotJoinableReason`. */
+export type NotJoinableReason = "noServer" | "cannotLaunch";
 
 export interface AudioDeviceInfo {
   id: string;
@@ -146,6 +191,15 @@ export interface MissedCallRow {
   peerKey: string;
   kind: number;
   expiredAt: number;
+}
+
+/** `Preferences.notificationContent`: sender and message, sender only, or nothing. */
+export type NotificationContent = "nameAndMessage" | "nameOnly" | "nothing";
+
+/// What arming or disarming the quick wipe answers (`QuickWipeState`).
+export interface QuickWipeState {
+  armed: boolean;
+  shortcut: string | null;
 }
 
 export interface Preferences {
@@ -173,11 +227,86 @@ export interface Preferences {
   ringtoneEnabled?: boolean;
   ringtoneVolume?: number;
   inCallDndAutoEnable?: boolean;
+  /** What an OS notification shows; the Host decides and enforces it. */
+  notificationContent?: NotificationContent;
+  /** DM read receipts (plan E2.5): reciprocal, off by default. Changed only
+   *  by `setReadReceiptsEnabled`, never by `setPreferences`. */
+  readReceiptsEnabled: boolean;
+  /** Send our game totals to friends (plan E7.2): opt-in, off by default;
+   *  set only by `setShareGameTotals`, never by `setPreferences`. */
+  shareGameTotals: boolean;
+  /** Show friends the game we play (plan E7.2): split from detection, off
+   *  by default; set only by `setShareCurrentGame`. */
+  shareCurrentGame: boolean;
+  /** Keep the local activity feed (plan E7.15): on by default, local
+   *  only; set only by `SetKeepActivityLog`, which clears it when off. */
+  keepActivityLog: boolean;
 }
 
-export type ExclusionGroupEdit =
-  | { kind: "set"; value: string }
-  | { kind: "clear" };
+/** What a feed entry says (`rekindle_types::activity::ActivityKind`). */
+export type ActivityKind =
+  | { type: "startedGame"; data: { friend: string; gameId: number; server: string | null } }
+  | { type: "stoppedGame"; data: { friend: string; gameId: number; seconds: number } }
+  | { type: "firstPlayed"; data: { friend: string; gameId: number } }
+  | { type: "renamedSelf"; data: { friend: string; from: string; to: string } }
+  | { type: "statusMessage"; data: { friend: string; text: string } }
+  | { type: "bioChanged"; data: { friend: string } }
+  | { type: "nowFriends"; data: { friend: string } }
+  | { type: "favouriteAdded"; data: { gameId: number; address: string; label: string } }
+  | { type: "joinedCommunity"; data: { community: string } };
+
+/** A feed entry as `ActivityList` answers and `ActivityAppended` pushes it
+ *  (plan E7.15): names are the Host's at read time. */
+export interface ActivityListItem {
+  id: number;
+  at: number;
+  kind: ActivityKind;
+  displayName: string | null;
+  nickname: string | null;
+  identityPinMismatch: boolean;
+}
+
+/** A game on the hide list (plan E7.2): never shown to anyone. */
+export interface HiddenGameView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
+}
+
+/** Where a launch's server came from (`JoinSource`, lead decision (50)):
+ *  the Host reviews a peer's server first, naming it. */
+export type JoinSource =
+  | "installed"
+  | "favourite"
+  | "recent"
+  | "friendPresence"
+  | "invite"
+  | "community"
+  | "lobby";
+
+/** A game we can launch (`InstalledGamesGet`, plan E7.15 IV3). */
+export interface InstalledGameView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
+  /** Whether a launch without a server can start it. */
+  launchable: boolean;
+}
+
+/** A personal favourite game server (plan E7.2), as the Host stores it.
+ *  `invitable` is the Host's answer to whether an invite may name it: the
+ *  game is not hidden and current-game sharing is on. */
+export interface FavouriteServerView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
+  address: string;
+  label: string;
+  addedAt: number;
+  invitable: boolean;
+}
+
+export type ExclusionGroupEdit = { set: string } | "clear" | "unchanged";
 
 export interface CommunityPolicy {
   /** Optional Markdown rules text (architecture §10.7 line 724). */
@@ -189,10 +318,10 @@ export interface CommunityPolicy {
 }
 
 /** How coarse a peer's last-seen timestamp is exposed. */
-export type LastSeenPrecision = "hidden" | "coarse" | "exact";
+type LastSeenPrecision = "hidden" | "coarse" | "exact";
 
 /** Per-signal share scope. Default-deny: "none" hides the signal. */
-export type ShareScope = "none" | "members";
+type ShareScope = "none" | "members";
 
 /**
  * Per-community presence sharing consent (default-deny). Local-only — never
@@ -214,23 +343,29 @@ export interface NetworkStatus {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
-  hasRoute: boolean;
+  /** Our inbound (General) route's availability (plan F9-A). */
+  generalRoute: RouteAvailability;
   mediaRoute: RouteAvailability;
+  /** The Host accepts writes now (its lifecycle's `can_write`). */
+  canWrite: boolean;
+  /** The indicator's bars as shown now, 0–5 (plan E7.2). */
+  bars: number;
+  /** Where the own-records stage is (plan E2.5 FC3). */
+  ownRecords: OwnRecordsPhase;
+  /** Why the stage failed, when it did. */
+  ownRecordsError: string | null;
+  /** Our inbound route is paused and why (plan RV1c), or null when it is not. */
+  routePaused: RoutePauseCause | null;
+  /** Our own routes down while the Host retries (plan F9-A): since when (epoch ms) and why, per class, or null. */
+  ownRouteDown: Record<OwnRouteClass, { sinceMs: number; reason: string } | null>;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }
 
 // Architecture §21 — scheduled-event metadata.
-export type RecurrenceFrequency = "daily" | "weekly" | "monthly";
+type RecurrenceFrequency = "daily" | "weekly" | "monthly";
 
-export type DayOfWeek =
-  | "sunday"
-  | "monday"
-  | "tuesday"
-  | "wednesday"
-  | "thursday"
-  | "friday"
-  | "saturday";
+type DayOfWeek = "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
 
 export interface RecurrenceRule {
   frequency: RecurrenceFrequency;
@@ -245,8 +380,6 @@ export type EventLocation =
   | { type: "stage_channel"; data: string }
   | { type: "external"; data: string }
   | { type: "in_game"; data: { gameId: number; serverAddress?: string } };
-
-export type EventStatus = "scheduled" | "active" | "completed" | "cancelled";
 
 export interface CreateEventRequest {
   title: string;
@@ -263,7 +396,7 @@ export interface CreateEventRequest {
   location?: EventLocation;
 }
 
-export interface EventRsvpInfo {
+interface EventRsvpInfo {
   pseudonymKey: string;
   status: string;
 }
@@ -319,6 +452,7 @@ export interface GameServer {
 export type SettingsTab =
   | "profile"
   | "application"
+  | "appearance"
   | "notifications"
   | "audio"
   | "video"
@@ -326,20 +460,6 @@ export type SettingsTab =
   | "devices"
   | "mobile"
   | "about";
-
-/// An OS deep link awaiting the user's consent. Mirrors
-/// `DeepLinkRequest` in `src-tauri/src/deep_links.rs`; the invite secrets
-/// stay in the backend.
-export type DeepLinkRequest =
-  | { kind: "joinCommunity"; requestId: string; keyFingerprint: string }
-  | { kind: "addFriend"; requestId: string; keyFingerprint: string }
-  | { kind: "pairingRefused"; requestId: string };
-
-/// What a confirmed deep link did.
-export type DeepLinkOutcome =
-  | { kind: "joinedCommunity"; communityId: string }
-  | { kind: "friendAdded" }
-  | { kind: "dismissed" };
 
 /// A live 1:1 call (`get_active_call`).
 export interface ActiveCall {
@@ -351,3 +471,6 @@ export interface ActiveCall {
   /// Accepted (connecting or active) rather than still ringing out.
   connected: boolean;
 }
+
+/** Our own presence status as the Host states it (`SessionStatus`). */
+export type SessionStatus = "online" | "away" | "busy" | "offline" | "invisible";

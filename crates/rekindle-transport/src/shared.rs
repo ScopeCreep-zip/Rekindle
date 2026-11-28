@@ -12,9 +12,10 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use parking_lot::RwLock;
+use rekindle_records::port::RecordPort;
 use tokio::sync::mpsc;
 
 // Re-export from rekindle-types — the single source of truth for IPC-boundary types.
@@ -38,22 +39,27 @@ pub struct SharedState {
     is_attached: AtomicBool,
     /// Whether the public internet is reachable.
     public_internet_ready: AtomicBool,
-    /// Reliable peers in the routing table (0.5.7 attachment signal).
+    /// Reliable peers in the routing table (Veilid attachment signal since
+    /// 0.5.7; 0.5.8 `veilid_api/types/veilid_state.rs:134`).
     reliable_peer_count: AtomicU64,
-    /// Live peers — reliable, unreliable, and newly added (0.5.7).
+    /// Live peers — reliable, unreliable, and newly added
+    /// (`veilid_state.rs:136`).
     live_peer_count: AtomicU64,
-    /// Smoothed estimate of total reachable network size (0.5.7).
+    /// Smoothed estimate of total reachable network size
+    /// (`veilid_state.rs:138`).
     estimated_network_size: AtomicU64,
     /// Median p75 latency across reliable peers, in microseconds
     /// (0 = no samples yet).
     median_latency_us: AtomicU64,
     /// Timestamp when the node was started.
     started_at: Instant,
-    /// `public_internet_ready` as a watch, for the record pool's retry layer.
-    ready: tokio::sync::watch::Sender<bool>,
+    /// `public_internet_ready` as a watch per follower (the record pool's
+    /// retry layer, own presence, the governance login stage), sent in
+    /// subscription order so their wake order is one per seed (RK1).
+    ready: Arc<rekindle_route::ordered_watch::OrderedWatch<bool>>,
     /// The unlocked session's record pool (plan C7.3), seen by the dispatch
     /// loop so dead watches reach their one owner.
-    records: RwLock<Option<Arc<rekindle_protocol::dht::pool::RecordPool>>>,
+    records: RwLock<Option<Arc<dyn RecordPort>>>,
     /// Broadcast subscribers. Each subscriber gets a clone of every notification.
     /// Dead subscribers (receiver dropped) are cleaned up on the next `notify()`.
     subscribers: RwLock<Vec<mpsc::UnboundedSender<TransportNotification>>>,
@@ -71,7 +77,7 @@ impl SharedState {
             estimated_network_size: AtomicU64::new(0),
             median_latency_us: AtomicU64::new(0),
             started_at: Instant::now(),
-            ready: tokio::sync::watch::Sender::new(false),
+            ready: Arc::new(rekindle_route::ordered_watch::OrderedWatch::new(false)),
             records: RwLock::new(None),
             subscribers: RwLock::new(Vec::new()),
         })
@@ -81,21 +87,34 @@ impl SharedState {
 
     /// Update attachment state and notify all subscribers.
     ///
-    /// Called by the dispatch loop when a `VeilidUpdate::Attachment` arrives.
-    pub fn set_attachment(&self, state: AttachmentState, attached: bool, pir: bool) {
-        self.attachment.store(state as u8, Ordering::Release);
-        self.is_attached.store(attached, Ordering::Release);
-        self.public_internet_ready.store(pir, Ordering::Release);
-        self.ready.send_replace(pir);
+    /// Called by the dispatch loop when a `PortEvent::Attachment` arrives.
+    /// Veilid 0.5.8 re-sends an unchanged attachment after an executor stall
+    /// whose tick lag exceeds `TICK_LAG_REPORT` (2 s) and is at least half the
+    /// RPC timeout (veilid-core `attachment_manager/mod.rs:24-25,557-581`,
+    /// `network_manager/online_detector.rs:63,711`), and to an app back from
+    /// the background (`attachment_manager/mod.rs:578-580,655-661,1039`), so
+    /// this is edge-triggered: the ready watch wakes its
+    /// waiters (the record pool's durable repush, `durable.rs`) only when
+    /// readiness changes, and subscribers hear only a changed state.
+    /// Returns whether anything changed (the dispatch loop's edge).
+    pub fn set_attachment(&self, state: AttachmentState, attached: bool, pir: bool) -> bool {
+        let prev_state = self.attachment.swap(state as u8, Ordering::AcqRel);
+        let prev_attached = self.is_attached.swap(attached, Ordering::AcqRel);
+        let prev_pir = self.public_internet_ready.swap(pir, Ordering::AcqRel);
+        self.ready.send_if_changed(pir);
+        if prev_state == state as u8 && prev_attached == attached && prev_pir == pir {
+            return false;
+        }
 
         self.notify(&TransportNotification::AttachmentChanged {
             state,
             is_attached: attached,
             public_internet_ready: pir,
         });
+        true
     }
 
-    /// Record the richer 0.5.7 attachment health signal (peer counts,
+    /// Record Veilid's richer attachment health signal (peer counts,
     /// network-size estimate, median latency). Called by the dispatch
     /// loop alongside [`set_attachment`](Self::set_attachment); readiness
     /// checks and status surfaces read these instead of inferring health
@@ -144,13 +163,20 @@ impl SharedState {
         self.ready.subscribe()
     }
 
+    /// Followers of `public_internet_ready`, each taking a watch of its
+    /// own when it waits (the node's route classes, record pools; RK1).
+    #[must_use]
+    pub fn follow_ready(&self) -> rekindle_route::ordered_watch::Follow<bool> {
+        self.ready.follower()
+    }
+
     /// The session's record pool, when one is running.
-    pub fn records(&self) -> Option<Arc<rekindle_protocol::dht::pool::RecordPool>> {
+    pub fn records(&self) -> Option<Arc<dyn RecordPort>> {
         self.records.read().clone()
     }
 
     /// Install or remove the session's record pool.
-    pub fn set_records(&self, pool: Option<Arc<rekindle_protocol::dht::pool::RecordPool>>) {
+    pub fn set_records(&self, pool: Option<Arc<dyn RecordPort>>) {
         *self.records.write() = pool;
     }
 
@@ -219,129 +245,5 @@ impl std::fmt::Debug for SharedState {
 pub use rekindle_types::display::TransportSnapshot;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn attachment_state_round_trip() {
-        for raw in 0..=8u8 {
-            let state = AttachmentState::from_u8(raw);
-            assert_eq!(state as u8, raw);
-        }
-        // Out of range falls back to Detached
-        assert_eq!(AttachmentState::from_u8(255), AttachmentState::Detached);
-    }
-
-    /// Every attached state veilid-core can actually emit must map to an
-    /// attached state on our side.
-    ///
-    /// `from_veilid_string` fails closed to `Detached`, so an upstream
-    /// rename or a new variant does not break the build — it silently
-    /// reports a healthy node as detached. veilid-core 0.5.4 did both at
-    /// once (added `attached_fair`, renamed `FullyAttached` ->
-    /// `AttachedFull`) and the changelog mentioned neither. This walks
-    /// upstream's own enum so the next one fails here instead.
-    #[test]
-    /// Stays in this crate, not beside the enum in `rekindle-types`:
-    /// it walks `veilid_core`'s own enum, and Tier 1 must not depend on
-    /// veilid-core (rule B2). The two pure-logic tests that used to sit
-    /// here were verbatim copies of ones in
-    /// `rekindle_types::notification`, where the type actually lives.
-    fn every_veilid_attachment_string_is_understood() {
-        use veilid_core::AttachmentState as Upstream;
-
-        for upstream in [
-            Upstream::Detached,
-            Upstream::Attaching,
-            Upstream::AttachedWeak,
-            Upstream::AttachedFair,
-            Upstream::AttachedGood,
-            Upstream::AttachedStrong,
-            Upstream::AttachedFull,
-            Upstream::Detaching,
-        ] {
-            let rendered = upstream.to_string();
-            let ours = AttachmentState::from_veilid_string(&rendered);
-
-            assert_eq!(
-                ours.is_attached(),
-                upstream.is_attached(),
-                "{rendered:?} parsed to {ours:?}, whose is_attached() \
-                 disagrees with veilid-core"
-            );
-
-            if !matches!(upstream, Upstream::Detached) {
-                assert_ne!(
-                    ours,
-                    AttachmentState::Detached,
-                    "{rendered:?} fell through to the fail-closed Detached \
-                     arm — add it to from_veilid_string"
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn shared_state_subscribe_receives_events() {
-        let state = SharedState::new();
-        let mut rx = state.subscribe();
-
-        state.set_attachment(AttachmentState::FullyAttached, true, true);
-
-        let event = rx.try_recv().expect("should receive notification");
-        match event {
-            TransportNotification::AttachmentChanged {
-                state,
-                is_attached,
-                public_internet_ready,
-            } => {
-                assert_eq!(state, AttachmentState::FullyAttached);
-                assert!(is_attached);
-                assert!(public_internet_ready);
-            }
-            other => panic!("unexpected event: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn shared_state_cleans_up_dropped_subscribers() {
-        let state = SharedState::new();
-        let rx1 = state.subscribe();
-        let _rx2 = state.subscribe();
-        assert_eq!(state.subscriber_count(), 2);
-
-        // Drop rx1
-        drop(rx1);
-
-        // Next notify cleans up the dead subscriber
-        state.notify(&TransportNotification::LocalRoutesDied { count: 1 });
-        assert_eq!(state.subscriber_count(), 1);
-    }
-
-    #[test]
-    fn shared_state_uptime_increases() {
-        let state = SharedState::new();
-        let t1 = state.uptime();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let t2 = state.uptime();
-        assert!(t2 > t1);
-    }
-
-    #[test]
-    fn shared_state_atomic_reads_match_writes() {
-        let state = SharedState::new();
-        assert_eq!(state.attachment_state(), AttachmentState::Detached);
-        assert!(!state.is_attached());
-        assert!(!state.public_internet_ready());
-
-        state.set_attachment(AttachmentState::AttachedStrong, true, true);
-        assert_eq!(state.attachment_state(), AttachmentState::AttachedStrong);
-        assert!(state.is_attached());
-        assert!(state.public_internet_ready());
-
-        state.set_attachment(AttachmentState::Detaching, false, false);
-        assert_eq!(state.attachment_state(), AttachmentState::Detaching);
-        assert!(!state.is_attached());
-        assert!(!state.public_internet_ready());
-    }
-}
+#[path = "shared_tests.rs"]
+mod tests;

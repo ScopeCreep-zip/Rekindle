@@ -1,0 +1,286 @@
+use parking_lot::RwLock;
+use rekindle_transport::session::{CommunityMembership, Session};
+
+use super::*;
+use crate::host::fixture::Fixture;
+use crate::host::identity;
+
+fn membership() -> CommunityMembership {
+    CommunityMembership {
+        anchor: "gov-key".into(),
+        pseudonym_key: "cd".repeat(32),
+        registry_key: "reg-key".into(),
+        slot_index: 3,
+        community_name: "Team".into(),
+        slot_seed: Some([9; 32]),
+        segment_index: Some(1),
+        mek_generation: 2,
+    }
+}
+
+/// Everything the daemon writes through these helpers comes back in the
+/// projection the next unlock loads: the identity, a membership with its
+/// slot seed, a friend, and a forgotten membership's absence.
+#[tokio::test]
+async fn writes_come_back_in_the_next_projection() {
+    let f = Fixture::new();
+    let made = identity::create(
+        &f.root,
+        &f.stores(),
+        Some("Ann"),
+        rekindle_test_fixtures::PASSPHRASE,
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let owner = made.public_key.clone();
+    drop(made);
+    let db = f.db.current().unwrap();
+    let session = RwLock::new(Some(
+        load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+            .await
+            .unwrap(),
+    ));
+    assert_eq!(
+        session.read().as_ref().unwrap().identity.display_name,
+        "Ann"
+    );
+
+    let communities =
+        crate::host::community::CommunityStore::new(crate::host::community::store::new_map());
+    record_membership(
+        &session,
+        &f.db,
+        &f.vault,
+        &communities,
+        NewMembership {
+            membership: membership(),
+            registry_keypair: Some(zeroize::Zeroizing::new("reg-kp".into())),
+            member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
+            member_record: None,
+            member_hpke_secret: Some(zeroize::Zeroizing::new([7; 32])),
+            genesis_cert: None,
+            joined_at: 1,
+        },
+    )
+    .unwrap();
+    // `K_M(p)` is in the vault (plan E3.2, D1: before the row).
+    let member_record_owner = f
+        .vault
+        .lock()
+        .as_ref()
+        .unwrap()
+        .get(&rekindle_vault::VaultKey::MemberRecordOwner {
+            community: "gov-key".into(),
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(member_record_owner.as_slice(), b"mr-kp");
+    // The community store holds what the governance adapter reads (B2b).
+    {
+        let map = communities.map().read();
+        let stored = map.get("gov-key").expect("the membership is in the store");
+        assert_eq!(
+            stored.my_pseudonym_key.as_deref(),
+            Some("cd".repeat(32).as_str())
+        );
+        // Our role ids are the projection's alone (review RV7 M1): a
+        // membership brings none.
+        assert!(stored.my_role_ids.is_empty());
+        assert_eq!(stored.my_subkey_index, Some(3));
+        assert_eq!(stored.my_segment_index, Some(1));
+        assert_eq!(stored.slot_seed.as_deref(), Some("09".repeat(32).as_str()));
+        assert_eq!(
+            stored
+                .registry_owner_keypair
+                .as_ref()
+                .map(|key| key.as_str()),
+            Some("reg-kp")
+        );
+    }
+    let o = owner.clone();
+    db.call(move |conn| {
+        rekindle_db::repo::friends::replace_with_invited(
+            conn,
+            &o,
+            "bob",
+            "Bob",
+            5,
+            "bob-profile",
+            "bob-mailbox",
+        )
+    })
+    .await
+    .unwrap();
+
+    let reloaded: Session = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+        .await
+        .unwrap();
+    // The memberships are the community store's projection (plan E3.1 C1).
+    let stored = crate::host::adapters::governance::loader::load(&db, &f.vault, &owner, &[1; 32])
+        .await
+        .unwrap();
+    let m = crate::host::adapters::governance::loader::membership(&stored["gov-key"]);
+    assert_eq!(m.slot_seed, Some([9; 32]));
+    assert_eq!(m.slot_index, 3);
+    assert_eq!(m.segment_index, Some(1));
+    assert_eq!(m.community_name, "Team");
+    let bob = &reloaded.friends["bob"];
+    assert_eq!(bob.mailbox_dht_key.as_deref(), Some("bob-mailbox"));
+    assert_eq!(bob.dht_record_key.as_deref(), Some("bob-profile"));
+    assert_eq!(
+        bob.friendship_state,
+        rekindle_types::friend::FriendshipState::PendingOut
+    );
+
+    // Plan E2.5: the first unlock minted our presence key; a reload keeps it.
+    let minted = reloaded.presence_key.clone().unwrap();
+    assert_eq!(minted.epoch(), 1);
+
+    forget_membership(&session, &f.db, &f.vault, "gov-key")
+        .await
+        .unwrap();
+    let after = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+        .await
+        .unwrap();
+    let stored = crate::host::adapters::governance::loader::load(&db, &f.vault, &owner, &[1; 32])
+        .await
+        .unwrap();
+    assert!(stored.is_empty());
+    assert_eq!(after.presence_key, Some(minted));
+}
+
+/// The session an unlock loads names no own record, even when the identity
+/// row does: only the own-records stage names each, once it holds the record
+/// writable (live finding 24), so the route publisher and the status
+/// heartbeat never write one first.
+#[tokio::test]
+async fn the_session_names_no_own_record_before_the_stage_holds_it() {
+    use rekindle_db::repo::identity::{set_mailbox_key, set_owned_record, OwnedRecord};
+    let f = Fixture::new();
+    let made = identity::create(
+        &f.root,
+        &f.stores(),
+        Some("Ann"),
+        rekindle_test_fixtures::PASSPHRASE,
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let owner = made.public_key.clone();
+    drop(made);
+    let db = f.db.current().unwrap();
+    let o = owner.clone();
+    db.call(move |conn| {
+        set_owned_record(conn, &o, OwnedRecord::Profile, "VLD0:profile")?;
+        set_owned_record(conn, &o, OwnedRecord::FriendList, "VLD0:friends")?;
+        set_mailbox_key(conn, &o, "VLD0:mailbox")?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let session = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+        .await
+        .unwrap();
+    assert_eq!(session.identity.profile_dht_key, "");
+    assert_eq!(session.identity.mailbox_dht_key, "");
+    assert_eq!(session.identity.friend_list_dht_key, "");
+}
+
+/// Live walk 23 (M87): a kick keeps the community as read-only history
+/// (`own_removal.rs`), its row with the remover's name and its channels.
+/// A re-join records its membership over that row, as a Matrix re-join's
+/// `m.room.member` join supersedes the leave in the same room: the new
+/// membership's columns replace the old, the removal's name goes, and the
+/// kept history (its channels, so their messages) stays, as Discord keeps
+/// a re-joined server's messages.
+#[tokio::test]
+async fn a_rejoin_records_its_membership_over_the_kept_history() {
+    let f = Fixture::new();
+    let made = identity::create(
+        &f.root,
+        &f.stores(),
+        Some("Bea"),
+        rekindle_test_fixtures::PASSPHRASE,
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let owner = made.public_key.clone();
+    drop(made);
+    let db = f.db.current().unwrap();
+    let session = RwLock::new(Some(
+        load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+            .await
+            .unwrap(),
+    ));
+    let communities =
+        crate::host::community::CommunityStore::new(crate::host::community::store::new_map());
+    let joined = |membership: CommunityMembership, joined_at: i64| NewMembership {
+        membership,
+        registry_keypair: None,
+        member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
+        member_record: None,
+        member_hpke_secret: Some(zeroize::Zeroizing::new([7; 32])),
+        genesis_cert: None,
+        joined_at,
+    };
+    record_membership(
+        &session,
+        &f.db,
+        &f.vault,
+        &communities,
+        joined(membership(), 1),
+    )
+    .unwrap();
+    // The kick: the remover's name kept with the row, the history kept.
+    record_removed_by_name(&session, &f.db, "gov-key", Some("Ann".into()));
+    let o = owner.clone();
+    db.call(move |conn| {
+        rekindle_db::repo::channels::insert_if_absent(
+            conn,
+            &o,
+            "gov-key",
+            &rekindle_db::repo::channels::StoredChannel {
+                id: "general",
+                name: "general",
+                channel_type: "text",
+                category_id: None,
+                topic: "",
+                slowmode_seconds: 0,
+                nsfw: false,
+                mek_generation: 2,
+                parent_voice_channel_id: None,
+            },
+        )
+    })
+    .await
+    .unwrap();
+
+    let rejoined = CommunityMembership {
+        registry_key: "reg-key-2".into(),
+        slot_index: 5,
+        mek_generation: 0,
+        ..membership()
+    };
+    record_membership(&session, &f.db, &f.vault, &communities, joined(rejoined, 9)).unwrap();
+    let o = owner.clone();
+    let stored = db
+        .call(move |conn| rekindle_db::repo::communities::load::load(conn, &o))
+        .await
+        .unwrap();
+    let [row] = stored.communities.as_slice() else {
+        panic!("one community row: {:?}", stored.communities);
+    };
+    assert_eq!(row.removed_by_name, None, "the re-join clears the removal");
+    assert_eq!(row.member_registry_key.as_deref(), Some("reg-key-2"));
+    assert_eq!(row.my_subkey_index, Some(5));
+    assert_eq!(row.mek_generation, 0, "no community key held yet");
+    assert!(
+        stored.channels.iter().any(|c| c.id == "general"),
+        "the kept history stays"
+    );
+}

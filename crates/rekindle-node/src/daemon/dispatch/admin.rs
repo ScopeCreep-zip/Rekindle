@@ -8,7 +8,7 @@ use rekindle_ipc::message::{AgentType, SecurityLevel};
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_ipc::server::DAEMON_AGENT_NAME;
 
-use super::{state_error, CallerContext, DaemonContext};
+use super::{state_error, Caller, DaemonContext};
 
 // ── Network ─────────────────────────────────────────────────────────────
 
@@ -35,6 +35,9 @@ pub(crate) fn handle_network_status(ctx: &DaemonContext, state: DaemonState) -> 
         "peer_count": snap.peer_count,
         "route_allocated": snap.route_allocated,
         "route_age_secs": snap.route_age_secs,
+        // The indicator's smoothed bars (plan E7.2), as `NetworkEvent::Strength`
+        // last published them, so the CLI and a late-starting TUI show them.
+        "bars": ctx.network_strength.shown(),
         "circuit_summary": {
             "total": circuit.total,
             "healthy": circuit.healthy,
@@ -64,13 +67,14 @@ pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> I
 /// Handle AgentRegister — register the calling connection under `name`.
 ///
 /// The registry key is the caller's Noise static key, which the bus server
-/// stamped from the handshake (`CallerContext::static_key`), so an agent
-/// can only ever register itself. The registration takes effect on the
-/// agent's next connection, whose handshake looks the key up. Clearance
-/// stays `Open`; raising it is the D1 clearance gate.
+/// stamped from the handshake (`Caller::static_key`), so an agent
+/// can only ever register itself. It registers at `Agent` (plan D1); the
+/// bus server stamps that clearance on the key's next frame. The request
+/// itself needs `Admin`, so only a client the identity trusts registers
+/// an agent.
 pub(crate) async fn handle_agent_register(
     ctx: &DaemonContext,
-    caller: &CallerContext,
+    caller: &Caller,
     name: &str,
     agent_type: AgentType,
     capabilities: &[String],
@@ -90,12 +94,17 @@ pub(crate) async fn handle_agent_register(
             format!("this connection's key is already registered as '{existing}'"),
         );
     }
+    // `validate_request` parsed every name.
+    let scoped = capabilities
+        .iter()
+        .filter_map(|c| rekindle_ipc::protocol::AgentCapability::parse(c))
+        .collect();
     registry.register(
         name.to_owned(),
         static_key,
-        SecurityLevel::Open,
+        SecurityLevel::Agent,
         agent_type,
-        capabilities.to_vec(),
+        scoped,
     );
     drop(registry);
     tracing::info!(agent = name, ?agent_type, "agent registered");
@@ -140,7 +149,7 @@ pub(crate) async fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcR
 /// the user layer, each only tightening. A layer that does not parse fails
 /// the reload and leaves the active policy unchanged.
 pub(crate) fn handle_policy_reload(ctx: &DaemonContext) -> IpcResponse {
-    let policy = match crate::host::policy::load_layered() {
+    let policy = match crate::host::policy::load_layered(&ctx.config_dir) {
         Ok(policy) => policy,
         Err(e) => return IpcResponse::error(500, e.to_string()),
     };

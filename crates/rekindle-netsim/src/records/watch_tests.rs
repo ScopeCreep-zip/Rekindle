@@ -1,0 +1,393 @@
+//! The watch model's rules (plan E2.B S5), each against the Veilid lines
+//! [`super::watches`] cites.
+
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use rekindle_records::port::{
+    DhtBackend, DhtErrorKind, PortEvent, RecordSchema, RecordValue, ValueChange,
+};
+
+use super::dht::SimDht;
+use super::watches::{self, Desired, MEMBER_WATCH_LIMIT, PUBLIC_WATCH_LIMIT, WATCH_TICK};
+use crate::{Netsim, Node};
+
+fn dht(sim: &Netsim, node: &Node) -> SimDht {
+    SimDht::new(node.index, Arc::clone(&sim.net), Arc::clone(&node.rng))
+}
+
+/// A record node 0 created and seeded at subkeys 0..4, open and read on
+/// node 1 (so a watch's establishing inspection finds nothing newer), and
+/// both nodes' backends.
+async fn seeded(sim: &Netsim, nodes: &[Node]) -> (String, SimDht, SimDht) {
+    let (a, b) = (dht(sim, &nodes[0]), dht(sim, &nodes[1]));
+    let key = a
+        .create(&RecordSchema::Dflt { owner_subkeys: 4 }, None)
+        .await
+        .unwrap()
+        .key;
+    for subkey in 0..4 {
+        a.set(&key, subkey, vec![0], None).await.unwrap();
+    }
+    b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
+    for subkey in 0..4 {
+        b.get(&key, subkey, true).await.unwrap();
+    }
+    (key, a, b)
+}
+
+/// Run the next watch tick and deliver; what node `i` heard.
+async fn tick(sim: &Netsim, nodes: &mut [Node], i: usize) -> Vec<ValueChange> {
+    sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
+    sim.net.deliver();
+    // A change reaches the watcher one message latency later.
+    tokio::time::sleep(crate::latency::MESSAGE.max).await;
+    sim.net.deliver();
+    let mut heard = Vec::new();
+    while let Ok(PortEvent::ValueChange(change)) = nodes[i].events.try_recv() {
+        heard.push(change);
+    }
+    heard
+}
+
+fn dead(change: &ValueChange) -> bool {
+    change.subkeys.is_empty() && change.count == 0 && change.value.is_none()
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn one_changed_subkey_carries_its_value_stored_before_the_report() {
+    let (sim, mut nodes) = Netsim::nodes(2, 11);
+    let (key, a, b) = seeded(&sim, &nodes).await;
+    assert!(b.watch(&key, None, None, None).await.unwrap());
+    // The establishing inspection runs at the watch's first tick (it finds
+    // nothing newer), before the writes land.
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
+    let heard = tick(&sim, &mut nodes, 1).await;
+    let first = heard.first().expect("a change");
+    assert_eq!(first.subkeys, vec![2]);
+    let value = first.value.clone().expect("the value inline");
+    assert_eq!((value.seq, value.data.as_slice()), (1, &b"news"[..]));
+    let local = sim.net.inner.lock().nodes[1].local[&(key.clone(), 2)].clone();
+    assert_eq!(local, value);
+    // The other replicas' reports of it are not newer: nothing more.
+    assert_eq!(heard.len(), 1, "{heard:?}");
+    // A same-data re-push stores nothing and marks nothing.
+    a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn several_changed_subkeys_are_a_range_with_no_value() {
+    let (sim, mut nodes) = Netsim::nodes(2, 12);
+    let (key, a, b) = seeded(&sim, &nodes).await;
+    b.watch(&key, None, None, None).await.unwrap();
+    // The establishing inspection runs at the watch's first tick (it finds
+    // nothing newer), before the writes land.
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    a.set(&key, 1, b"x".to_vec(), None).await.unwrap();
+    a.set(&key, 3, b"y".to_vec(), None).await.unwrap();
+    // A set returns at consensus; its RPCs still in flight land after
+    // (`records/fanout.rs`, 0.5.8 `fanout_call.rs:466-471,624-626`).
+    tokio::time::sleep(crate::latency::SET_RPC.max).await;
+    let heard = tick(&sim, &mut nodes, 1).await;
+    assert!(!heard.is_empty());
+    for change in &heard {
+        assert_eq!(
+            (change.subkeys.as_slice(), &change.value),
+            (&[1, 3][..], &None)
+        );
+    }
+    assert_eq!(
+        sim.net.inner.lock().nodes[1]
+            .local
+            .get(&(key, 1))
+            .map(|v| v.seq),
+        Some(0),
+        "a range stores nothing"
+    );
+}
+
+fn desired(subkeys: &[u32]) -> Desired {
+    Desired {
+        subkeys: subkeys.iter().copied().collect(),
+        expiration: None,
+        count: u32::MAX,
+        member: None,
+    }
+}
+
+/// The nonce of a pushed ciphertext no replica holds.
+const PUSHED_NONCE: u64 = 7;
+
+/// A pushed ciphertext of [`value`].
+fn pushed(seq: u32) -> crate::records::replicas::Cipher {
+    crate::records::replicas::Cipher {
+        value: value(seq),
+        nonce: PUSHED_NONCE,
+    }
+}
+
+fn value(seq: u32) -> RecordValue {
+    RecordValue {
+        seq,
+        data: vec![1],
+        writer: "w".into(),
+    }
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_watcher_drops_a_value_it_may_not_report() {
+    let (sim, _nodes) = Netsim::nodes(1, 13);
+    let mut inner = sim.net.inner.lock();
+    let k = "k".to_string();
+    inner.nodes[0]
+        .watches
+        .insert(k.clone(), Some(desired(&[2, 3])));
+    crate::records::outbound::per_node_placed(&mut inner, 0, &k, 0, 9);
+    let set = |s: &[u32]| s.iter().copied().collect::<BTreeSet<u32>>();
+    // The first changed subkey is not watched: the range, no value.
+    let change = watches::receive(&mut inner, 0, &k, 0, (set(&[1, 2]), 9, None), 0).unwrap();
+    assert_eq!((change.subkeys, change.value), (vec![2], None));
+    let change = watches::receive(&mut inner, 0, &k, 0, (set(&[1]), 9, Some(pushed(0))), 0);
+    assert!(change.is_none(), "nothing watched changed");
+    // Not newer than the local copy: dropped, and nothing is left.
+    inner.nodes[0].local.insert((k.clone(), 2), value(4));
+    assert!(watches::receive(&mut inner, 0, &k, 0, (set(&[2]), 9, Some(pushed(4))), 0).is_none());
+    // Newer: stored, then reported.
+    let change =
+        watches::receive(&mut inner, 0, &k, 0, (set(&[2]), 9, Some(pushed(5))), 0).unwrap();
+    assert_eq!(change.value, Some(value(5)));
+    assert_eq!(inner.nodes[0].local[&(k.clone(), 2)], value(5));
+    // The local copy keeps the pushed ciphertext's nonce (`watch_value.rs:2080-2263`
+    // stores the replica's bytes), so a later rewrite resends those bytes.
+    assert_eq!(
+        crate::records::replicas::local(&inner, 0, &k, 2).map(|c| c.nonce),
+        Some(PUSHED_NONCE)
+    );
+    // A node that watches nothing hears nothing.
+    inner.nodes[0].watches.clear();
+    assert!(watches::receive(&mut inner, 0, &k, 0, (set(&[2]), 9, Some(pushed(6))), 0).is_none());
+}
+
+/// 0.5.8 `watch_value.rs:1890-1929`: per replica, a lower count is taken,
+/// an equal one is a duplicate still reported, and a higher one is invalid:
+/// the change is dropped and that replica's watch is cancelled at the next
+/// check, which places a fresh one.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_push_whose_count_rose_is_dropped_and_its_replica_watch_cancelled() {
+    let (sim, nodes) = Netsim::nodes(2, 15);
+    let (key, _a, _b) = seeded(&sim, &nodes).await;
+    let now = sim.net.now_us();
+    let set = |s: &[u32]| s.iter().copied().collect::<BTreeSet<u32>>();
+    let r = {
+        let mut inner = sim.net.inner.lock();
+        let mut d = desired(&[1, 2, 3]);
+        d.count = 5;
+        watches::desire(&mut inner, 1, &key, Some(d), now);
+        let homes = homes(&inner, &key, 1);
+        let r = homes[0];
+        let other = homes[1];
+        assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), r)], 5);
+        // Lower: taken.
+        let heard = watches::receive(&mut inner, 1, &key, r, (set(&[1]), 4, None), now);
+        assert_eq!(heard.map(|c| c.subkeys), Some(vec![1]));
+        // Equal: a duplicate, still reported.
+        let heard = watches::receive(&mut inner, 1, &key, r, (set(&[2]), 4, None), now);
+        assert_eq!(heard.map(|c| c.subkeys), Some(vec![2]));
+        // Higher: dropped, that replica's count forced to 0.
+        let heard = watches::receive(&mut inner, 1, &key, r, (set(&[3]), 5, None), now);
+        assert!(heard.is_none(), "{heard:?}");
+        assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), r)], 0);
+        // Another replica's count is its own.
+        assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), other)], 5);
+        // A change pending on the cancelled watch goes with it.
+        watches::mark(inner.records.get_mut(&key).unwrap(), &[r, other], 3);
+        r
+    };
+    sim.net.tick_watches();
+    let inner = sim.net.inner.lock();
+    let replicas = &inner.records[&key].replicas;
+    let changed = |x: usize| {
+        replicas[x]
+            .watches
+            .iter()
+            .find(|w| w.node == 1)
+            .map(|w| w.changed.clone())
+    };
+    assert_eq!(changed(r), Some(BTreeSet::new()), "a fresh watch at {r}");
+    assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), r)], 4);
+    assert!(changed(homes(&inner, &key, 1)[1]).is_some_and(|c| c.contains(&3)));
+}
+
+/// The replicas holding `node`'s watch on `key`.
+fn homes(inner: &crate::network::Inner, key: &str, node: usize) -> Vec<usize> {
+    let replicas = &inner.records[key].replicas;
+    (0..replicas.len())
+        .filter(|r| replicas[*r].watches.iter().any(|w| w.node == node))
+        .collect()
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_replica_refuses_watches_past_the_limits() {
+    let (sim, nodes) = Netsim::nodes(PUBLIC_WATCH_LIMIT + 2, 14);
+    let (key, _a, _b) = seeded(&sim, &nodes).await;
+    let now = sim.net.now_us();
+    {
+        let mut inner = sim.net.inner.lock();
+        for node in 1..=PUBLIC_WATCH_LIMIT + 1 {
+            watches::desire(&mut inner, node, &key, Some(desired(&[0])), now);
+            assert_eq!(watches::held(&inner, node, &key), 3);
+        }
+        assert_eq!(homes(&inner, &key, 1), vec![0, 1, 2]);
+        assert_eq!(homes(&inner, &key, PUBLIC_WATCH_LIMIT + 1), vec![3, 4, 5]);
+        // Each full replica answered `Rejected` once.
+        assert_eq!(inner.watch_refusals, 3);
+    }
+    // A member has its own budget per member (a fresh record).
+    let (key, _a, _b) = seeded(&sim, &nodes).await;
+    let mut inner = sim.net.inner.lock();
+    let owner = inner.records[&key].owner;
+    for node in 0..=MEMBER_WATCH_LIMIT {
+        let member = Desired {
+            member: Some(owner),
+            ..desired(&[0])
+        };
+        watches::desire(&mut inner, node, &key, Some(member), now);
+    }
+    assert_eq!(homes(&inner, &key, MEMBER_WATCH_LIMIT), vec![3, 4, 5]);
+    assert_eq!(inner.watch_refusals, 6);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn expiration_is_checked_clamped_and_ends_the_watch() {
+    let (sim, mut nodes) = Netsim::nodes(2, 15);
+    let (key, _a, b) = seeded(&sim, &nodes).await;
+    let now = sim.net.now_us();
+    let err = b.watch(&key, None, Some(now + 1_000_000), None).await;
+    assert_eq!(err.unwrap_err().kind, DhtErrorKind::InvalidArgument);
+    let at = sim.net.now_us() + 20_000_000;
+    assert!(b.watch(&key, None, Some(at), None).await.unwrap());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    tokio::time::advance(Duration::from_secs(20)).await;
+    let heard = tick(&sim, &mut nodes, 1).await;
+    assert!(heard.len() == 1 && dead(&heard[0]), "{heard:?}");
+    assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 0);
+    // With no expiration the replicas clamp to the max and the node renews;
+    // a node offline past the max loses them, and gets them back online.
+    b.watch(&key, None, None, None).await.unwrap();
+    sim.net.inner.lock().faults.dht_offline.insert(1);
+    tokio::time::advance(watches::MAX_WATCH_EXPIRATION + WATCH_TICK).await;
+    tick(&sim, &mut nodes, 1).await;
+    assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 0);
+    sim.net.inner.lock().faults.dht_offline.remove(&1);
+    tick(&sim, &mut nodes, 1).await;
+    assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 3);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn death_is_empty_subkeys_count_zero_no_value() {
+    let (sim, mut nodes) = Netsim::nodes(2, 16);
+    let (key, a, b) = seeded(&sim, &nodes).await;
+    b.watch(&key, Some(&[1]), None, None).await.unwrap();
+    sim.fault(crate::Fault::WatchDeath {
+        node: 1,
+        key: key.clone(),
+    });
+    sim.net.deliver();
+    assert!(matches!(nodes[1].events.try_recv(), Ok(PortEvent::ValueChange(c)) if dead(&c)));
+    // A cancel ends it at the next tick, the same way.
+    b.watch(&key, Some(&[1]), None, None).await.unwrap();
+    assert!(!b.cancel_watch(&key, Some(&[1])).await.unwrap());
+    let heard = tick(&sim, &mut nodes, 1).await;
+    assert!(heard.len() == 1 && dead(&heard[0]), "{heard:?}");
+    // A detached node hears nothing of a change.
+    b.watch(&key, None, None, None).await.unwrap();
+    sim.net.inner.lock().faults.detached.insert(1);
+    a.set(&key, 1, b"z".to_vec(), None).await.unwrap();
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+}
+
+/// What node `i`'s trace gained since it held `from` entries.
+fn heard_since(sim: &Netsim, i: usize, from: usize) -> Vec<String> {
+    let inner = sim.net.inner.lock();
+    inner.trace.of(i).skip(from).map(str::to_string).collect()
+}
+
+/// VU2 item 20: the storage tick checks the outbound watches before the
+/// offline subkey writes (0.5.8 `storage_manager/tasks/mod.rs:140-153`). A
+/// watch due to be placed and a queued push of a newer value fall on one
+/// tick: the watch lands first, its establishing inspection finds nothing
+/// newer, and the push's store marks it, so a replica reports the change.
+/// With the push first, the watch would land on the newer value and only
+/// the inspection would find it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_tick_places_watches_before_it_pushes_offline_writes() {
+    let (sim, nodes) = Netsim::nodes(2, 18);
+    let (key, a, _b) = seeded(&sim, &nodes).await;
+    let before: Vec<_> = sim.net.inner.lock().records[&key]
+        .replicas
+        .iter()
+        .map(|r| r.values.clone())
+        .collect();
+    // Node 0's local copy moves past the replicas', its push queued.
+    a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
+    let from = {
+        let mut inner = sim.net.inner.lock();
+        let replicas = &mut inner.records.get_mut(&key).unwrap().replicas;
+        for (replica, values) in replicas.iter_mut().zip(before) {
+            replica.values = values;
+        }
+        inner.nodes[0].pushes.insert((key.clone(), 2), None);
+        inner.nodes[1]
+            .watches
+            .insert(key.clone(), Some(desired(&[0, 1, 2, 3])));
+        inner.trace.of(1).count()
+    };
+    sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
+    sim.net.deliver();
+    for _ in 0..4 {
+        tokio::time::sleep(WATCH_TICK).await;
+        sim.net.deliver();
+    }
+    let heard = heard_since(&sim, 1, from);
+    assert!(
+        heard.iter().any(|e| e.contains(" ValueChange ")),
+        "{heard:?}"
+    );
+    assert!(
+        !heard.iter().any(|e| e.contains("ChangeInspect")),
+        "{heard:?}"
+    );
+    let local = sim.net.inner.lock().nodes[1].local[&(key.clone(), 2)].clone();
+    assert_eq!((local.seq, local.data.as_slice()), (1, &b"news"[..]));
+}
+
+/// VU2 item 20: the outbound watch check runs only while the node's DHT is
+/// online (0.5.8 `storage_manager/tasks/mod.rs:102,110,140-144`), and a
+/// watch's death is one of its operations (`watch_value.rs:1327-1348`): a
+/// watch cancelled offline dies at the first tick back online, and keeps no
+/// tick busy meanwhile.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_watch_cancelled_offline_dies_back_online() {
+    let (sim, mut nodes) = Netsim::nodes(2, 19);
+    let (key, _a, b) = seeded(&sim, &nodes).await;
+    b.watch(&key, Some(&[1]), None, None).await.unwrap();
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    sim.net.inner.lock().faults.dht_offline.insert(1);
+    assert!(!b.cancel_watch(&key, Some(&[1])).await.unwrap());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    {
+        let inner = sim.net.inner.lock();
+        assert!(!crate::network::Network::watch_work(
+            &inner,
+            sim.net.now_us()
+        ));
+    }
+    sim.net.inner.lock().faults.dht_offline.remove(&1);
+    let heard = tick(&sim, &mut nodes, 1).await;
+    assert!(heard.len() == 1 && dead(&heard[0]), "{heard:?}");
+}

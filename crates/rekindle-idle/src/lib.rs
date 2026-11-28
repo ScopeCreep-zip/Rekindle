@@ -4,9 +4,8 @@
 //! `docs/research/2026-10-harvest-security-infra-audit.md`) — this crate
 //! holds exactly the platform FFI that file used to carry inline, with
 //! zero `AppState`/Tauri dependency, mirroring `rekindle-game-detect`'s
-//! `platform/` module shape. The orchestration that polls this on a
-//! timer and flips presence status to Away/back stays in src-tauri; see
-//! `services::idle_service::start_idle_service`.
+//! `platform/` module shape. The host's idle stage polls it and runs
+//! auto-away on both hosts (`rekindle_node::host::idle`, plan E1.1).
 
 mod platform;
 
@@ -20,4 +19,15 @@ mod platform;
 #[must_use]
 pub fn get_idle_seconds() -> Option<u64> {
     platform::get_idle_seconds()
+}
+
+/// The operating system's idle time, as the Host's idle port (both hosts
+/// in production; the network simulator drives its own).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OsIdle;
+
+impl rekindle_utils::IdleSource for OsIdle {
+    fn idle_seconds(&self) -> Option<u64> {
+        get_idle_seconds()
+    }
 }

@@ -14,6 +14,11 @@
 //! uses an HMAC-SHA256 key the same way). Within one run the same
 //! identifier always gets the same tag, so a log can still be followed;
 //! across runs, and against the real key, tags are unlinkable.
+//! Debug builds only: `REKINDLE_LOG_SCRUB_KEY` (64 hex digits) replaces
+//! the random key, so every process of one test run tags alike and the
+//! app's and its peers' logs line up (plan RD2). Release builds never read
+//! it: the code that does is under `cfg(debug_assertions)`, and
+//! `cargo xtask check-log-scrub` keeps every mention of the name there.
 //!
 //! Recognised shapes (each verified against real output — see the tests
 //! here and `rekindle-protocol/tests/log_scrub_veilid.rs`):
@@ -36,18 +41,73 @@ use tracing_subscriber::fmt::MakeWriter;
 
 fn process_key() -> &'static [u8; 32] {
     static KEY: OnceLock<[u8; 32]> = OnceLock::new();
-    KEY.get_or_init(|| {
-        let mut k = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut k);
-        k
-    })
+    KEY.get_or_init(draw_key)
+}
+
+fn random_key() -> [u8; 32] {
+    let mut k = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut k);
+    k
+}
+
+/// The debug-only variable that names one test run's shared key (plan
+/// RD2): with it, every process of the run tags an identifier alike, so
+/// the app's and its peers' logs can be lined up. It exists only under
+/// `debug_assertions`; a release build has no code that reads it
+/// (`cargo xtask check-log-scrub` keeps every mention of it there).
+#[cfg(debug_assertions)]
+const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+
+/// The key for a `SHARED_KEY_VAR` value: 64 hex digits, or `Err` naming
+/// what is wrong. Unset (`None`) is the normal per-process random key.
+#[cfg(debug_assertions)]
+fn key_from(shared: Option<&str>) -> Result<[u8; 32], String> {
+    let Some(text) = shared else {
+        return Ok(random_key());
+    };
+    let text = text.trim();
+    if text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("{SHARED_KEY_VAR} must be 64 hex digits"));
+    }
+    let mut k = [0u8; 32];
+    for (byte, pair) in k.iter_mut().zip(text.as_bytes().chunks(2)) {
+        let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
+        *byte = u8::from_str_radix(pair, 16).map_err(|e| e.to_string())?;
+    }
+    Ok(k)
+}
+
+/// Debug builds: the run's shared key when `SHARED_KEY_VAR` is set. A
+/// malformed value stops the process: logging on under a random key would
+/// silently defeat the run it was set for, and the scrubber cannot panic
+/// (its own panic hook scrubs through this key).
+#[cfg(debug_assertions)]
+fn draw_key() -> [u8; 32] {
+    let shared = std::env::var(SHARED_KEY_VAR).ok();
+    match key_from(shared.as_deref()) {
+        Ok(k) => k,
+        Err(e) => {
+            let _ = writeln!(io::stderr().lock(), "log scrub: {e}");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Release builds: always a fresh key from the OS RNG.
+#[cfg(not(debug_assertions))]
+fn draw_key() -> [u8; 32] {
+    random_key()
+}
+
+fn tag_with(key: &[u8; 32], identifier: &str) -> String {
+    let h = blake3::keyed_hash(key, identifier.as_bytes());
+    format!("<{}>", &h.to_hex()[..8])
 }
 
 /// The `<tag>` an identifier is replaced with in this process.
 #[must_use]
 pub fn tag(identifier: &str) -> String {
-    let h = blake3::keyed_hash(process_key(), identifier.as_bytes());
-    format!("<{}>", &h.to_hex()[..8])
+    tag_with(process_key(), identifier)
 }
 
 struct Rules {
@@ -263,103 +323,5 @@ pub fn install_panic_hook_with(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{scrub, tag};
-
-    const B64_A: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
-    const B64_B: &str = "5JN8bi47CYSxohJ9YCbWzULVQmbtr7z9O_zVZmtdU8g";
-    const HEX64: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
-
-    fn assert_gone(out: &str, secret: &str) {
-        assert!(!out.contains(secret), "`{secret}` survived in `{out}`");
-    }
-
-    #[test]
-    fn typed_keys_keep_kind_and_lose_value() {
-        let line = format!("open record=VLD0:{B64_A} failed");
-        let out = scrub(&line);
-        assert_gone(&out, B64_A);
-        assert!(out.contains(&format!("record=VLD0:{}", tag(B64_A))));
-    }
-
-    #[test]
-    fn encrypted_record_keys_are_one_identifier() {
-        let line = format!("community_id=\"VLD0:{B64_A}:{B64_B}\"");
-        let out = scrub(&line);
-        assert_gone(&out, B64_A);
-        assert_gone(&out, B64_B);
-        assert!(out.contains(&format!("VLD0:{}", tag(&format!("{B64_A}:{B64_B}")))));
-    }
-
-    #[test]
-    fn bare_base64url_keys() {
-        let out = scrub(&format!("BareRecordKey({B64_A}) sig={B64_A}{B64_B}")).into_owned();
-        assert_gone(&out, B64_A);
-        assert_gone(&out, B64_B);
-    }
-
-    #[test]
-    fn hex_identifiers() {
-        let channel = "e3513a747e412077f0a1b2c3d4e5f6a7";
-        let out = scrub(&format!(
-            "friend={HEX64} channel_id=\"{channel}\" window=chat-{}",
-            &HEX64[..16]
-        ))
-        .into_owned();
-        assert_gone(&out, HEX64);
-        assert_gone(&out, channel);
-        assert_gone(&out, &HEX64[..16]);
-        assert!(out.contains(&format!("friend={}", tag(HEX64))));
-    }
-
-    #[test]
-    fn uuids() {
-        let id = "6f9619ff-8b86-d011-b42d-00cf4fc964ff";
-        assert_gone(&scrub(&format!("file {id} done")), id);
-    }
-
-    #[test]
-    fn ip_addresses_but_not_ports_loopback_or_unspecified() {
-        let line = "dial Direct:udp|[fe80::ce81:b1c:bd2c:69e]:5150 Direct:udp|[fd03:802f:11a8:9639:144f:918e:eaa2:618d]:5150 Direct:tcp|81.2.69.142:5150 bind [0.0.0.0, ::] lo 127.0.0.1 ::1";
-        let out = scrub(line);
-        for ip in [
-            "fe80::ce81:b1c:bd2c:69e",
-            "fd03:802f:11a8:9639:144f:918e:eaa2:618d",
-            "81.2.69.142",
-        ] {
-            assert_gone(&out, ip);
-        }
-        assert!(out.contains(&format!("{}:5150", tag("81.2.69.142"))));
-        assert!(out.contains("[0.0.0.0, ::]"));
-        assert!(out.contains("127.0.0.1"));
-        assert!(out.contains("::1"));
-    }
-
-    #[test]
-    fn ordinary_log_text_is_untouched() {
-        let line = "2026-10-04T10:09:43.385923Z  INFO rekindle_voice::media_ready: media-ready transition ready=false start_ts: 1759572583123456 v1.2.3 lamport=42 src-tauri/src/setup.rs:120:5 SubscriptionEventGovernanceSegmentsChanged deadbeef";
-        assert_eq!(scrub(line), line);
-    }
-
-    #[test]
-    fn tags_are_stable_within_a_process_and_distinct_per_identifier() {
-        assert_eq!(tag(HEX64), tag(HEX64));
-        assert_ne!(tag(HEX64), tag(B64_A));
-        let a = scrub(&format!("a={HEX64}")).into_owned();
-        let b = scrub(&format!("b={HEX64}")).into_owned();
-        assert_eq!(&a[2..], &b[2..]);
-    }
-
-    #[test]
-    fn writer_scrubs_whole_events() {
-        use std::io::Write as _;
-        let mut sink = Vec::new();
-        {
-            let mut w = super::ScrubbingWriter(&mut sink);
-            w.write_all(format!("peer={HEX64}\n").as_bytes()).unwrap();
-        }
-        let out = String::from_utf8(sink).unwrap();
-        assert_gone(&out, HEX64);
-        assert!(out.ends_with('\n'));
-    }
-}
+#[path = "log_scrub_tests.rs"]
+mod tests;

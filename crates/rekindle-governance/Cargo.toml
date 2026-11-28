@@ -1,19 +1,27 @@
 [package]
 name = "rekindle-governance"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Pure CRDT merge engine for Rekindle v2.0 flat governance — NO I/O, NO async"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
+blake3 = "1"
 regex = "1"
+rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[features]
+fixture = [  ]
+
 [dev-dependencies]
 proptest = "1"
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-governance = { path = ".", features = [ "fixture" ] }

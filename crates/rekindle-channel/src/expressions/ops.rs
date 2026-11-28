@@ -5,8 +5,9 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::state::ExpressionState;
 use rekindle_types::governance::GovernanceEntry;
 
-use super::limits::{detect_audio_kind, detect_image_media_type};
-use super::upload::next_lamport;
+use super::image::{published_media_type, ExpressionPicture};
+use super::limits::detect_audio_kind;
+use super::upload::require_governance;
 use crate::deps::{ChannelMessagingDeps, ExpressionView};
 use crate::error::ChannelError;
 
@@ -28,7 +29,7 @@ pub fn play_soundboard<D: ChannelMessagingDeps>(
     let actor_pseudonym = deps
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::SoundboardPlay {
+    let envelope = CommunityEnvelope::control(ControlPayload::SoundboardPlay {
         channel_id: channel_id.to_string(),
         expression_id: expression_id_hex.to_string(),
         actor_pseudonym,
@@ -47,13 +48,10 @@ pub async fn delete_expression<D: ChannelMessagingDeps>(
         .try_into()
         .map_err(|_| ChannelError::InvalidId("expression id must be 16 bytes".into()))?;
 
-    let lamport = next_lamport(deps, community_id)?;
+    require_governance(deps, community_id)?;
     deps.write_governance_entry(
         community_id,
-        GovernanceEntry::ExpressionRemoved {
-            expression_id,
-            lamport,
-        },
+        GovernanceEntry::ExpressionRemoved { expression_id },
     )
     .await
 }
@@ -91,16 +89,18 @@ fn to_expression_view<D: ChannelMessagingDeps>(
         .attachment
         .as_ref()
         .and_then(|offer| deps.read_expression_bytes(community_id, offer));
-    // The media type comes from the bytes' magic numbers, checked against
-    // the per-kind allowlist; a `data:` URL is built only for a type on it.
-    // The webview never chooses the type of a `data:` URL it renders.
-    let media_type = bytes.as_deref().and_then(|b| {
-        if expression.kind == "soundboard" {
-            detect_audio_kind(b)
-        } else {
-            detect_image_media_type(b, expression.animated)
-        }
-    });
+    // A peer published these bytes: a picture is decoded again through
+    // `rekindle-image` as the kind its `animated` flag implies, under the
+    // expression's size, and a sound's container is checked. A `data:` URL
+    // is built only for what passes; the webview never chooses its type.
+    let media_type = bytes
+        .as_deref()
+        .and_then(|b| match expression.kind.as_str() {
+            "soundboard" => detect_audio_kind(b),
+            "emoji" => published_media_type(b, expression.animated, ExpressionPicture::Emoji),
+            "sticker" => published_media_type(b, expression.animated, ExpressionPicture::Sticker),
+            _ => None,
+        });
     let inline_data_url = bytes.as_deref().zip(media_type).map(|(b, mt)| {
         format!(
             "data:{mt};base64,{}",

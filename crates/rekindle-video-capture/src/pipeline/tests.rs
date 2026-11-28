@@ -87,29 +87,95 @@ fn force_keyframe_yields_keyframe_quickly() {
     );
 }
 
+/// One synthetic I420 frame for the rate-control test: a diagonal luma ramp
+/// that moves 3 px a frame plus deterministic per-frame grain, so every
+/// frame carries motion and residual for the encoder to spend its budget on.
+/// Stamped at frame `n` of a `fps` stream, as a live source would stamp it.
+fn synthetic_frame(info: &gst_video::VideoInfo, n: u64, fps: u64) -> gst::Buffer {
+    let width = usize::try_from(info.width()).unwrap();
+    let height = usize::try_from(info.height()).unwrap();
+    let stride = usize::try_from(info.stride()[0]).unwrap();
+    let offset = info.offset()[0];
+    let step = usize::try_from(n).unwrap() * 3;
+    let mut grain = n.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let mut data = vec![128u8; info.size()];
+    for y in 0..height {
+        let row = &mut data[offset + y * stride..][..width];
+        for (x, px) in row.iter_mut().enumerate() {
+            grain ^= grain << 13;
+            grain ^= grain >> 7;
+            grain ^= grain << 17;
+            let noise = usize::try_from(grain % GRAIN_LEVELS).unwrap();
+            *px = u8::try_from((x * 2 + y + step + noise) % 256).unwrap();
+        }
+    }
+    let mut buffer = gst::Buffer::from_mut_slice(data);
+    let frame = buffer.get_mut().unwrap();
+    frame.set_pts(gst::ClockTime::from_nseconds(n * 1_000_000_000 / fps));
+    frame.set_duration(gst::ClockTime::from_nseconds(1_000_000_000 / fps));
+    buffer
+}
+
+/// Grain amplitude of [`synthetic_frame`], in luma levels.
+const GRAIN_LEVELS: u64 = 8;
+
+/// The encoder's rate control follows a live bitrate change. Measured in
+/// stream time, not wall time: frames go through the production encoder
+/// configuration (`configure_encoder`, `set_target_bitrate`) one at a time
+/// with synthetic timestamps at the configured fps, and each window is a
+/// fixed frame count, so machine load cannot change how many frames (or how
+/// much stream time) a window holds. (Wall-clock windows over a non-live
+/// `videotestsrc` measured how fast the source ran: the leaky queue dropped
+/// whatever the encoder could not keep up with, and the bytes per window
+/// scaled with the source's speed, which load changes.)
 #[test]
 fn bitrate_halving_shrinks_output() {
-    if !capture_available() {
-        eprintln!("skipping: gstreamer unavailable in this environment");
+    use gstreamer_app as gst_app;
+    if gst::init().is_err() || gst::ElementFactory::find("vp9enc").is_none() {
+        eprintln!("skipping: gstreamer/vp9enc unavailable in this environment");
         return;
     }
-    let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(1024);
-    let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
-    let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-    let session = NativeCaptureSession::start(&test_config(600), frame_tx, preview_tx, error_tx)
-        .expect("videotestsrc pipeline starts");
-    let high: usize = drain_for(&mut frame_rx, Duration::from_millis(1_500))
-        .iter()
-        .map(|f| f.payload.len())
-        .sum();
-    session.set_bitrate_kbps(120);
-    // Settle, then measure.
-    let _ = drain_for(&mut frame_rx, Duration::from_millis(500));
-    let low: usize = drain_for(&mut frame_rx, Duration::from_millis(1_500))
-        .iter()
-        .map(|f| f.payload.len())
-        .sum();
-    session.stop();
+    let config = test_config(600);
+    let fps = u64::from(config.fps);
+    let info =
+        gst_video::VideoInfo::builder(gst_video::VideoFormat::I420, config.width, config.height)
+            .fps(gst::Fraction::new(i32::try_from(config.fps).unwrap(), 1))
+            .build()
+            .unwrap();
+    let pipeline = gst::Pipeline::new();
+    let src = gst_app::AppSrc::builder()
+        .caps(&info.to_caps().unwrap())
+        .format(gst::Format::Time)
+        .build();
+    let encoder = gst::ElementFactory::make("vp9enc").build().unwrap();
+    super::gst_util::configure_encoder(&encoder, &config);
+    let sink = gst_app::AppSink::builder().sync(false).build();
+    pipeline
+        .add_many([src.upcast_ref(), &encoder, sink.upcast_ref()])
+        .unwrap();
+    gst::Element::link_many([src.upcast_ref(), &encoder, sink.upcast_ref()]).unwrap();
+    pipeline.set_state(gst::State::Playing).unwrap();
+
+    // lag-in-frames 0 and no frame dropping: one encoded frame per input.
+    let encode = |n: u64| -> usize {
+        src.push_buffer(synthetic_frame(&info, n, fps)).unwrap();
+        sink.try_pull_sample(gst::ClockTime::from_seconds(30))
+            .expect("one encoded frame per input frame")
+            .buffer()
+            .map_or(0, gst::BufferRef::size)
+    };
+    // A window of keyframe_max_dist frames (4 s of stream at 15 fps) holds
+    // exactly one keyframe wherever it starts, so both windows carry the
+    // same frame mix; the settle (2 s) outlasts the 0.5 s CBR buffer.
+    let window = u64::from(config.keyframe_max_dist);
+    let settle = window / 2;
+    let high: usize = (0..window).map(encode).sum();
+    super::gst_util::set_target_bitrate(&encoder, 120);
+    (window..window + settle).for_each(|n| {
+        encode(n);
+    });
+    let low: usize = (window + settle..2 * window + settle).map(encode).sum();
+    pipeline.set_state(gst::State::Null).unwrap();
     assert!(
         low * 2 < high,
         "120 kbps window ({low} B) should be well under half the 600 kbps window ({high} B)"

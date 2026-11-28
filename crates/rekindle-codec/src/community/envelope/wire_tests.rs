@@ -55,6 +55,7 @@ fn sample_mek_transfer() -> ControlPayload {
         generation: 5,
         sender_pseudonym: "p1".into(),
         wrapped_mek: vec![0xAA, 0xBB],
+        transfer_id: vec![0x01, 0x02],
     })
 }
 
@@ -64,6 +65,8 @@ fn sample_mek_ack() -> ControlPayload {
         channel_id: None,
         generation: 5,
         requester_pseudonym: "p2".into(),
+        transfer_id: vec![0x01, 0x02],
+        ack_tag: vec![0x03],
     })
 }
 
@@ -76,13 +79,15 @@ fn serde_json_wire_identity() {
         serde_json::to_value(sample_mek_transfer()).unwrap(),
         json!({"type": "MekTransfer", "data": {
             "community_id": "c1", "channel_id": "ch1", "generation": 5,
-            "sender_pseudonym": "p1", "wrapped_mek": [170, 187]
+            "sender_pseudonym": "p1", "wrapped_mek": [170, 187],
+            "transfer_id": [1, 2]
         }})
     );
     assert_eq!(
         serde_json::to_value(sample_mek_ack()).unwrap(),
         json!({"type": "MekTransferAck", "data": {
-            "community_id": "c1", "generation": 5, "requester_pseudonym": "p2"
+            "community_id": "c1", "generation": 5, "requester_pseudonym": "p2",
+            "transfer_id": [1, 2], "ack_tag": [3]
         }})
     );
     let v = serde_json::to_value(sample_video_fragment()).unwrap();
@@ -99,11 +104,11 @@ fn capnp_wire_identity() {
     let expect = [
         ("video_fragment", sample_video_fragment(), "10115001010101500101013b500304712a0103010740e2010109110d22110d8211111a11111a07636831ff07070707070707070107070707070707070701020307040506"),
         ("parity", sample_parity(), "10125001010101500101013c500404612a020373e70340e20100000109110d22110d8211111211111207636831ff0707070707070707010707070707070707030909030808"),
-        ("mek_transfer", sample_mek_transfer(), "100f5001010101500101011050020401010105110d1a110d22110d1a110d120363310763683103703103aabb"),
-        ("mek_ack", sample_mek_ack(), "100c500101010150010101435002030000010511091a000011051a036331037032"),
+        ("mek_transfer", sample_mek_transfer(), "1011500101010150010101105002050101010511111a11112211111a1111121111120363310763683103703103aabb030102"),
+        ("mek_ack", sample_mek_ack(), "1010500101010150010101435002050000010511111a0000110d1a110d12110d0a0363310370320301020103"),
     ];
     for (name, payload, hex_expected) in expect {
-        let env = CommunityEnvelope::Control(payload);
+        let env = CommunityEnvelope::control(payload);
         let bytes = encode_community_envelope(&env).expect(name);
         assert_eq!(
             hex::encode(&bytes),
@@ -124,6 +129,7 @@ fn signed_envelope_matches_the_codec_declaration() {
     use crate::envelope::SignedEnvelope as CodecSigned;
 
     let mine = SignedEnvelope {
+        message_id: [7u8; 16],
         community_id: "c1".into(),
         sender_pseudonym: "ab12".into(),
         envelope_bytes: vec![1, 2, 3],
@@ -131,6 +137,7 @@ fn signed_envelope_matches_the_codec_declaration() {
         ttl: 5,
     };
     let theirs = CodecSigned {
+        message_id: [7u8; 16],
         community_id: "c1".into(),
         sender_pseudonym: "ab12".into(),
         envelope_bytes: vec![1, 2, 3],
@@ -146,7 +153,7 @@ fn signed_envelope_matches_the_codec_declaration() {
     // Pin the shape: camelCase, and `ttl` present rather than skipped.
     assert_eq!(
         serde_json::to_string(&mine).unwrap(),
-        r#"{"communityId":"c1","senderPseudonym":"ab12","envelopeBytes":[1,2,3],"signature":[9,9,9,9],"ttl":5}"#
+        r#"{"communityId":"c1","senderPseudonym":"ab12","messageId":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"envelopeBytes":[1,2,3],"signature":[9,9,9,9],"ttl":5}"#
     );
 
     // Each must load the other's bytes — what a peer actually does.
@@ -161,7 +168,7 @@ fn signed_envelope_matches_the_codec_declaration() {
 fn signed_envelope_ttl_default_agrees() {
     use crate::envelope::SignedEnvelope as CodecSigned;
 
-    let json = r#"{"communityId":"c1","senderPseudonym":"ab","envelopeBytes":[],"signature":[]}"#;
+    let json = r#"{"communityId":"c1","senderPseudonym":"ab","messageId":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"envelopeBytes":[],"signature":[]}"#;
     let mine: SignedEnvelope = serde_json::from_str(json).unwrap();
     let theirs: CodecSigned = serde_json::from_str(json).unwrap();
     assert_eq!(mine.ttl, 5);
@@ -181,6 +188,7 @@ fn media_key_payloads_round_trip() {
             recipient: "r".into(),
             key_index: 0x1234_5678_9abc,
             sealed: vec![7; 80],
+            signature: vec![8; 64],
         },
         ControlPayload::VoiceMediaKeyAck {
             community_id: "c".into(),
@@ -199,13 +207,13 @@ fn media_key_payloads_round_trip() {
     ];
     for payload in payloads {
         let bytes =
-            encode_community_envelope(&CommunityEnvelope::Control(payload.clone())).unwrap();
+            encode_community_envelope(&CommunityEnvelope::control(payload.clone())).unwrap();
         let decoded = crate::capnp_envelope::try_decode_community_envelope(&bytes)
             .unwrap()
             .unwrap();
         assert_eq!(
             format!("{decoded:?}"),
-            format!("{:?}", CommunityEnvelope::Control(payload))
+            format!("{:?}", CommunityEnvelope::control(payload))
         );
     }
 }

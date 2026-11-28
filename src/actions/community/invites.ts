@@ -1,28 +1,18 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState } from "../../stores/community.store";
-import { authState } from "../../stores/auth.store";
-import { addToast } from "../../stores/toast.store";
 import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
+import { setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 
 export async function handleCreateCommunityInvite(
   communityId: string,
-  maxUses?: number,
-  expiresInSeconds?: number,
+  maxUses: number,
+  expiresInSeconds?: number
 ): Promise<InviteCreated | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
-    // Optimistic store update — the raw code is only available to the creator
-    const now = Math.floor(Date.now() / 1000);
-    const newInvite: InviteDto = {
-      codeHash: result.codeHash,
-      createdBy: authState.publicKey ?? "",
-      maxUses: maxUses ?? null,
-      uses: 0,
-      expiresAt: expiresInSeconds ? now + expiresInSeconds : null,
-      createdAt: now,
-      url: result.url,
-    };
-    setCommunityState("communityInvites", communityId, (prev) => [newInvite, ...(prev ?? [])]);
+    // The Host's list is the one source of each invite's fields, its
+    // fingerprint among them (plan E7.15): never built here.
+    await handleListCommunityInvites(communityId);
     return result;
   } catch (err) {
     console.error("[Community] Failed to create invite:", err);
@@ -33,13 +23,13 @@ export async function handleCreateCommunityInvite(
 
 export async function handleRevokeCommunityInvite(
   communityId: string,
-  codeHash: string,
+  inviteId: string
 ): Promise<boolean> {
   try {
-    await commands.revokeCommunityInvite(communityId, codeHash);
+    await commands.revokeCommunityInvite(communityId, inviteId);
     // Optimistic store removal
     setCommunityState("communityInvites", communityId, (prev) =>
-      (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
+      (prev ?? []).filter((inv) => inv.inviteId !== inviteId)
     );
     return true;
   } catch (err) {
@@ -49,9 +39,7 @@ export async function handleRevokeCommunityInvite(
   }
 }
 
-export async function handleListCommunityInvites(
-  communityId: string,
-): Promise<InviteDto[]> {
+export async function handleListCommunityInvites(communityId: string): Promise<InviteDto[]> {
   try {
     const invites = await commands.listCommunityInvites(communityId);
     setCommunityState("communityInvites", communityId, invites);

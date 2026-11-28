@@ -8,22 +8,27 @@
 //! member count answerable without a DHT read, and what the v1.0 member
 //! index was substituting for.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashMap;
 
 use rekindle_presence::deps::{DiscoveredMemberRow, PresenceError, RowWrite};
 
-use crate::daemon::community_runtime::MemberRecord;
+use crate::host::community::MemberRecord;
 
 use super::DaemonPresenceAdapter;
 
 impl DaemonPresenceAdapter {
     /// Read every occupied subkey of one segment.
     ///
-    /// Uses `inspect_present_subkeys` to learn which subkeys hold a
-    /// value, then fetches only those — rather than sweeping
-    /// `0..max_subkey` blind. On a segment holding five members that is
-    /// five reads instead of 255, and the orchestrator's contract only
-    /// asks for non-empty rows.
+    /// One UpdateGet inspect says which subkeys hold a value and which are
+    /// newer on the network than our local copy (`RecordPool::read_changed`);
+    /// only those are fetched, and only the changed ones from the network.
+    /// The registry is not watched (`setup_community_watches`), so a plain
+    /// local read returned the first copy of a peer's row forever: Veilid's
+    /// `get_value` answers from local storage whenever it holds the subkey
+    /// and `force_refresh` is false (`storage_manager/get_value.rs`), and
+    /// the peer's heartbeat aged past `STALE_HEARTBEAT_SECS` while the peer
+    /// kept writing.
     ///
     /// `skip_subkey` is our own slot: we already know what we wrote
     /// there, and re-reading it would let a stale network copy of our
@@ -37,24 +42,43 @@ impl DaemonPresenceAdapter {
         let Some(node) = self.transport() else {
             return Vec::new();
         };
+        let pool = match node.require_records() {
+            Ok(pool) => pool,
+            Err(error) => {
+                tracing::debug!(registry = %registry_key, %error, "presence scan: no record pool");
+                return Vec::new();
+            }
+        };
         // One borrow per segment for the whole scan: a table hit while the
         // community holds the record (plan C7.7g).
-        let lease = match rekindle_transport::broadcast::dht_writes::acquire_str(
-            node.as_ref(),
-            registry_key,
-            None,
-        )
-        .await
-        {
+        let lease = match pool.acquire(registry_key, None, OpenIntent::Check).await {
             Ok(lease) => lease,
             Err(error) => {
                 tracing::debug!(registry = %registry_key, %error, "presence scan: segment not open");
                 return Vec::new();
             }
         };
-        let rows = scan_leased(node.as_ref(), lease, registry_key, max_subkey, skip_subkey).await;
-        rekindle_transport::broadcast::dht_writes::release(node.as_ref(), lease).await;
-        rows
+        let subkeys: Vec<u32> = (0..=max_subkey)
+            .filter(|subkey| Some(*subkey) != skip_subkey)
+            .collect();
+        let read = pool.read_changed(lease, &subkeys).await;
+        pool.release(lease).await;
+        match read {
+            Ok(values) => values
+                .into_iter()
+                .filter(|(_, value)| !value.data.is_empty())
+                .map(|(subkey, value)| (subkey, value.data))
+                .collect(),
+            Err(error) => {
+                // Not an empty segment: an unreadable one, skipped this tick.
+                tracing::debug!(
+                    registry = %registry_key,
+                    %error,
+                    "presence scan: inspect failed; skipping this segment for now"
+                );
+                Vec::new()
+            }
+        }
     }
 
     /// Write our own presence row into our slot.
@@ -73,6 +97,7 @@ impl DaemonPresenceAdapter {
             node.as_ref(),
             registry_key,
             Some(writer_keypair_str),
+            OpenIntent::Hold,
         )
         .await
         .map_err(|e| PresenceError::Dht(format!("open registry: {e}")))?;
@@ -113,22 +138,25 @@ impl DaemonPresenceAdapter {
         rows: Vec<DiscoveredMemberRow>,
         banned_pseudonyms: &[String],
     ) {
-        let members: HashMap<String, MemberRecord> = rows
+        let rows: Vec<DiscoveredMemberRow> = rows
             .into_iter()
             // Defence in depth: the orchestrator already drops banned
             // rows, but the roster is what every downstream count and
             // lookup reads, so it filters again rather than trusting an
             // upstream pass.
             .filter(|row| !banned_pseudonyms.contains(&row.pseudonym_key))
+            .collect();
+        self.store_roster_rows(community_id, rows.clone());
+        let members: HashMap<String, MemberRecord> = rows
+            .into_iter()
             .map(|row| {
                 let record = MemberRecord {
-                    display_name: row.display_name,
-                    subkey_index: u32::try_from(row.subkey_index).unwrap_or(0),
-                    segment_index: u32::try_from(row.segment_index).unwrap_or(0),
+                    subkey_index: row.subkey_index,
+                    segment_index: row.segment_index,
                     bio: row.bio,
                     pronouns: row.pronouns,
-                    theme_color: row.theme_color.and_then(|c| u32::try_from(c).ok()),
-                    badges: serde_json::from_str(&row.badges_json).unwrap_or_default(),
+                    theme_color: row.theme_color,
+                    badges: row.badges,
                     avatar_ref: row.avatar_ref,
                     banner_ref: row.banner_ref,
                 };
@@ -141,9 +169,39 @@ impl DaemonPresenceAdapter {
             members = members.len(),
             "presence poll: roster refreshed"
         );
-        self.ctx
-            .community_runtime
-            .set_members(community_id, members);
+        self.ctx.communities.set_members(community_id, members);
+    }
+
+    /// Upsert the validated registry rows into the identity's
+    /// `community_members` (plan E3.1 D1b): the registry is the durable
+    /// path (PATH 1), so a member the poll sees is on the stored roster
+    /// even when no gossip announcement reached us.
+    fn store_roster_rows(&self, community_id: &str, rows: Vec<DiscoveredMemberRow>) {
+        if rows.is_empty() {
+            return;
+        }
+        let Some(owner) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone())
+        else {
+            return;
+        };
+        let Ok(db) = self.ctx.db.current() else {
+            return;
+        };
+        let community = community_id.to_string();
+        let joined_at = self.ctx.clock.now_secs().cast_signed();
+        db.fire("presence poll roster", move |conn| {
+            for row in &rows {
+                rekindle_db::repo::members::upsert_discovered(
+                    conn, &owner, &community, row, joined_at,
+                )?;
+            }
+            Ok(())
+        });
     }
 
     /// Pseudonyms in `candidates` not already in the roster.
@@ -156,53 +214,10 @@ impl DaemonPresenceAdapter {
         community_id: &str,
         candidates: Vec<String>,
     ) -> Vec<String> {
-        let known = self.ctx.community_runtime.members(community_id);
+        let known = self.ctx.communities.members(community_id);
         candidates
             .into_iter()
             .filter(|pseudonym| !known.contains_key(pseudonym))
             .collect()
     }
-}
-
-/// [`DaemonPresenceAdapter::scan_segment_impl`] on the segment's lease.
-async fn scan_leased(
-    node: &rekindle_transport::broadcast::node::TransportNode,
-    lease: rekindle_transport::broadcast::dht_writes::LeaseId,
-    registry_key: &str,
-    max_subkey: u32,
-    skip_subkey: Option<u32>,
-) -> Vec<(u32, Vec<u8>)> {
-    let occupied = match rekindle_transport::broadcast::dht_writes::inspect_leased_present_subkeys(
-        node, lease,
-    )
-    .await
-    {
-        Ok(subkeys) => subkeys,
-        Err(error) => {
-            // Not an empty segment — an unreadable one. Falling
-            // back to a blind sweep would turn one failed round
-            // trip into 255.
-            tracing::debug!(
-                registry = %registry_key,
-                %error,
-                "presence scan: inspect failed; skipping this segment for now"
-            );
-            return Vec::new();
-        }
-    };
-
-    let mut rows = Vec::new();
-    for subkey in occupied {
-        if subkey > max_subkey || Some(subkey) == skip_subkey {
-            continue;
-        }
-        if let Ok(Some(raw)) =
-            rekindle_transport::broadcast::dht_writes::get_leased(node, lease, subkey, false).await
-        {
-            if !raw.is_empty() {
-                rows.push((subkey, raw));
-            }
-        }
-    }
-    rows
 }

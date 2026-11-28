@@ -1,12 +1,13 @@
-import { Component, Show, For, createSignal } from "solid-js";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
-  handleGenerateInvite,
   handleAddFriendFromInvite,
   handleCancelInvite,
+  handleGenerateInvite,
 } from "../../actions/buddy.actions";
+import { friendsState } from "../../stores/friends.store";
 import { maskInviteUrl } from "../../utils/masking";
 import { formatRelativeTime, formatTimeUntil } from "../../utils/time";
+import OwnRecordsWait from "../common/OwnRecordsWait";
 
 interface InviteLinkTabProps {
   onClose: () => void;
@@ -17,6 +18,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
   const [generatedInvite, setGeneratedInvite] = createSignal("");
   const [currentInviteId, setCurrentInviteId] = createSignal<string | null>(null);
   const [generating, setGenerating] = createSignal(false);
+  const [adding, setAdding] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -50,7 +52,9 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
     setError(null);
     const err = await handleCancelInvite(inviteId);
     if (err) {
+      // The Host kept the invite: it stays listed and shown (audit U-9).
       setError(err);
+      return;
     }
     if (currentInviteId() === inviteId) {
       setGeneratedInvite("");
@@ -73,7 +77,9 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
     const invite = inviteString().trim();
     if (!invite) return;
     setError(null);
+    setAdding(true);
     const err = await handleAddFriendFromInvite(invite);
+    setAdding(false);
     if (err) {
       setError(err);
     } else {
@@ -82,33 +88,32 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
   }
 
   const activeInvites = () =>
-    friendsState.outgoingInvites.filter(
-      (inv) => inv.inviteId !== currentInviteId(),
-    );
+    friendsState.outgoingInvites.filter((inv) => inv.inviteId !== currentInviteId());
 
   return (
     <div class="add-friend-section">
       <div class="add-friend-generate">
         <button
+          type="button"
           class="form-btn-primary"
           onClick={handleGenerate}
           disabled={generating()}
         >
           {generating() ? "Generating..." : "Generate My Invite"}
         </button>
+        <OwnRecordsWait active={generating()} />
         <Show when={generatedInvite()}>
           <div class="add-friend-invite-result">
-            <textarea
-              class="add-friend-invite-text"
-              readOnly
-              value={generatedInvite()}
-              rows={3}
-            />
+            <textarea class="add-friend-invite-text" readOnly value={generatedInvite()} rows={3} />
             <div class="add-friend-invite-actions">
-              <button class="add-friend-copy-btn" onClick={handleCopy}>
+              <button type="button" class="add-friend-copy-btn" onClick={handleCopy}>
                 {copied() ? "Copied!" : "Copy"}
               </button>
-              <button class="add-friend-cancel-btn" onClick={handleCancelCurrentInvite}>
+              <button
+                type="button"
+                class="add-friend-cancel-btn"
+                onClick={handleCancelCurrentInvite}
+              >
                 Cancel Invite
               </button>
             </div>
@@ -129,22 +134,20 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
                   {invite.status === "accepted" ? "Responded" : "Waiting"}
                 </span>
                 <Show when={invite.url}>
-                  <span
+                  <button
+                    type="button"
                     class="invite-url-masked"
                     title="Click to copy invite URL"
                     onClick={() => navigator.clipboard.writeText(invite.url)}
                   >
                     {maskInviteUrl(invite.url)}
-                  </span>
+                  </button>
                 </Show>
-                <span class="invite-time">
-                  {formatRelativeTime(invite.createdAt)}
-                </span>
-                <span class="invite-time">
-                  expires in {formatTimeUntil(invite.expiresAt)}
-                </span>
+                <span class="invite-time">{formatRelativeTime(invite.createdAt)}</span>
+                <span class="invite-time">expires in {formatTimeUntil(invite.expiresAt)}</span>
                 <Show when={invite.url}>
                   <button
+                    type="button"
                     class="invite-copy-btn"
                     onClick={() => navigator.clipboard.writeText(invite.url)}
                   >
@@ -152,6 +155,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
                   </button>
                 </Show>
                 <button
+                  type="button"
                   class="invite-cancel-btn"
                   onClick={() => handleCancelListInvite(invite.inviteId)}
                 >
@@ -173,10 +177,15 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
           value={inviteString()}
           onInput={(e) => setInviteString(e.currentTarget.value)}
         />
+        <OwnRecordsWait active={adding()} />
         <Show when={error()}>
           <div class="form-error">{error()}</div>
         </Show>
-        <button class="form-btn-primary" type="submit" disabled={!inviteString().trim()}>
+        <button
+          class="form-btn-primary"
+          type="submit"
+          disabled={adding() || !inviteString().trim()}
+        >
           Add from Invite
         </button>
       </form>

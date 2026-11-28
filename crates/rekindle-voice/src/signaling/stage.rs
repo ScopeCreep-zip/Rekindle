@@ -185,7 +185,7 @@ pub async fn request_to_speak<D: VoiceSignalingDeps + ?Sized>(
     deps.persist_hand_raise(community_id.to_string(), channel_id.to_string(), true)
         .await;
     let lamport = deps.next_lamport(community_id)?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::SpeakRequest {
+    let envelope = CommunityEnvelope::control(ControlPayload::SpeakRequest {
         channel_id: channel_id.to_string(),
         requester_pseudonym,
         lamport,
@@ -212,7 +212,7 @@ pub async fn respond_to_speak_request<D: VoiceSignalingDeps + ?Sized>(
         .ok_or_else(|| VoiceError::Session("no pseudonym for community".into()))?;
 
     let lamport = deps.next_lamport(community_id)?;
-    let response = CommunityEnvelope::Control(ControlPayload::SpeakResponse {
+    let response = CommunityEnvelope::control(ControlPayload::SpeakResponse {
         channel_id: channel_id.to_string(),
         requester_pseudonym: requester_pseudonym.to_string(),
         granted,
@@ -226,7 +226,7 @@ pub async fn respond_to_speak_request<D: VoiceSignalingDeps + ?Sized>(
         if !speakers.contains(&requester_pseudonym.to_string()) {
             speakers.push(requester_pseudonym.to_string());
         }
-        let stage_update = CommunityEnvelope::Control(ControlPayload::StageUpdate {
+        let stage_update = CommunityEnvelope::control(ControlPayload::StageUpdate {
             channel_id: channel_id.to_string(),
             topic: None,
             speakers,
@@ -249,7 +249,7 @@ pub fn server_mute_member<D: VoiceSignalingDeps + ?Sized>(
     target_pseudonym: &str,
     muted: bool,
 ) {
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceMute {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceMute {
         channel_id: channel_id.to_string(),
         target_pseudonym: target_pseudonym.to_string(),
         muted,
@@ -266,7 +266,7 @@ pub fn server_deafen_member<D: VoiceSignalingDeps + ?Sized>(
     target_pseudonym: &str,
     deafened: bool,
 ) {
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceDeafen {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceDeafen {
         channel_id: channel_id.to_string(),
         target_pseudonym: target_pseudonym.to_string(),
         deafened,

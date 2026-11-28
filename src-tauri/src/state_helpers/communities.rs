@@ -1,4 +1,4 @@
-//! Community channel-list write helpers + governance-key collection.
+//! Community channel-list write helpers + anchor collection.
 
 use std::sync::Arc;
 
@@ -44,12 +44,12 @@ pub fn my_pseudonym_key(state: &Arc<AppState>, community_id: &str) -> Option<Str
 }
 
 /// Collect communities with governance record keys.
-pub fn communities_with_governance_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
+pub fn communities_with_anchors(state: &Arc<AppState>) -> Vec<(String, String)> {
     state
         .communities
         .read()
         .values()
-        .filter_map(|c| c.governance_key.as_ref().map(|k| (c.id.clone(), k.clone())))
+        .filter_map(|c| c.anchor.as_ref().map(|k| (c.id.clone(), k.clone())))
         .collect()
 }
 

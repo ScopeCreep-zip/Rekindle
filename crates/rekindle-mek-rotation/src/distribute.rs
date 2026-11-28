@@ -14,14 +14,13 @@
 //! sleeps `cascade_delay(N)` and bails out if any peer already
 //! advanced the generation (we yielded the rotation).
 
-use rekindle_codec::community::envelope::{
-    CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
-};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_crypto::group::mek_distribution::wrap_mek;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 
+use crate::ack::{is_mek_transfer_ack, ExpectedAck};
 use crate::pseudonym_hex::pseudonym_from_hex;
 
 use crate::deps::{MekDistributeDeps, RotationRecipient};
@@ -74,7 +73,14 @@ pub async fn wait_for_rotation_slot<D: MekDistributeDeps>(
 
 /// Encrypt + dispatch the new MEK to each recipient. Emits
 /// `RotationStarted` before the first send and `RotationComplete`
-/// after the last successful one.
+/// after the last one.
+///
+/// Returns the pseudonyms (hex) the push did not reach. A recipient whose
+/// `app_call` fails is skipped, not fatal: the others still get the key,
+/// and the unreached member repairs from the `MEKGenerationBump` by asking
+/// for the key it lacks (plan E3.2 S7m item 1c, the D16 `RequestMEK`
+/// path), as a missing ack is left to recovery. Each caller decides what
+/// an unreached recipient means for it.
 ///
 /// `recipients` should exclude our own pseudonym (the rotator); the
 /// fn additionally filters out any recipient whose pseudonym matches
@@ -85,12 +91,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
     scope: KeyScope,
     new_mek: &MediaEncryptionKey,
     recipients: &[RotationRecipient],
-) -> Result<(), MekRotationError> {
-    let secret = deps
-        .identity_secret()
-        .ok_or(MekRotationError::IdentityNotLoaded)?;
-    let my_signing_key =
-        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
+) -> Result<Vec<String>, MekRotationError> {
     let my_pseudonym = deps
         .my_pseudonym(community_id)
         .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
@@ -104,6 +105,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         initiator_pseudonym_hex: my_pseudonym_hex.clone(),
     });
 
+    let mut unreached = Vec::new();
     for recipient in recipients {
         // A rotation cut short by the session ending is repaired like one
         // nobody was online to receive: peers request the key.
@@ -114,44 +116,49 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
             // Defensive: should already have been excluded.
             continue;
         }
-        let recipient_pseudo = pseudonym_from_hex(&recipient.pseudonym_hex).ok_or_else(|| {
-            MekRotationError::InvalidInput(format!(
-                "invalid recipient pseudonym: {}",
-                recipient.pseudonym_hex
-            ))
-        })?;
-        let wrapped = wrap_mek(
-            &my_signing_key,
-            &recipient_pseudo.0,
-            &new_mek.to_wire_bytes(),
-        )
-        .map_err(|e| MekRotationError::Crypto(format!("wrap MEK: {e}")))?;
-        let payload = CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
-            community_id: community_id.to_string(),
-            channel_id: scope.wire_channel(),
-            generation,
-            sender_pseudonym: my_pseudonym_hex.clone(),
-            wrapped_mek: wrapped,
-        }));
-        let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
-            .map_err(|e| MekRotationError::Transport(format!("encode MEK transfer: {e}")))?;
+        let bytes =
+            seal_mek_transfer(deps, community_id, scope, new_mek, &recipient.pseudonym_hex)?;
 
-        let reply = deps
+        let reply = match deps
             .broadcast_to_peer(
                 community_id,
                 &recipient.pseudonym_hex,
                 &recipient.route_blob,
                 bytes,
             )
-            .await?;
+            .await
+        {
+            Ok(reply) => reply,
+            Err(error) => {
+                tracing::info!(
+                    community = %community_id,
+                    recipient = %recipient.pseudonym_hex,
+                    generation,
+                    %error,
+                    "key push did not reach the member; it asks for the key"
+                );
+                unreached.push(recipient.pseudonym_hex.clone());
+                continue;
+            }
+        };
 
-        inspect_reply(
+        // A missing ack is not a failure here (it is logged): the next
+        // rotation recovers.
+        let expected = ExpectedAck {
             community_id,
-            &recipient.pseudonym_hex,
+            inviter_hex: &my_pseudonym_hex,
+            joiner_hex: &recipient.pseudonym_hex,
             scope,
-            generation,
-            &reply,
-        );
+            mek: new_mek,
+        };
+        if !is_mek_transfer_ack(&expected, &reply) {
+            tracing::debug!(
+                community = %community_id,
+                recipient = %recipient.pseudonym_hex,
+                generation,
+                "rotation push not confirmed"
+            );
+        }
     }
 
     deps.emit_event(MekRotationEvent::RotationComplete {
@@ -160,76 +167,52 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         generation,
     });
 
-    Ok(())
+    Ok(unreached)
 }
 
-/// P1.3 — verify the recipient sent back a structured
-/// `MekTransferAck` confirming BOTH the network arrival and the
-/// app-layer unwrap. Bare `ACK` reply means the recipient hit an
-/// unwrap error (logged on their side); we record a debug trace so
-/// the operator can investigate. Mismatches are warned but don't
-/// hard-fail the rotation — the next rotation will recover.
-fn inspect_reply(
+/// A transfer id's length in bytes.
+pub const TRANSFER_ID_LEN: usize = 16;
+
+/// The encoded `MekTransfer` envelope of `mek` (of `scope`) sealed to
+/// `recipient_hex`'s pseudonym under our community pseudonym key: the
+/// payload `distribute_mek` calls each recipient with, and a
+/// `mek_transfer` outbox row's (plan E3.2, D16), which never holds the
+/// key itself.
+///
+/// # Errors
+/// No identity, no pseudonym in `community_id`, an invalid recipient, or
+/// the wrap or encoding failed.
+pub fn seal_mek_transfer<D: MekDistributeDeps + ?Sized>(
+    deps: &D,
     community_id: &str,
+    scope: KeyScope,
+    mek: &MediaEncryptionKey,
     recipient_hex: &str,
-    expected_scope: KeyScope,
-    expected_generation: u64,
-    reply: &[u8],
-) {
-    if reply == b"ACK" {
-        tracing::debug!(
-            community = %community_id,
-            recipient = %recipient_hex,
-            generation = expected_generation,
-            "MEK transfer recipient replied with bare ACK (unwrap likely failed)"
-        );
-        return;
-    }
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(reply) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck(
-            MekTransferAckPayload {
-                generation: ack_gen,
-                channel_id: ack_channel,
-                requester_pseudonym,
-                ..
-            },
-        )))) => {
-            if ack_gen != expected_generation {
-                tracing::warn!(
-                    community = %community_id,
-                    recipient = %recipient_hex,
-                    sent_gen = expected_generation,
-                    ack_gen,
-                    "MekTransferAck generation mismatch"
-                );
-            } else if KeyScope::from_wire(ack_channel.as_deref()) != Some(expected_scope) {
-                tracing::warn!(
-                    community = %community_id,
-                    recipient = %recipient_hex,
-                    sent_scope = %expected_scope,
-                    ack_channel = ?ack_channel,
-                    "MekTransferAck channel_id mismatch"
-                );
-            } else {
-                tracing::trace!(
-                    community = %community_id,
-                    recipient = %recipient_hex,
-                    requester = %requester_pseudonym,
-                    generation = ack_gen,
-                    "MekTransferAck verified"
-                );
-            }
-        }
-        Ok(_) => tracing::debug!(
-            community = %community_id,
-            recipient = %recipient_hex,
-            "MEK transfer reply was not a MekTransferAck variant"
-        ),
-        Err(e) => tracing::debug!(
-            community = %community_id,
-            recipient = %recipient_hex,
-            error = %e,
-            "MEK transfer reply could not be decoded as community envelope"
-        ),
-    }
+) -> Result<Vec<u8>, MekRotationError> {
+    let secret = deps
+        .identity_secret()
+        .ok_or(MekRotationError::IdentityNotLoaded)?;
+    let my_signing_key =
+        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
+    let my_pseudonym = deps
+        .my_pseudonym(community_id)
+        .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
+    let recipient = pseudonym_from_hex(recipient_hex).ok_or_else(|| {
+        MekRotationError::InvalidInput(format!("invalid recipient pseudonym: {recipient_hex}"))
+    })?;
+    let wrapped = wrap_mek(&my_signing_key, &recipient.0, &mek.to_wire_bytes())
+        .map_err(|e| MekRotationError::Crypto(format!("wrap MEK: {e}")))?;
+    // Random per push; a retry resends these bytes, so it keeps its id.
+    let mut transfer_id = vec![0u8; TRANSFER_ID_LEN];
+    deps.rng().fill(&mut transfer_id);
+    let payload = CommunityEnvelope::control(ControlPayload::MekTransfer(MekTransferPayload {
+        community_id: community_id.to_string(),
+        channel_id: scope.wire_channel(),
+        generation: mek.generation(),
+        sender_pseudonym: hex::encode(my_pseudonym.0),
+        wrapped_mek: wrapped,
+        transfer_id,
+    }));
+    rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
+        .map_err(|e| MekRotationError::Transport(format!("encode MEK transfer: {e}")))
 }

@@ -1,36 +1,33 @@
-import { Component, For, createSignal, createEffect, Show } from "solid-js";
 import { Popover } from "@kobalte/core/popover";
-import { handleKeyDown } from "../../actions/chat.actions";
+import { type Component, createEffect, createSignal, createUniqueId, For, Show } from "solid-js";
+import { canSend } from "../../actions/chat.actions";
 import { handleUploadAttachment } from "../../actions/community.actions";
-import EmojiPicker from "./EmojiPicker";
-import ReplyPreview from "./ReplyPreview";
 import { voiceState } from "../../stores/voice.store";
-import { ICON_CLOSE, ICON_EMOTICON, ICON_PAPERCLIP } from "../../icons";
-import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
-import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
-import { useSlowmode } from "./message_input/useSlowmode";
+import SkinGlyph from "../common/SkinGlyph";
+import { SlotMount } from "../skin-tree/slots";
+import EmojiPicker from "./EmojiPicker";
 import type { MessageInputProps } from "./message_input/types";
-
-const ICON_MIC = "\u{F036C}"; // nf-md-microphone
-const ICON_MIC_OFF = "\u{F036D}"; // nf-md-microphone_off
-
-// Declared in ./message_input/types.ts and re-exported here so the
-// existing import sites keep working. `useSlowmode` needs the props
-// type and this file imports `useSlowmode` — declaring it here closed
-// a module cycle.
-export type { EditMode, MessageInputProps } from "./message_input/types";
+import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
+import { useSlowmode } from "./message_input/useSlowmode";
+import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
+import ReplyPreview from "./ReplyPreview";
 
 const MessageInput: Component<MessageInputProps> = (props) => {
   const [body, setBody] = createSignal("");
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
+  const mentionListId = createUniqueId();
+  const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
   let textareaRef: HTMLTextAreaElement | undefined;
 
   const mentions = useMentionAutocomplete({
     communityId: () => props.communityId,
+    channelId: () => props.peerId,
     body,
     setBody,
     getTextarea: () => textareaRef,
   });
+  const mentionOpen = () =>
+    mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0;
   const recorder = useVoiceRecorder({
     communityId: () => props.communityId,
     channelId: () => props.peerId,
@@ -79,19 +76,21 @@ const MessageInput: Component<MessageInputProps> = (props) => {
       return;
     }
 
-    if (props.onSend) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const text = getBody();
-        if (text.trim()) {
-          props.onSend(props.peerId, text, props.replyTo?.messageId);
-          clearInput();
-          props.onDismissReply?.();
-          slowmode.recordSent();
-        }
-      }
-    } else {
-      handleKeyDown(e, props.peerId, getBody, clearInput);
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  }
+
+  /** Send the draft as Enter does (the Send button's action). */
+  function send(): void {
+    if (slowmode.effectiveDisabled()) return;
+    const text = getBody();
+    if (canSend(text)) {
+      props.onSend(props.peerId, text, props.replyTo?.messageId);
+      clearInput();
+      props.onDismissReply?.();
+      slowmode.recordSent();
     }
   }
 
@@ -101,6 +100,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     // Recompute mention picker query from the new caret position.
     mentions.recomputeOnInput(target.value, target.selectionStart ?? target.value.length);
     props.onTyping?.();
+    props.onDraftChanged?.(target.value);
   }
 
   function insertEmoji(value: string): void {
@@ -119,20 +119,21 @@ const MessageInput: Component<MessageInputProps> = (props) => {
         <div class="edit-mode-header">
           <span>Editing message</span>
           <button
+            type="button"
             class="edit-mode-cancel"
-            onClick={() => { props.onEditCancel?.(); clearInput(); }}
+            onClick={() => {
+              props.onEditCancel?.();
+              clearInput();
+            }}
             title="Cancel edit (Esc)"
             aria-label="Cancel edit"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+            <SkinGlyph name="close" />
           </button>
         </div>
       </Show>
       <Show when={!props.editMode}>
-        <ReplyPreview
-          replyTo={props.replyTo ?? null}
-          onDismiss={() => props.onDismissReply?.()}
-        />
+        <ReplyPreview replyTo={props.replyTo ?? null} onDismiss={() => props.onDismissReply?.()} />
       </Show>
       <Show when={slowmode.effectiveDisabled() && !props.editMode}>
         <div class="typing-indicator">
@@ -149,15 +150,23 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               aria-label="Attach file"
               onClick={() => void handleAttachClick()}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_PAPERCLIP}</span>
+              <SkinGlyph name="paperclip" />
             </button>
           </Show>
           <Show when={props.communityId && !props.editMode}>
             <button
               class={`message-input-mic-btn ${recorder.recording() ? "message-input-mic-btn-active" : ""}`}
               type="button"
-              title={recorder.recording() ? "Release to send (mousedown to record)" : "Hold to record voice"}
-              aria-label={recorder.recording() ? "Recording voice — release to send" : "Hold to record a voice message"}
+              title={
+                recorder.recording()
+                  ? "Release to send (mousedown to record)"
+                  : "Hold to record voice"
+              }
+              aria-label={
+                recorder.recording()
+                  ? "Recording voice — release to send"
+                  : "Hold to record a voice message"
+              }
               aria-pressed={recorder.recording()}
               onMouseDown={() => void recorder.startRecording()}
               onMouseUp={() => void recorder.stopRecording(true)}
@@ -165,7 +174,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               onTouchStart={() => void recorder.startRecording()}
               onTouchEnd={() => void recorder.stopRecording(true)}
             >
-              <span class="nf-icon" aria-hidden="true">{recorder.recording() ? ICON_MIC_OFF : ICON_MIC}</span>
+              <SkinGlyph name={recorder.recording() ? "mic.off" : "mic.on"} />
               <Show when={recorder.recording()}>
                 <span class="message-input-mic-timer">
                   {Math.floor(recorder.recordedMs() / 1000)}s
@@ -185,14 +194,16 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               aria-label="Insert emoji"
               aria-pressed={showEmojiPicker()}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_EMOTICON}</span>
+              <SkinGlyph name="emoticon" />
             </Popover.Trigger>
             <Popover.Portal>
               <Popover.Content class="emoji-picker-popover">
                 <EmojiPicker
                   communityId={props.communityId}
                   mode="message"
-                  activeVoiceChannelId={voiceState.activeCallType === "community" ? voiceState.channelId : null}
+                  activeVoiceChannelId={
+                    voiceState.activeCallType === "community" ? voiceState.channelId : null
+                  }
                   onSelect={insertEmoji}
                   onClose={() => setShowEmojiPicker(false)}
                 />
@@ -207,32 +218,51 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             onInput={onInput}
             onKeyDown={onKeyDown}
             rows={2}
+            aria-label={props.label}
             role="combobox"
             aria-autocomplete="list"
-            aria-expanded={mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0}
-            aria-controls="mention-popover-list"
+            aria-expanded={mentionOpen()}
+            aria-controls={mentionOpen() ? mentionListId : undefined}
             aria-activedescendant={
-              mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0
-                ? `mention-row-${mentions.mentionSelected()}`
-                : undefined
+              mentionOpen() ? mentionOptionId(mentions.mentionSelected()) : undefined
             }
           />
+          {/* Xfire's chat window has a Send button (plan E7.7.7, CLAUDE.md
+           * "1:1 Xfire look"); Enter still sends. */}
+          <Show when={props.sendButton && !props.editMode}>
+            <SlotMount slot="chatSend">
+              <button
+                class="message-input-send-btn"
+                type="button"
+                disabled={!canSend(body())}
+                onClick={() => {
+                  send();
+                  textareaRef?.focus();
+                }}
+              >
+                <span class="message-input-send-label">Send</span>
+              </button>
+            </SlotMount>
+          </Show>
           {/* Architecture §28.5 — mention autocomplete popover.
            * Implements the ARIA combobox listbox pattern (2026-canon):
            * arrow keys move `mentionSelected`, Enter applies, Esc
            * dismisses; the textarea uses `aria-activedescendant` to
-           * point at the focused row without moving DOM focus. Each row is
-           * a `<li role="option">` carrying that id; no nested button —
-           * the textarea owns focus and mouse interactions live on the
-           * option element itself so the focus target and id-referenced
-           * node are the same. */}
-          <Show when={mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0}>
-            <ul class="mention-popover" role="listbox" id="mention-popover-list">
+           * name the active option while the textarea retains DOM focus.
+           * The options stay outside the sequential focus order. */}
+          <Show when={mentionOpen()}>
+            <div
+              class="mention-popover"
+              role="listbox"
+              id={mentionListId}
+              aria-label="Mention suggestions"
+            >
               <For each={mentions.mentionCandidates()}>
                 {(candidate, index) => (
-                  <li
+                  <div
                     role="option"
-                    id={`mention-row-${index()}`}
+                    tabIndex={-1}
+                    id={mentionOptionId(index())}
                     aria-selected={index() === mentions.mentionSelected()}
                     class={`mention-popover-row ${index() === mentions.mentionSelected() ? "mention-popover-row-active" : ""}`}
                     onMouseEnter={() => mentions.setMentionSelected(index())}
@@ -241,12 +271,14 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                       mentions.applyMention(candidate);
                     }}
                   >
-                    <span class={`mention-popover-tag mention-popover-tag-${candidate.kind}`}>{candidate.kind}</span>
+                    <span class={`mention-popover-tag mention-popover-tag-${candidate.kind}`}>
+                      {candidate.kind}
+                    </span>
                     <span class="mention-popover-label">{candidate.label}</span>
-                  </li>
+                  </div>
                 )}
               </For>
-            </ul>
+            </div>
           </Show>
         </div>
       </Show>

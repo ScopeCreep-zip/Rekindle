@@ -1,10 +1,10 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
   handleAcceptRequest,
-  handleRejectRequest,
   handleBlockUser,
+  handleRejectRequest,
 } from "../../actions/buddy.actions";
+import { friendsState } from "../../stores/friends.store";
 
 const PendingRequests: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
@@ -21,9 +21,9 @@ const PendingRequests: Component = () => {
     if (err) setError(err);
   }
 
-  async function onBlock(publicKey: string, displayName: string): Promise<void> {
+  async function onBlock(publicKey: string): Promise<void> {
     setError(null);
-    const err = await handleBlockUser(publicKey, displayName);
+    const err = await handleBlockUser(publicKey);
     if (err) setError(err);
   }
 
@@ -31,7 +31,7 @@ const PendingRequests: Component = () => {
     <Show when={friendsState.pendingRequests.length > 0}>
       <div class="pending-section">
         <div class="pending-header">
-          Pending Requests ({friendsState.pendingRequests.length})
+          <span>Pending Requests ({friendsState.pendingRequests.length})</span>
         </div>
         <Show when={error()}>
           <div class="form-error">{error()}</div>
@@ -41,27 +41,30 @@ const PendingRequests: Component = () => {
             <div class="pending-item">
               <div class="pending-info">
                 <span class="buddy-name">
-                  {request.displayName || request.publicKey.slice(0, 12) + "..."}
+                  {request.displayName || `${request.publicKey.slice(0, 12)}...`}
                 </span>
                 <Show when={request.message}>
                   <span class="pending-message">{request.message}</span>
                 </Show>
               </div>
               <button
+                type="button"
                 class="pending-btn-accept"
                 onClick={() => onAccept(request.publicKey)}
               >
                 Accept
               </button>
               <button
+                type="button"
                 class="pending-btn-reject"
                 onClick={() => onReject(request.publicKey)}
               >
                 Reject
               </button>
               <button
+                type="button"
                 class="pending-btn-block"
-                onClick={() => onBlock(request.publicKey, request.displayName)}
+                onClick={() => onBlock(request.publicKey)}
               >
                 Block
               </button>

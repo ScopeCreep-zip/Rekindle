@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-lifecycle"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "9-state application lifecycle FSM + TransportGuard RAII for Rekindle"
 
 [lints]
@@ -12,9 +14,10 @@ futures-util = { version = "0.3", default-features = false, features = [ "std" ]
 parking_lot = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = [ "sync", "macros", "time" ] }
+tokio = { workspace = true, features = [ "sync", "macros", "time", "rt" ] }
 tokio-util = { version = "0.7", features = [ "rt" ] }
 tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [ "sync", "rt", "rt-multi-thread", "macros", "time" ] }
+tracing-subscriber = { workspace = true }

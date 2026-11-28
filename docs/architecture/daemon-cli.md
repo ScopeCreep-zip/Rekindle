@@ -10,7 +10,7 @@ Rekindle ships **two ways** to run the protocol stack:
    `ratatui` TUI.
 
 Both speak the same Veilid protocol, the same SMPL governance, the same
-Signal/MEK encryption. They differ only in how the local process is
+Double Ratchet/MEK encryption. They differ only in how the local process is
 structured. This document covers the daemon track. For the desktop
 shell, see [`tauri-backend.md`](tauri-backend.md).
 
@@ -35,7 +35,7 @@ desktop shell as well.
 
 ## Three crates
 
-```
+```text
               ┌────────────────────────────┐
               │ rekindle (CLI), rekindle-tui│  frontends, over
               │ via rekindle-client        │   rekindle-client
@@ -50,9 +50,9 @@ desktop shell as well.
                             │ rekindle-transport public API
                             ▼
               ┌────────────────────────────┐
-              │ rekindle-transport         │   sole Veilid boundary;
-              │ (sole Veilid boundary)     │   broadcast/ + subscriptions/
-              │  broadcast/ subscriptions/ │   are the only veilid_core
+              │ rekindle-transport         │   links veilid-core (ADR
+              │ (Veilid adapter)           │   0014); broadcast/ + subscriptions/
+              │  broadcast/ subscriptions/ │   are its only veilid_core
               │  operations/ payload/ …    │   importers.
               └─────────────┬──────────────┘
                             │
@@ -70,7 +70,7 @@ the daemon track be tested without a running Veilid node.
 
 ## `rekindle-transport` — the unified Veilid boundary
 
-```
+```text
 crates/rekindle-transport/src/
 ├── broadcast/         outbound: sends, DHT writes, route management,
 │                      node lifecycle (only outbound veilid_core importer)
@@ -80,7 +80,7 @@ crates/rekindle-transport/src/
 │                      friend, voice, mek, presence, roles,
 │                      moderation, invites, identity)
 ├── payload/           wire payload helpers, Cap'n Proto adapters
-├── crypto/            pseudonym derivation, prekeys, Signal session
+├── crypto/            pseudonym derivation, prekeys
 ├── community/         per-community state types
 ├── session/           Session, SessionIdentity, CommunityMembership
 ├── gossip.rs          GossipMesh, OnlineMember, DedupCache, LamportClock
@@ -95,21 +95,21 @@ crates/rekindle-transport/src/
 Public re-exports include `TransportNode` (its routes via
 `TransportNode::own_routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `Session`, `QueryEngine`,
-`SignalSessionManager`, plus the per-feature operation modules.
+plus the per-feature operation modules.
 
 ## `rekindle-ipc` — the bus
 
 Tier 3, `#![forbid(unsafe_code)]`. No Veilid, no storage: every frontend
 and the daemon link it.
 
-```
+```text
 crates/rekindle-ipc/src/
 ├── server/              bus server (accept loop, per-connection Noise, routing)
 ├── client.rs            BusClient (consumed by rekindle-cli; later rekindle-client)
 ├── transport.rs         platform listener/stream, peer credentials, socket path
 ├── framing.rs           u16 BE per Noise message; reader task per connection
 ├── noise.rs             Noise IK handshake (Noise_IK_25519_ChaChaPoly_BLAKE2s)
-├── noise_keys.rs        bus key files, agent-name validation
+├── noise_keys.rs        bus.pub, agent key files, agent-name validation
 ├── protocol/            IpcRequest / IpcResponse enums (exhaustive match)
 ├── registry.rs          ClearanceRegistry (shared with the host's dispatch)
 ├── event_router.rs      push events to subscribed clients
@@ -134,7 +134,7 @@ Everyone read access, which is why it is replaced. Research:
 
 ## `rekindle-node` — the daemon (`rekindled`)
 
-```
+```text
 crates/rekindle-node/src/
 ├── lib.rs               crate-level docs
 ├── bin/rekindled.rs     the `rekindled` binary
@@ -142,14 +142,13 @@ crates/rekindle-node/src/
 │   ├── mod.rs           run(): lock, policy, bus key, transport, context, bus
 │   ├── lock.rs          NodeLock — one rekindled per data root
 │   ├── policy.rs        admin policy: one fail-closed loader (startup + PolicyReload)
-│   ├── bus_key.rs       bus Noise keypair with tamper detection
+│   ├── bus_key.rs       per-run bus Noise keypair; publishes bus.pub
 │   └── watchdog.rs      sd_notify READY=1 + watchdog
 ├── validation.rs        input validation
 ├── daemon/              lifecycle + RPC handlers
 │   ├── mod.rs           DaemonState state machine
 │   ├── handler.rs       top-level request dispatch
 │   ├── community_rpc.rs / governance_rpc.rs
-│   ├── friend_inbox.rs  inbound friend-request queue
 │   └── dispatch/        per-operation dispatch tables
 └── state/               session, config, paths
 ```
@@ -163,7 +162,7 @@ daemon's socket. The lock is `std::fs::File::try_lock` (`flock` /
 
 ### Lifecycle state machine
 
-```
+```text
        ┌────────────┐
        │  STOPPED   │  no socket, no Veilid node
        └─────┬──────┘
@@ -208,16 +207,16 @@ discriminant comparisons.
 
 ### IPC bus (Noise IK over the local socket)
 
-```
+```text
 Client                                    Daemon (rekindled)
 ──────                                    ──────────────────
 connect to the per-user socket / pipe
                                           peer credentials → UID (PID if the OS gives one)
                                           refuse a UID other than the daemon's
         ◀──── Noise IK handshake (1 RTT) ────▶
-                                          prologue: "REKINDLE-IPC-v2" ‖ lo_uid ‖ hi_uid
+                                          prologue: "REKINDLE-IPC-v3" ‖ lo_uid ‖ hi_uid
                                                     ‖ socket path   (no PIDs)
-                                          registry lookup: Noise static key → name, clearance
+                                          registry lookup: Noise static key → name
                                                    │
                                                    ▼
                                           transport: ChaCha20-Poly1305 + BLAKE2s
@@ -237,18 +236,24 @@ Pattern: **`Noise_IK_25519_ChaChaPoly_BLAKE2s`** via `snow`.
 | Local binding | Both UIDs and the socket path are in the prologue, so a handshake relayed to another user's or another path's bus fails. PIDs are not: a PID-namespaced client has none to give |
 | Cancel safety | A reader task per connection owns the socket's read half and hands whole ciphertext messages over a channel; snow advances the receive nonce only on a successful decrypt |
 | Sender stamping | The server overwrites `verified_sender_name` and `verified_sender_key` (the connection's Noise static key) on every routed frame; `WIRE_VERSION` 2, other versions are dropped |
+| Clearance | The server stamps every frame's `security_level` from the registry entry of the connection's key at that frame (`Open` for an unknown key), overwriting the client's claim. The daemon checks it against `IpcRequest::required_clearance()` before the lane split (403): `Open` for the locked-state requests (`Status`, `Unlock`, `Lock`, `Logout`, `IdentityList/Create/Import/Delete/Wipe`), `Admin` for agents, policy, `IdentityRotate` and `IdentityExport`, `Authenticated` for the rest. `Subscribe` needs `Authenticated`, and every event and media frame goes only to connections that hold it at delivery |
+| Client keys | Each frontend connects with a persistent static key (`DataRoot.config/agent-keys/client.*`, 0600, created on first use). An unlock registers the unlocking key at `Admin` in the identity's vault (`VaultKey::ClientKey`); while unlocked the identity's clients are in the registry, and a lock removes them, so their live connections drop to `Open` with their next frame. `AgentRegister` (Admin) registers the caller at `Agent` |
+| Agent capabilities | A closed vocabulary in Slack's `resource:action` form (`AgentCapability`: `identity:read`, `network:read`, `events:read`, `friends:read`/`write`, `communities:read`/`write`, `moderation:write`, `channels:history`, `chat:write`, `im:history`, `im:write`, `presence:write`, `voice:write`). An `Agent`-level sender may send a request above `Open` only with its capability (`IpcRequest::agent_capability`); key material, identity moves, ownership transfer, shutdown and administration have none and are never delegated. `Subscribe` and event delivery need `events:read` |
 | Response routing | A correlated frame is accepted only from the daemon's own connection, so a client cannot answer another client's request |
 | Rate limit | 100 requests/sec per connection, refill bucket |
 | Handshake DoS protection | 5-second handshake timeout |
 
-The daemon's long-term Ed25519 key lives in the OS keyring (`keyring`
-crate) until plan D1 moves it into the vault.
+Each identity's Ed25519 key lives in its vault (`state/{pk}.vault`, plan
+D1); `Unlock { identity, passphrase }` opens it through
+`host::identity::unlock`, and the session is projected from the
+identity's database. There is no OS keyring use.
 
 ### IpcRequest dispatch
 
 `IpcRequest` is a single Rust enum with one variant per supported
 operation: `Unlock`, `Lock`, `Status`, `Shutdown`, `IdentityCreate`,
-`IdentityShow`, `IdentityRotate`, `FriendAdd`, `FriendAccept`,
+`IdentityList`, `IdentityShow`, `IdentityExport`, `IdentityImport`,
+`IdentityRotate`, `IdentityDelete`, `Logout`, `FriendAdd`, `FriendAccept`,
 `FriendRemove`, `FriendList`, `CommunityCreate`, `CommunityJoin`,
 `CommunityLeave`, `ChannelCreate`, `ChannelMessage`, `MEKRotate`,
 `VoiceJoin`, `VoiceLeave`, …
@@ -308,8 +313,7 @@ matching client.
 
 `MAX_FILTERS_PER_CONNECTION` caps subscription cost per client.
 
-Both the bus's event delivery and the daemon's tier-3 inbox consumer
-follow the event source with `rekindle_ipc::event_source::follow`: unlock
+The bus's event delivery follows the event source with `rekindle_ipc::event_source::follow`: unlock
 publishes the `SubscriptionManager` broadcast, lock clears it, and each
 follower re-subscribes after every unlock.
 
@@ -341,7 +345,7 @@ this order, within systemd's `TimeoutStopSec=15`:
 | 1 | startup failed: transport, audit log, node lock | restarted (`on-failure`) |
 | 70 `EX_SOFTWARE` | a handler panicked | restarted from fresh state |
 | 75 `EX_TEMPFAIL` | identity destroyed or data wiped | restarted empty (`RestartForceExitStatus=75`) |
-| 78 `EX_CONFIG` | unparsable policy; incomplete, malformed or tampered bus key | not restarted (`RestartPreventExitStatus=78`) |
+| 78 `EX_CONFIG` | unparsable policy; a bus key that cannot be generated or published | not restarted (`RestartPreventExitStatus=78`) |
 
 ## The frontends: `rekindle-client`, `rekindle` and `rekindle-tui`
 
@@ -375,19 +379,36 @@ start the daemon at once, the node lock lets one run; the other's
 The CLI starts the daemon for every command except `status` (which
 reports a stopped daemon honestly) and `node stop`.
 
-```
-$ rekindle friend list                 # starts rekindled if needed
-$ rekindle node start                  # detached; returns once it answers
-$ rekindle node start --foreground     # becomes `rekindled` in this terminal
-$ rekindle channel watch -c Dev -C general   # stream until Ctrl-C
-$ rekindle --format jsonl dm watch     # one JSON event per line
-$ rekindle-tui                         # the terminal UI
-$ rekindled                            # or run the host directly
+```sh
+rekindle friend list                 # starts rekindled if needed
+rekindle node start                  # detached; returns once it answers
+rekindle node start --foreground     # becomes `rekindled` in this terminal
+rekindle channel watch -c Dev -C general   # stream until Ctrl-C
+rekindle --format jsonl dm watch     # one JSON event per line
+rekindle-tui                         # the terminal UI
+rekindled                            # or run the host directly
 ```
 
-`channel watch`, `dm watch` and `voice join --watch` subscribe on the bus
-and print each matching event until Ctrl-C. Peer-controlled text goes
-through `sanitize_for_display` before it reaches the terminal.
+`channel watch`, `community watch`, `dm watch` and `voice join --watch`
+subscribe on the bus and print each matching event until Ctrl-C.
+`community watch [-c X]` streams every `Membership` and `Governance` event
+of one community (or all), so a removed member sees the kick or ban arrive
+with the remover and the op's reason. Peer-controlled text goes through
+`sanitize_for_display` before it reaches the terminal.
+
+With `--format json|jsonl` each event is the `SubscriptionEvent` JSON the
+GUI receives: externally tagged and camelCase at every level, e.g.
+`{"friend":{"requestReceived":{"fromKey":"…","displayName":"…","message":"…"}}}`.
+The shape of every variant is pinned by
+`crates/rekindle-types/tests/golden/subscription_events.json` (plan
+C7.26); before C7.26 the inner families printed PascalCase variants and
+snake_case fields.
+
+| Command | Effect |
+|---|---|
+| `rekindle community focus <community> [<channel>] [--voice]` | Set the active text channel or use `--voice` for a voice channel. Omit the channel to clear focus. Accepts names or IDs and lists the matching IDs for ambiguous names. |
+
+The TUI Community Info view shows your active channel from the daemon's member list.
 
 ### Configuration
 
@@ -408,8 +429,8 @@ default, and a key it leaves out is untouched. An invalid config stops
 dirs.
 
 Every frontend command builds an `IpcRequest`, sends it, and renders the
-response. No frontend touches `TransportNode`, `Session` or the OS
-keyring.
+response. No frontend touches `TransportNode`, `Session` or an
+identity's vault.
 
 Input follows clig.dev:
 
@@ -418,10 +439,16 @@ Input follows clig.dev:
 - `unlock` and `init` read the passphrase from a no-echo prompt or from
   `--passphrase-file <PATH>` (`-` is stdin), never from a flag value or
   the environment;
-- severe actions (`identity destroy`, `init --wipe-all-data`) are
-  confirmed by typing the phrase, or with `--confirm="<phrase>"`; the
-  daemon checks the phrase;
-- other confirmations are skipped with `--force`.
+- the host decides what needs confirming (ADR 0019, plan D3.3): a held
+  request answers `IntentRequired` with a review, which the CLI prints to
+  stderr (as JSON with `--format json`) and commits with the proof it asks
+  for: a y/N prompt or `--yes` for a consequential action; `yes` typed or
+  `--confirm=<subject>` to acknowledge a trust-changing one; the subject's
+  name typed or `--confirm=<subject>` for a destructive one; the
+  passphrase (prompt or `--passphrase-file`) for a protected one
+  (`identity delete`, `identity rotate`, `identity export`,
+  `init --wipe-all-data`). `--yes` never confirms anything above
+  consequential.
 
 Exit codes: 0 success, 1 error, 2 timeout, 3 auth, 4 daemon state (409,
 503), 69 (`EX_UNAVAILABLE`) for a command that is not implemented yet.

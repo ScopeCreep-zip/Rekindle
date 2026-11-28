@@ -1,4 +1,7 @@
-//! Token-bucket rate limiter for per-sender gossip control.
+//! Token-bucket rate limiter for per-sender gossip control. Time is the
+//! caller's monotonic clock (plan C9.2): a host passes
+//! `tokio::time::Instant::now().into_std()`, which a paused runtime
+//! advances with the simulation.
 
 use std::time::Instant;
 
@@ -12,9 +15,9 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    /// Create a bucket with `capacity` burst and `refill_rate_per_sec`.
-    pub fn new(capacity: u32, refill_rate_per_sec: u32) -> Self {
-        let now = Instant::now();
+    /// Create a bucket with `capacity` burst and `refill_rate_per_sec`,
+    /// full at `now`.
+    pub fn new(capacity: u32, refill_rate_per_sec: u32, now: Instant) -> Self {
         Self {
             capacity,
             tokens: f64::from(capacity),
@@ -42,11 +45,6 @@ impl TokenBucket {
         false
     }
 
-    /// Attempt to consume `amount` tokens using `Instant::now()`.
-    pub fn try_consume(&mut self, amount: u32) -> bool {
-        self.try_consume_at(amount, Instant::now())
-    }
-
     /// Approximate number of currently available tokens.
     pub fn available(&self) -> f64 {
         self.tokens
@@ -64,51 +62,11 @@ impl TokenBucket {
     }
 
     /// Convenience constructor for the default 10 msg/sec channel limit.
-    pub fn ten_per_second() -> Self {
-        Self::new(10, 10)
+    pub fn ten_per_second(now: Instant) -> Self {
+        Self::new(10, 10, now)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::TokenBucket;
-
-    #[test]
-    fn token_bucket_sustains_100_msgs_per_second_target() {
-        // Architecture §32 / Week 26: gossip throughput target is 100
-        // messages/second sustained. The token bucket sized to that
-        // rate should accept exactly that many over a one-second window
-        // and reject the 101st without burst.
-        let mut bucket = TokenBucket::new(100, 100);
-        let start = std::time::Instant::now();
-        let mut accepted = 0u32;
-        for _ in 0..100 {
-            if bucket.try_consume_at(1, start) {
-                accepted += 1;
-            }
-        }
-        assert_eq!(accepted, 100, "100 msg/sec target must accept full burst");
-        assert!(
-            !bucket.try_consume_at(1, start),
-            "101st msg in same instant must be rejected"
-        );
-        // After 1s of refill we should be back to full capacity.
-        assert!(bucket.try_consume_at(100, start + Duration::from_secs(1)));
-    }
-
-    #[test]
-    fn token_refill_restores_capacity_over_time() {
-        let start = std::time::Instant::now();
-        let mut bucket = TokenBucket::new(10, 10);
-
-        assert!(bucket.try_consume_at(10, start));
-        assert!(!bucket.try_consume_at(1, start));
-
-        assert!(!bucket.try_consume_at(6, start + Duration::from_millis(500)));
-        assert!(bucket.try_consume_at(5, start + Duration::from_millis(500)));
-
-        assert!(bucket.try_consume_at(10, start + Duration::from_secs(2)));
-    }
-}
+#[path = "rate_limit_tests.rs"]
+mod tests;

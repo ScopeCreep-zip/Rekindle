@@ -11,7 +11,7 @@ the IPC commands in **`src-tauri/src/commands/game.rs`**.
 
 ## What it does
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │  game_service.rs (Tauri background task)                │
 │                                                         │
@@ -50,7 +50,7 @@ protocol.
 
 ## The game database
 
-```
+```text
 crates/rekindle-game-detect/src/default_games.json
 ```
 
@@ -62,8 +62,9 @@ struct GameEntry {
     name: String,                     // Display name
     process_names: Vec<String>,       // Match against running processes
     icon: Option<String>,             // Icon ref (matches assets in icons.dll)
-    steam_app_id: Option<u32>,        // For steam://connect/ URI
-    connect_template: Option<String>, // URI template for non-Steam launchers
+    steam_app_id: Option<u32>,        // With network_args: steam://run/<id>//<args>/
+    connect_template: Option<String>, // URI template, tried first ("{addr}")
+    network_args: Option<String>,     // Xfire's LauncherNetworkArgs ("+connect {addr}")
 }
 ```
 
@@ -131,7 +132,7 @@ The combined server address (`server_ip:server_port`) is what powers the
 
 ## Joining a friend's server
 
-```
+```text
 ┌────────────────┐                ┌────────────────────┐
 │ Friend's buddy │  click "Join"  │ commands::game::    │
 │ list entry     │ ────────────▶  │ launch_game_to_     │
@@ -147,14 +148,20 @@ The combined server address (`server_ip:server_port`) is what powers the
                                              │
                           ┌──────────────────┼──────────────────┐
                           ▼                  ▼                  ▼
-              connect_template?      steam_app_id?         neither
-              "scheme://join/{addr}" "steam://connect/    Error: no
-                                       {addr}"             launch method
+              connect_template?      steam_app_id +        neither
+              "scheme://join/{addr}" network_args?         CannotLaunch
+                                     "steam://run/<id>//
+                                      <args>/"
                           │                  │
                           └──────────┬───────┘
                                      ▼
                           open::that(url)  → OS handles URI scheme
 ```
+
+There is no blanket `steam://connect` fallback: a Steam game reaches a server
+only through its `connect_template` or, failing that, its Steam app id with
+Xfire's `LauncherNetworkArgs` (`network_args`, percent-encoded into the
+`steam://run` command line). A game with neither is `CannotLaunch`.
 
 The `open` crate dispatches the URI to the OS default handler. For
 Steam URIs, Steam intercepts and joins the game. For custom schemes,
@@ -164,16 +171,37 @@ keeps Rekindle out of the way of anti-cheat systems.
 
 ## Privacy posture
 
-Game detection is **opt-in per identity**. Disabling it stops the scan
-loop and removes the `game_info` field from the user's presence
-writes. The user can also restrict which friends see their game status
-via the standard friend-group privacy controls (groups marked "limit
-visibility" do not receive `PresenceUpdate` gossips with `game_info`).
+Detection and sharing are two settings (plan E7.2, prod research batch 7):
+
+- **`game_detection_enabled`** (on by default, local only): while on, the
+  Host's game stage (`crates/rekindle-node/src/host/game_stage.rs`) scans
+  the process table at `game_scan_interval_secs` and records each session
+  in `game_sessions` for the local game-time history. Off, no scanner task
+  exists and the process table is never read. `SetGameDetection` (U1
+  `SetPreferences`, Routine) starts or stops the stage at once, with no
+  restart; turning it off clears a game the detector was showing. The bulk
+  preference save never writes it, so only the Host changes it.
+- **`share_current_game`** (off by default): only while on does the detected
+  game become our shown game, written sealed under our friend-presence key
+  to profile subkey 4 (and so seen only by friends holding that key).
+  `SetShareCurrentGame` is TrustChanging (U1 `ShareCurrentGame`); turning it
+  off clears the shown game at once. A game set by hand
+  (`GamePresenceSet`) is an explicit act and is not gated.
+- **`hidden_games(owner_key, game_id)`**: a hidden game is never our shown
+  game and is left out of the `GameTotals` frames friends receive (hiding
+  one re-sends the totals while totals sharing is on, so friends' copies,
+  which each frame replaces, drop it); it is still recorded locally.
+  `GameHide` is Routine (it narrows exposure), `GameUnhide` TrustChanging.
+  Settings → Privacy lists the hidden games and hides any game played.
+- **Game totals** go to friends only while `share_game_totals` is on (see
+  the plan's E7.2 sharing slices).
+- A per-community `share_activity` flag has nothing to gate yet: the Host
+  sends the game to friends only (profile subkey 4); no community fan-out
+  of the current game exists. The flag is built with that fan-out.
 
 The database is **bundled** — no network requests are made to identify
 games. The scanner runs **locally** — no process list ever leaves the
-machine. The only thing that goes over the wire is the matched
-`{game_id, server, map, …}` tuple, encrypted to the user's friends.
+machine; a command line is read only for an already matched process.
 
 ## Where to look
 
@@ -187,7 +215,7 @@ machine. The only thing that goes over the wire is the matched
 | Linux `/proc` extras | `crates/rekindle-game-detect/src/platform/linux.rs` |
 | macOS `.app` bundle helpers | `crates/rekindle-game-detect/src/platform/macos.rs` |
 | Windows path lookup | `crates/rekindle-game-detect/src/platform/windows.rs` |
-| Background scan loop | `src-tauri/src/services/game_service.rs` |
+| Background scan loop | `crates/rekindle-game-detect/src/runtime.rs`, run by `crates/rekindle-node/src/host/game.rs` and switched by `host/game_stage.rs` |
 | IPC commands | `src-tauri/src/commands/game.rs` |
 | Frontend store / display | `src/stores/`, friend list rich-presence rendering |
 

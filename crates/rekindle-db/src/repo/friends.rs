@@ -1,11 +1,36 @@
 //! `friends`: one row per (owner, friend).
 //!
-//! `friendship_state` holds the wire form of
-//! [`FriendStatus`](rekindle_types::friend_store::FriendStatus):
-//! `accepted`, `pending_out`, or a removal in progress.
+//! `friendship_state` holds the stored form of
+//! [`FriendshipState`]; a value it does not name is a read error.
 
-use rekindle_types::friend_store::{FriendRecord, FriendStatus};
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension as _};
+use rekindle_types::friend_store::FriendshipState;
+use rusqlite::{params, Connection, OptionalExtension as _};
+
+mod changes;
+mod listing;
+mod nickname;
+mod participant;
+mod presence;
+mod records;
+mod reply;
+pub use changes::{
+    accept_request, accept_with_records, add_by_code, block, cancel_request, changing_list,
+    expire_pending_out, forget, forget_removed, mark_removing, reject_request,
+    replace_with_invited, unfriended, RecordKeys,
+};
+pub use listing::{added_at, open_handshake_or_friend};
+pub(crate) use nickname::rekey as rekey_nickname;
+pub use nickname::{for_previous_key, set_nickname, PREVIOUS_KEY_SUFFIX};
+pub use participant::{
+    participant_record_key, peer_participant_record_key, set_participant_record_key,
+    set_peer_participant_record_key,
+};
+pub use presence::{clear_presence_key, presence_keys, set_presence_key};
+pub use records::{active_records, record, record_by_profile_key, records};
+pub use reply::{
+    is_accepted_row, reply_inbox_of, reply_inboxes, set_peer_reply, set_reply_inbox,
+    take_peer_reply,
+};
 
 /// A friend as the buddy list loads it, with its group's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,13 +38,13 @@ pub struct FriendRow {
     pub public_key: String,
     pub display_name: String,
     pub nickname: Option<String>,
+    /// The id of their group, when they are in one of ours.
+    pub group_id: Option<i64>,
     pub group_name: Option<String>,
     pub dht_record_key: Option<String>,
     pub last_seen_at: Option<i64>,
-    pub local_conversation_key: Option<String>,
-    pub remote_conversation_key: Option<String>,
     pub mailbox_dht_key: Option<String>,
-    pub friendship_state: String,
+    pub friendship_state: FriendshipState,
 }
 
 /// Every friend of `owner_key`.
@@ -27,34 +52,53 @@ pub struct FriendRow {
 /// # Errors
 /// The query failed.
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FriendRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT f.public_key, f.display_name, f.nickname, g.name, f.dht_record_key, \
-         f.last_seen_at, f.local_conversation_key, f.remote_conversation_key, \
-         f.mailbox_dht_key, f.friendship_state \
+    let mut stmt = conn.prepare(&format!(
+        "SELECT f.public_key, f.display_name, {}, g.name, f.dht_record_key, \
+         f.last_seen_at, f.mailbox_dht_key, f.friendship_state, f.group_id \
          FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
          WHERE f.owner_key = ?1",
-    )?;
+        nickname::NICKNAME
+    ))?;
     let rows = stmt
         .query_map(params![owner_key], |row| {
             Ok(FriendRow {
                 public_key: row.get(0)?,
                 display_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                 nickname: row.get(2)?,
+                group_id: row.get(8)?,
                 group_name: row.get(3)?,
                 dht_record_key: row.get(4)?,
                 last_seen_at: row.get(5)?,
-                local_conversation_key: row.get(6)?,
-                remote_conversation_key: row.get(7)?,
-                mailbox_dht_key: row.get(8)?,
-                friendship_state: row.get(9)?,
+                mailbox_dht_key: row.get(6)?,
+                friendship_state: crate::row::get_enum(row, "friendship_state")?,
             })
         })?
         .collect();
     rows
 }
 
+/// Whether our request to `public_key` is outstanding (a `pending_out`
+/// row): a request of theirs arriving now crosses ours (plan E2.5).
+///
+/// # Errors
+/// The read failed.
+pub fn is_pending_out(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT 1 FROM friends WHERE owner_key = ?1 AND public_key = ?2 \
+           AND friendship_state = 'pending_out'",
+        params![owner_key, public_key],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+}
+
 /// Record an outgoing request: a `pending_out` row, unless the friend is
-/// already there.
+/// already there (a friend we are removing is added afresh).
 ///
 /// # Errors
 /// The write failed.
@@ -64,16 +108,20 @@ pub fn insert_pending_out(
     public_key: &str,
     display_name: &str,
     added_at: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
-         VALUES (?1, ?2, ?3, ?4, 'pending_out')",
-        params![owner_key, public_key, display_name, added_at],
-    )?;
-    Ok(())
+) -> rusqlite::Result<Vec<super::outbox::Row>> {
+    changes::atomically(conn, |conn| {
+        let ended = changes::end_removal(conn, owner_key, public_key)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
+             VALUES (?1, ?2, ?3, ?4, 'pending_out')",
+            params![owner_key, public_key, display_name, added_at],
+        )?;
+        Ok(ended)
+    })
 }
 
-/// Record an accepted friend, unless the friend is already there.
+/// Record an accepted friend, unless the friend is already there (a friend
+/// we are removing is added afresh).
 ///
 /// # Errors
 /// The write failed.
@@ -83,21 +131,20 @@ pub fn insert_accepted(
     public_key: &str,
     display_name: &str,
     added_at: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) \
-         VALUES (?1, ?2, ?3, ?4)",
-        params![owner_key, public_key, display_name, added_at],
-    )?;
-    Ok(())
+) -> rusqlite::Result<Vec<super::outbox::Row>> {
+    changes::atomically(conn, |conn| {
+        let ended = changes::end_removal(conn, owner_key, public_key)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
+             VALUES (?1, ?2, ?3, ?4, 'accepted')",
+            params![owner_key, public_key, display_name, added_at],
+        )?;
+        Ok(ended)
+    })
 }
 
-/// Replace any row for the friend with a `pending_out` row carrying the
-/// record keys an invite named.
-///
-/// # Errors
-/// The write failed.
-pub fn replace_with_invited(
+/// [`replace_with_invited`]'s rows, without its transaction.
+fn replace_with_invited_rows(
     conn: &Connection,
     owner_key: &str,
     public_key: &str,
@@ -105,7 +152,8 @@ pub fn replace_with_invited(
     added_at: i64,
     profile_key: &str,
     mailbox_key: &str,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<super::outbox::Row>> {
+    let ended = changes::end_removal(conn, owner_key, public_key)?;
     delete(conn, owner_key, public_key)?;
     conn.execute(
         "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, \
@@ -119,7 +167,7 @@ pub fn replace_with_invited(
             mailbox_key
         ],
     )?;
-    Ok(())
+    Ok(ended)
 }
 
 /// Delete the friend's row.
@@ -131,10 +179,14 @@ pub fn delete(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
         "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
         params![owner_key, public_key],
     )?;
-    Ok(())
+    // The friendship's cursor on their dm chain ends with it: the next
+    // friendship's chain starts at seq 1, and its first hints step a fresh
+    // cursor (live A/B finding 73).
+    crate::repo::stream_cursors::reset(conn, owner_key, "dm", public_key)
 }
 
-/// Delete the outgoing requests sent before `cutoff`; their keys.
+/// Delete the outgoing requests sent before `cutoff`; their keys, each
+/// with the rows to them the expiry failed in the same transaction.
 ///
 /// # Errors
 /// The query or a delete failed.
@@ -142,18 +194,44 @@ pub fn delete_pending_out_before(
     conn: &Connection,
     owner_key: &str,
     cutoff: i64,
-) -> rusqlite::Result<Vec<String>> {
-    let expired = conn
-        .prepare(
-            "SELECT public_key FROM friends \
-             WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
-        )?
-        .query_map(params![owner_key, cutoff], |row| row.get(0))?
-        .collect::<rusqlite::Result<Vec<String>>>()?;
-    for public_key in &expired {
-        delete(conn, owner_key, public_key)?;
-    }
-    Ok(expired)
+) -> rusqlite::Result<Vec<(String, Vec<super::outbox::Row>)>> {
+    changes::atomically(conn, |conn| {
+        let expired: Vec<String> = conn
+            .prepare(
+                "SELECT public_key FROM friends \
+                 WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
+            )?
+            .query_map(params![owner_key, cutoff], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        expired
+            .into_iter()
+            .map(|public_key| {
+                let failed = changes::cancel_request(conn, owner_key, &public_key)?;
+                Ok((public_key, failed))
+            })
+            .collect()
+    })
+}
+
+/// The friend's local nickname and display name, when the friend is
+/// stored: what an intent review names them by (plan D3.3).
+///
+/// # Errors
+/// The query failed.
+pub fn names(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Option<(Option<String>, Option<String>)>> {
+    conn.query_row(
+        &format!(
+            "SELECT {}, f.display_name FROM friends f WHERE f.owner_key = ?1 AND f.public_key = ?2",
+            nickname::NICKNAME
+        ),
+        params![owner_key, public_key],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
 }
 
 /// The friend's cached avatar, if any.
@@ -179,8 +257,6 @@ pub fn avatar(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     DisplayName,
-    Nickname,
-    FriendshipState,
     DhtRecordKey,
     MailboxDhtKey,
     LastSeenAt,
@@ -191,8 +267,6 @@ impl Column {
     fn name(self) -> &'static str {
         match self {
             Self::DisplayName => "display_name",
-            Self::Nickname => "nickname",
-            Self::FriendshipState => "friendship_state",
             Self::DhtRecordKey => "dht_record_key",
             Self::MailboxDhtKey => "mailbox_dht_key",
             Self::LastSeenAt => "last_seen_at",
@@ -222,6 +296,23 @@ pub fn set(
     Ok(())
 }
 
+/// Set the friend's friendship state.
+///
+/// # Errors
+/// The write failed.
+pub fn set_state(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+    state: FriendshipState,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE friends SET friendship_state = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+        params![state.as_str(), owner_key, public_key],
+    )?;
+    Ok(())
+}
+
 /// Set the profile and/or mailbox record keys; `None` keeps the stored one.
 ///
 /// # Errors
@@ -242,158 +333,6 @@ pub fn set_record_keys(
     Ok(())
 }
 
-// ── The receive path's view (`FriendStore`) ────────────────────────
-
-const RECORD_COLS: &str = "public_key, dht_record_key, mailbox_dht_key, \
-    current_device_id, display_name, added_at, friendship_state";
-
-fn to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<FriendRecord> {
-    Ok(FriendRecord {
-        pubkey_hex: row.get(0)?,
-        inbox_record_key: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-        mailbox_record_key: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-        current_device_id: row.get(3)?,
-        display_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-        // `added_at` is milliseconds; the record carries microseconds.
-        added_at_us: u64::try_from(row.get::<_, i64>(5)?)
-            .unwrap_or(0)
-            .saturating_mul(1_000),
-        status: FriendStatus::from_wire(&row.get::<_, String>(6)?),
-    })
-}
-
-/// The friend with `public_key`.
-///
-/// # Errors
-/// The query failed.
-pub fn record(
-    conn: &Connection,
-    owner_key: &str,
-    public_key: &str,
-) -> rusqlite::Result<Option<FriendRecord>> {
-    conn.query_row(
-        &format!("SELECT {RECORD_COLS} FROM friends WHERE owner_key = ?1 AND public_key = ?2"),
-        params![owner_key, public_key],
-        to_record,
-    )
-    .optional()
-}
-
-/// The friend whose profile (inbox) record is `record_key`.
-///
-/// # Errors
-/// The query failed.
-pub fn record_by_profile_key(
-    conn: &Connection,
-    owner_key: &str,
-    record_key: &str,
-) -> rusqlite::Result<Option<FriendRecord>> {
-    conn.query_row(
-        &format!("SELECT {RECORD_COLS} FROM friends WHERE owner_key = ?1 AND dht_record_key = ?2"),
-        params![owner_key, record_key],
-        to_record,
-    )
-    .optional()
-}
-
-/// The friends among `public_keys`.
-///
-/// # Errors
-/// The query failed.
-pub fn records(
-    conn: &Connection,
-    owner_key: &str,
-    public_keys: &[String],
-) -> rusqlite::Result<Vec<FriendRecord>> {
-    if public_keys.is_empty() {
-        return Ok(Vec::new());
-    }
-    let placeholders = (2..=public_keys.len() + 1)
-        .map(|i| format!("?{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {RECORD_COLS} FROM friends WHERE owner_key = ?1 AND public_key IN ({placeholders})"
-    ))?;
-    let rows = stmt
-        .query_map(
-            params_from_iter(
-                std::iter::once(owner_key).chain(public_keys.iter().map(String::as_str)),
-            ),
-            to_record,
-        )?
-        .collect();
-    rows
-}
-
-/// Every accepted friend.
-///
-/// # Errors
-/// The query failed.
-pub fn active_records(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FriendRecord>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {RECORD_COLS} FROM friends WHERE owner_key = ?1 AND friendship_state = 'accepted'"
-    ))?;
-    let rows = stmt.query_map(params![owner_key], to_record)?.collect();
-    rows
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::repo::fixture::{self, OWNER};
-
-    #[test]
-    fn an_outgoing_request_loads_as_pending_out_and_accept_does_not_overwrite_it() {
-        let conn = fixture::conn();
-        insert_pending_out(&conn, OWNER, "bob", "Bob", 1).unwrap();
-        insert_accepted(&conn, OWNER, "bob", "Other", 2).unwrap();
-        let rows = load_all(&conn, OWNER).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].display_name, "Bob");
-        assert_eq!(rows[0].friendship_state, "pending_out");
-    }
-
-    #[test]
-    fn set_writes_one_column_and_record_keys_keep_the_stored_value_for_none() {
-        let conn = fixture::conn();
-        replace_with_invited(&conn, OWNER, "bob", "Bob", 1, "profile", "mailbox").unwrap();
-        set(&conn, OWNER, "bob", Column::Nickname, "bobby").unwrap();
-        set_record_keys(&conn, OWNER, "bob", None, Some("mailbox-2")).unwrap();
-        let row = &load_all(&conn, OWNER).unwrap()[0];
-        assert_eq!(row.nickname.as_deref(), Some("bobby"));
-        assert_eq!(row.dht_record_key.as_deref(), Some("profile"));
-        assert_eq!(row.mailbox_dht_key.as_deref(), Some("mailbox-2"));
-        let record = record_by_profile_key(&conn, OWNER, "profile")
-            .unwrap()
-            .unwrap();
-        assert_eq!(record.status, FriendStatus::PendingOut);
-    }
-
-    #[test]
-    fn only_old_outgoing_requests_expire() {
-        let conn = fixture::conn();
-        insert_pending_out(&conn, OWNER, "old", "Old", 1).unwrap();
-        insert_pending_out(&conn, OWNER, "new", "New", 100).unwrap();
-        insert_accepted(&conn, OWNER, "friend", "Friend", 1).unwrap();
-        assert_eq!(
-            delete_pending_out_before(&conn, OWNER, 50).unwrap(),
-            ["old"]
-        );
-        let mut left: Vec<String> = load_all(&conn, OWNER)
-            .unwrap()
-            .into_iter()
-            .map(|r| r.public_key)
-            .collect();
-        left.sort();
-        assert_eq!(left, ["friend", "new"]);
-    }
-
-    #[test]
-    fn a_friend_without_an_avatar_has_none() {
-        let conn = fixture::conn();
-        insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
-        assert_eq!(avatar(&conn, OWNER, "bob").unwrap(), None);
-        assert_eq!(avatar(&conn, OWNER, "ghost").unwrap(), None);
-    }
-}
+#[path = "friends_tests.rs"]
+mod tests;

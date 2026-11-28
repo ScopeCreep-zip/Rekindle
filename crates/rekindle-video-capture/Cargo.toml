@@ -1,7 +1,9 @@
 [package]
 name = "rekindle-video-capture"
 version = "0.1.0"
+publish = false
 edition = "2021"
+license.workspace = true
 description = "Native camera capture + VP9 realtime CBR encode for Rekindle, cross-platform on GStreamer (v4l2src/avfvideosrc/ksvideosrc)."
 
 [lints]

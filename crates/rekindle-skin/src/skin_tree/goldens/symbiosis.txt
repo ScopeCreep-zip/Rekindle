@@ -1,0 +1,123 @@
+ResizeGripperTL Button target [0, 0, 24, 24] art [0, 0, 10, 10] Size
+ResizeTop Button target [0, 0, 335, 24] art [0, 0, 335, 10] Size
+ResizeGripperTR Button target [-14, 0, 24, 24] art [14, 0, 10, 10] Short
+ResizeL Button target [0, 0, 24, 535] art [0, 0, 10, 535] Size
+ResizeR Button target [-14, 0, 24, 535] art [14, 0, 10, 535] Size
+ResizeGripperBL Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size
+ResizeBottom Button target [0, -14, 335, 24] art [0, 14, 335, 10] Size
+ResizeGripperBR Button target [-14, -14, 24, 24] art [14, 14, 10, 10] Size
+WindowDraggerTop Drag
+TopRow Decor
+LeftSide Decor
+Background Decor
+RightSide Decor
+BottomRow Decor
+InfoBar Group
+  XfireLogo Logo label "Rekindle" cover [0, 0, 121, 37] glyph RekindleWordmark
+  ButtonMinimize Button target [-5, -4, 24, 24] art [5, 4, 18, 16] Size
+  ButtonMaximize Button target [-5, -4, 24, 24] art [5, 4, 18, 16] Size
+  ButtonClose Button target [-1, -4, 24, 24] art [1, 4, 18, 16] Size
+MenuBackground MenuBar
+  XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20] target [0, -2, 45, 24] art [0, 2, 45, 20] Size
+  ToolsMenu MenuTitle target [0, -2, 46, 24] art [0, 2, 46, 20] Size
+  HelpMenu MenuTitle target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+UsernameContainer NameField inset [0, 28] target [0, -4, 315, 24] art [0, 4, 343, 15] Size
+  Username Part
+StatusBarContainer Group
+  Status StatusText target [0, -5, 322, 24] art [0, 5, 322, 14] Size
+  StatusChanger StatusList target [0, -3, 24, 24] art [0, 3, 18, 18] Size
+AdView AdArea
+TabsContainer Decor
+  ButtonFriendsTab Tab(Friends)
+  TabSeparator1 Decor
+  ButtonChatRoomsTab Tab(ChatRooms)
+  TabSeparator2 Decor
+  ButtonServersTab Tab(Servers)
+  TabSeparator3 Decor
+  ButtonFilesTab Tab(Files)
+  TabSeparator4 Decor
+  ButtonPicturesTab Tab(Pictures)
+  TabSeparator5 Decor
+  ButtonVideosTab Tab(Videos)
+  ButtonVideosTab.Communities Tab(Communities) label "Communities" cover [14, 15, 18, 17] glyph Communities
+  TabSeparator6 Decor
+ButtonNotificationsTab Tab(Notifications)
+  ButtonNotificationsTabControl ButtonBar
+    ButtonNotificationsTabVisited ButtonRow(Notifications)
+    ButtonNotificationsTabUnvisited ButtonRow(Notifications)
+XfireView Views
+  XfireView.Friends View(Friends)
+  XfireView.ChatRooms View(ChatRooms)
+  XfireView.Servers View(Servers)
+  XfireView.Files View(Files)
+  XfireView.Pictures View(Pictures)
+  XfireView.Videos View(Videos)
+  XfireView.Notifications View(Notifications)
+  XfireView.Communities View(Communities)
+TabsButtonsContainer ButtonBar
+  FriendsButtonBar ButtonRow(Friends)
+    FriendChatButton Button
+    FriendsButtonBar.Separator1 Decor
+    FriendInfoButton Button
+    FriendsButtonBar.Separator2 Decor
+    FriendJoinGame Button
+    FriendsButtonBar.Separator3 Decor
+    FriendAddButton Button
+  ChatRoomsButtonBar ButtonRow(ChatRooms)
+    RoomEditBG Decor
+      ChatRoomEdit RoomName
+    ChatRoomEnter Button
+    ChatRoomsButtonBar.Separator1 Decor
+    ChatRoomDelete Button
+    ChatRoomsButtonBar.Separator2 Decor
+    ChatRoomCreate Button
+  FilesButtonBar ButtonRow(Files)
+    OpenFiles Button
+    FilesButtonBar.Separator1 Decor
+    DeleteFiles Button
+    FilesButtonBar.Separator2 Decor
+    SearchFiles Button
+  ServersButtonBar ButtonRow(Servers)
+    FavoriteServer Button
+    ServersButtonBar.Separator1 Decor
+    JoinGame Button
+    ServersButtonBar.Separator2 Decor
+    RefreshServer Button
+  PicturesButtonBar ButtonRow(Pictures)
+    OpenPictures Button
+    PicturesButtonBar.Separator1 Decor
+    UploadPictures Button
+    PicturesButtonBar.Separator2 Decor
+    DeletePictures Button
+    PicturesButtonBar.Separator3 Decor
+    ViewPictures Button
+  VideosButtonBar ButtonRow(Videos)
+    OpenVideos Button
+    VideosButtonBar.Separator1 Decor
+    DeleteVideos Button
+    VideosButtonBar.Separator2 Decor
+    UploadVideos Button
+    VideosButtonBar.Separator3 Decor
+    SearchVideos Button
+  NotificationsButtonBar ButtonRow(Notifications)
+    OpenNotification Button
+    NotificationsButtonBar.Separator1 Decor
+    DeleteNotification Button
+    NotificationsButtonBar.Separator2 Decor
+  ChatRoomsButtonBar.Communities ButtonRow(Communities)
+    CommunitiesOpen Button
+    ChatRoomsButtonBar.Separator1.Communities Decor
+    CommunitiesLeave Button
+    ChatRoomsButtonBar.Separator2.Communities Decor
+    CommunitiesNew Button
+MainInfoViewButton Button target [-5, 0, 18, 115] art [5, 0, 13, 115] Spacing
+popup MainInfoViewPopup
+  MainInfoResizeR Button target [-14, 0, 24, 509] art [14, 0, 10, 509] Size
+  MainInfoTopRow Decor
+  MainInfoLeftSide Decor
+  MainInfoBackground Decor
+  MainInfoRightSide Decor
+  MainInfoBottomRow Decor
+  MainInfoContentContainer Decor
+    MainInfoContent InfoView
+  MainInfoViewButton Button target [-11, 0, 24, 115] art [11, 0, 13, 115] Size

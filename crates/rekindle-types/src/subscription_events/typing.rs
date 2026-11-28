@@ -1,27 +1,43 @@
 //! Typing indicator events — channel and DM contexts.
 //!
-//! Typing is ephemeral — indicators auto-expire after 5 seconds
-//! without renewal. `Started` fires on first keystroke, `Stopped`
-//! fires on expiry or explicit stop.
+//! Typing is ephemeral and decided in the backend: a start lapses after
+//! 5 seconds without a refresh (`rekindle_events::typing`). `Started`
+//! fires once per typing burst, `Stopped` on the typist's stop, their
+//! message, or the lapse; frontends keep no timer.
 
 use serde::{Deserialize, Serialize};
 
 /// Typing indicator events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TypingEvent {
     /// Someone started typing.
-    /// Triggered by: gossip `TypingIndicator`, `DmPayload::Typing { typing: true }`.
-    Started { context: TypingContext, who: String },
+    /// Triggered by: gossip `TypingIndicator`, a 1:1 `TypingIndicator { typing: true }`.
+    ///
+    /// `name` is the Host's name for the typist (plan E3.4 S9): in a
+    /// channel the name on their verified member card, in a DM or group DM
+    /// the name our friendship holds, else their key's short fingerprint.
+    /// Never empty and never a raw key; frontends show it as given.
+    Started {
+        context: TypingContext,
+        who: String,
+        name: String,
+    },
     /// Someone stopped typing (expired or explicit).
-    /// Triggered by: expiry timer, `DmPayload::Typing { typing: false }`.
+    /// Triggered by: the backend's expiry, a 1:1 `TypingIndicator { typing: false }`,
+    /// or the typist's message arriving.
     Stopped { context: TypingContext, who: String },
 }
 
 /// Where the typing is happening.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TypingContext {
     /// Typing in a community channel.
     Channel { community: String, channel: String },
     /// Typing in a DM conversation.
     Dm { peer_key: String },
+    /// Typing in a group DM (plan E2.6): 0x0401 inside a member's
+    /// `GroupContent` hint, never on its chain.
+    GroupDm { group_id: String },
 }

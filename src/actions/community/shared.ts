@@ -1,21 +1,20 @@
 import { createStore } from "solid-js/store";
-import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import type { Role, ScheduledEvent } from "../../stores/community.store";
 import type { EventInfo } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
+import type { Role, ScheduledEvent } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
 
 // Typing indicator state
-export interface TypingUser {
+interface TypingUser {
   pseudonymKey: string;
   displayName: string;
 }
 
 const [typingUsersStore, setTypingUsers] = createStore<Record<string, TypingUser[]>>({});
-const typingTimers: Record<string, number> = {};
 
-export { typingUsersStore as typingUsers, setTypingUsers, typingTimers };
+export { setTypingUsers, typingUsersStore as typingUsers };
 
-export function computeDisplayRoleName(roleIds: number[], roles: Role[]): string {
+export function computeDisplayRoleName(roleIds: string[], roles: Role[]): string {
   const highestRole = roleIds
     .map((roleId) => roles.find((role) => role.id === roleId))
     .filter((role): role is Role => Boolean(role))
@@ -45,10 +44,13 @@ export function transformEvent(e: EventInfo): ScheduledEvent {
   };
 }
 
-export async function refreshStageHandRaises(communityId: string, channelId: string): Promise<void> {
+export async function refreshStageHandRaises(
+  communityId: string,
+  channelId: string
+): Promise<void> {
   const community = communityState.communities[communityId];
   const channel = community?.channels.find((item) => item.id === channelId);
-  if (!channel || channel.type !== "stage") {
+  if (channel?.type !== "stage") {
     return;
   }
 

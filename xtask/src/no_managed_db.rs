@@ -5,7 +5,7 @@
 //! error; a database put in Tauri's managed state is always there, so any
 //! command or service that read it would keep writing after logout (and,
 //! from plan D1, into whichever identity's file it was handed at boot).
-//! This gate rejects, in `src-tauri` and `crates/rekindle-e2e-server`:
+//! This gate rejects, in `src-tauri`:
 //! - a `State<'_, Db>` (or `Db`) type;
 //! - `state::<Db>()` / `try_state::<Db>()`;
 //! - a `.manage(…)` call whose argument names a database (`pool`, `db`).
@@ -124,11 +124,7 @@ fn scan(rel: &str, src: &str) -> Vec<String> {
 
 pub(crate) fn check_no_managed_db(root: &Path) -> Result<()> {
     let mut hits = Vec::new();
-    for dir in [
-        "src-tauri/src",
-        "src-tauri/tests",
-        "crates/rekindle-e2e-server/src",
-    ] {
+    for dir in ["src-tauri/src", "src-tauri/tests"] {
         for path in walk_source_files(&root.join(dir), &["rs"])? {
             let rel = path
                 .strip_prefix(root)
@@ -155,31 +151,5 @@ pub(crate) fn check_no_managed_db(root: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::scan;
-
-    #[test]
-    fn flags_managed_database_access() {
-        let bad = r"
-            fn a(pool: tauri::State<'_, rekindle_db::Db>) {}
-            fn b(app: &tauri::AppHandle) {
-                let p = app.try_state::<Db>();
-                let q = tauri::Manager::try_state::<crate::db::Db>(app);
-                app.manage(pool);
-            }
-        ";
-        assert_eq!(scan("x.rs", bad).len(), 4);
-    }
-
-    #[test]
-    fn allows_the_handle_and_other_state() {
-        let good = r"
-            fn a(state: tauri::State<'_, SharedState>, pool: &rekindle_db::Db) {
-                let db = state.db.current();
-                app.manage(root);
-                let k: tauri::State<'_, KeystoreHandle> = app.state();
-            }
-        ";
-        assert!(scan("x.rs", good).is_empty());
-    }
-}
+#[path = "no_managed_db_tests.rs"]
+mod tests;
