@@ -42,4 +42,12 @@
     color: var(--color-xfire-text-primary);
     background: var(--color-xfire-bg-dark);
   }
+
+  :root:not([data-skin-opening]) .skin-load-error {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 10;
+    min-block-size: 0;
+    border-block-start: 1px solid currentColor;
+  }
 }

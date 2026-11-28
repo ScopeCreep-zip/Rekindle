@@ -133,11 +133,17 @@ function showOpeningError(message: string): void {
   openingFailed = true;
   pending?.abort();
   document.documentElement.dataset.skinOpening = "";
-  const alert = document.createElement("div");
-  alert.className = "skin-load-error";
-  alert.setAttribute("role", "alert");
-  alert.textContent = message;
-  document.body.appendChild(alert);
+  showSkinError(message);
+}
+
+function showSkinError(message: string): void {
+  if (!skinError) {
+    skinError = document.createElement("div");
+    skinError.className = "skin-load-error";
+    skinError.setAttribute("role", "alert");
+    document.body.appendChild(skinError);
+  }
+  skinError.textContent = message;
 }
 
 function logSkinError(error: unknown): void {
@@ -148,6 +154,7 @@ let generation = 0;
 let pending: AbortController | undefined;
 let openingFailed = false;
 let loading: HTMLLinkElement | null = null;
+let skinError: HTMLDivElement | undefined;
 
 function framedWindow(): SkinShell["window"] | undefined {
   const path = window.location.pathname;
@@ -184,7 +191,7 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
   const expired = new Channel<string>((message) => {
     if (!attempt.signal.aborted) {
       attempt.abort();
-      addToast(message);
+      showSkinError(message);
     }
   });
   let attemptId: string | null = null;
@@ -195,6 +202,8 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
     await untilAborted(commitSkin(skin, shown, frame, attempt.signal), attempt.signal);
     if (!attempt.signal.aborted) {
       href = skin.tokensHref;
+      skinError?.remove();
+      skinError = undefined;
       // Displayable before the commit below, which is what lets native
       // reveal the window: its first shown frame is the skinned page.
       if (frame && !openingFailed) delete document.documentElement.dataset.skinOpening;
@@ -205,6 +214,9 @@ async function applySkin(skin: SkinApplied | null, frame: SkinShell["window"] | 
       report(skin, { type: "imageDecode", data: { path: error.path } });
     } else if (error instanceof Error) {
       report(skin, { type: "sheetError", data: { detail: error.message } });
+    }
+    if (document.documentElement.dataset.skinOpening === undefined) {
+      showSkinError("Rekindle could not load the skin for this window.");
     }
     logSkinError(error);
   } finally {
