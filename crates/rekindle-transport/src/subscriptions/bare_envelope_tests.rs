@@ -1,4 +1,8 @@
-use super::{decode_bare_attachment_request, decode_bare_mek_transfer};
+use super::{
+    decode_bare_attachment_request, decode_bare_bootstrap_request,
+    decode_bare_checkpoint_hint_request, decode_bare_checkpoint_state_request,
+    decode_bare_frontier_request, decode_bare_media_key, decode_bare_mek_transfer,
+};
 use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
 
@@ -41,6 +45,12 @@ fn refuses_other_control_variants_even_when_well_formed() {
         decode_bare_mek_transfer(&rotated).is_none(),
         "an unsigned MEKRotated must not be actionable"
     );
+    assert!(decode_bare_media_key(&rotated).is_none());
+    assert!(decode_bare_attachment_request(&rotated).is_none());
+    assert!(decode_bare_bootstrap_request(&rotated).is_none());
+    assert!(decode_bare_checkpoint_state_request(&rotated).is_none());
+    assert!(decode_bare_checkpoint_hint_request(&rotated).is_none());
+    assert!(decode_bare_frontier_request(&rotated).is_none());
 }
 
 #[test]

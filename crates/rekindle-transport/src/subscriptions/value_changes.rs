@@ -9,8 +9,7 @@
 //! `dm_new_friendship::a_re_hint_then_its_chain_copy_is_one_message_acked_by_its_chain_seq`:
 //! a profile change that came in just before Jon's DHT went offline kept
 //! Ida's "solo" hint undelivered for the whole offline span). The loop
-//! hands the change here and goes on; one worker, polled beside the loop
-//! in its task, applies the changes in
+//! hands the change here and goes on. One worker applies the changes in
 //! the order they came, so a record's notifications never overtake each
 //! other. The pool's own bookkeeping (re-arming a dead watch) stays in the
 //! loop: it is local and immediate.
@@ -30,9 +29,8 @@ pub(crate) struct ValueChanges {
 
 impl ValueChanges {
     /// The queue and the worker that applies its changes to `handler`. The
-    /// dispatch loop polls the worker beside itself in its own task (no
-    /// spawn: it ends with the loop, rule B20), so a change still reading
-    /// the network never holds an app message back.
+    /// dispatch loop owns the worker task and stops it at shutdown, so a
+    /// change still reading the network never holds an app message back.
     ///
     /// The queue is unbounded so the loop never waits on it: what fills it
     /// is the record watches' notifications, at most one per watched record

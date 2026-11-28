@@ -375,10 +375,10 @@ pub async fn handle_voice_media_key(
 
 /// A `VoiceMediaKeyRequest` call: if it asks for our key and the requester
 /// is on our roster, deliver our keys from its admission on.
-pub fn handle_voice_media_key_request(
+pub async fn handle_voice_media_key_request(
     deps: &Arc<dyn VoiceSignalingDeps>,
     payload: &ControlPayload,
-) {
+) -> bool {
     let ControlPayload::VoiceMediaKeyRequest {
         community_id,
         channel_id,
@@ -387,31 +387,29 @@ pub fn handle_voice_media_key_request(
         ..
     } = payload
     else {
-        return;
+        return false;
     };
     if deps.my_pseudonym(community_id).as_ref() != Some(sender)
         || !deps.voice_engine_bound_to(community_id, channel_id)
     {
-        return;
+        return false;
     }
     let Some(transport) = deps.transport_handle() else {
-        return;
+        return false;
     };
-    let deps_task = Arc::clone(deps);
-    let (cid, ch, requester) = (community_id.clone(), channel_id.clone(), requester.clone());
-    deps.scope()
-        .spawn_or_drop("voice media key answer", async move {
-            // Only a participant we hold on the roster gets our key.
-            if !transport.lock().await.peer_keys().contains(&requester) {
-                return;
-            }
-            for key in deps_task
-                .channel_sender_keys(&cid, &ch)
-                .shareable_for(&requester)
-            {
-                spawn_delivery(&deps_task, &cid, &ch, &requester, key);
-            }
-        });
+    if !transport.lock().await.peer_keys().contains(requester) {
+        return false;
+    }
+    let keys = deps
+        .channel_sender_keys(community_id, channel_id)
+        .shareable_for(requester);
+    if keys.is_empty() {
+        return false;
+    }
+    for key in keys {
+        spawn_delivery(deps, community_id, channel_id, requester, key);
+    }
+    true
 }
 
 #[cfg(test)]

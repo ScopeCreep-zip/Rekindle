@@ -1,6 +1,7 @@
 mod media;
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use tauri::AppHandle;
 
@@ -12,6 +13,7 @@ use crate::state_helpers;
 use rekindle_codec::capnp_envelope::{decode_signed_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{verify_envelope, CommunityEnvelope, SignedEnvelope};
 use rekindle_codec::ingress::{classify, Ingress};
+use rekindle_transport::subscriptions::lanes::IngressItem;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::key_format::pseudonym_hex;
 
@@ -19,7 +21,8 @@ use rekindle_types::key_format::pseudonym_hex;
 // everything else is a queue push — the dispatch loop never blocks on
 // an app_message again.
 pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
-    let message = msg.message().to_vec();
+    let arrived = tokio::time::Instant::now().into_std();
+    let message = msg.message();
     // Arrival over our route proves its inbound path (plan RH1r-c O1).
     if let Some(live) = super::network::route_liveness(state) {
         live.heard_over(msg.route_id().map(ToString::to_string).as_deref());
@@ -28,25 +31,13 @@ pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     // on the serial dispatch loop the audio fast path shares (plan C7.23).
     tracing::trace!(msg_len = message.len(), "app_message received");
 
-    // Both media fast paths (audio packets and their receiver
-    // reports) live in `media`: verify, `try_send`, return — never
-    // any work on this thread, which is serial across every
-    // app_message the node receives.
-    if media::handle_media_tag(state, &message) {
-        return;
-    }
-
-    // Everything below is queued, NOT processed inline: gossip/video
-    // processing (sig verify → dedup → reassembly → MEK decrypt → emit)
-    // is slow enough that a fragment burst would stall this serial
-    // dispatch path and starve the voice fast path above. The worker
-    // spawned by `lifecycle::dispatch` drains the queue in FIFO order.
-    //
-    // Routed by the ingress tag (§6), so nothing here trial-decodes: a
-    // datagram that is neither media, `'D'` nor `'G'` is dropped (plan E2.3).
-    use crate::services::veilid::ingress_queue::IngressItem;
-    match classify(&message) {
-        Ingress::Direct(_) => state.gossip_ingress.push(IngressItem::Direct(message)),
+    // The shared tag classifier routes media inline. Signature verification,
+    // reassembly and delivery of gossip run on its worker.
+    match classify(message) {
+        Ingress::Media(raw) => on_media(state, raw, arrived),
+        Ingress::Direct(_) => state
+            .gossip_ingress
+            .push(IngressItem::Direct(message.to_vec())),
         Ingress::Gossip(bytes) => match decode_signed_envelope(bytes) {
             Ok(signed) => {
                 let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
@@ -62,13 +53,19 @@ pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     }
 }
 
+fn on_media(state: &Arc<AppState>, raw: &[u8], arrived: Instant) {
+    if !media::handle_media_tag(state, raw, arrived) {
+        tracing::debug!(msg_len = raw.len(), "malformed media datagram dropped");
+    }
+}
+
 /// Worker-side processing of one queued ingress item: the state-only core
 /// (`ingest_item`, plan GI4), then its delivery. The dispatch-loop worker
 /// only sees this entry point.
 pub(crate) async fn process_ingress_item(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
-    item: crate::services::veilid::ingress_queue::IngressItem,
+    item: IngressItem,
 ) {
     ingest_item(state, item)
         .await
@@ -78,11 +75,7 @@ pub(crate) async fn process_ingress_item(
 
 /// One queued ingress item, ingested with the state alone: the events to
 /// show and the follow-ups that need the Tauri handle (plan GI4).
-pub(crate) async fn ingest_item(
-    state: &Arc<AppState>,
-    item: crate::services::veilid::ingress_queue::IngressItem,
-) -> IngestOutcome {
-    use crate::services::veilid::ingress_queue::IngressItem;
+pub(crate) async fn ingest_item(state: &Arc<AppState>, item: IngressItem) -> IngestOutcome {
     match item {
         IngressItem::Gossip { signed, .. } => gossip_core(state, signed).await,
         IngressItem::Direct(message) => {

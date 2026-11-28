@@ -20,14 +20,13 @@
 
 use std::sync::Arc;
 
+use rekindle_codec::community::envelope::SignedEnvelope;
 use tracing::{trace, warn};
 
 use crate::gossip::DedupCache;
 use crate::handler::InboundHandler;
 
-/// Decode, verify and deliver a community gossip envelope: `raw` is the
-/// bytes after the `'G'` tag. Anything that is not a signed community
-/// envelope is dropped here; nothing falls through to another decoder.
+/// Verify and deliver a community gossip envelope on the gossip worker.
 ///
 /// The signature check is not optional and not deferred: a gossip
 /// datagram has no transport-layer authentication, so `verify_envelope`
@@ -37,19 +36,11 @@ use crate::handler::InboundHandler;
 pub(super) async fn dispatch_bare_gossip<H: InboundHandler>(
     handler: &Arc<H>,
     dedup: &mut DedupCache,
-    raw: &[u8],
+    signed: SignedEnvelope,
 ) {
-    use rekindle_codec::capnp_envelope::decode_signed_envelope;
     use rekindle_codec::capnp_envelope::try_decode_community_envelope;
     use rekindle_codec::community::envelope::verify_envelope;
 
-    let signed = match decode_signed_envelope(raw) {
-        Ok(signed) => signed,
-        Err(e) => {
-            warn!(error = %e, raw_len = raw.len(), "dropping gossip: not a signed envelope");
-            return;
-        }
-    };
     let inner = match try_decode_community_envelope(&signed.envelope_bytes) {
         Ok(Some(inner)) => inner,
         Ok(None) => {

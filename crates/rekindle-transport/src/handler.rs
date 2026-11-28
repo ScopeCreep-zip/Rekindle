@@ -9,9 +9,9 @@
 //! 3. Dedup-checked (gossip only)
 //! 4. Decrypted (if applicable: MEK for channel/voice)
 //!
-//! The handler receives only authenticated, deserialized, plaintext payloads,
-//! except a 1:1 message (`on_direct`), which carries its own signed envelope
-//! and is opened by `operations::direct` on both hosts (plan E2.1).
+//! Gossip and signed RPC reach the handler after verification by the
+//! transport. Direct messages, media datagrams and bare media-key calls
+//! carry the authentication that their receiving handler must verify.
 //!
 //! # Async trait design
 //!
@@ -25,8 +25,8 @@
 use std::future::Future;
 
 use crate::payload::rpc::{CallResponse, InboundCall};
-use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_codec::community::envelope::SignedEnvelope;
+use crate::subscriptions::media_key::MediaKeyReply;
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, SignedEnvelope};
 
 /// Identity of a verified inbound message sender.
 #[derive(Debug, Clone)]
@@ -57,9 +57,8 @@ pub enum TransportEvent {
 
 /// Application-layer handler for all inbound transport events.
 ///
-/// Implement this trait in the application crate to receive authenticated,
-/// decrypted payloads from the transport layer. The transport guarantees
-/// that every call to these methods has passed full authentication.
+/// Each method documents the authentication performed before dispatch
+/// and what remains for the application to check.
 pub trait InboundHandler: Send + Sync + 'static {
     /// Our identity key while an identity is unlocked. Signed framed RPCs
     /// are verified as addressed to it; with none, they are dropped.
@@ -89,6 +88,22 @@ pub trait InboundHandler: Send + Sync + 'static {
         datagram: &[u8],
         route: Option<&str>,
     ) -> impl Future<Output = Option<Vec<u8>>> + Send;
+
+    /// A media datagram arrived (plan E4.1 S3): `raw` starts with a media
+    /// tag (`rekindle_codec::ingress::Ingress::Media`), tag included, and
+    /// `arrived` is when the dispatch loop took it, before any queue adds a
+    /// delay the bandwidth estimator would measure. Synchronous on purpose:
+    /// the handler verifies and `try_send`s onto its media owner and
+    /// returns, so the serial dispatch loop never waits on media, and the
+    /// app-call lane keeps media from ever waiting on a call.
+    fn on_media(&self, raw: &[u8], arrived: std::time::Instant);
+
+    /// An admitted bare media key or request (ADR 0016). The voice
+    /// session checks the key signature or requester's roster entry.
+    fn on_media_key_call(
+        &self,
+        payload: &ControlPayload,
+    ) -> impl Future<Output = MediaKeyReply> + Send;
 
     /// An authenticated gossip broadcast arrived from a community member.
     fn on_gossip(

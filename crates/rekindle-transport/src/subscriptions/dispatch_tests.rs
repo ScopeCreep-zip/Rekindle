@@ -4,23 +4,31 @@
 //! handler.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rekindle_codec::capnp_envelope::{encode_community_envelope, encode_signed_envelope};
-use rekindle_codec::community::envelope::{sign_envelope, CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::envelope::{
+    sign_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
+};
 use rekindle_codec::ingress::{gossip_datagram, DIRECT_TAG};
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortError};
 
-use super::{dispatch_app_call, dispatch_app_message};
+use super::super::dispatch_bare::dispatch_bare_request;
+use super::{dispatch_app_call, dispatch_app_message, process_gossip, GossipIngressQueue};
 use crate::gossip::DedupCache;
 use crate::handler::{InboundHandler, TransportEvent};
 use crate::payload::rpc::{CallResponse, InboundCall};
+use crate::subscriptions::media_key::{MediaKeyAdmission, MediaKeyReply};
 
 /// What reached the handler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Seen {
     Direct(Vec<u8>),
     DirectCall(Vec<u8>),
+    Media(Vec<u8>, Instant),
+    MediaKey,
+    CallDone,
     Gossip { community: String, sender: String },
     Forward { ttl: u8 },
 }
@@ -30,6 +38,8 @@ struct Recorder {
     seen: Mutex<Vec<Seen>>,
     /// Its bare-request handler runs twice past `CALL_DEADLINE`.
     slow_calls: bool,
+    stall_direct_calls: bool,
+    mismatch_ack: bool,
     /// The slow handler calls that ran to their end.
     finished: std::sync::atomic::AtomicUsize,
 }
@@ -59,8 +69,42 @@ impl InboundHandler for Recorder {
 
     async fn on_direct_call(&self, datagram: &[u8], _route: Option<&str>) -> Option<Vec<u8>> {
         self.seen.lock().push(Seen::DirectCall(datagram.to_vec()));
+        if self.stall_direct_calls {
+            tokio::time::sleep(Duration::from_secs(12)).await;
+            self.seen.lock().push(Seen::CallDone);
+        }
         // `[DIRECT_TAG, 0]` stands for a call the Host left unanswered.
         (datagram.get(1) != Some(&0)).then(|| b"reply".to_vec())
+    }
+
+    fn on_media(&self, raw: &[u8], arrived: Instant) {
+        self.seen.lock().push(Seen::Media(raw.to_vec(), arrived));
+    }
+
+    async fn on_media_key_call(&self, payload: &ControlPayload) -> MediaKeyReply {
+        self.seen.lock().push(Seen::MediaKey);
+        match payload {
+            ControlPayload::VoiceMediaKey {
+                community_id,
+                channel_id,
+                sender,
+                recipient,
+                key_index,
+                ..
+            } => MediaKeyReply::Installed(Box::new(ControlPayload::VoiceMediaKeyAck {
+                community_id: if self.mismatch_ack {
+                    "other".into()
+                } else {
+                    community_id.clone()
+                },
+                channel_id: channel_id.clone(),
+                sender: sender.clone(),
+                recipient: recipient.clone(),
+                key_index: *key_index,
+            })),
+            ControlPayload::VoiceMediaKeyRequest { .. } => MediaKeyReply::Requested,
+            _ => MediaKeyReply::Refused,
+        }
     }
 
     async fn on_gossip(
@@ -156,7 +200,21 @@ fn signed_as(message_id: [u8; 16], channel: &str, ttl: u8) -> SignedEnvelope {
 
 async fn message(handler: &Arc<Recorder>, raw: &[u8]) {
     let mut dedup = DedupCache::new(64);
-    dispatch_app_message(handler, &mut dedup, raw).await;
+    queued_messages(handler, &mut dedup, [raw.to_vec()]).await;
+}
+
+async fn queued_messages(
+    handler: &Arc<Recorder>,
+    dedup: &mut DedupCache,
+    datagrams: impl IntoIterator<Item = Vec<u8>>,
+) {
+    let queue = GossipIngressQueue::new();
+    for datagram in datagrams {
+        dispatch_app_message(handler.as_ref(), &queue, datagram, Instant::now());
+    }
+    while queue.depth() > 0 {
+        process_gossip(handler, dedup, queue.pop().await).await;
+    }
 }
 
 #[tokio::test]
@@ -199,9 +257,12 @@ async fn a_relayed_copy_is_suppressed_but_a_re_send_of_the_same_content_is_deliv
     let resent = signed_as([2u8; 16], "general", 5);
     assert_eq!(first.envelope_bytes, resent.envelope_bytes);
 
-    for envelope in [&first, &relayed, &resent] {
-        dispatch_app_message(&handler, &mut dedup, &gossip_datagram(envelope).unwrap()).await;
-    }
+    queued_messages(
+        &handler,
+        &mut dedup,
+        [&first, &relayed, &resent].map(|envelope| gossip_datagram(envelope).unwrap()),
+    )
+    .await;
     let gossip = Seen::Gossip {
         community: "gov-key".into(),
         sender: first.sender_pseudonym.clone(),
@@ -238,10 +299,19 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
     let datagram = [DIRECT_TAG, 9];
-    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram, None).await;
     dispatch_app_call(
         &handler,
         &replies,
+        &Mutex::<MediaKeyAdmission>::default(),
+        AppCallId(1),
+        &datagram,
+        None,
+    )
+    .await;
+    dispatch_app_call(
+        &handler,
+        &replies,
+        &Mutex::<MediaKeyAdmission>::default(),
         AppCallId(2),
         &gossip_datagram(&signed(5)).unwrap(),
         None,
@@ -262,7 +332,15 @@ async fn a_direct_call_left_unanswered_gets_no_reply() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
     let datagram = [DIRECT_TAG, 0];
-    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram, None).await;
+    dispatch_app_call(
+        &handler,
+        &replies,
+        &Mutex::<MediaKeyAdmission>::default(),
+        AppCallId(1),
+        &datagram,
+        None,
+    )
+    .await;
     assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
     assert!(replies.0.lock().is_empty());
 }
@@ -280,7 +358,15 @@ async fn a_gossip_call_is_refused_before_any_decode() {
         .into_iter()
         .enumerate()
     {
-        dispatch_app_call(&handler, &replies, AppCallId(n as u64), &datagram, None).await;
+        dispatch_app_call(
+            &handler,
+            &replies,
+            &Mutex::<MediaKeyAdmission>::default(),
+            AppCallId(n as u64),
+            &datagram,
+            None,
+        )
+        .await;
     }
     assert_eq!(handler.seen(), []);
     assert_eq!(
@@ -320,9 +406,9 @@ async fn a_bare_request_past_the_deadline_is_answered_retry_later() {
         ..Recorder::default()
     });
     let refusing = Arc::new(Recorder::default());
-    super::dispatch_bare_request(&slow, &replies, AppCallId(1), bootstrap()).await;
-    super::dispatch_bare_request(&slow, &replies, AppCallId(2), snapshot()).await;
-    super::dispatch_bare_request(&refusing, &replies, AppCallId(3), bootstrap()).await;
+    dispatch_bare_request(&slow, &replies, AppCallId(1), bootstrap()).await;
+    dispatch_bare_request(&slow, &replies, AppCallId(2), snapshot()).await;
+    dispatch_bare_request(&refusing, &replies, AppCallId(3), bootstrap()).await;
     assert_eq!(
         *replies.0.lock(),
         [RETRY_LATER.to_vec(), RETRY_LATER.to_vec(), NAK.to_vec()]
@@ -344,7 +430,7 @@ async fn a_bare_request_past_the_deadline_finishes_its_work() {
         ..Recorder::default()
     });
     let request = InboundCall::CheckpointStateRequest { request: vec![6] };
-    super::dispatch_bare_request(&slow, &replies, AppCallId(1), request).await;
+    dispatch_bare_request(&slow, &replies, AppCallId(1), request).await;
     assert_eq!(*replies.0.lock(), [RETRY_LATER.to_vec()]);
     assert_eq!(slow.finished.load(Ordering::SeqCst), 0, "answered first");
     tokio::time::sleep(CALL_DEADLINE * 2).await;
@@ -354,3 +440,6 @@ async fn a_bare_request_past_the_deadline_finishes_its_work() {
         "the handler's work goes on past the deadline"
     );
 }
+
+#[path = "dispatch_lane_tests.rs"]
+mod lane_tests;

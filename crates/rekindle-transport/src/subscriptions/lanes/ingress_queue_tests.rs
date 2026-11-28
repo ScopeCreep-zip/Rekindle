@@ -1,4 +1,8 @@
-use super::*;
+use std::sync::atomic::Ordering;
+
+use rekindle_codec::community::envelope::SignedEnvelope;
+
+use super::{GossipIngressQueue, IngressItem, INGRESS_QUEUE_MAX};
 
 fn gossip(is_video: bool, tag: u8) -> IngressItem {
     IngressItem::Gossip {

@@ -1,8 +1,6 @@
 //! The ingress tags of `app_message`/`app_call` datagrams (§6 ingress
 //! ledger): the first byte names what follows, so every ingress path
-//! routes by it and none trial-decodes. The media tags (`'V'`, `'M'`,
-//! `'P'`, `'T'`, `'R'`) live with the media plane in
-//! `rekindle_voice::media_frame`; these never collide with them.
+//! routes by it and none trial-decodes.
 //!
 //! An untagged datagram is dropped. The untagged formats still accepted on
 //! `app_call` (transport frames, the community capnp arms) keep their
@@ -28,9 +26,28 @@ pub const LIVENESS_TAG: u8 = b'L';
 /// The length of a liveness probe: the tag and its nonce.
 pub const LIVENESS_PROBE_LEN: usize = 17;
 
+/// A voice packet (`VoicePacket`, Cap'n Proto) after the route's
+/// `transport_seq` (`rekindle_voice::media_frame`).
+pub const VOICE_TAG: u8 = b'V';
+/// A signed community envelope of the video plane (video fragments,
+/// parity, frame acks, keyframe requests) after the sequence number.
+pub const ENVELOPE_TAG: u8 = b'M';
+/// Padding the pacer sends to probe the route (plan E4.3.3): zero bytes
+/// after the sequence number, counted by the estimator, discarded on
+/// arrival. str0m sends blank padding the same way (`poll_packet_padding`).
+pub const PADDING_TAG: u8 = b'P';
+/// A `TransportFeedback` report (plan E4.3.2); no sequence number.
+pub const FEEDBACK_TAG: u8 = b'T';
+/// An RFC 3550 receiver report (`VoiceReceiverReport`), sibling to the
+/// voice packet's tag. Reports ride the same media route as the audio they
+/// describe, so they measure the path actually in use.
+pub const RECEIVER_REPORT_TAG: u8 = b'R';
+
 /// What an inbound datagram carries, by its first byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ingress<'a> {
+    /// The full media datagram, including its tag.
+    Media(&'a [u8]),
     /// [`DIRECT_TAG`]; the bytes after the tag.
     Direct(&'a [u8]),
     /// [`GOSSIP_TAG`]; the bytes after the tag.
@@ -43,6 +60,7 @@ pub enum Ingress<'a> {
 #[must_use]
 pub fn classify(datagram: &[u8]) -> Ingress<'_> {
     match datagram.split_first() {
+        Some((&(VOICE_TAG | ENVELOPE_TAG | PADDING_TAG | FEEDBACK_TAG | RECEIVER_REPORT_TAG), _)) => Ingress::Media(datagram),
         Some((&DIRECT_TAG, rest)) => Ingress::Direct(rest),
         Some((&GOSSIP_TAG, rest)) => Ingress::Gossip(rest),
         _ => Ingress::Untagged,

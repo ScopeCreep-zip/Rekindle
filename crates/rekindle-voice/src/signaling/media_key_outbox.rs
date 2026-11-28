@@ -64,32 +64,13 @@ pub(crate) fn acknowledges(
     envelope: &CommunityEnvelope,
     reply: Option<&CommunityEnvelope>,
 ) -> bool {
-    let (
-        Some(ControlPayload::VoiceMediaKey {
-            channel_id,
-            sender,
-            recipient,
-            key_index,
-            ..
-        }),
-        Some(ControlPayload::VoiceMediaKeyAck {
-            channel_id: acked_channel,
-            sender: acked_sender,
-            recipient: acker,
-            key_index: acked_index,
-            ..
-        }),
-    ) = (
+    match (
         envelope.as_control(),
         reply.and_then(CommunityEnvelope::as_control),
-    )
-    else {
-        return false;
-    };
-    acked_channel == channel_id
-        && acked_sender == sender
-        && acker == recipient
-        && acked_index == key_index
+    ) {
+        (Some(key), Some(ack)) => key.acknowledged_by(ack),
+        _ => false,
+    }
 }
 
 /// Attempt the queued key `sealed` once: send it to its recipient's

@@ -1,29 +1,18 @@
 //! Inbound message dispatcher — the single entry point for all network data.
 //!
-//! Receives the node's [`PortEvent`]s and performs deterministic routing:
-//!
-//! 0. Route by the ingress tag (§6, `rekindle_codec::ingress`): `'D'` is a
-//!    1:1 message, `'G'` gossip; an untagged `app_message` is dropped, and
-//!    an untagged `app_call` is a transport frame (below) or the bare MEK
-//!    transfer until E3.5 tags it
-//! 1. Parse frame header (4 bytes: version, type, length)
-//! 2. Reject unknown versions (fail closed)
-//! 3. Route by TypeId to the correct verification + deserialization path
-//! 4. Verify Ed25519 signature (every message, no exceptions)
-//! 5. Dedup check (gossip only)
-//! 6. Forward gossip to mesh peers (if TTL > 0 and not private)
-//! 7. Invoke the appropriate `InboundHandler` method with authenticated data
-//!
-//! If any step fails, the message is dropped and logged. No partial dispatch.
+//! Demultiplexes the node's port events into the app-call, gossip and
+//! control workers. Media is timestamped and handed off synchronously.
 
 pub use crate::handler::TransportEvent;
 
 use std::sync::Arc;
 
-use rekindle_codec::ingress::Ingress;
+use rekindle_codec::capnp_envelope::decode_signed_envelope;
+use rekindle_codec::ingress::{classify, Ingress};
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortEvent, RoutePort};
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tokio::task::JoinSet;
+use tracing::{info, warn, Instrument};
 
 use crate::config::TransportConfig;
 use crate::crypto::envelope::{Addressing, SignedPayload};
@@ -33,6 +22,15 @@ use crate::handler::InboundHandler;
 use crate::liveness::ProbeAnswer;
 use crate::operations::direct::{CALL_DEADLINE, NAK};
 use crate::shared::{AttachmentState, SharedState};
+use crate::subscriptions::bare_envelope;
+use crate::subscriptions::dispatch_bare::{
+    dispatch_bare_attachment_request, dispatch_bare_media_key, dispatch_bare_mek_transfer,
+    dispatch_bare_request,
+};
+use crate::subscriptions::lanes::{
+    AppCallLane, ControlIngressQueue, GossipIngressQueue, IngressItem,
+};
+use crate::subscriptions::media_key::MediaKeyAdmission;
 use crate::subscriptions::value_changes::ValueChanges;
 
 /// The route owners the dispatch loop reports `RouteChange` to.
@@ -57,75 +55,109 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     shared: Arc<SharedState>,
     routes: RouteOwners,
 ) {
-    let mut dedup = DedupCache::new(config.dedup_cache_capacity);
-    let (value_changes, worker) = ValueChanges::new(Arc::clone(&handler));
+    let (value_changes, value_worker) = ValueChanges::new(Arc::clone(&handler));
+    let inbound = Arc::new(InboundLanes {
+        calls: AppCallLane::default(),
+        messages,
+        media_keys: Arc::default(),
+        gossip: GossipIngressQueue::new(),
+        control: ControlIngressQueue::new(),
+    });
+    let mut workers = JoinSet::new();
+    workers.spawn(value_worker.in_current_span());
+    workers.spawn({
+        let handler = Arc::clone(&handler);
+        let inbound = Arc::clone(&inbound);
+        async move { run_gossip(&handler, &inbound.gossip, config.dedup_cache_capacity).await }
+            .in_current_span()
+    });
+    workers.spawn({
+        let handler = Arc::clone(&handler);
+        let inbound = Arc::clone(&inbound);
+        async move { run_control(handler.as_ref(), &inbound).await }.in_current_span()
+    });
     info!("transport dispatch loop started");
 
-    let dispatch = async {
-        loop {
-            // `biased` (here and below): the branches in this order on
-            // every poll, never tokio's per-runtime random draw, so one
-            // seed gives one order of events in the netsim (ADR 0021).
-            tokio::select! {
-                biased;
-                _ = shutdown_rx.recv() => {
-                    info!("transport dispatch loop shutting down");
-                    break;
-                }
-                Some(event) = events.recv() => {
-                    let ctx = DispatchCtx {
-                        messages: messages.as_ref(),
-                        shared: &shared,
-                        routes: &routes,
-                        value_changes: &value_changes,
-                    };
-                    dispatch_event(&handler, &mut dedup, &ctx, event).await;
-                }
+    loop {
+        tokio::select! {
+            biased;
+            _ = shutdown_rx.recv() => break,
+            result = workers.join_next() => {
+                warn!(?result, "inbound worker stopped during dispatch");
+                break;
+            }
+            event = events.recv() => {
+                let Some(event) = event else { return };
+                dispatch_event(&handler, &shared, &routes, &value_changes, &inbound, event);
             }
         }
-        // Stopping: dispatch nothing more, but keep the receiver until
-        // Veilid's last update, `Shutdown` (live R3-6); the node's
-        // `shutdown` signals again once the network stopped.
-        super::drain::drain_through_shutdown(&mut events, &mut shutdown_rx, &shared).await;
-    };
-    // The value changes' worker runs beside the loop in this task and ends
-    // with it: at shutdown a change still reading the network is dropped
-    // with the node.
-    tokio::select! {
-        biased;
-        () = dispatch => {}
-        () = worker => {}
+    }
+    workers.abort_all();
+    info!("transport dispatch loop shutting down");
+    super::drain::drain_through_shutdown(&mut events, &mut shutdown_rx, &shared).await;
+}
+
+struct InboundLanes {
+    calls: AppCallLane,
+    messages: Arc<dyn AppMessagePort>,
+    media_keys: Arc<parking_lot::Mutex<MediaKeyAdmission>>,
+    gossip: GossipIngressQueue,
+    control: ControlIngressQueue<ControlWork>,
+}
+
+enum ControlWork {
+    Event(TransportEvent),
+    Probe(AppCallId),
+}
+
+async fn run_gossip<H: InboundHandler>(
+    handler: &Arc<H>,
+    queue: &GossipIngressQueue,
+    dedup_capacity: usize,
+) {
+    let mut dedup = DedupCache::new(dedup_capacity);
+    loop {
+        process_gossip(handler, &mut dedup, queue.pop().await).await;
     }
 }
 
-/// What the loop lends each event's dispatch.
-struct DispatchCtx<'a> {
-    messages: &'a dyn AppMessagePort,
-    shared: &'a SharedState,
-    routes: &'a RouteOwners,
-    /// The value changes' own worker: their handlers read the DHT, so
-    /// they never run in this loop.
-    value_changes: &'a ValueChanges,
-}
-
-async fn dispatch_event<H: InboundHandler>(
+async fn process_gossip<H: InboundHandler>(
     handler: &Arc<H>,
     dedup: &mut DedupCache,
-    ctx: &DispatchCtx<'_>,
+    item: IngressItem,
+) {
+    match item {
+        IngressItem::Direct(datagram) => handler.on_direct(&datagram).await,
+        IngressItem::Gossip { signed, .. } => {
+            super::dispatch_gossip::dispatch_bare_gossip(handler, dedup, signed).await;
+        }
+    }
+}
+
+async fn run_control<H: InboundHandler>(handler: &H, lanes: &InboundLanes) {
+    loop {
+        match lanes.control.pop().await {
+            ControlWork::Event(event) => handler.on_event(event).await,
+            ControlWork::Probe(call_id) => reply_nak(lanes.messages.as_ref(), call_id).await,
+        }
+    }
+}
+
+fn dispatch_event<H: InboundHandler>(
+    handler: &Arc<H>,
+    shared: &SharedState,
+    routes: &RouteOwners,
+    value_changes: &ValueChanges,
+    lanes: &InboundLanes,
     event: PortEvent,
 ) {
-    let DispatchCtx {
-        messages,
-        shared,
-        routes,
-        value_changes,
-    } = *ctx;
     match event {
         PortEvent::AppMessage { message, route } => {
+            let arrived = tokio::time::Instant::now().into_std();
             // Arrival over our route proves its inbound path (RH1r-c O1):
             // Veilid names the route that decrypted it.
             routes.liveness.heard_over(route.as_deref());
-            dispatch_app_message(handler, dedup, &message).await;
+            dispatch_app_message(handler.as_ref(), &lanes.gossip, message, arrived);
         }
         PortEvent::AppCall {
             call_id,
@@ -138,12 +170,12 @@ async fn dispatch_event<H: InboundHandler>(
                 // tells it the call arrived. It names no sender, so it is
                 // no evidence about our route (plan RV2).
                 ProbeAnswer::Refuse => {
-                    reply_nak(messages, call_id).await;
+                    lanes.control.push(ControlWork::Probe(call_id));
                     return;
                 }
             }
             routes.liveness.heard_over(route.as_deref());
-            dispatch_app_call(handler, messages, call_id, &message, route.as_deref()).await;
+            lane_app_call(handler, lanes, call_id, message, route);
         }
         PortEvent::ValueChange(change) => {
             dispatch_value_change(shared, value_changes, change);
@@ -169,16 +201,16 @@ async fn dispatch_event<H: InboundHandler>(
             if !changed {
                 return;
             }
-            handler
-                .on_event(TransportEvent::AttachmentChanged {
+            lanes
+                .control
+                .push(ControlWork::Event(TransportEvent::AttachmentChanged {
                     state,
                     is_attached,
                     public_internet_ready,
-                })
-                .await;
+                }));
         }
         PortEvent::RouteChange { dead, dead_remote } => {
-            dispatch_route_change(handler, routes, &dead, &dead_remote).await;
+            dispatch_route_change(&lanes.control, routes, &dead, &dead_remote);
         }
         PortEvent::Shutdown => {
             info!("network shutdown event received");
@@ -186,37 +218,62 @@ async fn dispatch_event<H: InboundHandler>(
     }
 }
 
-async fn dispatch_app_message<H: InboundHandler>(
-    handler: &Arc<H>,
-    dedup: &mut DedupCache,
-    raw: &[u8],
+fn dispatch_app_message<H: InboundHandler>(
+    handler: &H,
+    gossip: &GossipIngressQueue,
+    raw: Vec<u8>,
+    arrived: std::time::Instant,
 ) {
-    // Routed by the ingress tag (§6 ledger), so no path trial-decodes: a
-    // 1:1 message carries `'D'` and gossip `'G'`. No transport frame
-    // travels as an app message, so anything else is dropped (plan E2.3).
-    match rekindle_codec::ingress::classify(raw) {
-        Ingress::Direct(_) => handler.on_direct(raw).await,
-        Ingress::Gossip(envelope) => {
-            super::dispatch_gossip::dispatch_bare_gossip(handler, dedup, envelope).await;
-        }
-        Ingress::Untagged => {
-            warn!(raw_len = raw.len(), "dropping untagged app_message");
-        }
+    match classify(&raw) {
+        Ingress::Media(datagram) => handler.on_media(datagram, arrived),
+        Ingress::Direct(_) => gossip.push(IngressItem::Direct(raw)),
+        Ingress::Gossip(envelope) => match decode_signed_envelope(envelope) {
+            Ok(signed) => gossip.push(IngressItem::Gossip {
+                signed,
+                is_video: false,
+            }),
+            Err(error) => warn!(%error, "dropping malformed gossip envelope"),
+        },
+        Ingress::Untagged => warn!(raw_len = raw.len(), "dropping untagged app_message"),
     }
+}
+
+fn lane_app_call<H: InboundHandler>(
+    handler: &Arc<H>,
+    lanes: &InboundLanes,
+    call_id: AppCallId,
+    message: Vec<u8>,
+    route: Option<String>,
+) {
+    let worker = Arc::clone(handler);
+    let messages = Arc::clone(&lanes.messages);
+    let media_keys = Arc::clone(&lanes.media_keys);
+    lanes.calls.dispatch(&handler.scope(), async move {
+        dispatch_app_call(
+            &worker,
+            messages.as_ref(),
+            &media_keys,
+            call_id,
+            &message,
+            route.as_deref(),
+        )
+        .await;
+    });
 }
 
 async fn dispatch_app_call<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
+    media_keys: &parking_lot::Mutex<MediaKeyAdmission>,
     call_id: AppCallId,
     raw: &[u8],
     route: Option<&str>,
 ) {
-    let ingress = rekindle_codec::ingress::classify(raw);
-    if let Ingress::Gossip(_) = ingress {
+    let ingress = classify(raw);
+    if matches!(ingress, Ingress::Gossip(_) | Ingress::Media(_)) {
         // Gossip travels by `app_message`; a `'G'` call is refused before
         // any frame decode (plan audit G10).
-        warn!("dropping app_call: gossip is not called");
+        warn!("dropping app_call: gossip and media use app_message");
         reply_nak(messages, call_id).await;
         return;
     }
@@ -237,35 +294,40 @@ async fn dispatch_app_call<H: InboundHandler>(
     let (type_id, payload) = match frame::decode(raw) {
         Ok(r) => r,
         Err(e) => {
-            // Not a transport frame. Before dropping it, check for the
-            // one unframed format we deliberately accept: a bare Cap'n
-            // Proto `CommunityEnvelope` carrying a wrapped MEK. That is
-            // what the desktop track's rotator sends
-            // (`services/veilid/network.rs`), and without this branch a
-            // desktop rotator could never deliver a rotated key to a
-            // daemon member — they would each NAK the other's format.
-            if let Some(transfer) = super::bare_envelope::decode_bare_mek_transfer(raw) {
+            // Unframed calls are restricted by their envelope's control variant.
+            if let Some(transfer) = bare_envelope::decode_bare_mek_transfer(raw) {
                 dispatch_bare_mek_transfer(handler, messages, call_id, transfer).await;
                 return;
             }
-            if let Some(request) = super::bare_envelope::decode_bare_bootstrap_request(raw) {
+            if let Some(payload) = bare_envelope::decode_bare_media_key(raw) {
+                let admitted = media_keys
+                    .lock()
+                    .admit(&payload, tokio::time::Instant::now().into_std());
+                if admitted {
+                    dispatch_bare_media_key(handler.as_ref(), messages, call_id, &payload).await;
+                } else {
+                    reply_nak(messages, call_id).await;
+                }
+                return;
+            }
+            if let Some(request) = bare_envelope::decode_bare_bootstrap_request(raw) {
                 dispatch_bare_request(handler, messages, call_id, request).await;
                 return;
             }
-            if let Some(request) = super::bare_envelope::decode_bare_checkpoint_state_request(raw) {
+            if let Some(request) = bare_envelope::decode_bare_checkpoint_state_request(raw) {
                 dispatch_bare_request(handler, messages, call_id, request).await;
                 return;
             }
-            if let Some(request) = super::bare_envelope::decode_bare_checkpoint_hint_request(raw) {
+            if let Some(request) = bare_envelope::decode_bare_checkpoint_hint_request(raw) {
                 dispatch_bare_request(handler, messages, call_id, request).await;
                 return;
             }
-            if let Some(request) = super::bare_envelope::decode_bare_frontier_request(raw) {
+            if let Some(request) = bare_envelope::decode_bare_frontier_request(raw) {
                 dispatch_bare_request(handler, messages, call_id, request).await;
                 return;
             }
             if let Some((attachment_id, requested_chunks)) =
-                super::bare_envelope::decode_bare_attachment_request(raw)
+                bare_envelope::decode_bare_attachment_request(raw)
             {
                 let request = crate::payload::rpc::InboundCall::RequestAttachment {
                     attachment_id,
@@ -348,95 +410,6 @@ async fn dispatch_app_call<H: InboundHandler>(
     }
 }
 
-/// Hand a bare MEK transfer to the handler and reply in the same
-/// dialect it arrived in.
-///
-/// The reply is the Cap'n Proto `MekTransferAck` the handler built (only
-/// the handler holds the unwrapped key that keys its confirmation tag,
-/// review S7m part 1), not a serialized `CallResponse`, because the sender
-/// awaits exactly that ack and settles the transfer only on a tag that
-/// verifies.
-async fn dispatch_bare_mek_transfer<H: InboundHandler>(
-    handler: &Arc<H>,
-    messages: &dyn AppMessagePort,
-    call_id: AppCallId,
-    transfer: rekindle_codec::community::envelope::MekTransferPayload,
-) {
-    let community_id = transfer.community_id.clone();
-    // The sender is authenticated by the ECDH wrap, not by an envelope
-    // signature, so it is passed through as the claimed sender and the
-    // handler's unwrap is what actually decides.
-    let sender = transfer.sender_pseudonym.clone();
-
-    let response_bytes = match tokio::time::timeout(
-        CALL_DEADLINE,
-        handler.on_call(
-            Some(sender.as_str()),
-            crate::payload::rpc::InboundCall::CommunityMekTransfer(transfer),
-        ),
-    )
-    .await
-    {
-        // `Ok(bytes)` is the encoded, tagged `MekTransferAck`.
-        Ok(crate::payload::rpc::CallResponse::Ok(ack)) => ack,
-        Ok(other) => {
-            warn!(
-                community = %community_id,
-                response = ?other,
-                "MEK transfer not accepted"
-            );
-            NAK.to_vec()
-        }
-        Err(_) => {
-            warn!(
-                community = %community_id,
-                deadline_secs = CALL_DEADLINE.as_secs(),
-                "MEK transfer handler exceeded deadline — sending NAK"
-            );
-            NAK.to_vec()
-        }
-    };
-
-    if let Err(e) = messages.reply(call_id, response_bytes).await {
-        warn!(error = %e, "failed to send MEK transfer reply");
-    }
-}
-
-/// The reply a requester of attachment chunks reads when we hold none of
-/// them: the desktop track's answer, so both shells read alike.
-const NOTHING_HELD: &[u8] = b"ACK";
-
-/// Hand a bare attachment request to the handler and reply in its
-/// dialect: the encoded `MultiAttachmentChunk` envelope the handler
-/// built, [`NOTHING_HELD`] when it holds none of the chunks, and a NAK
-/// when it refused or ran past the deadline.
-async fn dispatch_bare_attachment_request<H: InboundHandler>(
-    handler: &Arc<H>,
-    messages: &dyn AppMessagePort,
-    call_id: AppCallId,
-    request: crate::payload::rpc::InboundCall,
-) {
-    use crate::payload::rpc::CallResponse;
-    let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
-        Ok(CallResponse::Ok(chunks)) => chunks,
-        Ok(CallResponse::Ack) => NOTHING_HELD.to_vec(),
-        Ok(CallResponse::Rejected { reason }) => {
-            warn!(%reason, "attachment request refused");
-            NAK.to_vec()
-        }
-        Err(_) => {
-            warn!(
-                deadline_secs = CALL_DEADLINE.as_secs(),
-                "attachment request exceeded deadline — sending NAK"
-            );
-            NAK.to_vec()
-        }
-    };
-    if let Err(e) = messages.reply(call_id, reply).await {
-        warn!(error = %e, "failed to send attachment reply");
-    }
-}
-
 fn dispatch_value_change(
     shared: &SharedState,
     value_changes: &ValueChanges,
@@ -478,21 +451,17 @@ pub(crate) fn forget_dead_remote(
     peers.write().invalidate_blobs(&blobs)
 }
 
-async fn dispatch_route_change<H: InboundHandler>(
-    handler: &Arc<H>,
+fn dispatch_route_change(
+    control: &ControlIngressQueue<ControlWork>,
     routes: &RouteOwners,
     dead: &[String],
     dead_remote: &[String],
 ) {
     if !dead.is_empty() {
-        // Ours among the dead are forgotten (never released: the network
-        // already dropped them) and reallocated by their owner, off this
-        // loop.
         routes.routes.on_dead_own(dead);
-        let count = dead.len();
-        handler
-            .on_event(TransportEvent::LocalRoutesDied { count })
-            .await;
+        control.push(ControlWork::Event(TransportEvent::LocalRoutesDied {
+            count: dead.len(),
+        }));
     }
     if !dead_remote.is_empty() {
         let peer_keys = forget_dead_remote(
@@ -501,13 +470,13 @@ async fn dispatch_route_change<H: InboundHandler>(
             &routes.liveness,
             dead_remote,
         );
-        handler
-            .on_event(TransportEvent::RemoteRoutesDied { peer_keys })
-            .await;
+        control.push(ControlWork::Event(TransportEvent::RemoteRoutesDied {
+            peer_keys,
+        }));
     }
 }
 
-async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
+pub(super) async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
     if let Err(e) = messages.reply(call_id, NAK.to_vec()).await {
         warn!(error = %e, "failed to send NAK reply");
     }
@@ -516,49 +485,3 @@ async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
 #[cfg(test)]
 #[path = "dispatch_tests.rs"]
 mod tests;
-
-/// Answer a joiner's bare `BootstrapRequest` (plan E3.2) with the
-/// handler's encoded `bootstrapResponseV2`, or a member's bare
-/// `CheckpointStateRequest` (S7c.3) with its `checkpointStateResponse` (a
-/// `CheckpointHintRequest`, S7c.5, likewise). A refusal is a NAK; a handler
-/// past [`CALL_DEADLINE`] is answered
-/// [`RETRY_LATER`](crate::operations::direct::RETRY_LATER), as a 1:1 call
-/// is: a deadline is no refusal (review RV5 H1), and a NAK here withdraws a
-/// joiner's join (`rekindle_governance_runtime::bootstrap_peers`). The
-/// handler runs on the session scope ([`InboundHandler::scope`]), so its
-/// work (a bootstrap answer's invite revoke and key delivery) goes on to
-/// completion past the deadline, as `operations::direct::answer_call`'s
-/// does (plan JP1); with no session the request is answered retry-later.
-async fn dispatch_bare_request<H: InboundHandler>(
-    handler: &Arc<H>,
-    messages: &dyn AppMessagePort,
-    call_id: AppCallId,
-    request: crate::payload::rpc::InboundCall,
-) {
-    let (answer, answered) = tokio::sync::oneshot::channel();
-    let worker = Arc::clone(handler);
-    handler
-        .scope()
-        .spawn_or_drop("answer bare request", async move {
-            // Past the deadline the answer has no taker; the work is done.
-            let _ = answer.send(worker.on_call(None, request).await);
-        });
-    let reply = match tokio::time::timeout(CALL_DEADLINE, answered).await {
-        Ok(Ok(crate::payload::rpc::CallResponse::Ok(bytes))) => bytes,
-        Ok(Ok(other)) => {
-            warn!(response = ?other, "bare request refused");
-            NAK.to_vec()
-        }
-        Ok(Err(_)) => {
-            debug!("bare request dropped with its session: answered retry-later");
-            crate::operations::direct::RETRY_LATER.to_vec()
-        }
-        Err(_) => {
-            warn!("bare request exceeded the call deadline: answered retry-later");
-            crate::operations::direct::RETRY_LATER.to_vec()
-        }
-    };
-    if let Err(e) = messages.reply(call_id, reply).await {
-        warn!(error = %e, "failed to send bare request reply");
-    }
-}

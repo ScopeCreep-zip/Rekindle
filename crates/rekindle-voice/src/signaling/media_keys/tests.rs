@@ -268,7 +268,7 @@ impl VoiceSignalingDeps for Peer {
                 .await
                 .map(CommunityEnvelope::control),
             ControlPayload::VoiceMediaKeyRequest { .. } => {
-                handle_voice_media_key_request(&target.deps(), payload);
+                handle_voice_media_key_request(&target.deps(), payload).await;
                 None
             }
             _ => None,
@@ -483,9 +483,9 @@ async fn key_requests_are_answered_only_for_the_roster() {
     alice.settle().await;
     alice.take_calls();
 
-    handle_voice_media_key_request(&alice.deps(), &request(&mallory, &alice.id()));
-    handle_voice_media_key_request(&alice.deps(), &request(&bob, &alice.id()));
-    handle_voice_media_key_request(&alice.deps(), &request(&bob, &mallory.id()));
+    assert!(!handle_voice_media_key_request(&alice.deps(), &request(&mallory, &alice.id())).await);
+    assert!(handle_voice_media_key_request(&alice.deps(), &request(&bob, &alice.id())).await);
+    assert!(!handle_voice_media_key_request(&alice.deps(), &request(&bob, &mallory.id())).await);
     alice.settle().await;
 
     let calls = alice.take_calls();

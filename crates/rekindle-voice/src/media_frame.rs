@@ -15,17 +15,10 @@
 //! Feedback and receiver reports are control, not counted media, and
 //! carry no sequence number.
 
-/// A voice packet (`VoicePacket`, Cap'n Proto) after the sequence number.
-pub const VOICE_TAG: u8 = b'V';
-/// A signed community envelope of the video plane (video fragments,
-/// parity, frame acks, keyframe requests) after the sequence number.
-pub const ENVELOPE_TAG: u8 = b'M';
-/// Padding the pacer sends to probe the route (plan E4.3.3): zero bytes
-/// after the sequence number, counted by the estimator, discarded on
-/// arrival. str0m sends blank padding the same way (`poll_packet_padding`).
-pub const PADDING_TAG: u8 = b'P';
-/// A `TransportFeedback` report (plan E4.3.2); no sequence number.
-pub const FEEDBACK_TAG: u8 = b'T';
+/// The media tags live with the other ingress tags in
+/// `rekindle_codec::ingress` (plan E4.1 S3), so the transport's dispatch
+/// routes media by them.
+pub use rekindle_codec::ingress::{ENVELOPE_TAG, FEEDBACK_TAG, PADDING_TAG, VOICE_TAG};
 /// Tag plus sequence number.
 pub const SEQUENCED_HEADER_LEN: usize = 5;
 

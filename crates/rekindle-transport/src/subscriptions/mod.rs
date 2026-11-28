@@ -22,12 +22,15 @@ pub mod events;
 pub use rekindle_events::{dedup, state, state_effects};
 mod bare_envelope;
 pub mod dispatch;
+mod dispatch_bare;
 mod dispatch_gossip;
 mod drain;
+pub mod lanes;
 mod manager_ingress;
 mod manager_lifecycle;
 mod manager_network;
 mod manager_setup;
+pub mod media_key;
 mod read_state;
 mod value_changes;
 

@@ -1,4 +1,4 @@
-//! The one unframed inbound format this track accepts.
+//! Admission rules for unframed community calls.
 //!
 //! Every other `app_call` must arrive as a transport frame carrying a
 //! `SignedPayload`, and `dispatch_app_call` verifies that signature
@@ -35,16 +35,36 @@
 //! the handler verifies and admits as a member before it answers; the
 //! answer is bytes the reader checks against the endorsed `stateRoot`.
 //!
-//! Those four arguments cover `MekTransfer`, `RequestAttachment`,
-//! `BootstrapRequest` and `CheckpointStateRequest` and nothing else. Every
-//! other
-//! control variant carries its authority in plaintext fields — a
+//! Checkpoint hints and frontier requests are bound to their signers as
+//! checkpoint state requests are. A `VoiceMediaKey` carries a pseudonym
+//! signature over the key sealed to our per-session key (ADR 0016).
+//! A `VoiceMediaKeyRequest` is unsigned. It only asks for redelivery
+//! sealed to the requester's signed session key, and is metered per
+//! requester before the voice handler sees it.
+//!
+//! Every other control variant carries its authority in plaintext fields — a
 //! `MEKRotated` generation, a `RequestMEK` cascade index — and would be
 //! forgeable by anyone who can reach our route. Those must keep
 //! arriving signed, which is why this returns `None` for them and lets
 //! the caller NAK.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
+
+/// Decode only the two bare media-key calls. Their acknowledgements
+/// travel as replies, never as inbound calls.
+pub(super) fn decode_bare_media_key(raw: &[u8]) -> Option<ControlPayload> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(
+            payload @ (ControlPayload::VoiceMediaKey { .. }
+            | ControlPayload::VoiceMediaKeyRequest { .. }),
+        ) => Some(payload),
+        _ => None,
+    }
+}
 
 /// Recognise a bare `CommunityEnvelope` carrying a wrapped MEK.
 ///

@@ -169,6 +169,17 @@ impl InboundHandler for DaemonHandler {
             )
     }
 
+    fn on_media(&self, raw: &[u8], _arrived: std::time::Instant) {
+        tracing::trace!(len = raw.len(), "media datagram without a voice session");
+    }
+
+    async fn on_media_key_call(
+        &self,
+        _payload: &rekindle_codec::community::envelope::ControlPayload,
+    ) -> rekindle_transport::subscriptions::media_key::MediaKeyReply {
+        rekindle_transport::subscriptions::media_key::MediaKeyReply::Refused
+    }
+
     async fn on_direct(&self, datagram: &[u8]) {
         let Some(host) = self.friends() else {
             debug!("1:1 message before the host is up — dropped");

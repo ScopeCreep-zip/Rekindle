@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    classify, gossip_datagram, Ingress, SignedEnvelope, DIRECT_TAG, ENVELOPE_TAG, FEEDBACK_TAG,
+    GOSSIP_TAG, PADDING_TAG, RECEIVER_REPORT_TAG, VOICE_TAG,
+};
+use crate::capnp_envelope::encode_signed_envelope;
 use crate::capnp_envelope::decode_signed_envelope;
 
 fn signed() -> SignedEnvelope {
@@ -34,4 +38,12 @@ fn the_tags_route_and_anything_else_is_untagged() {
     assert_eq!(classify(&bare.unwrap()), Ingress::Untagged);
     // A transport frame starts with its version byte.
     assert_eq!(classify(&[0x01, 0, 0, 0]), Ingress::Untagged);
+}
+
+#[test]
+fn the_media_tags_route_without_stripping_the_tag() {
+    for tag in [VOICE_TAG, ENVELOPE_TAG, PADDING_TAG, FEEDBACK_TAG, RECEIVER_REPORT_TAG] {
+        let datagram = [tag, 7];
+        assert_eq!(classify(&datagram), Ingress::Media(&datagram));
+    }
 }

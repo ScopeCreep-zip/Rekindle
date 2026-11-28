@@ -9,6 +9,9 @@
 //! path below this is queued to a worker rather than run inline.
 
 use std::sync::Arc;
+use std::time::Instant;
+
+use rekindle_transport::subscriptions::lanes::IngressItem;
 
 use crate::state::AppState;
 
@@ -18,10 +21,7 @@ use crate::state::AppState;
 /// `b'T'` transport feedback report (plan E4.3.2), or a `b'R'` receiver
 /// report. Returns `true` if the message was one of them and is now
 /// dealt with.
-pub(super) fn handle_media_tag(state: &Arc<AppState>, message: &[u8]) -> bool {
-    // Arrival is stamped here, on the dispatch thread, before any queue
-    // adds its own delay to what the estimator measures.
-    let arrived = std::time::Instant::now();
+pub(super) fn handle_media_tag(state: &Arc<AppState>, message: &[u8], arrived: Instant) -> bool {
     if let Some((tag, transport_seq, payload)) =
         rekindle_voice::media_frame::split_sequenced(message)
     {
@@ -169,7 +169,7 @@ fn handle_media_envelope(
     let is_video = super::video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
     state
         .gossip_ingress
-        .push(crate::services::veilid::ingress_queue::IngressItem::Gossip { signed, is_video });
+        .push(IngressItem::Gossip { signed, is_video });
 }
 
 /// Transport feedback about our outbound stream to one peer: verified,

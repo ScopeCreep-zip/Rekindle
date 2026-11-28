@@ -464,3 +464,30 @@ pub enum ControlPayload {
     },
     // ── Generic responses ──
 }
+
+impl ControlPayload {
+    /// Whether the peer acknowledged this exact voice media key.
+    #[must_use]
+    pub fn acknowledged_by(&self, ack: &Self) -> bool {
+        let (
+            Self::VoiceMediaKey {
+                community_id, channel_id, sender, recipient, key_index, ..
+            },
+            Self::VoiceMediaKeyAck {
+                community_id: acked_community,
+                channel_id: acked_channel,
+                sender: acked_sender,
+                recipient: acker,
+                key_index: acked_index,
+            },
+        ) = (self, ack)
+        else {
+            return false;
+        };
+        acked_community == community_id
+            && acked_channel == channel_id
+            && acked_sender == sender
+            && acker == recipient
+            && acked_index == key_index
+    }
+}

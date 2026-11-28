@@ -10,7 +10,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_transport::subscriptions::media_key::MediaKeyReply;
 use rekindle_voice::signaling::{CommunityVoiceEvent, StageChannelInfo, VoiceSignalingDeps};
 use rekindle_voice::transport::VoiceTransport;
 use tokio::sync::Mutex as AsyncMutex;
@@ -86,37 +87,32 @@ pub fn member_departed(
     rekindle_voice::signaling::member_departed(&deps, community_id, departed);
 }
 
-/// An inbound media-key `app_call` (plan C7.22): a `VoiceMediaKey` is
-/// installed and answered with its `VoiceMediaKeyAck`; a
-/// `VoiceMediaKeyRequest` starts our deliveries and is answered with a
-/// bare acknowledgement. Returns the reply bytes.
+/// Pass an admitted media-key call to the current voice session.
 pub async fn answer_media_key_call(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    payload: &rekindle_codec::community::envelope::ControlPayload,
-) -> Vec<u8> {
-    use rekindle_codec::community::envelope::ControlPayload;
-    let Ok(adapter) = VoiceSignalingAdapter::new(state.clone(), app_handle.clone()) else {
-        return b"ACK".to_vec();
+    payload: &ControlPayload,
+) -> MediaKeyReply {
+    let Ok(adapter) = VoiceSignalingAdapter::new(Arc::clone(state), app_handle.clone()) else {
+        return MediaKeyReply::Refused;
     };
     let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     match payload {
         ControlPayload::VoiceMediaKey { .. } => {
             rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
                 .await
-                .and_then(|ack| {
-                    rekindle_codec::capnp_envelope::encode_community_envelope(
-                        &CommunityEnvelope::control(ack),
-                    )
-                    .ok()
+                .map_or(MediaKeyReply::Refused, |ack| {
+                    MediaKeyReply::Installed(Box::new(ack))
                 })
-                .unwrap_or_else(|| b"ACK".to_vec())
         }
         ControlPayload::VoiceMediaKeyRequest { .. } => {
-            rekindle_voice::signaling::handle_voice_media_key_request(&deps, payload);
-            b"ACK".to_vec()
+            if rekindle_voice::signaling::handle_voice_media_key_request(&deps, payload).await {
+                MediaKeyReply::Requested
+            } else {
+                MediaKeyReply::Refused
+            }
         }
-        _ => b"ACK".to_vec(),
+        _ => MediaKeyReply::Refused,
     }
 }
 

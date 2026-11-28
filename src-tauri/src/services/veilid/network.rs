@@ -48,7 +48,7 @@ pub async fn handle_app_call(
 
     // A 1:1 call (the `'D'` tag) is routed first, by its tag: the Host's
     // direct dispatch; an unported kind (a relay offer) is answered by the
-    // desktop's arm (plan E2.3). Gossip never travels by `app_call`. The
+    // desktop's arm (plan E2.3). Gossip and media use app_message. The
     // untagged arms below keep their order until their owners tag them
     // (plan E2.3, "Ingress").
     match rekindle_codec::ingress::classify(&message) {
@@ -61,8 +61,9 @@ pub async fn handle_app_call(
             }
             return;
         }
-        rekindle_codec::ingress::Ingress::Gossip(_) => {
-            tracing::debug!(msg_len = message.len(), "gossip by app_call — NAK");
+        rekindle_codec::ingress::Ingress::Gossip(_)
+        | rekindle_codec::ingress::Ingress::Media(_) => {
+            tracing::debug!(msg_len = message.len(), "gossip or media by app_call — NAK");
             reply_to_call(state, call_id, NAK.to_vec()).await;
             return;
         }
@@ -211,10 +212,19 @@ async fn community_call(
                 // acknowledged. The sender is authenticated by its pseudonym
                 // signature inside the payload (plan C7.29), not by an
                 // envelope signature.
+                let admitted = state
+                    .media_key_admission
+                    .lock()
+                    .admit(&payload, tokio::time::Instant::now().into_std());
+                if !admitted {
+                    return Some(NAK.to_vec());
+                }
                 crate::services::voice_signaling_adapter::answer_media_key_call(
                     app_handle, state, &payload,
                 )
                 .await
+                .encode(&payload)
+                .unwrap_or_else(|| NAK.to_vec())
             }
             Some(ControlPayload::RequestAttachment {
                 channel_id: _,

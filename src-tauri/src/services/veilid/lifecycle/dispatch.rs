@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::state::AppState;
+use rekindle_transport::subscriptions::lanes::work_until_stopped;
 use tokio::sync::mpsc;
 use veilid_core::VeilidUpdate;
 
@@ -29,49 +30,41 @@ fn update_kind(update: &VeilidUpdate) -> &'static str {
     }
 }
 
-/// Phase 9 — drain the cold-start buffer through `handle_veilid_update`.
-/// Called once on the first lifecycle Operational transition. After the
-/// drain, subsequent identity-dependent events bypass the buffer
-/// (`try_record` returns `Err`) and dispatch directly in the main loop.
-async fn drain_cold_start(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
-    let mut drained: Vec<VeilidUpdate> = Vec::new();
-    state.cold_start.install_callback(|ev| drained.push(ev));
-    if drained.is_empty() {
-        return;
-    }
+/// Drain recorded identity-dependent updates through their normal lanes.
+fn drain_cold_start(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
+    let mut drained = Vec::new();
+    state
+        .cold_start
+        .install_callback(|event| drained.push(event));
     tracing::info!(count = drained.len(), "cold_start_drain");
-    for ev in drained {
-        crate::services::veilid::handle_veilid_update(app_handle, state, ev).await;
+    for update in drained {
+        dispatch_identity_update(app_handle, state, update);
     }
 }
 
-/// Run `handle` on each item `pop` yields until the stop flag turns true,
-/// or its sender is gone: the dispatch loop ended without the flag (its task
-/// panicked or was aborted). A gone sender's `changed()` is ready at once on
-/// every poll, so a worker that only read the flag re-polled it forever,
-/// one busy runtime thread per worker (IC1).
-async fn work_until_stopped<T, P, PF, H, HF>(
-    mut stop: tokio::sync::watch::Receiver<bool>,
-    worker: &'static str,
-    mut pop: P,
-    mut handle: H,
-) where
-    P: FnMut() -> PF,
-    PF: std::future::Future<Output = T>,
-    H: FnMut(T) -> HF,
-    HF: std::future::Future<Output = ()>,
-{
-    loop {
-        tokio::select! {
-            biased;
-            changed = stop.changed() => {
-                if changed.is_err() || *stop.borrow() {
-                    tracing::info!(worker, "ingress worker shutting down");
-                    break;
-                }
-            }
-            item = pop() => handle(item).await,
+fn dispatch_identity_update(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    update: VeilidUpdate,
+) {
+    let Some(scope) = crate::state_helpers::login_scope(state) else {
+        tracing::debug!(
+            kind = update_kind(&update),
+            "identity-dependent update dropped: no session"
+        );
+        return;
+    };
+    match update {
+        VeilidUpdate::ValueChange(_) => state.control_ingress.push(update),
+        VeilidUpdate::AppMessage(message) => super::super::app_message::handle(state, &message),
+        VeilidUpdate::AppCall(_) => {
+            let app_handle = app_handle.clone();
+            let worker = Arc::clone(state);
+            state.app_call_lane.dispatch(&scope, async move {
+                crate::services::veilid::handle_veilid_update(&app_handle, &worker, update).await;
+            });
         }
+        _ => unreachable!("only identity-dependent updates are recorded"),
     }
 }
 
@@ -110,17 +103,8 @@ pub async fn start_dispatch_loop(
         })
     };
 
-    // Piece 6 — control ingress worker: sibling to the gossip worker.
-    // The serial recv loop used to `.await` the SLOW identity-dependent
-    // handlers inline — `ValueChange` (DHT read → DB → decrypt) and
-    // `AppCall` (network round-trips). While it did, incoming media
-    // `AppMessage`s backed up in the node's 4096-deep update channel and
-    // overflowed (the measured 388 media drops). This worker drains
-    // `ValueChange`/`AppCall` off-loop via `handle_veilid_update` so the
-    // recv loop returns immediately. Single worker → FIFO among control
-    // events (largely order-tolerant, but kept ordered conservatively).
-    // Shares the gossip worker's stop signal (one `send(true)` stops
-    // both).
+    // Watch notifications drain on one control worker so DHT reads leave
+    // the receiver free to handle media. Both workers share the stop flag.
     let control_stop_rx = worker_stop_tx.subscribe();
     let control_worker_handle = {
         let app_handle = app_handle.clone();
@@ -153,7 +137,7 @@ pub async fn start_dispatch_loop(
     if state.lifecycle.current() == rekindle_lifecycle::LifecycleState::Operational
         && !state.cold_start.is_installed()
     {
-        drain_cold_start(&app_handle, &state).await;
+        drain_cold_start(&app_handle, &state);
     }
 
     loop {
@@ -172,7 +156,7 @@ pub async fn start_dispatch_loop(
                         if new_state == rekindle_lifecycle::LifecycleState::Operational
                             && !state.cold_start.is_installed()
                         {
-                            drain_cold_start(&app_handle, &state).await;
+                            drain_cold_start(&app_handle, &state);
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
@@ -187,7 +171,7 @@ pub async fn start_dispatch_loop(
                             == rekindle_lifecycle::LifecycleState::Operational
                             && !state.cold_start.is_installed()
                         {
-                            drain_cold_start(&app_handle, &state).await;
+                            drain_cold_start(&app_handle, &state);
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -205,61 +189,8 @@ pub async fn start_dispatch_loop(
                 }
                 // Identity-dependent: buffer until consumer install, then
                 // dispatch once the buffer is closed.
-                match state.cold_start.try_record(update) {
-                    Ok(()) => {
-                        // Buffered for later drain. Nothing to do now.
-                    }
-                    Err(update) if crate::state_helpers::login_scope(&state).is_none() => {
-                        // Past the cold-start buffer with no session: the
-                        // update belongs to an identity that logged out
-                        // (its records closing, its peers' calls). Dropped
-                        // rather than handled against no session (plan
-                        // C4.L3).
-                        tracing::debug!(
-                            kind = update_kind(&update),
-                            "identity-dependent update dropped: no session"
-                        );
-                    }
-                    Err(update) => {
-                        // Piece 6 — post-cold-start, offload the SLOW
-                        // identity-dependent handlers to the control
-                        // ingress worker so this serial recv loop returns
-                        // immediately and the node's 4096-deep update
-                        // channel can't back up incoming media
-                        // `AppMessage`s behind them (the measured 388
-                        // media drops). `AppMessage` STAYS inline: its
-                        // handler is already sync-fast (media `try_send` /
-                        // gossip-queue push, returns immediately).
-                        //
-                        // Ordering is safe: media (`AppMessage`) and
-                        // control (`ValueChange`/`AppCall`) are independent
-                        // inbound streams with no cross-ordering
-                        // dependency, so decoupling them reorders nothing
-                        // that matters. The single control worker preserves
-                        // FIFO among control events; governance
-                        // `ValueChange`s are CRDT-merged (order-independent)
-                        // and presence `ValueChange`s are staleness-checked
-                        // via `last_heartbeat`.
-                        match update {
-                            VeilidUpdate::ValueChange(_) => {
-                                state.control_ingress.push(update);
-                            }
-                            // Plan C7.22 — a call must be answered within
-                            // Veilid's 5 s deadline, so it never waits
-                            // behind `ValueChange`s (`app_call_lane`).
-                            VeilidUpdate::AppCall(_) => {
-                                state.app_call_lane.dispatch(&app_handle, &state, update);
-                            }
-                            _ => {
-                                crate::services::veilid::handle_veilid_update(
-                                    &app_handle,
-                                    &state,
-                                    update,
-                                )
-                                .await;
-                            }
-                        }
-                    }
+                if let Err(update) = state.cold_start.try_record(update) {
+                    dispatch_identity_update(&app_handle, &state, update);
                 }
             }
         }

@@ -116,6 +116,15 @@ impl InboundHandler for ShellInbound {
             .unwrap_or_else(|| rekindle_lifecycle::SessionScope::closed("no host"))
     }
 
+    fn on_media(&self, _raw: &[u8], _arrived: std::time::Instant) {}
+
+    async fn on_media_key_call(
+        &self,
+        _payload: &rekindle_codec::community::envelope::ControlPayload,
+    ) -> rekindle_transport::subscriptions::media_key::MediaKeyReply {
+        rekindle_transport::subscriptions::media_key::MediaKeyReply::Refused
+    }
+
     async fn on_direct(&self, datagram: &[u8]) {
         if let Some(host) = self.host() {
             host.receive_direct(datagram).await;
