@@ -240,3 +240,7 @@ pub fn rewrite(vault_path: &Path, header: &VaultHeader) -> Result<(), VaultError
 #[cfg(test)]
 #[path = "header_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "header_kat_tests.rs"]
+mod kat_tests;
