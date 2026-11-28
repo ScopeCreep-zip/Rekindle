@@ -11,7 +11,11 @@ verbose = "info"
 timeout = 20
 
 # Retries on transient errors.
-max_retries = 2
+max_retries = 4
+
+# Wait before the first retry; lychee doubles it each retry (2, 4, 8, 16 s),
+# long enough to outlast github.com throttling the runner (503 on blob pages).
+retry_wait_time = 2
 
 # Maximum number of concurrent requests.
 max_concurrency = 14
@@ -71,3 +75,12 @@ include_fragments = "none"
 
 # Run only over markdown — code comments are out of scope for now.
 extensions = ["md"]
+
+# github.com throttles automated page fetches from CI runners and answers 503
+# (lychee fetches a blob URL's HTML; the token only backs a repo-metadata
+# fallback). Pace requests to it instead of accepting 503 or excluding it, so a
+# broken GitHub link still fails. lychee's rate-limit guidance:
+# https://lychee.cli.rs/troubleshooting/rate-limits/ (per-host settings, v0.24.2).
+[hosts."github.com"]
+concurrency = 2
+request_interval = "500ms"
