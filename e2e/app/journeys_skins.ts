@@ -116,6 +116,11 @@ export async function importAndKeepSkin(b: Browser, user: User, bytes: Buffer, n
 /** The href of the window's linked, loaded skin sheet (useSkin.ts LINK_ID), or "". */
 export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";';
 
+// On a framed first show or reload, the linked sheet can precede the
+// rendered skin tree: the window stays hidden behind `data-skin-opening`
+// (useSkin.ts) until applySkin commits, so a press or shot finds nothing.
+const PRESENTED_SHEET = `return { opening: document.documentElement.hasAttribute("data-skin-opening"), href: (function () { ${LINKED_SHEET} })() };`;
+
 /**
  * Wait until the window `b` is in shows the skin sheet `href` (applySkin's
  * answer). Each window links a new skin itself, after decoding its own
@@ -123,15 +128,21 @@ export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); r
  * setSkinShells), so until then it still draws the previous skin's tree.
  */
 export async function skinShown(b: Browser, href: string): Promise<void> {
-  let now = "";
+  let now = { opening: false, href: "" };
   await waitUntil(
     async () => {
-      now = (await b.execute(LINKED_SHEET)) as string;
-      return now === href;
+      now = (await b.execute(PRESENTED_SHEET)) as typeof now;
+      return !now.opening && now.href === href;
     },
     NET_WAIT_MS,
-    `the window never showed the applied skin (shows ${now || "no sheet"})`,
-  );
+    "",
+  ).catch(() => {
+    throw new Error(
+      now.opening
+        ? `the window never showed the applied skin: still hidden behind data-skin-opening (sheet ${now.href || "none"})`
+        : `the window never showed the applied skin (shows ${now.href || "no sheet"})`,
+    );
+  });
 }
 
 /** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
