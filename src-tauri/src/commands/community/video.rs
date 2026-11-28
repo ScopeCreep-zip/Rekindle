@@ -3,6 +3,7 @@
 //! the desktop side provides framing helpers and emits assembled
 //! frames the renderer can consume.
 
+use rekindle_types::video::TopologyReason;
 use tauri::State;
 
 use crate::services::community_video_runtime::{
@@ -187,7 +188,7 @@ pub async fn notify_video_topology_change(
     channel_id: String,
     stream_id_hex: String,
     relay_host_pseudonym: Option<String>,
-    reason: String,
+    reason: TopologyReason,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     notify_video_topology_change_inner(

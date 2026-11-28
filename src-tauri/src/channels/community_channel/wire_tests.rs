@@ -1,7 +1,7 @@
 //! Wire-format snapshot tests for the video cluster of `CommunityEvent`.
 use rekindle_governance_runtime::{deps::GovernanceRuntimeDeps, CardText};
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::video::{Codec, ScalabilityMode};
+use rekindle_types::video::{Codec, ScalabilityMode, TopologyReason};
 use rekindle_video::{DecoderConstraints, EncoderConstraints, SessionVideoConfig};
 use serde_json::json;
 
@@ -128,15 +128,21 @@ fn video_bitrate_target_wire() {
 #[tokio::test]
 async fn video_envelope_rejected_wire() {
     let test = host_with_card().await;
-    for (peer, name) in [(NAMED_PEER, "Kit"), (UNNAMED_PEER, "cdcd cdcd")] {
-        let pseudonym = peer.to_hex();
-        let ev = rejection_event(
-            &test.state,
-            "c1".into(),
-            pseudonym.clone(),
-            "bad signature".into(),
-        )
-        .expect("video rejection event");
+    for (peer, name, notice) in [
+        (Some(NAMED_PEER), "Kit", "Could not verify video from Kit."),
+        (
+            Some(UNNAMED_PEER),
+            "cdcd cdcd",
+            "Could not verify video from cdcd cdcd.",
+        ),
+        (
+            None,
+            "Unknown sender",
+            "Could not verify video from Unknown sender.",
+        ),
+    ] {
+        let pseudonym = peer.as_ref().map(PseudonymKey::to_hex);
+        let ev = rejection_event(&test.state, "c1".into(), peer).expect("video rejection event");
         assert_eq!(
             serde_json::to_value(&ev).unwrap(),
             json!({
@@ -145,7 +151,7 @@ async fn video_envelope_rejected_wire() {
                     "communityId": "c1",
                     "senderPseudonym": pseudonym,
                     "displayName": name,
-                    "reason": "bad signature"
+                    "notice": notice
                 }
             })
         );
@@ -161,7 +167,7 @@ fn video_topology_change_wire() {
         channel_id: "ch1".into(),
         stream_id: "s1".into(),
         relay_host_pseudonym: None,
-        reason: "initial".into(),
+        reason: TopologyReason::Initial,
         lamport: 7,
     });
     assert_eq!(

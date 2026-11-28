@@ -14,7 +14,8 @@
 
 use crate::error::VideoError;
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_types::video::{Codec, ScalabilityMode};
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::video::{Codec, ScalabilityMode, TopologyReason};
 
 /// Events emitted to the UI from receive-side flows. Each variant
 /// maps 1:1 to a `CommunityEvent::Video*` shape; the adapter does the
@@ -47,7 +48,7 @@ pub enum VideoFlowEvent {
         channel_id: String,
         stream_id: [u8; 16],
         relay_host_pseudonym: Option<String>,
-        reason: String,
+        reason: TopologyReason,
         lamport: u64,
     },
     MediaCapabilities {
@@ -65,15 +66,10 @@ pub enum VideoFlowEvent {
     /// rejected at the gossip-verify boundary. The frontend renders this
     /// as a UI hint so users see asymmetric-drop conditions without grep.
     ///
-    /// **Sentinel values:** if the envelope failed to deserialize before
-    /// we could read the routing fields, the emitter substitutes
-    /// `"<unknown>"` literally for `community_id` and/or
-    /// `sender_pseudonym`. Callers must treat that exact string as the
-    /// "indeterminate" marker — no other fallback is permitted.
+    /// Routing fields may be absent if the envelope did not decode.
     EnvelopeRejected {
-        community_id: String,
-        sender_pseudonym: String,
-        reason: String,
+        community_id: Option<String>,
+        sender_pseudonym: Option<PseudonymKey>,
     },
 }
 
@@ -145,7 +141,3 @@ pub trait VideoDeps: Send + Sync + 'static {
         recovered_via_fec: bool,
     );
 }
-
-#[cfg(test)]
-#[path = "deps_tests.rs"]
-mod tests;

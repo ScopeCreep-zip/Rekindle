@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::media::MediaScope;
-use crate::video::SessionVideoConfig;
+use crate::video::{SessionVideoConfig, TopologyReason};
 
 /// A peer whose advertised decoder set blocks codec negotiation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,9 +44,11 @@ pub enum VideoEvent {
     /// boundary.
     EnvelopeRejected {
         scope: MediaScope,
-        sender: String,
+        /// The sender key, if it could be determined.
+        sender: Option<String>,
+        /// The Host's shown name, including for an indeterminate sender.
         display_name: String,
-        reason: String,
+        notice: String,
     },
     /// `sender`'s `stream_id` now reaches us through `relay_host` (or
     /// directly when `None`).
@@ -55,7 +57,7 @@ pub enum VideoEvent {
         sender: String,
         stream_id: String,
         relay_host: Option<String>,
-        reason: String,
+        reason: TopologyReason,
         lamport: u64,
     },
 }

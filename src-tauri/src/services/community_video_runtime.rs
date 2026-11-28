@@ -4,6 +4,7 @@
 //! commands (keyframe_request, frame_send, topology_change).
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::video::TopologyReason;
 
 use crate::services::community::video;
 use crate::state::SharedState;
@@ -142,7 +143,7 @@ pub fn notify_video_topology_change_inner(
     channel_id: &str,
     stream_id_hex: &str,
     relay_host_pseudonym: Option<String>,
-    reason: String,
+    reason: TopologyReason,
 ) -> Result<(), String> {
     let stream_id = decode_stream_id(stream_id_hex)?;
     let lamport =

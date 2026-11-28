@@ -12,6 +12,8 @@ use crate::state_helpers;
 use rekindle_codec::capnp_envelope::{decode_signed_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{verify_envelope, CommunityEnvelope, SignedEnvelope};
 use rekindle_codec::ingress::{classify, Ingress};
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
 
 // Fully synchronous: the voice fast path is a `try_send` and
 // everything else is a queue push — the dispatch loop never blocks on
@@ -116,10 +118,9 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOut
         // rejections to the frontend as `VideoEnvelopeRejected` so the
         // asymmetric-drop case (Pop!_OS rejects, macOS accepts or vice
         // versa) is observable from frontend signals.
-        let reason = e.clone();
         tracing::warn!(
             target: "rekindle_video::verify",
-            reason = %reason,
+            reason = %e,
             sender_pseudonym = %signed.sender_pseudonym,
             community_id = %community_id,
             "verify_envelope failed"
@@ -134,8 +135,9 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOut
             if let Some(event) = crate::services::video_adapter::rejection_event(
                 state,
                 community_id.clone(),
-                signed.sender_pseudonym.clone(),
-                reason,
+                pseudonym_hex(&signed.sender_pseudonym)
+                    .ok()
+                    .map(|key| PseudonymKey(key.to_bytes())),
             ) {
                 return IngestOutcome::event(WebviewEvent::Community(event));
             }

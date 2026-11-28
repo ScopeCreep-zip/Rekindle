@@ -215,7 +215,10 @@ fn first_frame_emits_initial_topology_change() {
     );
     assert!(matches!(
         calls.sent.first().expect("topology sent").as_control(),
-        Some(ControlPayload::TopologyChange { reason, .. }) if reason == "initial"
+        Some(ControlPayload::TopologyChange {
+            reason: rekindle_types::video::TopologyReason::Initial,
+            ..
+        })
     ));
     // The returned frame carries the fragments for the pacer.
     for env in &frame.envelopes {

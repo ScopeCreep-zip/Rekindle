@@ -24,7 +24,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use rekindle_video_capture::{CaptureConfig, NativeCaptureSession};
+use rekindle_types::video::NativeVideoFailure;
+use rekindle_video_capture::{CaptureConfig, CaptureError, NativeCaptureSession};
 
 use crate::state::AppState;
 
@@ -199,12 +200,14 @@ fn fail_session(
     window: &str,
     community_id: &str,
     channel_id: &str,
-    message: String,
+    cause: NativeVideoFailure,
+    detail: Option<&str>,
 ) {
     tracing::warn!(
         target: "rekindle_video_capture",
         community_id = %community_id,
-        %message,
+        ?cause,
+        ?detail,
         "native capture failed — stopping session"
     );
     state.native_video.active.lock().take();
@@ -214,14 +217,18 @@ fn fail_session(
             window: window.to_owned(),
             community_id: community_id.to_owned(),
             channel_id: channel_id.to_owned(),
-            message,
+            cause,
         },
     );
 }
 
+fn start_notice(cause: NativeVideoFailure, detail: &dyn std::fmt::Display) -> String {
+    tracing::warn!(target: "rekindle_video_capture", ?cause, %detail, "native camera start failed");
+    cause.notice()
+}
+
 /// Start the native camera for the given voice channel. Returns the
-/// stream id (hex) on success. Errors are user-displayable strings
-/// (`camera busy: …`, `camera-session-active`, …).
+/// stream id (hex) on success and the Host's notice on refusal.
 pub async fn start(
     state: &Arc<AppState>,
     window: &str,
@@ -231,7 +238,7 @@ pub async fn start(
     device_label: Option<String>,
 ) -> Result<String, String> {
     if state.native_video.active.lock().is_some() {
-        return Err("camera-session-active".into());
+        return Err(NativeVideoFailure::SessionActive.notice());
     }
     // nokhwa's AVCaptureDevice open does not reliably trigger the macOS
     // TCC prompt on its own; front-load the request (idempotent — a
@@ -244,12 +251,13 @@ pub async fn start(
         community_id,
         channel_id,
         track_label,
-    )?;
+    )
+    .map_err(|error| start_notice(NativeVideoFailure::StartFailed, &error))?;
     let stream_id: [u8; 16] = hex::decode(&stream_id_hex)
-        .map_err(|e| e.to_string())?
+        .map_err(|error| start_notice(NativeVideoFailure::StartFailed, &error))?
         .as_slice()
         .try_into()
-        .map_err(|_| "stream id must be 16 bytes".to_string())?;
+        .map_err(|error| start_notice(NativeVideoFailure::StartFailed, &error))?;
 
     let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(64);
     let (preview_tx, mut preview_rx) = tokio::sync::mpsc::channel(8);
@@ -289,8 +297,17 @@ pub async fn start(
         move || NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx)
     })
     .await
-    .map_err(|e| format!("capture start task: {e}"))?
-    .map_err(|e| e.to_string())?;
+    .map_err(|error| start_notice(NativeVideoFailure::StartFailed, &error))?
+    .map_err(|error| {
+        let cause = match error {
+            CaptureError::Busy(_) => NativeVideoFailure::CameraBusy,
+            CaptureError::Unavailable(_)
+            | CaptureError::Device(_)
+            | CaptureError::Timeout(_)
+            | CaptureError::Pipeline(_) => NativeVideoFailure::StartFailed,
+        };
+        start_notice(cause, &error)
+    })?;
 
     *state.native_video.active.lock() = Some(ActiveSession {
         stream_id,
@@ -361,7 +378,8 @@ pub async fn start(
                                             &pump_window,
                                             &pump_community,
                                             &pump_channel,
-                                            message,
+                                            NativeVideoFailure::ReopenFailed,
+                                            Some(&message),
                                         );
                                         break;
                                     }
@@ -374,14 +392,19 @@ pub async fn start(
                         }
                     }
                     error = error_rx.recv() => {
-                        let message = error.unwrap_or_else(|| "camera pipeline ended".into());
+                        let cause = if error.is_some() {
+                            NativeVideoFailure::PipelineFailed
+                        } else {
+                            NativeVideoFailure::PipelineEnded
+                        };
                         session.stop();
                         fail_session(
                             &pump_state,
                             &pump_window,
                             &pump_community,
                             &pump_channel,
-                            message,
+                            cause,
+                            error.as_deref(),
                         );
                         break;
                     }
@@ -416,8 +439,14 @@ pub async fn start(
                     }
                     frame = frame_rx.recv() => {
                         let Some(frame) = frame else {
-                            // Pipeline torn down — sender side dropped.
-                            pump_state.native_video.active.lock().take();
+                            fail_session(
+                                &pump_state,
+                                &pump_window,
+                                &pump_community,
+                                &pump_channel,
+                                NativeVideoFailure::PipelineEnded,
+                                None,
+                            );
                             break;
                         };
                         // The frame sequence numbers only frames the egress

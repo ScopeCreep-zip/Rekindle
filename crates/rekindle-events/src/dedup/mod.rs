@@ -75,7 +75,8 @@ impl EventDedup {
         // UnreadChanged is always emitted — it's a computed aggregate, not a network event.
         // Transfers and post admission changes come from local state.
         // Each change may legitimately repeat the same event payload.
-        // Repeated video facts (such as keyframe requests) are independent events.
+        // Video ingress already rejects stale topology clocks. A fresh rejection
+        // or keyframe request may repeat earlier display copy or payload fields.
         if matches!(
             event,
             SubscriptionEvent::UnreadChanged { .. }

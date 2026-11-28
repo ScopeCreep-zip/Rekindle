@@ -11,6 +11,79 @@ use serde::{Deserialize, Serialize};
 
 use crate::media::{MediaScope, Track};
 
+/// The supported reasons for a video topology announcement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TopologyReason {
+    Initial,
+    RelayLeft,
+    RelayOverloaded,
+    ExplicitRequest,
+}
+
+impl TopologyReason {
+    /// Code written to the Cap'n Proto text field.
+    #[must_use]
+    pub const fn wire_str(self) -> &'static str {
+        match self {
+            Self::Initial => "initial",
+            Self::RelayLeft => "relay-left",
+            Self::RelayOverloaded => "relay-overloaded",
+            Self::ExplicitRequest => "explicit-request",
+        }
+    }
+
+    /// Decode a Cap'n Proto reason code.
+    #[must_use]
+    pub fn from_wire_str(code: &str) -> Option<Self> {
+        match code {
+            "initial" => Some(Self::Initial),
+            "relay-left" => Some(Self::RelayLeft),
+            "relay-overloaded" => Some(Self::RelayOverloaded),
+            "explicit-request" => Some(Self::ExplicitRequest),
+            _ => None,
+        }
+    }
+}
+
+/// Why the native camera could not start or keep capturing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeVideoFailure {
+    SessionActive,
+    CameraBusy,
+    StartFailed,
+    ReopenFailed,
+    PipelineFailed,
+    PipelineEnded,
+}
+
+impl NativeVideoFailure {
+    /// The Host's words for command refusals and live pump failures.
+    #[must_use]
+    pub fn notice(self) -> String {
+        match self {
+            Self::SessionActive => "A camera session is already active.",
+            Self::CameraBusy => "The camera is in use by another application.",
+            Self::StartFailed => "Could not start the camera.",
+            Self::ReopenFailed => "Could not switch to the selected camera.",
+            Self::PipelineFailed => "The camera stopped working.",
+            Self::PipelineEnded => "The camera stopped sending video.",
+        }
+        .to_owned()
+    }
+}
+
+/// Resolve the name and notice for a rejected video envelope.
+#[must_use]
+pub fn video_rejection_notice(known_name: Option<String>) -> (String, String) {
+    let display_name = match known_name {
+        Some(name) => name,
+        None => "Unknown sender".to_owned(),
+    };
+    let notice = format!("Could not verify video from {display_name}.");
+    (display_name, notice)
+}
+
 /// Video codec identifier. Closed set, multi-codec by design (the
 /// platform reality: Apple WebKit guarantees H.264 hardware encode but
 /// not VP9; WebKitGTK guarantees VP8/VP9 via libvpx but H.264 only via

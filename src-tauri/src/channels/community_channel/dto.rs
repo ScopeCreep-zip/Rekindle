@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use rekindle_types::video::TopologyReason;
 use rekindle_video::SessionVideoConfig;
 
 /// Architecture §10.6 — receiver requests an I-frame.
@@ -71,9 +72,9 @@ pub struct VideoBitrateTargetEvent {
 #[serde(rename_all = "camelCase")]
 pub struct VideoEnvelopeRejectedEvent {
     pub community_id: String,
-    pub sender_pseudonym: String,
+    pub sender_pseudonym: Option<String>,
     pub display_name: String,
-    pub reason: String,
+    pub notice: String,
 }
 
 /// Architecture §10.6 + Phase 6 Week 22 — the active video relay
@@ -88,6 +89,6 @@ pub struct VideoTopologyChangeEvent {
     pub channel_id: String,
     pub stream_id: String,
     pub relay_host_pseudonym: Option<String>,
-    pub reason: String,
+    pub reason: TopologyReason,
     pub lamport: u64,
 }

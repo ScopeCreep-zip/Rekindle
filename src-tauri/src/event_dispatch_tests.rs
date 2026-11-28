@@ -561,7 +561,7 @@ fn native_video_error_wire() {
         window: "community-3f1a9c0b7e2d4f6a".into(),
         community_id: "c1".into(),
         channel_id: "ch1".into(),
-        message: "camera unplugged".into(),
+        cause: rekindle_types::video::NativeVideoFailure::PipelineFailed,
     };
     assert!(event.audience().includes("community-3f1a9c0b7e2d4f6a"));
     assert!(!event.audience().includes("community-browser"));
@@ -573,7 +573,7 @@ fn native_video_error_wire() {
         envelope.payload,
         serde_json::json!({
             "type": "nativeVideoError",
-            "data": { "communityId": "c1", "channelId": "ch1", "message": "camera unplugged" },
+            "data": { "communityId": "c1", "channelId": "ch1", "message": "The camera stopped working." },
         })
     );
 }

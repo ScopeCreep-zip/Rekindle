@@ -3,7 +3,8 @@
 use rekindle_types::media::MediaScope;
 use rekindle_types::subscription_events::{SubscriptionEvent, VideoCodecPeer, VideoEvent};
 use rekindle_types::video::{
-    Codec, DecoderConstraints, EncoderConstraints, ScalabilityMode, SessionVideoConfig,
+    video_rejection_notice, Codec, DecoderConstraints, EncoderConstraints, NativeVideoFailure,
+    ScalabilityMode, SessionVideoConfig, TopologyReason,
 };
 
 use crate::{pk, rk, Sample};
@@ -53,6 +54,8 @@ fn ev(name: &str, e: VideoEvent) -> Sample {
 }
 
 pub fn samples() -> Vec<Sample> {
+    let (display_name, notice) = video_rejection_notice(Some("Fern".into()));
+    let (unknown_name, unknown_notice) = video_rejection_notice(None);
     vec![
         ev(
             "keyframeRequest.channel",
@@ -109,9 +112,18 @@ pub fn samples() -> Vec<Sample> {
             "envelopeRejected",
             VideoEvent::EnvelopeRejected {
                 scope: channel(),
-                sender: pk('f'),
-                display_name: "Fern".into(),
-                reason: "bad signature".into(),
+                sender: Some(pk('f')),
+                display_name,
+                notice,
+            },
+        ),
+        ev(
+            "envelopeRejected.indeterminate",
+            VideoEvent::EnvelopeRejected {
+                scope: channel(),
+                sender: None,
+                display_name: unknown_name,
+                notice: unknown_notice,
             },
         ),
         ev(
@@ -121,7 +133,7 @@ pub fn samples() -> Vec<Sample> {
                 sender: pk('d'),
                 stream_id: "5".repeat(16),
                 relay_host: Some(pk('a')),
-                reason: "relay elected".into(),
+                reason: TopologyReason::Initial,
                 lamport: 7,
             },
         ),
@@ -154,4 +166,52 @@ fn scoped_video_events_round_trip_on_the_bus() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn native_capture_failures_have_host_notices() {
+    for (cause, expected) in [
+        (
+            NativeVideoFailure::SessionActive,
+            "A camera session is already active.",
+        ),
+        (
+            NativeVideoFailure::CameraBusy,
+            "The camera is in use by another application.",
+        ),
+        (
+            NativeVideoFailure::StartFailed,
+            "Could not start the camera.",
+        ),
+        (
+            NativeVideoFailure::ReopenFailed,
+            "Could not switch to the selected camera.",
+        ),
+        (
+            NativeVideoFailure::PipelineFailed,
+            "The camera stopped working.",
+        ),
+        (
+            NativeVideoFailure::PipelineEnded,
+            "The camera stopped sending video.",
+        ),
+    ] {
+        assert_eq!(cause.notice(), expected);
+    }
+}
+
+#[test]
+fn topology_reason_is_a_closed_wire_code() {
+    for (reason, code) in [
+        (TopologyReason::Initial, "initial"),
+        (TopologyReason::RelayLeft, "relay-left"),
+        (TopologyReason::RelayOverloaded, "relay-overloaded"),
+        (TopologyReason::ExplicitRequest, "explicit-request"),
+    ] {
+        assert_eq!(serde_json::to_value(reason).unwrap(), code);
+        assert_eq!(reason.wire_str(), code);
+        assert_eq!(TopologyReason::from_wire_str(code), Some(reason));
+    }
+    assert_eq!(TopologyReason::from_wire_str("relay elected"), None);
+    assert!(serde_json::from_str::<TopologyReason>(r#""relay elected""#).is_err());
 }

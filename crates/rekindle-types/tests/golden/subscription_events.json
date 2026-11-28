@@ -2634,7 +2634,7 @@
     "video": {
       "envelopeRejected": {
         "displayName": "Fern",
-        "reason": "bad signature",
+        "notice": "Could not verify video from Fern.",
         "scope": {
           "channel": {
             "channelId": "11111111111111111111111111111111",
@@ -2642,6 +2642,21 @@
           }
         },
         "sender": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    }
+  },
+  "video.envelopeRejected.indeterminate": {
+    "video": {
+      "envelopeRejected": {
+        "displayName": "Unknown sender",
+        "notice": "Could not verify video from Unknown sender.",
+        "scope": {
+          "channel": {
+            "channelId": "11111111111111111111111111111111",
+            "communityId": "VLD0:ccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        "sender": null
       }
     }
   },
@@ -2700,7 +2715,7 @@
     "video": {
       "topologyChange": {
         "lamport": 7,
-        "reason": "relay elected",
+        "reason": "initial",
         "relayHost": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "scope": {
           "channel": {

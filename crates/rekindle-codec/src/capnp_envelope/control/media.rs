@@ -8,7 +8,7 @@ use crate::community::envelope::{
 };
 use crate::community_envelope_capnp as cap;
 use crate::error::CodecError;
-use rekindle_types::video::{Codec, ScalabilityMode};
+use rekindle_types::video::{Codec, ScalabilityMode, TopologyReason};
 
 /// Map the Rust `Codec` enum to its Cap'n Proto counterpart. Centralized
 /// so adding a new variant is a single edit touching both sides.
@@ -251,7 +251,7 @@ pub(super) fn write_topology_change(
     if let Some(rh) = relay_host_pseudonym {
         p.set_relay_host_pseudonym(rh);
     }
-    p.set_reason(reason);
+    p.set_reason(reason.wire_str());
     p.set_lamport(*lamport);
 }
 
@@ -420,7 +420,10 @@ pub(super) fn read_topology_change(
         } else {
             None
         },
-        reason: text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?,
+        reason: TopologyReason::from_wire_str(&text_to_string(
+            p.get_reason().map_err(|e| capnp_err(&e))?,
+        )?)
+        .ok_or_else(|| CodecError::Deserialization("invalid video topology reason".into()))?,
         lamport: p.get_lamport(),
     })
 }

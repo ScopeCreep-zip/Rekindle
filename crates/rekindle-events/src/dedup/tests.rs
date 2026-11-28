@@ -181,3 +181,28 @@ fn successive_group_send_retries_are_not_merged() {
         "the second retry is published"
     );
 }
+
+#[test]
+fn a_repeat_of_video_rejection_is_a_separate_fact() {
+    use rekindle_types::media::MediaScope;
+    use rekindle_types::subscription_events::VideoEvent;
+    use rekindle_types::video::video_rejection_notice;
+
+    let (display_name, notice) = video_rejection_notice(None);
+    let event = SubscriptionEvent::Video(VideoEvent::EnvelopeRejected {
+        scope: MediaScope::Channel {
+            community_id: "community".into(),
+            channel_id: "channel".into(),
+        },
+        sender: None,
+        display_name,
+        notice,
+    });
+    let mut dedup = EventDedup::new(100, 300);
+    assert!(dedup.check(&event, NOW_MS));
+    assert!(
+        dedup.check(&event, NOW_MS),
+        "two unrelated drops may share a notice"
+    );
+    assert_eq!(dedup.suppressed_count(), 0);
+}

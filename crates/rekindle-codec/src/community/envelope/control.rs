@@ -5,7 +5,7 @@
 //! whose literals were captured against the pre-conversion enum).
 
 use rekindle_types::id::RoleId;
-use rekindle_types::video::{Codec, ScalabilityMode};
+use rekindle_types::video::{Codec, ScalabilityMode, TopologyReason};
 use serde::{Deserialize, Serialize};
 
 use super::payloads::{
@@ -441,10 +441,8 @@ pub enum ControlPayload {
         stream_id: [u8; 16],
         #[serde(default, skip_serializing_if = "Option::is_none")]
         relay_host_pseudonym: Option<String>,
-        /// Free-form reason: `"initial"`, `"relay_left"`,
-        /// `"relay_overloaded"`, `"explicit_request"`. Receivers
-        /// surface this in logs only — behaviour is the same.
-        reason: String,
+        /// Control code describing the topology announcement.
+        reason: TopologyReason,
         lamport: u64,
     },
 

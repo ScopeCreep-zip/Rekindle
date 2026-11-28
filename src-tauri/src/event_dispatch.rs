@@ -22,6 +22,7 @@
 
 use rekindle_types::dto::infoview::InfoviewEvent;
 use rekindle_types::key_format::record_key;
+use rekindle_types::video::NativeVideoFailure;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
@@ -64,7 +65,7 @@ pub enum WebviewEvent {
         window: String,
         community_id: String,
         channel_id: String,
-        message: String,
+        cause: NativeVideoFailure,
     },
     /// Show `channel` in the open community window labelled `window` (plan
     /// E7.2 A: the skin's Show Voice on a community voice session).
@@ -105,11 +106,11 @@ impl WebviewEvent {
             Self::NativeVideoError {
                 community_id,
                 channel_id,
-                message,
+                cause,
                 ..
             } => Ok(serde_json::json!({
                 "type": "nativeVideoError",
-                "data": { "communityId": community_id, "channelId": channel_id, "message": message },
+                "data": { "communityId": community_id, "channelId": channel_id, "message": cause.notice() },
             })),
             Self::CommunityFocusChannel { channel, .. } => serde_json::to_value(channel),
         }

@@ -17,7 +17,7 @@ use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
-use rekindle_types::video::Codec;
+use rekindle_types::video::{Codec, TopologyReason};
 
 use crate::deps::VideoDeps;
 use crate::error::VideoError;
@@ -160,7 +160,7 @@ fn emit_initial_topology<D: VideoDeps>(
         // Future: when relay-peer routing lands for video, the elected
         // relay's pseudonym goes here and senders adjust their dispatch.
         relay_host_pseudonym: None,
-        reason: "initial".to_string(),
+        reason: TopologyReason::Initial,
         lamport,
     });
     deps.send_to_channel(community_id, channel_id, &envelope)

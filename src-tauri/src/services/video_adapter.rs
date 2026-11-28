@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::key_format::{pseudonym_hex, KeyFormatError};
+use rekindle_types::video::video_rejection_notice;
 use rekindle_video::{VideoDeps, VideoFlowEvent};
 
 use crate::channels::{CommunityEvent, VideoCodecIncompatibleEvent, VideoCodecIncompatiblePeer};
@@ -37,18 +39,20 @@ impl VideoAdapter {
 pub fn rejection_event(
     state: &AppState,
     community_id: String,
-    sender_pseudonym: String,
-    reason: String,
+    sender: Option<PseudonymKey>,
 ) -> Option<CommunityEvent> {
     let host = state_helpers::host_governance(state).ok()?;
-    pseudonym_hex(&sender_pseudonym).ok()?;
-    let display_name = host.member_shown_name(&community_id, &sender_pseudonym);
+    let sender_pseudonym = sender.map(|key| key.to_hex());
+    let known_name = sender_pseudonym
+        .as_deref()
+        .map(|key| host.member_shown_name(&community_id, key));
+    let (display_name, notice) = video_rejection_notice(known_name);
     Some(CommunityEvent::VideoEnvelopeRejected(
         crate::channels::VideoEnvelopeRejectedEvent {
             community_id,
             sender_pseudonym,
             display_name,
-            reason,
+            notice,
         },
     ))
 }
@@ -297,8 +301,7 @@ fn map_video_event(state: &AppState, event: VideoFlowEvent) -> Option<CommunityE
         VideoFlowEvent::EnvelopeRejected {
             community_id,
             sender_pseudonym,
-            reason,
-        } => return rejection_event(state, community_id, sender_pseudonym, reason),
+        } => return rejection_event(state, community_id?, sender_pseudonym),
     })
 }
 
