@@ -59,12 +59,11 @@ async function membersShow(b: Browser, name: string): Promise<void> {
  * (an idle Mac may legitimately go away, so the check is that each place
  * agrees, not a literal Online; Away rows under an Online user were the
  * bug), in whatever group the list puts them (roles group first); and
- * CHANNEL's presence badge reads `here`: "1 here" by default, since location
- * is shared with no one by default and a member who shares none sees no
- * one's (PresenceSharingPolicy share_location None, rekindle-presence
- * community/policy.rs), "2 here" once both share it.
+ * CHANNEL's presence badge counts other members whose location is visible.
+ * The default policy shares no location, so the badge is absent. It reads
+ * "1 here" once both members share their locations with each other.
  */
-async function presenceRight(b: Browser, otherB: Browser, self: string, other: string, here = "1 here"): Promise<void> {
+async function presenceRight(b: Browser, otherB: Browser, self: string, other: string, here: string | null = null): Promise<void> {
   let last = "";
   await waitUntil(
     async () => {
@@ -78,16 +77,18 @@ async function presenceRight(b: Browser, otherB: Browser, self: string, other: s
             dots[name] = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
           }
           const row = Array.from(document.querySelectorAll(".channel-item")).find((r) => (r.querySelector(".channel-name")?.textContent ?? "").trim() === channel);
-          return { me: dots[me] ?? "no row", them: dots[them] ?? "no row", here: row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge" };
+          const badge = row?.querySelector(".channel-presence-badge");
+          const here = !row ? "no channel row" : badge ? (badge.getAttribute("title") ?? "no badge title") : null;
+          return { me: dots[me] ?? "no row", them: dots[them] ?? "no row", here };
         },
         self,
         other,
         CHANNEL,
-      )) as { me: string; them: string; here: string };
+      )) as { me: string; them: string; here: string | null };
       const faults: string[] = [];
       if ((DOT_STATUS[seen.them] ?? seen.them) !== theirs) faults.push(`${other}'s row "${seen.them}", their own line ${theirs}`);
       if ((DOT_STATUS[seen.me] ?? seen.me) !== mine) faults.push(`own row "${seen.me}", own line ${mine}`);
-      if (seen.here !== here) faults.push(`#${CHANNEL} badge "${seen.here}", not "${here}"`);
+      if (seen.here !== here) faults.push(`#${CHANNEL} badge: saw "${seen.here ?? "absent"}", expected "${here ?? "absent"}"`);
       last = faults.join("; ");
       return last === "";
     },
@@ -211,21 +212,20 @@ describe("a community post reaches the other member live", () => {
     await shot("bob-post-at-alice");
   });
 
-  // Location is shared with no one by default; once both share it with
-  // members each badge counts both, and when one stops, neither sees the
-  // other's (a member who shares none sees none).
-  it("with the channel shared both ways each badge reads 2 here, and 1 again when Bob stops", async () => {
+  // Each badge counts the other member while both share location. When
+  // Bob stops sharing, the badge clears for both members.
+  it("shows one other member with mutual location sharing and clears the badge when Bob stops", async () => {
     const a = multiRemoteBrowser.getInstance("alice");
     const b = multiRemoteBrowser.getInstance("bob");
     await setLocationSharing(a, alice, true);
     await setLocationSharing(b, bob, true);
     // One at a time: each reads both sessions' own status lines.
-    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "2 here");
-    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "2 here");
-    await shot("location-shared");
-    await setLocationSharing(b, bob, false);
     await presenceRight(a, b, ALICE_NAME, BOB_NAME, "1 here");
     await presenceRight(b, a, BOB_NAME, ALICE_NAME, "1 here");
+    await shot("location-shared");
+    await setLocationSharing(b, bob, false);
+    await presenceRight(a, b, ALICE_NAME, BOB_NAME);
+    await presenceRight(b, a, BOB_NAME, ALICE_NAME);
     await shot("location-unshared");
   });
 });
