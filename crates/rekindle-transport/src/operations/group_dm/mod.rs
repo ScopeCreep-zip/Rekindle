@@ -125,6 +125,7 @@ pub async fn create(
     let own = crate::operations::friend::published_identity(host).await?;
     let others = friend_members(host, members)?;
     let me = GroupDmRosterMember {
+        membership_generation: [0; 16],
         identity: own.public_key,
         profile_record_key: own.profile_dht_key,
         display_name: own.display_name,
@@ -273,6 +274,7 @@ fn friend_members(
             .map(|profile| (profile, friend.display_name))
             .ok_or_else(|| FriendError::Invalid("no profile record".into()))?;
         others.push(GroupDmRosterMember {
+            membership_generation: [0; 16],
             identity: key.clone(),
             profile_record_key: profile,
             display_name,

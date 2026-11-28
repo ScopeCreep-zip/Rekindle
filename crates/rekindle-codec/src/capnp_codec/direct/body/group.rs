@@ -86,6 +86,7 @@ impl GroupDmInvite {
             put_len_prefixed(&mut out, member.identity.as_bytes())?;
             put_len_prefixed(&mut out, member.profile_record_key.as_bytes())?;
             put_len_prefixed(&mut out, member.display_name.as_bytes())?;
+            out.extend_from_slice(&member.membership_generation);
         }
         put_len_prefixed(&mut out, self.creator_chain_key.as_bytes())?;
         out.extend_from_slice(&self.epoch.to_be_bytes());
@@ -103,6 +104,7 @@ impl GroupDmInvite {
             m.set_identity(&member.identity);
             m.set_profile_record_key(&member.profile_record_key);
             m.set_display_name(&member.display_name);
+            m.set_membership_generation(&member.membership_generation);
         }
         b.set_creator_sender_key(&self.creator_sender_key);
         b.set_epoch(self.epoch);
@@ -130,6 +132,7 @@ impl GroupDmInvite {
             .iter()
             .map(|m| {
                 Ok(GroupDmRosterMember {
+                    membership_generation: fixed(m.get_membership_generation(), "roster membership generation")?,
                     identity: public_key(m.get_identity(), "roster identity")?,
                     profile_record_key: record_key(
                         m.get_profile_record_key(),
@@ -244,16 +247,19 @@ impl GroupDmAccept {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupDmDecline {
     pub group_id: GroupId,
+    pub membership_generation: [u8; 16],
 }
 
 impl GroupDmDecline {
     pub(super) fn write(&self, mut b: group_dm_decline::Builder<'_>) {
         b.set_group_id(&self.group_id);
+        b.set_membership_generation(&self.membership_generation);
     }
 
     pub(super) fn read(r: group_dm_decline::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             group_id: fixed(r.get_group_id(), "group id")?,
+            membership_generation: fixed(r.get_membership_generation(), "membership generation")?,
         })
     }
 }
@@ -264,17 +270,20 @@ impl GroupDmDecline {
 pub struct GroupDmLeave {
     pub group_id: GroupId,
     pub epoch: u32,
+    pub membership_generation: [u8; 16],
 }
 
 impl GroupDmLeave {
     pub(super) fn write(&self, mut b: group_dm_leave::Builder<'_>) {
         b.set_group_id(&self.group_id);
         b.set_epoch(self.epoch);
+        b.set_membership_generation(&self.membership_generation);
     }
 
     pub(super) fn read(r: group_dm_leave::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             group_id: fixed(r.get_group_id(), "group id")?,
+            membership_generation: fixed(r.get_membership_generation(), "membership generation")?,
             epoch: r.get_epoch(),
         })
     }

@@ -14,6 +14,7 @@ use crate::ports::RendezvousSlot;
 
 struct Host {
     key: SigningKey,
+    membership_gate: tokio::sync::Mutex<()>,
     groups: Mutex<HashMap<GroupId, GroupState>>,
     keys: Mutex<HashMap<(GroupId, String), GroupSenderKey>>,
     invites: Mutex<HashMap<GroupId, PendingInvite>>,
@@ -61,6 +62,7 @@ impl Host {
     fn new(n: u8) -> Self {
         Self {
             key: signer(n),
+            membership_gate: tokio::sync::Mutex::default(),
             groups: Mutex::default(),
             keys: Mutex::default(),
             invites: Mutex::default(),
@@ -79,6 +81,10 @@ impl Host {
 
 #[async_trait]
 impl GroupDmDeps for Host {
+    fn membership_gate(&self) -> &tokio::sync::Mutex<()> {
+        &self.membership_gate
+    }
+
     fn own_identity(&self) -> String {
         self.id()
     }
@@ -272,7 +278,8 @@ async fn a_leaver_reads_nothing_after_the_rotation() {
     for h in [&ann, &bea] {
         let out = on_member_left(h, &cy.id(), &left.frame)
             .await
-            .expect("left");
+            .expect("left")
+            .expect("matching generation");
         assert_eq!(out.frame.epoch, 1);
         assert!(!out.to.contains(&cy.id()));
         deliver_keys(&[&ann, &bea], h, out).await;
@@ -357,7 +364,8 @@ async fn invites_are_refused_when_forged_or_not_ours_and_decline_rotates() {
     assert!(accept(&bea, &gid, &bea.chain()).await.is_err());
     let out = on_decline(&ann, &bea.id(), &declined.frame)
         .await
-        .expect("decline");
+        .expect("decline")
+        .expect("matching generation");
     assert_eq!((out.frame.epoch, out.to), (1, vec![cy.id()]));
     assert!(create(
         &ann,

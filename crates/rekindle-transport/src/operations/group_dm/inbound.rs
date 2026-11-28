@@ -47,15 +47,15 @@ pub async fn apply(host: &dyn FriendHost, sender: &str, body: &DirectBody) -> bo
             .await
             .map(|()| None),
         DirectBody::GroupDmAccept(key) => rekindle_dm::on_member_key(deps, sender, key).await,
-        DirectBody::GroupDmDecline(d) => rekindle_dm::on_decline(deps, sender, d).await.map(Some),
-        DirectBody::GroupDmLeave(l) => rekindle_dm::on_member_left(deps, sender, l).await.map(Some),
+        DirectBody::GroupDmDecline(d) => rekindle_dm::on_decline(deps, sender, d).await,
+        DirectBody::GroupDmLeave(l) => rekindle_dm::on_member_left(deps, sender, l).await,
         DirectBody::GroupDmRosterGrow(g) => rekindle_dm::on_roster_grow(deps, sender, g).await,
         _ => {
             tracing::debug!(from = %sender, kind = ?body.type_id(), "not a pairwise group frame");
             return false;
         }
     };
-    if reply.is_ok() && matches!(body, DirectBody::GroupDmLeave(_)) {
+    if matches!(reply, Ok(Some(_))) && matches!(body, DirectBody::GroupDmLeave(_)) {
         // The leaver is off the roster: their session ends unless they
         // are our friend or share another group with us.
         super::pairwise::drop_sessions(host, &[sender.to_string()]).await;

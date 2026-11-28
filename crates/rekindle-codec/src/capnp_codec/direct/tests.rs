@@ -33,6 +33,7 @@ pub(super) fn roster() -> Vec<rekindle_types::group_dm::GroupDmRosterMember> {
     ['a', 'b', 'c']
         .into_iter()
         .map(|n| rekindle_types::group_dm::GroupDmRosterMember {
+            membership_generation: [1; 16],
             identity: n.to_string().repeat(64),
             profile_record_key: dht_key(),
             display_name: format!("member {n}"),
@@ -153,9 +154,11 @@ fn samples() -> Vec<DirectBody> {
             chain_record_key: dht_key(),
         }),
         DirectBody::GroupDmDecline(GroupDmDecline {
+            membership_generation: [1; 16],
             group_id: [0x6D; 16],
         }),
         DirectBody::GroupDmLeave(GroupDmLeave {
+            membership_generation: [1; 16],
             group_id: [0x6D; 16],
             epoch: 3,
         }),

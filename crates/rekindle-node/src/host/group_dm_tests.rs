@@ -11,6 +11,7 @@ use super::direct_tests::ann;
 
 pub(super) fn member(identity: String, n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
+        membership_generation: [1; 16],
         identity,
         profile_record_key: format!("VLD0:{}", n.to_string().repeat(43)),
         display_name: format!("member {n}"),
@@ -131,6 +132,12 @@ async fn a_member_who_is_not_a_friend_is_admitted_for_the_group_kinds_only() {
 
     // b leaves: off our roster, its admission ends, and our key rotates.
     let leave = DirectBody::GroupDmLeave(GroupDmLeave {
+        membership_generation: created
+            .group
+            .roster
+            .member(&b)
+            .unwrap()
+            .membership_generation,
         group_id: gid,
         epoch: 0,
     });

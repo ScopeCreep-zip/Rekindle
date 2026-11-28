@@ -122,12 +122,21 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
     own_chain: &str,
     mint: &RendezvousMint,
 ) -> Result<Created, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     group::check_name(name)?;
     let me = deps.own_identity();
     if own.identity != me {
         return Err(DmError::InvalidRoster("the creator is not us".into()));
     }
-    let roster = Roster::new(std::iter::once(own).chain(others).collect())?;
+    let roster = Roster::new(
+        std::iter::once(own)
+            .chain(others)
+            .map(|mut member| {
+                member.membership_generation = [0; 16];
+                member
+            })
+            .collect(),
+    )?;
     let key = sender_key::mint_first(deps.rng());
     let slots: Vec<u8> = (0..roster.members().len())
         .map(|i| u8::try_from(i).expect("a roster of at most eight"))
@@ -175,6 +184,7 @@ pub async fn on_invite<D: GroupDmDeps + ?Sized>(
     from: &str,
     invite: GroupDmInvite,
 ) -> Result<(), DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let roster = group::verify_invite(&invite, from)?;
     let me = deps.own_identity();
     if !roster.contains(&me) {
@@ -213,6 +223,7 @@ pub async fn accept<D: GroupDmDeps + ?Sized>(
     group_id: &GroupId,
     own_chain: &str,
 ) -> Result<Outbound<GroupDmAccept>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let pending = deps
         .take_invite(group_id)
         .await?
@@ -256,13 +267,23 @@ pub async fn decline<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
 ) -> Result<Outbound<GroupDmDecline>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let pending = deps
         .take_invite(group_id)
         .await?
         .ok_or_else(|| DmError::UnknownGroup(group_id_hex(group_id)))?;
+    let me = deps.own_identity();
+    let membership_generation = pending
+        .invite
+        .roster
+        .iter()
+        .find(|m| m.identity == me)
+        .ok_or_else(|| DmError::NotOnRoster(me.clone()))?
+        .membership_generation;
     Ok(Outbound {
         frame: GroupDmDecline {
             group_id: *group_id,
+            membership_generation,
         },
         to: vec![pending.from],
     })
@@ -277,8 +298,14 @@ pub async fn leave<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
 ) -> Result<Outbound<GroupDmLeave>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, group_id).await?;
     let me = deps.own_identity();
+    let membership_generation = group
+        .roster
+        .member(&me)
+        .ok_or_else(|| DmError::NotOnRoster(me.clone()))?
+        .membership_generation;
     deps.delete_group(group_id).await?;
     deps.publish(GroupDmEvent::Left {
         group_id: group_id_hex(group_id),
@@ -288,6 +315,7 @@ pub async fn leave<D: GroupDmDeps + ?Sized>(
         frame: GroupDmLeave {
             group_id: *group_id,
             epoch: group.epoch,
+            membership_generation,
         },
         to: group.roster.others(&me),
     })
@@ -301,6 +329,7 @@ pub async fn rotate_own_key<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
 ) -> Result<Outbound<GroupDmAccept>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, group_id).await?;
     rotate_in(deps, &group, &group.roster).await
 }
@@ -337,7 +366,17 @@ pub async fn remove_member<D: GroupDmDeps + ?Sized>(
     group_id: &GroupId,
     who: &str,
 ) -> Result<Outbound<GroupDmAccept>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, group_id).await?;
+    remove_from(deps, &group, who).await
+}
+
+async fn remove_from<D: GroupDmDeps + ?Sized>(
+    deps: &D,
+    group: &GroupState,
+    who: &str,
+) -> Result<Outbound<GroupDmAccept>, DmError> {
+    let group_id = &group.group_id;
     if who == deps.own_identity() {
         return Err(DmError::InvalidRoster("we leave with leave()".into()));
     }
@@ -350,32 +389,52 @@ pub async fn remove_member<D: GroupDmDeps + ?Sized>(
         group_id: group_id_hex(group_id),
         member: member(deps, who).await,
     });
-    rotate_in(deps, &group, &roster).await
+    rotate_in(deps, group, &roster).await
 }
 
 /// A member's `GroupDmLeave` over `from`'s session.
 ///
 /// # Errors
-/// As [`remove_member`].
+/// Storage or key rotation failed.
 pub async fn on_member_left<D: GroupDmDeps + ?Sized>(
     deps: &D,
     from: &str,
     leave: &GroupDmLeave,
-) -> Result<Outbound<GroupDmAccept>, DmError> {
-    remove_member(deps, &leave.group_id, from).await
+) -> Result<Option<Outbound<GroupDmAccept>>, DmError> {
+    on_departure(deps, &leave.group_id, from, leave.membership_generation).await
 }
 
 /// An invitee's `GroupDmDecline` over `from`'s session: it held our key
 /// from the invite, so it leaves as a member does.
 ///
 /// # Errors
-/// As [`remove_member`].
+/// Storage or key rotation failed.
 pub async fn on_decline<D: GroupDmDeps + ?Sized>(
     deps: &D,
     from: &str,
     decline: &GroupDmDecline,
-) -> Result<Outbound<GroupDmAccept>, DmError> {
-    remove_member(deps, &decline.group_id, from).await
+) -> Result<Option<Outbound<GroupDmAccept>>, DmError> {
+    on_departure(deps, &decline.group_id, from, decline.membership_generation).await
+}
+
+async fn on_departure<D: GroupDmDeps + ?Sized>(
+    deps: &D,
+    group_id: &GroupId,
+    from: &str,
+    generation: [u8; 16],
+) -> Result<Option<Outbound<GroupDmAccept>>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
+    let Some(group) = deps.group(group_id).await? else {
+        return Ok(None);
+    };
+    if group
+        .roster
+        .member(from)
+        .is_none_or(|m| m.membership_generation != generation)
+    {
+        return Ok(None);
+    }
+    remove_from(deps, &group, from).await.map(Some)
 }
 
 /// A member's sending key (its accept, or a rotation's resend) over
@@ -390,6 +449,7 @@ pub async fn on_member_key<D: GroupDmDeps + ?Sized>(
     from: &str,
     frame: &GroupDmAccept,
 ) -> Result<Option<Outbound<GroupDmAccept>>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, &frame.group_id).await?;
     if !group.roster.contains(from) || from == deps.own_identity() {
         return Err(DmError::NotOnRoster(from.to_owned()));
@@ -437,6 +497,7 @@ pub async fn on_member_chain<D: GroupDmDeps + ?Sized>(
     group_id: &GroupId,
     record_key: &str,
 ) -> Result<(), DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, group_id).await?;
     if !group.roster.contains(from) || from == deps.own_identity() {
         return Err(DmError::NotOnRoster(from.to_owned()));

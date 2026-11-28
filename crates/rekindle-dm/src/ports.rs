@@ -86,6 +86,9 @@ impl std::fmt::Debug for RendezvousSlot {
 /// The host's side of the group-DM owner.
 #[async_trait]
 pub trait GroupDmDeps: Send + Sync {
+    /// Serializes local membership writes and their sender-key changes.
+    fn membership_gate(&self) -> &tokio::sync::Mutex<()>;
+
     /// Our identity key, 64 lowercase hex.
     fn own_identity(&self) -> String;
 

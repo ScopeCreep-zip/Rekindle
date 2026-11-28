@@ -83,6 +83,7 @@ pub async fn grow<D: GroupDmDeps + ?Sized>(
     added: Vec<GroupDmRosterMember>,
     mint: &RendezvousMint,
 ) -> Result<Grown, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let group = held_group(deps, group_id).await?;
     let me = deps.own_identity();
     if let Some(reason) = group::invite_refused(&group.roster, &me) {
@@ -95,13 +96,18 @@ pub async fn grow<D: GroupDmDeps + ?Sized>(
         return Err(DmError::AlreadyMember(on.identity.clone()));
     }
     let had = group.roster.others(&me);
+    let mut generation = [0; 16];
+    deps.rng().fill(&mut generation);
     let roster = Roster::new(
         group
             .roster
             .members()
             .iter()
             .cloned()
-            .chain(added)
+            .chain(added.into_iter().map(|mut member| {
+                member.membership_generation = generation;
+                member
+            }))
             .collect(),
     )?;
     let next = sender_key::rotate(&own_key(deps, &group).await?, deps.rng())?;
@@ -173,6 +179,7 @@ pub async fn on_roster_grow<D: GroupDmDeps + ?Sized>(
     from: &str,
     grow: &GroupDmRosterGrow,
 ) -> Result<Option<Outbound<GroupDmAccept>>, DmError> {
+    let _membership = deps.membership_gate().lock().await;
     let invite = &grow.invite;
     let roster = group::verify_invite(invite, from)?;
     let me = deps.own_identity();

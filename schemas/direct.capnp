@@ -247,6 +247,7 @@ struct GroupDmRosterMember {
   identity @0 :Text;                    # 64 lowercase hex
   profileRecordKey @1 :Text;            # where its prekey record is found
   displayName @2 :Text;                 # the creator's name for it (a label)
+  membershipGeneration @3 :Data;        # 16, assigned by the creator at admission
 }
 
 # 0x0120: the creator's invite, signed by its identity over
@@ -277,15 +278,17 @@ struct GroupDmAccept {
   chainRecordKey @3 :Text;              # our group chain (dm_participant)
 }
 
-# 0x0122.
+# 0x0122: decline this admission.
 struct GroupDmDecline {
   groupId @0 :Data;                     # 16
+  membershipGeneration @1 :Data;        # 16
 }
 
-# 0x0123: we left at our key's `epoch`.
+# 0x0123: leave this admission.
 struct GroupDmLeave {
   groupId @0 :Data;                     # 16
-  epoch @1 :UInt32;
+  epoch @1 :UInt32;                      # sender key epoch
+  membershipGeneration @2 :Data;        # 16
 }
 
 # 0x0125: the creator grew the roster (plan E7.2 G8), to each member

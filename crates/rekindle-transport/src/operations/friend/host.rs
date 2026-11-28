@@ -42,6 +42,8 @@ pub type CreatorAnswer = Option<([u8; 32], [u8; 64])>;
 /// identity, cleared at lock.
 #[derive(Default)]
 pub struct FriendStores {
+    /// Serializes local group-DM membership and key changes.
+    pub group_membership_gate: tokio::sync::Mutex<()>,
     /// The co-creators' answers to our reserved creations (plan E3.2
     /// S7s.3), by anchor then co-creator: `Some((pseudonym, signature))`
     /// for a verified accept, `None` for a decline. Memory only, like the

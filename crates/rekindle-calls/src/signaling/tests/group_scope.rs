@@ -25,6 +25,7 @@ fn rosters(deps: &MockDeps, groups: &[(&str, &[&str])]) {
                 (*g).to_owned(),
                 m.iter()
                     .map(|&key| GroupDmRosterMember {
+                        membership_generation: [1; 16],
                         identity: key.into(),
                         display_name: "Roster name".into(),
                         profile_record_key: String::new(),

@@ -16,6 +16,7 @@ fn key(n: char) -> String {
 fn conn_with_group() -> Connection {
     let conn = fixture::conn();
     let member = |n: char| GroupDmRosterMember {
+        membership_generation: [1; 16],
         identity: key(n),
         profile_record_key: format!("VLD0:{}", "P".repeat(43)),
         display_name: format!("member {n}"),

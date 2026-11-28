@@ -5,6 +5,7 @@ const G: &str = "0123456789abcdef0123456789abcdef";
 
 fn member(n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
+        membership_generation: [1; 16],
         identity: n.to_string().repeat(64),
         profile_record_key: format!("VLD0:{}", "P".repeat(43)),
         display_name: format!("member {n}"),

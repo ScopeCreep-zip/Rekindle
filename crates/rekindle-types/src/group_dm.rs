@@ -18,6 +18,8 @@ pub const MAX_NAME_CHARS: usize = 64;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupDmRosterMember {
+    /// The creator-assigned generation of this admission to the group.
+    pub membership_generation: [u8; 16],
     /// The member's identity key, 64 lowercase hex.
     pub identity: String,
     /// The member's profile record, where its prekey record is found

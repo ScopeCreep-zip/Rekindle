@@ -6,6 +6,7 @@ use rekindle_types::group_dm::GroupDmRosterMember;
 fn db() -> Connection {
     let conn = fixture::conn();
     let member = |n: char| GroupDmRosterMember {
+        membership_generation: [1; 16],
         identity: n.to_string().repeat(64),
         profile_record_key: format!("VLD0:{}", "P".repeat(43)),
         display_name: format!("member {n}"),

@@ -102,6 +102,9 @@ fn group_bodies_hold_their_shapes() {
     let mut fewer = invite.clone();
     fewer.roster[2].identity = "d".repeat(64);
     assert_ne!(invite.signing_bytes(), fewer.signing_bytes());
+    let mut readmitted = invite.clone();
+    readmitted.roster[2].membership_generation = [2; 16];
+    assert_ne!(invite.signing_bytes(), readmitted.signing_bytes());
     assert!(!format!("{invite:?}").contains("171, 171"));
     let accept = GroupDmAccept {
         group_id: [1; 16],
@@ -124,6 +127,16 @@ fn group_bodies_hold_their_shapes() {
         Ok(())
     });
     assert!(DirectBody::decode(DmTypeId::GroupDmDecline, &bad_id.unwrap()).is_err());
+    let missing_generation = encode_root::<crate::direct_capnp::group_dm_leave::Owned>(|mut b| {
+        b.set_group_id(&[1; 16]);
+        Ok(())
+    });
+    assert!(DirectBody::decode(DmTypeId::GroupDmLeave, &missing_generation.unwrap()).is_err());
+    let missing_generation = encode_root::<crate::direct_capnp::group_dm_decline::Owned>(|mut b| {
+        b.set_group_id(&[1; 16]);
+        Ok(())
+    });
+    assert!(DirectBody::decode(DmTypeId::GroupDmDecline, &missing_generation.unwrap()).is_err());
     let bad_stream = encode_root::<crate::direct_capnp::stream_record::Owned>(|mut b| {
         b.set_record_key(dht_key());
         b.set_group_id([1; 3].as_slice());

@@ -130,6 +130,10 @@ fn invite_of(bytes: &[u8]) -> Result<GroupDmInvite, DmError> {
 
 #[async_trait::async_trait]
 impl GroupDmDeps for HostGroupDm {
+    fn membership_gate(&self) -> &tokio::sync::Mutex<()> {
+        &self.host.ctx().friend_stores.group_membership_gate
+    }
+
     fn own_identity(&self) -> String {
         self.owner.clone()
     }

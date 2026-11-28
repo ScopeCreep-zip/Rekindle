@@ -4,6 +4,7 @@ fn held(keys: &[&str]) -> GroupCallRoster {
     GroupCallRoster::Held(
         keys.iter()
             .map(|&key| GroupDmRosterMember {
+                membership_generation: [1; 16],
                 identity: key.into(),
                 profile_record_key: String::new(),
                 display_name: key.into(),
