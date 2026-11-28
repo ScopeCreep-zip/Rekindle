@@ -44,7 +44,9 @@ pub use stream::{Cursor, Sequenced, StopReason, StreamFrame};
 pub use system::SystemEvent;
 pub use transfer::TransferEvent;
 pub use typing::{TypingContext, TypingEvent};
-pub use voice::{LinkMeasurement, VoiceEvent, VoiceParticipant, VoiceScope};
+pub use voice::{
+    JoinHandshake, LinkMeasurement, VoiceEvent, VoiceMediaReady, VoiceParticipant, VoiceScope,
+};
 
 use serde::{Deserialize, Serialize};
 

@@ -229,6 +229,11 @@ fn calls_reach_their_window_and_conversation_windows() {
         scope: VoiceScope::Dm {
             peer_key: PK.into(),
         },
+        join_handshake: rekindle_types::subscription_events::JoinHandshake::Announced,
+        media_ready: rekindle_types::subscription_events::VoiceMediaReady {
+            ready: false,
+            reason: "handshake-announced".into(),
+        },
     }));
     assert!(voice.includes("call-0123456789ab"));
 }

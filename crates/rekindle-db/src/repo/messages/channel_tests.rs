@@ -86,3 +86,23 @@ fn the_notification_gate_reads_the_stored_mention_and_flags() {
     );
     assert_eq!(notify_fields(&conn, OWNER, "absent").unwrap(), None);
 }
+
+#[test]
+fn history_ranges_span_each_channels_stamped_messages() {
+    let conn = fixture::conn();
+    fixture::community(&conn, "c");
+    conn.execute(
+        "INSERT INTO channels (owner_key, id, community_id, name, channel_type) \
+         VALUES (?1, 'ch', 'c', 'general', 'text')",
+        params![OWNER],
+    )
+    .unwrap();
+    for (id, ts, l) in [("a", 10, 4), ("b", 20, 9), ("c", 30, 0)] {
+        insert(&conn, &row(id, ts, l)).unwrap();
+    }
+    assert_eq!(
+        history_ranges(&conn, OWNER, "c").unwrap(),
+        vec![("ch".to_string(), 4, 9)]
+    );
+    assert!(history_ranges(&conn, OWNER, "other").unwrap().is_empty());
+}

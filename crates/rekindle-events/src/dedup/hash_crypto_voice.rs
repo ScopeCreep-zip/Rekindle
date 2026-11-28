@@ -131,7 +131,11 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent, now_ms: u64) {
         }
         VoiceEvent::JoinHandshake { state, peer, .. } => {
             h.update(b"handshake|");
-            h.update(state.as_bytes());
+            h.update(match state {
+                rekindle_types::subscription_events::JoinHandshake::Announced => b"announced",
+                rekindle_types::subscription_events::JoinHandshake::Seen => b"seen",
+                rekindle_types::subscription_events::JoinHandshake::Connected => b"connected",
+            });
             h.update(b"|");
             h.update(peer.as_deref().unwrap_or("").as_bytes());
         }

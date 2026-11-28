@@ -42,7 +42,7 @@ impl AccountRecord {
         display_name: &str,
         status_message: &str,
         now: u64,
-    ) -> Result<(Self, String, SetOutcome), ProtocolError> {
+    ) -> Result<(Self, zeroize::Zeroizing<String>, SetOutcome), ProtocolError> {
         let (lease, record_key, keypair) = pool
             .create(&rekindle_records::schema::single(), None)
             .await?;

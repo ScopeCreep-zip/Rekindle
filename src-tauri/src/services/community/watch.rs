@@ -1,5 +1,6 @@
 use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 use rekindle_sync::watch::WatchManager;
 
@@ -114,8 +115,10 @@ pub async fn hold_unheld_records(
             cs.anchor.clone(),
             cs.member_registry_key.clone(),
             cs.registry_owner_keypair
-                .clone()
-                .or_else(|| cs.slot_keypair.clone()),
+                .as_ref()
+                .map(|key| key.as_str())
+                .or(cs.slot_keypair.as_deref())
+                .map(|key| Zeroizing::new(key.to_owned())),
         )
     };
     let mut leases = rekindle_records::lease::CommunityLeases::default();
@@ -123,9 +126,12 @@ pub async fn hold_unheld_records(
         // Leaving the community stops this before the next borrow; a borrow
         // in flight runs on the pool's scope, so none is dropped (C4.L1).
         let is_registry = registry_key.as_deref() == Some(record_key.as_str());
-        let writer = is_registry.then(|| registry_writer.clone()).flatten();
+        let writer = registry_writer
+            .as_ref()
+            .filter(|_| is_registry)
+            .map(|key| key.as_str());
         let Some(acquired) = stop
-            .run_until_cancelled(pool.acquire(&record_key, writer.as_deref(), OpenIntent::Hold))
+            .run_until_cancelled(pool.acquire(&record_key, writer, OpenIntent::Hold))
             .await
         else {
             break;
