@@ -23,7 +23,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, openSettings, SETTINGS } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { decodePng, type Rgba } from "../../png.ts";
@@ -37,6 +37,10 @@ import { disagreements, silhouette } from "../../silhouette.ts";
  * tool reads (`builtin:<id>`).
  */
 async function builtinPacks(): Promise<{ name: string; file: string }[]> {
+  // The library is Settings' to read (`allow-list-skins` is granted to the
+  // Settings window only, capabilities/app-settings.json): asked there.
+  await openSettings(browser, "Appearance");
+  await switchTo(browser, SETTINGS);
   const library = (await browser.execute(async () => {
     const { invoke } = (
       window as unknown as {
@@ -461,6 +465,7 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
           throw new Error(`the window did not grow from ${atMin.join("x")} (${larger.join("x")})`);
         faults.push(...(await checkSize(pack, "larger")));
         walked.push(pack.file);
+        console.log(`[resize-tiles] walked ${walked.length} of ${packs.length}: ${pack.file}`);
       } catch (e) {
         faults.push(
           `${pack.file}: not walked: ${(e instanceof Error ? e.message : String(e)).split("\n")[0]}`
