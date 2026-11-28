@@ -16,6 +16,11 @@ fn the_passphrase_stretch_matches_its_known_answer() {
         duress_salt: [0u8; 32],
         duress_tag: [0u8; 32],
     };
-    let out = header.stretch("correct horse battery staple", &[7u8; 32]).unwrap();
-    assert_eq!(hex::encode(&*out), "28ce213c03186b8a6ecefe8d9689e4cc858f48c43e18d316e786335e1e73f872");
+    let out = header
+        .stretch("correct horse battery staple", &[7u8; 32])
+        .unwrap();
+    assert_eq!(
+        hex::encode(&*out),
+        "28ce213c03186b8a6ecefe8d9689e4cc858f48c43e18d316e786335e1e73f872"
+    );
 }
