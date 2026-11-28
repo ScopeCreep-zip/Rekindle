@@ -29,11 +29,17 @@ use super::{RecordReport, RecordSchema, RecordValue, ReportScope};
 ///     writer.to_string()
 /// }
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WriterKey {
     keypair: RecordWriterSecret,
     /// The public key text, as [`RecordValue::writer`] carries it.
     pub public: String,
+}
+
+impl std::fmt::Debug for WriterKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WriterKey(<redacted>)")
+    }
 }
 
 impl WriterKey {
@@ -56,7 +62,7 @@ impl WriterKey {
 }
 
 /// What an open or a create returns.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RecordDescriptor {
     /// The record key text.
     pub key: String,
@@ -71,6 +77,12 @@ pub struct RecordDescriptor {
     pub owner_public: String,
     /// The schema's subkey count.
     pub subkey_count: u32,
+}
+
+impl std::fmt::Debug for RecordDescriptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RecordDescriptor(<redacted>)")
+    }
 }
 
 /// Why a record is opened (plan VU decision 1, ADR 0021 amendment): the

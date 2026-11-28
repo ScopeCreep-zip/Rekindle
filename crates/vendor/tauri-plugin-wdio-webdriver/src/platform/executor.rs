@@ -230,6 +230,18 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
     /// Get the script timeout in milliseconds
     fn script_timeout_ms(&self) -> u64;
 
+    /// Route an Actions key through this window's native webview responder.
+    async fn dispatch_native_key(
+        &self,
+        _key: super::NativeKey,
+        _is_down: bool,
+        _modifiers: ModifierState,
+    ) -> Result<(), WebDriverErrorResponse> {
+        Err(WebDriverErrorResponse::unsupported_operation(
+            "Native navigation keys are unavailable on this platform",
+        ))
+    }
+
     // =========================================================================
     // Core JavaScript Execution
     // =========================================================================

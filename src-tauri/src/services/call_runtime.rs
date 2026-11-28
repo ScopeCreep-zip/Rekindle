@@ -53,9 +53,11 @@ pub fn get_active_call_inner(
         | rekindle_calls::CallStatus::Incoming
         | rekindle_calls::CallStatus::Missed => false,
     };
-    let display_name = crate::state_helpers::friend_display_name(state, &call.peer_pubkey)
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| format!("{}…", rekindle_utils::text::prefix(&call.peer_pubkey, 12)));
+    let display_name = rekindle_calls::signaling::deps::friend_shown_name(
+        &call.peer_pubkey,
+        crate::state_helpers::friend_display_name(state, &call.peer_pubkey),
+    )
+    .map_err(|error| error.to_string())?;
     Ok(Some(ActiveCallDto {
         call_id: call.call_id.clone(),
         peer_key: call.peer_pubkey.clone(),

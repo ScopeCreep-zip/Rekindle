@@ -48,10 +48,7 @@ impl CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
-                        display_name: crate::state_helpers::peer_label(
-                            &self.state,
-                            &from_public_key,
-                        ),
+                        display_name: from_display_name,
                         from: from_public_key,
                         kind: kind_str(kind),
                         expires_at_ms,
@@ -68,9 +65,9 @@ impl CallsAdapter {
             CallSignalEvent::CallConnected {
                 call_id,
                 peer_public_key,
+                peer_display_name,
                 kind,
             } => {
-                let display_name = self.display_name_with_fallback(&peer_public_key);
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
                     rekindle_types::subscription_events::CallEvent::Connected {
@@ -79,7 +76,7 @@ impl CallsAdapter {
                         direct: Some(rekindle_types::subscription_events::DirectCallInfo {
                             kind: kind_str(kind),
                             peer_key: peer_public_key,
-                            peer_display_name: display_name,
+                            peer_display_name,
                             expected_local_camera: matches!(kind, CallKind::Video),
                         }),
                     },
@@ -206,10 +203,7 @@ impl CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
-                        display_name: crate::state_helpers::peer_label(
-                            &self.state,
-                            &initiator_public_key,
-                        ),
+                        display_name: initiator_display_name,
                         from: initiator_public_key,
                         kind: kind_u8_str(kind),
                         expires_at_ms,

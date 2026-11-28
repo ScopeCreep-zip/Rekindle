@@ -15,7 +15,7 @@ use rekindle_types::friend::FriendState;
 // ── Session ─────────────────────────────────────────────────────────────
 
 /// Root session state for the local user.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Session {
     /// The local user's identity.
     pub identity: SessionIdentity,
@@ -34,6 +34,12 @@ pub struct Session {
     /// Each friend's current friend-presence key, which opens their STATUS
     /// and GAME_INFO (from `friends.presence_*`).
     pub friend_presence_keys: HashMap<String, PresenceKey>,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Session(<redacted>)")
+    }
 }
 
 impl Session {

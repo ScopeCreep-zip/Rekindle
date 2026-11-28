@@ -150,6 +150,8 @@ pub(crate) enum Command {
     CheckInlineModules,
     /// Verify the peer-input crates deny the panic-class clippy lints.
     CheckPanicLints,
+    /// Verify secret types never derive Debug or format instance data.
+    CheckSecretDebug,
     /// Move each inline module body to `<stem>_<name>.rs` beside its parent.
     OutlineModules {
         /// Only this workspace member (package name).

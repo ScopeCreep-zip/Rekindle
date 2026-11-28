@@ -60,14 +60,17 @@ async fn voice_roster_uses_the_fingerprint_when_the_card_has_no_name() {
         &cara.to_hex(),
         &ControlPayload::VoiceRoster {
             channel_id: "stage".into(),
-            participants: vec![VoiceRosterEntry {
-                pseudonym_key: cara.to_hex(),
-                route_blob: vec![1, 2, 3],
-                muted: false,
-                deafened: false,
-                display_name: Some("Handshake name".into()),
-                session_key: MediaSessionKey::default(),
-            }],
+            participants: [cara.to_hex(), "invalid-key".into()]
+                .into_iter()
+                .map(|pseudonym_key| VoiceRosterEntry {
+                    pseudonym_key,
+                    route_blob: vec![1, 2, 3],
+                    muted: false,
+                    deafened: false,
+                    display_name: Some("Handshake name".into()),
+                    session_key: MediaSessionKey::default(),
+                })
+                .collect(),
         },
     );
     let Some(SubscriptionEvent::Voice(VoiceEvent::RosterUpdated { participants, .. })) = event

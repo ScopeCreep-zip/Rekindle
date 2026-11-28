@@ -15,9 +15,5 @@ fn the_secret_sits_alone_on_locked_pages() {
 #[test]
 fn debug_shows_no_bytes() {
     let secret = LockedBox::<4>::from_bytes(&[0xAB; 4]);
-    let shown = format!("{secret:?}");
-    assert!(
-        !shown.contains("171") && !shown.to_lowercase().contains("ab,"),
-        "{shown}"
-    );
+    assert_eq!(format!("{secret:?}"), "LockedBox(<redacted>)");
 }

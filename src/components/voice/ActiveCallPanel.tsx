@@ -13,6 +13,7 @@ import type { CallEntry } from "../../stores/calls.store";
 import { friendsState } from "../../stores/friends.store";
 import { setSettingsState, settingsState } from "../../stores/settings.store";
 import { setVoiceState, voiceState } from "../../stores/voice.store";
+import { initials } from "../../utils/initials";
 import SkinGlyph from "../common/SkinGlyph";
 import ReactionFloater from "./ReactionFloater";
 import ReactionsTray from "./ReactionsTray";
@@ -36,8 +37,6 @@ interface ActiveCallPanelProps {
 //   - quality bars     → reads voiceState.connectionQuality (populated by
 //                        the backend's ConnectionQuality voice event)
 const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
-  const microphoneId = createUniqueId();
-  const speakersId = createUniqueId();
   const [now, setNow] = createSignal(Date.now());
   let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -62,6 +61,8 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 
   const isVideoCall = createMemo(() => props.call.kind === "video");
 
+  const microphoneId = createUniqueId();
+  const speakersId = createUniqueId();
   const peerSpeaking = createMemo(
     () =>
       voiceState.participants.find((p) => p.publicKey === props.call.peerKey)?.isSpeaking ?? false
@@ -166,7 +167,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           class={`active-call-peer-avatar${peerSpeaking() ? " active-call-peer-avatar-speaking" : ""}`}
           aria-hidden="true"
         >
-          {props.call.displayName.slice(0, 1).toUpperCase()}
+          {initials(props.call.displayName)}
         </div>
         <div class="active-call-peer-info">
           <div class="active-call-peer-name">{props.call.displayName}</div>
@@ -281,7 +282,12 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           (props.call.peerMediaState?.screen ?? false)
         }
       >
-        <VideoCallPanel mode="dm" peerId={props.call.peerKey} visible />
+        <VideoCallPanel
+          mode="dm"
+          peerId={props.call.peerKey}
+          peerName={props.call.displayName}
+          visible
+        />
       </Show>
 
       <details class="active-call-devices">

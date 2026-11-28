@@ -14,6 +14,7 @@ export async function handleLogin(
     setAuthState({
       isLoggedIn: true,
       publicKey: result.publicKey,
+      fingerprint: result.fingerprint,
       displayName: result.displayName,
       avatarUrl,
       status: "online",
@@ -35,6 +36,7 @@ export async function handleCreateIdentity(
     setAuthState({
       isLoggedIn: true,
       publicKey: result.publicKey,
+      fingerprint: result.fingerprint,
       displayName: result.displayName,
       avatarUrl: null,
       status: "online",
@@ -53,6 +55,7 @@ export async function handleLogout(): Promise<void> {
     setAuthState({
       isLoggedIn: false,
       publicKey: null,
+      fingerprint: null,
       displayName: null,
       avatarUrl: null,
       status: "offline",

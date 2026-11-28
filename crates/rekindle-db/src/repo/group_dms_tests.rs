@@ -30,6 +30,10 @@ fn a_group_is_stored_listed_updated_and_deleted() {
     assert!(insert(&conn, OWNER, &group()).is_err(), "held once");
     assert_eq!(get(&conn, OWNER, G).unwrap(), Some(group()));
     assert_eq!(list(&conn, OWNER).unwrap(), vec![group()]);
+    assert_eq!(
+        call_roster(&conn, OWNER, G, 0).unwrap(),
+        rekindle_types::group_dm::GroupCallRoster::Held(group().roster)
+    );
     let roster = vec![member('a'), member('b')];
     assert!(update_roster_epoch(&conn, OWNER, G, &roster, 1).unwrap());
     let held = get(&conn, OWNER, G).unwrap().unwrap();

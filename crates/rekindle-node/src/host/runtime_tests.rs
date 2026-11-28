@@ -117,6 +117,9 @@ async fn a_create_unlocks_until_logout() {
 
     let view = create_ann(&host).await;
     assert_eq!(view.display_name, "Ann");
+    let key = &view.public_key;
+    let expected = rekindle_crypto::identity::short_key_fingerprint(&hex::decode(key).unwrap());
+    assert_eq!(view.fingerprint, expected, "create response");
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Operational);
     assert_eq!(
         host.ctx.require_owner().ok().as_deref(),
@@ -128,7 +131,19 @@ async fn a_create_unlocks_until_logout() {
     };
     let shown: Option<rekindle_types::dto::identity::IdentityShown> =
         serde_json::from_value(data).unwrap();
-    assert_eq!(shown.map(|s| s.public_key), Some(view.public_key));
+    let shown = shown.expect("unlocked identity");
+    assert_eq!(&shown.public_key, key);
+    assert_eq!(shown.fingerprint, expected, "get_identity response");
+    let unlock = || IpcRequest::Unlock {
+        identity: key.clone(),
+        passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
+    };
+    let attached = host.call(Caller::shell(), unlock()).await;
+    assert!(
+        matches!(attached, IpcResponse::Ok { data, .. }
+        if data["publicKey"] == *key && data["fingerprint"] == expected),
+        "unlock response when already operational"
+    );
 
     let out = host.call(Caller::shell(), IpcRequest::Logout).await;
     assert!(status_of(&out).is_none(), "{out:?}");
@@ -137,6 +152,18 @@ async fn a_create_unlocks_until_logout() {
     assert!(host.ctx.db.current().is_err());
     let shown = host.call(Caller::shell(), IpcRequest::IdentityShow).await;
     assert!(matches!(shown, IpcResponse::Ok { data, .. } if data.is_null()));
+    let listed = host.call(Caller::shell(), IpcRequest::IdentityList).await;
+    assert!(
+        matches!(listed, IpcResponse::Ok { data, .. }
+        if data[0]["publicKey"] == *key && data[0]["fingerprint"] == expected),
+        "locked identity list row"
+    );
+    let unlocked = host.call(Caller::shell(), unlock()).await;
+    assert!(
+        matches!(unlocked, IpcResponse::Ok { data, .. }
+        if data["publicKey"] == *key && data["fingerprint"] == expected),
+        "unlock response from locked"
+    );
 }
 
 /// One host per data root: a second claim of a held root is refused.

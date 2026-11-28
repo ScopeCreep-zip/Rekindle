@@ -171,6 +171,9 @@ impl MlKemSecret {
     }
 }
 
+// The manual Drop implementation wipes the private key in place.
+impl zeroize::ZeroizeOnDrop for MlKemSecret {}
+
 impl Drop for MlKemSecret {
     fn drop(&mut self) {
         self.zeroize_in_place();

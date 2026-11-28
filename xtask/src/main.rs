@@ -87,6 +87,7 @@
 //!                                      banks (plan E7.7.3).
 //!     cargo xtask check-inline-modules No inline `mod name { … }` (gate item 1).
 //!     cargo xtask check-panic-lints    Peer-input crates deny the panic lints (gate item 3(a)).
+//!     cargo xtask check-secret-debug  Secret types keep fields out of Debug (gate item 3(d)).
 //!     cargo xtask outline-modules [--crate <name>]
 //!                                      Move each inline module body to
 //!                                      `<stem>_<name>.rs` (the fixer).
@@ -134,6 +135,7 @@ mod duplication;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
+mod frontend_key_slices;
 mod gen_isolation_commands;
 mod gen_skin_registry;
 mod icon_glyphs;
@@ -158,8 +160,10 @@ mod platform_floor;
 mod release_build;
 mod role_ids;
 mod rust_lex;
+mod rust_uses;
 mod sec_styles;
 mod sec_surfaces;
+mod secret_debug;
 mod shell_permission_bits;
 mod sidecars;
 mod skin_silhouette;
@@ -203,6 +207,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| frontend_boundaries::check_frontend_boundaries(&root)),
                 ),
                 (
+                    "frontend-key-slices",
+                    Box::new(|| frontend_key_slices::check(&root)),
+                ),
+                (
                     "file-sizes",
                     Box::new(|| file_sizes::check_file_sizes(&root)),
                 ),
@@ -218,6 +226,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "panic-lints",
                     Box::new(|| panic_lints::check_panic_lints(&root)),
                 ),
+                ("secret-debug", Box::new(|| secret_debug::check(&root))),
                 (
                     "duplicate-constants",
                     Box::new(|| duplicate_constants::check_duplicate_constants(&root)),
@@ -435,6 +444,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
         Command::CheckInlineModules => inline_modules::check_inline_modules(&root),
         Command::CheckPanicLints => panic_lints::check_panic_lints(&root),
+        Command::CheckSecretDebug => secret_debug::check(&root),
         Command::OutlineModules { krate } => {
             outline_modules::outline_modules(&root, krate.as_deref())
         }

@@ -11,8 +11,7 @@ use crate::daemon::dispatch::DaemonContext;
 
 /// What an install hands the caller.
 pub struct Installed {
-    pub public_key: String,
-    pub display_name: String,
+    pub view: rekindle_types::dto::identity::IdentityView,
     /// The Ed25519 identity secret.
     pub secret: Zeroizing<[u8; 32]>,
     /// What the audit chain's restore found, when it ran.
@@ -33,6 +32,13 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         friend_store,
         failed_attempts,
     } = unlocked;
+    let view = match super::identity::view(public_key, display_name) {
+        Ok(view) => view,
+        Err(e) => {
+            release(ctx).await;
+            return Err(e.to_string());
+        }
+    };
     // This unlock's events start a new journal epoch (plan D3.2).
     ctx.journal.begin();
     *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(*secret));
@@ -43,7 +49,7 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         Ok(db) => super::session::load(
             &db,
             &ctx.vault,
-            &public_key,
+            &view.public_key,
             ctx.rng.as_ref(),
             ctx.clock.now_ms_i64(),
         )
@@ -61,13 +67,12 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
     *ctx.session.write() = Some(session);
     // A download the last Host left running resumes only when asked.
     super::transfers::pause_interrupted(ctx).await;
-    let audit = restore_audit(ctx, &public_key, failed_attempts).await;
+    let audit = restore_audit(ctx, &view.public_key, failed_attempts).await;
     // The identity's trusted clients get their clearance back (plan D1).
     crate::daemon::clients::load(ctx).await;
     raise_memory_notice(ctx, &held_secrets_locked(ctx));
     Ok(Installed {
-        public_key,
-        display_name,
+        view,
         secret,
         audit,
     })

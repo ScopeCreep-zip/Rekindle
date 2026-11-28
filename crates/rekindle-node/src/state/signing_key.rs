@@ -49,8 +49,6 @@ impl SigningKeyHandle {
 
 impl std::fmt::Debug for SigningKeyHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SigningKeyHandle")
-            .field("bytes", &"[REDACTED]")
-            .finish()
+        f.write_str("SigningKeyHandle(<redacted>)")
     }
 }

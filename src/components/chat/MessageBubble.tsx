@@ -153,9 +153,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
   const removedByName = (): string => {
     const by = props.message.removedBy ?? "";
     const community = props.communityId ? communityState.communities[props.communityId] : undefined;
-    return (
-      community?.members?.find((m) => m.pseudonymKey === by)?.displayName ?? `${by.slice(0, 8)}…`
-    );
+    return community?.members?.find((m) => m.pseudonymKey === by)?.displayName ?? "a moderator";
   };
 
   // Architecture §32 a11y — the bubble's accessible name: sender, time and

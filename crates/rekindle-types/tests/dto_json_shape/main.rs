@@ -163,6 +163,7 @@ fn samples() -> Map<String, Value> {
         "identity.summary",
         to(IdentitySummary {
             public_key: pk('a'),
+            fingerprint: "aaaa aaaa".into(),
             display_name: "Ann".into(),
             created_at: 1_700_000_000_000,
         }),
@@ -171,6 +172,7 @@ fn samples() -> Map<String, Value> {
         "identity.view",
         to(IdentityView {
             public_key: pk('a'),
+            fingerprint: "aaaa aaaa".into(),
             display_name: "Ann".into(),
         }),
     );
@@ -178,6 +180,7 @@ fn samples() -> Map<String, Value> {
         "identity.shown",
         to(Some(IdentityShown {
             public_key: pk('a'),
+            fingerprint: "aaaa aaaa".into(),
             display_name: "Ann".into(),
             profile_dht_key: Some(format!("VLD0:{}", "p".repeat(43))),
             mailbox_dht_key: Some(format!("VLD0:{}", "m".repeat(43))),

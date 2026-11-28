@@ -9,6 +9,8 @@
 //! command needs to know about a call-state transition (e.g., to
 //! refresh the call window), the adapter forwards via `app.emit`.
 
+use rekindle_types::subscription_events::CallParticipant;
+
 use crate::state::CallKind;
 
 #[derive(Debug, Clone)]
@@ -39,6 +41,7 @@ pub enum CallSignalEvent {
     CallConnected {
         call_id: String,
         peer_public_key: String,
+        peer_display_name: String,
         kind: CallKind,
     },
     /// W15.6 — caller-side: we just sent CallInvite. Frontends seed
@@ -93,7 +96,7 @@ pub enum CallSignalEvent {
         call_id: String,
         initiator_public_key: String,
         initiator_display_name: String,
-        participants: Vec<String>,
+        participants: Vec<CallParticipant>,
         kind: u8,
         expires_at_ms: u64,
         /// The group DM the call belongs to, checked against its roster.
@@ -103,7 +106,7 @@ pub enum CallSignalEvent {
     /// (`GroupCallStatus::Outgoing`) until the first accept.
     GroupCallStarted {
         call_id: String,
-        participants: Vec<String>,
+        participants: Vec<CallParticipant>,
         kind: u8,
         expires_at_ms: u64,
         group_id: Option<String>,

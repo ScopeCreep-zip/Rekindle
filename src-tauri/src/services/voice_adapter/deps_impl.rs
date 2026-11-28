@@ -6,6 +6,8 @@
 //! `io_helpers`) for bodies that would otherwise blow the file-size
 //! cap.
 
+use rekindle_calls::signaling::deps::friend_shown_name;
+use rekindle_types::key_format::pseudonym_hex;
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -182,6 +184,10 @@ impl VoiceSessionDeps for VoiceAdapter {
             VoiceSessionEvent::UserJoined { peer_pubkey } => {
                 let display_name = match &scope {
                     VoiceScope::Community { community, .. } => {
+                        if let Err(error) = pseudonym_hex(&peer_pubkey) {
+                            tracing::warn!(%error, "invalid community voice participant");
+                            return;
+                        }
                         let Ok(host) = state_helpers::host_governance(&self.state) else {
                             return;
                         };
@@ -189,8 +195,13 @@ impl VoiceSessionDeps for VoiceAdapter {
                     }
                     VoiceScope::Dm { .. } => {
                         let name = state_helpers::friend_display_name(&self.state, &peer_pubkey);
-                        let key = rekindle_types::id::PseudonymKey::from_hex_lossy(&peer_pubkey);
-                        rekindle_node::host::adapters::governance::shown_name(name, &key)
+                        match friend_shown_name(&peer_pubkey, name) {
+                            Ok(name) => name,
+                            Err(error) => {
+                                tracing::warn!(%error, "invalid DM voice participant");
+                                return;
+                            }
+                        }
                     }
                 };
                 VoiceEvent::Joined {

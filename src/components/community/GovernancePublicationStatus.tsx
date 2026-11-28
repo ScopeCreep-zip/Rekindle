@@ -33,6 +33,10 @@ const quarantinesCommunity = (reason: OpQuarantineReason) =>
  * one notice says so, with the reason, above the rest.
  */
 const GovernancePublicationStatus: Component<{ communityId: string }> = (props) => {
+  const authorName = (pseudonym: string) =>
+    communityState.communities[props.communityId]?.members.find(
+      (member) => member.pseudonymKey === pseudonym
+    )?.displayName ?? "a member";
   const states = () => Object.values(communityState.opPublications[props.communityId] ?? {});
   const pending = () => states().filter((s) => s.kind === "pending").length;
   const failures = () => states().flatMap((s) => (s.kind === "failed" ? [s.reason] : []));
@@ -47,7 +51,7 @@ const GovernancePublicationStatus: Component<{ communityId: string }> = (props) 
         <Show when={unreadable()[0]}>
           {(op) => (
             <div class="governance-publication-failed">
-              {name()} is quarantined: a change by {op().author.slice(0, 8)} is{" "}
+              {name()} is quarantined: a change by {authorName(op().author)} is{" "}
               {QUARANTINE_TEXT[op().reason]}. Update Rekindle to apply it; until then {name()} shows
               its state without that change.
             </div>
@@ -74,7 +78,7 @@ const GovernancePublicationStatus: Component<{ communityId: string }> = (props) 
         <For each={quarantined()}>
           {(op) => (
             <div class="governance-publication-failed">
-              Change by {op.author.slice(0, 8)} set aside: {QUARANTINE_TEXT[op.reason]}
+              Change by {authorName(op.author)} set aside: {QUARANTINE_TEXT[op.reason]}
             </div>
           )}
         </For>

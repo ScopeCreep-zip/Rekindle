@@ -39,9 +39,7 @@ pub struct GroupSenderKey {
 /// The key is never printed.
 impl std::fmt::Debug for GroupSenderKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GroupSenderKey")
-            .field("epoch", &self.epoch)
-            .finish_non_exhaustive()
+        f.write_str("GroupSenderKey(<redacted>)")
     }
 }
 

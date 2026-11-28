@@ -25,11 +25,6 @@ async fn members(deps: &dyn GroupDmDeps, roster: &[GroupDmRosterMember]) -> Vec<
     out
 }
 
-/// A held group's roster as a group call reads it.
-fn held(roster: &[GroupDmRosterMember]) -> GroupCallRoster {
-    GroupCallRoster::Held(roster.iter().map(|m| m.identity.clone()).collect())
-}
-
 /// Every invite we have not answered, newest first, then every group we
 /// are in.
 ///
@@ -71,7 +66,10 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
             favourite,
             rename_refused: rekindle_dm::rename_refused(&group.roster, &me),
             invite_refused: rekindle_dm::invite_refused(&group.roster, &me),
-            call_refused: group_call_refused(&held(group.roster.members()), &me),
+            call_refused: group_call_refused(
+                &GroupCallRoster::Held(group.roster.members().to_vec()),
+                &me,
+            ),
         });
     }
     Ok(views)

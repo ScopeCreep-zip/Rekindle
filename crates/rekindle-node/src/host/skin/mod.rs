@@ -14,6 +14,8 @@ mod actions_routes_tests;
 mod actions_test_support;
 #[cfg(test)]
 mod actions_tests;
+#[cfg(test)]
+mod call_fixtures;
 pub(crate) mod capability;
 #[cfg(test)]
 mod capability_tests;

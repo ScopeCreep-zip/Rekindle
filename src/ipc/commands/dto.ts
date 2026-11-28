@@ -388,6 +388,9 @@ export function isCancelled(e: unknown): boolean {
 export interface IdentitySummary {
   publicKey: string;
   displayName: string;
+  /** The identity's fingerprint form, as the Host formats it for the
+   *  member list (contract VN2): how peers see this identity. */
+  fingerprint: string;
   createdAt: number;
 }
 
@@ -395,12 +398,18 @@ export interface IdentitySummary {
 export interface IdentityView {
   publicKey: string;
   displayName: string;
+  /** The identity's fingerprint form, as the Host formats it for the
+   *  member list (contract VN2): how peers see this identity. */
+  fingerprint: string;
 }
 
 /** The unlocked identity's public data. */
 export interface IdentityShown {
   publicKey: string;
   displayName: string;
+  /** The identity's fingerprint form, as the Host formats it for the
+   *  member list (contract VN2): how peers see this identity. */
+  fingerprint: string;
   /** Null while not yet held (the own-records stage names each after unlock). */
   profileDhtKey: string | null;
   mailboxDhtKey: string | null;
