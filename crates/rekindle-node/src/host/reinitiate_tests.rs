@@ -13,7 +13,7 @@ use rekindle_types::subscription_events::{StreamFrame, SubscriptionEvent};
 
 use super::adapters::friends::HostFriends;
 use super::direct_tests::{ann, befriend};
-use super::Host;
+use super::{held_reviews_of, Host};
 
 /// Ann with Bob an accepted friend in her projection (the unlock loads it).
 pub(super) async fn ann_and_bob(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String, String) {
@@ -114,15 +114,27 @@ async fn exhausted_retry_requests_hold_one_reinitiation_and_only_its_commit_rese
         let (host, ann, bob) = ann_and_bob(&dir).await;
         let mut events = host.subscribe(None).await.unwrap();
         let friends = HostFriends::of(&host.ctx);
-        // A second exhaustion replaces the first hold: the newer review is
-        // the one held.
-        let mut review = None;
-        for id in [1, 2] {
-            exhaust(&host, &ann, &bob, id).await;
-            retry_requests::on_caught_up(&friends, &bob).await;
-            review = Some(next_review(&mut events).await);
-        }
-        let review = review.unwrap();
+        exhaust(&host, &ann, &bob, 1).await;
+        retry_requests::on_caught_up(&friends, &bob).await;
+        let review = next_review(&mut events).await;
+        let first = held_reviews_of(&host.ctx);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].review.intent_id, review.intent_id);
+
+        // Another exhausted message for Bob calls for the same review.
+        let before = host.ctx.journal.head();
+        exhaust(&host, &ann, &bob, 2).await;
+        retry_requests::on_caught_up(&friends, &bob).await;
+        assert_eq!(held_reviews_of(&host.ctx), first);
+        assert!(
+            host.ctx.journal.replay(before).into_iter().all(|frame| {
+                !matches!(frame, StreamFrame::Event(event) if matches!(
+                    event.event,
+                    SubscriptionEvent::IntentPending { .. } | SubscriptionEvent::HeldReviews(_)
+                ))
+            }),
+            "an identical review is not published again"
+        );
         // One hold per friend; nothing was asked of Bob, nothing re-initiated.
         assert_eq!(reinitiate_holds(&host, &bob), 1);
         assert!(!reset_requested(&host, &ann, &bob).await);
