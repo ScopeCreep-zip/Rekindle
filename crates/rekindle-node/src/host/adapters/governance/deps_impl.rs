@@ -99,6 +99,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.insert_community_impl(community);
     }
 
+    fn member_record_published(&self, community: &str, record: &str, route: &[u8]) {
+        self.finish_member_record(community, record, route);
+    }
+
     async fn next_beat_seq(&self, community_id: &str) -> Result<u64, GovernanceRuntimeError> {
         self.next_beat_seq_impl(community_id).await
     }

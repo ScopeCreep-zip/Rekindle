@@ -79,6 +79,7 @@ pub(crate) struct Faults {
     pub dht_offline: HashSet<usize>,
     /// The node's sets that land below consensus, and how many replicas
     /// still take each (`0` for [`crate::Fault::WriteFails`]).
+    pub write_stalls: HashMap<(usize, crate::faults::Writes), std::time::Duration>,
     pub write_limits: HashMap<(usize, crate::faults::Writes), usize>,
     /// Detached nodes: no watch change, app message or call reaches them,
     /// and they send none.

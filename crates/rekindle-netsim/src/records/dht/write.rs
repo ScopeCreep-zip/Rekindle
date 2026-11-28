@@ -36,6 +36,21 @@ impl SimDht {
         if self.offline() {
             return Err(try_again());
         }
+        let stall = {
+            let inner = self.net.inner.lock();
+            inner
+                .faults
+                .write_stalls
+                .iter()
+                .filter(|((node, of), _)| {
+                    *node == self.node && of.selects(self.node, key, subkey, inner.records.get(key))
+                })
+                .map(|(_, stall)| *stall)
+                .max()
+        };
+        if let Some(stall) = stall {
+            tokio::time::sleep(stall).await;
+        }
         let _slot = self.net.latency.slot(self.node, key, &[subkey]).await;
         // An outbound error: the same handler bails `TryAgain` first
         // (`set_value.rs:276-290`).

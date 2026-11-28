@@ -100,3 +100,79 @@ async fn a_rotation_after_an_unlock_reaches_members_outside_the_ring_by_m6() {
         "every remaining member got the key from the rotation itself, none by asking"
     );
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn rotation_routes_reconciles_the_joiners_first_write() {
+    use rekindle_governance_runtime::member_routes::{read_member_route, RoutePin};
+    use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+    use rekindle_netsim::{Fault, Records, Writes};
+    use rekindle_records::port::RouteClass;
+    use rekindle_types::dht_layout::member_record::{CARD, ROUTES, SUBKEY_COUNT};
+
+    let mut community = Community::create(2, 4421).await;
+    let link = community.invite().await;
+    let joiner = &community.nodes[1];
+    let governance = joiner.host.governance();
+    let old = joiner.routes.own_blob(RouteClass::General).unwrap();
+    community.sim.fault(Fault::WriteStalls {
+        node: 1,
+        of: Writes::Subkey {
+            subkey: CARD,
+            record: Some(Records::CreatedDflt(SUBKEY_COUNT)),
+        },
+        stall: Duration::from_secs(12),
+    });
+    let rotate = async {
+        let own_binding = || {
+            let p = governance.my_pseudonym(&community.anchor)?;
+            let state = governance.governance_state(&community.anchor)?;
+            let member = state.members.get(&p)?;
+            Some((
+                p,
+                member.member_record.clone(),
+                member.member_record_owner.clone(),
+            ))
+        };
+        assert!(
+            eventually(&community.sim, Duration::from_secs(60), || async {
+                own_binding()
+                    .is_some_and(|(_, record, _)| community.sim.is_setting(1, &record, CARD))
+            })
+            .await,
+            "the join took its route snapshot and is publishing the first card"
+        );
+        let (p, record, owner) = own_binding().unwrap();
+        assert!(community.sim.network_get(&record, ROUTES).is_none());
+        joiner.routes.replace_own_class(RouteClass::General);
+        assert!(
+            eventually(&community.sim, Duration::from_secs(10), || async {
+                joiner
+                    .routes
+                    .own_blob(RouteClass::General)
+                    .is_some_and(|current| current != old)
+            })
+            .await,
+            "the new route is available before the stalled card write finishes"
+        );
+        assert!(community.sim.is_setting(1, &record, CARD));
+        (p, record, owner)
+    };
+    let ((), (p, record, owner)) = tokio::join!(community.join_with(1, link), rotate);
+    let port = community.nodes[0].host.governance().record_port().unwrap();
+    assert!(
+        eventually(&community.sim, Duration::from_secs(60), || async {
+            let current = joiner.routes.own_blob(RouteClass::General).unwrap();
+            read_member_route(
+                &*port,
+                &community.anchor,
+                &record,
+                &p,
+                RoutePin::Joined(&owner),
+            )
+            .await
+            .is_ok_and(|route| route == Some(current))
+        })
+        .await,
+        "a reader sees the joiner's current General route in M/6"
+    );
+}
