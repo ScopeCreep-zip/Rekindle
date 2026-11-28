@@ -334,8 +334,8 @@ async fn commit(
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
 /// A group member's key (`GroupDmAccept`) and the creator's
-/// `GroupDmInvite` are receipted too (plan E2.6; Linux run 2: one lost
-/// left a member without the key and chain or the signed roster). A
+/// `GroupDmInvite` and `GroupDmRosterGrow` are receipted too (plan E2.6).
+/// A lost frame can leave a member without a key, chain or signed roster. A
 /// `FriendsKey` and these group kinds come here only to a peer not yet an
 /// accepted friend: to an accepted friend they are entries of our DM
 /// chain, settled by the friend's `DmAck` (plan RV2c, D22,
@@ -359,6 +359,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::UnfriendedAck
             | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
+            | DmTypeId::GroupDmRosterGrow
             | DmTypeId::CallEnd
     )
 }
