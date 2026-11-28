@@ -14,6 +14,7 @@ mod onboarding;
 mod presence;
 mod servers;
 mod skin;
+mod skin_failure;
 mod thread;
 
 use std::path::PathBuf;
