@@ -178,9 +178,30 @@ describe("a channel post is admitted at its signed governance cut (CP1)", functi
       "--deny",
       SEND_MESSAGES,
     ]);
+    // The post is judged at the cut its author signs (CP1): Bea's must
+    // already hold the deny, or her post is rightly admitted. Her own Host
+    // refusing a normal send proves it (there is no read of her Send
+    // Messages; a probe sent before the deny arrives is admitted, harmless).
+    let probes = 0;
+    await waitUntil(
+      async () => {
+        probes += 1;
+        try {
+          await peerPostChannel(bea, anchor, refusedChannel, `send probe ${probes}`);
+          return false;
+        } catch (e) {
+          const refusal = e instanceof Error ? e.message : String(e);
+          if (!/permission|Send Messages|not allowed|refus/i.test(refusal)) throw e;
+          console.log(`[cp1] Bea's own Host refuses a normal send after ${probes} probe(s): ${refusal.slice(0, 160)}`);
+          return true;
+        }
+      },
+      NET_WAIT_MS * 2,
+      "Bea's own Host never refused a normal send: the deny overwrite never reached her"
+    );
     await openCommunity(browser, COMMUNITY);
     await selectChannel(browser, "refused");
-    // Bea's own Host would refuse to send; the aid skips only that gate.
+    // Bea's own Host refuses to send; the aid skips only that gate.
     await postSkippingLocalPermission(bea, refusedChannel, REFUSED_BODY);
     let seen = await rows();
     await waitUntil(
