@@ -52,7 +52,7 @@ pub async fn create_role(
     self_assignable: bool,
     exclusion_group: Option<String>,
     state: State<'_, SharedState>,
-) -> Result<Done<u32>, CommandError> {
+) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleCreate {
