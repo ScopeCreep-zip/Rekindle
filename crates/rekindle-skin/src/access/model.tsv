@@ -490,6 +490,10 @@
 .message-forwarded-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .message-forwarded-icon	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .message-forwarded-icon	text	var(--color-xfire-accent-text)	--color-xfire-bg-panel	1.0	false
+.message-held	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
+.message-held	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
+.message-held[data-admission="refused"]	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
+.message-held[data-admission="refused"]	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .message-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .message-input-attach-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .message-input-attach-btn:hover	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
