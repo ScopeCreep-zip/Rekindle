@@ -182,9 +182,7 @@ pub struct RecordPool {
 
 impl std::fmt::Debug for RecordPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RecordPool")
-            .field("held", &self.table.lock().keys().count())
-            .finish_non_exhaustive()
+        f.write_str("RecordPool(<redacted>)")
     }
 }
 
