@@ -388,7 +388,8 @@ jobs:
       # No agent attribution (owner 2026-11-28): GitHub lists a commit's author and every
       # Co-Authored-By email that maps to a GitHub account as a repository contributor, so a commit
       # authored or co-authored as an agent account puts that agent in the repo's Contributors.
-      # Checks only this event's own commits (the PR or the merge group).
+      # Checks only this event's own commits (the PR or the merge group): author, committer and
+      # every Co-authored-by trailer.
       - name: No agent attribution in the new commits
         env:
           EVENT: ${{ github.event_name }}
@@ -402,8 +403,10 @@ jobs:
             merge_group) range="$MQ_BASE..$MQ_HEAD" ;;
             *) echo "::error::Unsupported commit attribution event"; exit 1 ;;
           esac
-          agents='noreply@anthropic\.com|codex@openai\.com'
-          found=$(git log --format='%h %ae %ce%n%(trailers:key=Co-authored-by,valueonly,separator=%x20)' "$range" \
+          # Any agent identity: an agent name as author or committer, an agent vendor's address,
+          # or a local agent address (Codex CLI commits as "Codex <codex@localhost>").
+          agents='\|(codex|claude)( [^|]*)?\||@anthropic\.com|@openai\.com|^(codex|claude)( [^<]*)?<|<(codex|claude)@'
+          found=$(git log --format='%h|%an|%ae|%cn|%ce|%n%(trailers:key=Co-authored-by,valueonly,separator=%x0A)' "$range" \
             | grep -iE "$agents" || true)
           if [ -n "$found" ]; then
             echo "::error::Commits in $range are authored, committed or co-authored as an agent account:"
