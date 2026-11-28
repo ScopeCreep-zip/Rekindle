@@ -149,13 +149,11 @@ pub fn build_voice_signaling_deps(
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<std::sync::Arc<dyn rekindle_voice::signaling::VoiceSignalingDeps>, String> {
-    let pool = state.db.current()?;
     Ok(
         crate::services::voice_signaling_adapter::VoiceSignalingAdapter::new(
             state.clone(),
             app.clone(),
-            pool,
-        ),
+        )?,
     )
 }
 
@@ -178,13 +176,9 @@ pub async fn join_voice_channel_inner(
         .map_err(|e| e.to_string())?;
     if let Some(cid) = community_id {
         apply_stage_audience_gate(state, cid, channel_id);
-        // Discover who is ALREADY in the channel now, rather than on the
-        // next 60 s steady poll: the presence reconcile that binds voice
-        // peers runs on the poll tick, and a join in steady state would
-        // otherwise wait up to a minute (observed: ~39 s join→peer gap).
-        // Our own row (now carrying the cleartext voice_channel_id) also
-        // publishes on this tick so peers see us join promptly.
-        crate::services::community::presence::nudge_presence_poll(state, cid);
+        // Our beat says the channel at once, and the voice roster is handed
+        // what the members' beats show (plan E3.4 S8-pre).
+        crate::services::presence_adapter::voice_presence_changed(state, cid);
     }
     Ok(())
 }

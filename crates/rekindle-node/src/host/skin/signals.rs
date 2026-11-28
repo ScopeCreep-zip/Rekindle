@@ -115,7 +115,7 @@ impl Inputs {
                 ..
             }) => self.typing.remove(peer_key),
             SubscriptionEvent::Call(call) => self.fold_call(call),
-            SubscriptionEvent::Voice(VoiceEvent::LocalJoined { scope }) => {
+            SubscriptionEvent::Voice(VoiceEvent::LocalJoined { scope, .. }) => {
                 self.voice = Some(scope.clone());
                 true
             }

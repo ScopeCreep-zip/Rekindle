@@ -55,7 +55,7 @@ pub fn mark_immutable(node: &TransportNode, lease: LeaseId) -> Result<()> {
 pub async fn create_smpl_leased(
     node: &TransportNode,
     member_pubkeys: &[[u8; 32]],
-) -> Result<(LeaseId, String, String)> {
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>)> {
     let schema = rekindle_records::schema::community_smpl(member_pubkeys);
     Ok(pool(node)?.create(&schema, None).await?)
 }
@@ -66,7 +66,7 @@ pub async fn create_smpl_leased(
 pub async fn create_dflt_leased(
     node: &TransportNode,
     owner: Option<&str>,
-) -> Result<(LeaseId, String, String)> {
+) -> Result<(LeaseId, String, zeroize::Zeroizing<String>)> {
     let schema = rekindle_records::schema::invite_secrets();
     Ok(pool(node)?.create(&schema, owner).await?)
 }

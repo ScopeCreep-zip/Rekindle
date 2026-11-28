@@ -88,11 +88,7 @@ async fn nothing_is_sealed_before_the_recipient_announced_a_session_key() {
     let net = net();
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
-    alice
-        .transport
-        .lock()
-        .await
-        .add_peer(&bob.id(), &bob.route, None);
+    alice.transport.lock().await.add_peer(&bob.id(), &bob.route);
     on_peer_added(
         &alice.deps(),
         COMMUNITY,
